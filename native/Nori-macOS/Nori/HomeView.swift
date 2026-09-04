@@ -129,9 +129,8 @@ struct HomeView: View {
                 .padding(20)
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 KindSwitch(provider: Bindable(library).provider)
             }
         }
