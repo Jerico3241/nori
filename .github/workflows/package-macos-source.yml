@@ -1,0 +1,31 @@
+name: Package macOS Source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/Nori-macOS/**'
+      - '.github/workflows/package-macos-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create macOS source package
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent native/Nori-macOS Nori-macOS.zip
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nori-macOS
+          path: Nori-macOS.zip
+          if-no-files-found: error
+          retention-days: 30
