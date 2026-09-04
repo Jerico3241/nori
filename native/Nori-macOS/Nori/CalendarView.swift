@@ -43,7 +43,7 @@ struct CalendarView: View {
         }
         .navigationTitle("Kalender")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 KindSwitch(provider: Bindable(library).provider)
             }
         }
