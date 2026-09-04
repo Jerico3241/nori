@@ -15,6 +15,7 @@ struct SeriesView: View {
     @State private var error: String?
     @State private var loading = true
     @State private var coverColor = NoriTheme.accent
+    @State private var pickingCover = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -47,11 +48,30 @@ struct SeriesView: View {
                 }
                 .help(library.isFavorite(slug) ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    pickingCover = true
+                } label: {
+                    Label("Cover wählen", systemImage: "photo")
+                }
+                .help("Cover manuell auswählen, wenn das automatische nicht passt")
+            }
         }
         .task { await load(season: nil) }
         .task(id: detail?.coverPath) {
             guard let url = AniworldClient.coverURL(detail?.coverPath, provider: library.provider) else { return }
+            // Das Cover der Quelle festhalten, damit es überall als
+            // Rückfallebene bereitsteht, wenn TMDB nichts findet.
+            await CoverIndex.shared.rememberSource(slug: slug, url: url)
             if let tone = await CoverToneSampler.sample(url: url) { coverColor = tone }
+        }
+        .sheet(isPresented: $pickingCover) {
+            CoverPicker(
+                slug: slug,
+                title: detail?.title ?? titleHint,
+                kind: providerOverride ?? library.provider,
+                sourceCover: AniworldClient.coverURL(detail?.coverPath, provider: providerOverride ?? library.provider)
+            )
         }
     }
 
@@ -103,6 +123,10 @@ struct SeriesView: View {
                 coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
             )
             .frame(width: 176)
+            .contextMenu {
+                Button("Cover wählen…") { pickingCover = true }
+            }
+            .help("Rechtsklick, um das Cover manuell zu wählen")
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(detail.title)
@@ -253,6 +277,151 @@ struct SeriesView: View {
             }
         }
         loading = false
+    }
+}
+
+/// Manuelle Cover-Zuordnung. TMDB findet nicht immer den richtigen Titel —
+/// besonders bei Anime mit mehreren Staffeln unter ähnlichem Namen. Hier lässt
+/// sich das Cover der Quelle oder ein anderer TMDB-Treffer festlegen.
+struct CoverPicker: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let slug: String
+    let title: String
+    let kind: CatalogProvider
+    let sourceCover: URL?
+
+    @State private var candidates: [CoverCandidate] = []
+    @State private var current: URL?
+    @State private var loading = true
+
+    private let grid = [GridItem(.adaptive(minimum: 110, maximum: 140), spacing: 14)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cover wählen")
+                        .font(.headline)
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(NoriTheme.muted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button("Fertig") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let sourceCover {
+                        section("Von \(kind.label)") {
+                            option(url: sourceCover, label: "Cover der Quelle")
+                        }
+                    }
+
+                    if loading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("TMDB wird durchsucht…")
+                                .font(.caption)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    } else if candidates.isEmpty {
+                        Text("TMDB liefert für diesen Titel keine Treffer.")
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                    } else {
+                        section("Von TMDB") {
+                            LazyVGrid(columns: grid, alignment: .leading, spacing: 14) {
+                                ForEach(candidates) { candidate in
+                                    option(url: candidate.url, label: candidate.label)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+
+            Divider()
+
+            HStack {
+                Button("Automatisch") {
+                    Task { await choose(nil) }
+                }
+                .disabled(current == nil)
+                .help("Manuelle Auswahl verwerfen und wieder automatisch zuordnen")
+                Spacer()
+                if current != nil {
+                    Label("Manuell gesetzt", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(NoriTheme.accent)
+                }
+            }
+            .padding(16)
+        }
+        .frame(width: 640, height: 540)
+        .background(NoriTheme.bg)
+        .task {
+            current = await CoverIndex.shared.override(for: slug)
+            candidates = await CoverIndex.shared.candidates(title: title, kind: kind)
+            loading = false
+        }
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            content()
+        }
+    }
+
+    private func option(url: URL, label: String) -> some View {
+        let selected = current == url
+        return Button {
+            Task { await choose(url) }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        NoriTheme.elevated.overlay {
+                            Image(systemName: "photo").foregroundStyle(NoriTheme.muted)
+                        }
+                    default:
+                        NoriTheme.elevated.overlay { ProgressView().controlSize(.small) }
+                    }
+                }
+                .frame(width: 110, height: 165)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(selected ? NoriTheme.accent : NoriTheme.border, lineWidth: selected ? 2.5 : 1)
+                }
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(selected ? NoriTheme.fg : NoriTheme.muted)
+                    .lineLimit(2, reservesSpace: true)
+                    .frame(width: 110, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+        .help(label)
+    }
+
+    private func choose(_ url: URL?) async {
+        await CoverIndex.shared.setOverride(slug: slug, url: url)
+        current = url
+        NotificationCenter.default.post(name: .noriCoverChanged, object: slug)
     }
 }
 

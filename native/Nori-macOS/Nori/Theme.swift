@@ -53,6 +53,10 @@ extension Notification.Name {
     /// Wird von „Ablage › Aktualisieren“ (⌘R) gesendet, damit auch Ansichten
     /// mit eigener Datenquelle (Kalender) neu laden.
     static let noriRefreshRequested = Notification.Name("NoriRefreshRequested")
+
+    /// Nach manueller Cover-Auswahl; `object` ist der Slug. Damit aktualisieren
+    /// sich auch Kacheln, die gerade in anderen Listen sichtbar sind.
+    static let noriCoverChanged = Notification.Name("NoriCoverChanged")
 }
 
 // MARK: - Bausteine
@@ -195,7 +199,9 @@ struct PosterTile: View {
     @State private var hovering = false
 
     private var radius: CGFloat { compact ? 8 : 12 }
-    private var shown: URL? { coverURL ?? remote }
+    /// `remote` deckt manuelle Auswahl und Nachschlagen ab und hat deshalb
+    /// Vorrang vor dem mitgegebenen Cover der Quelle.
+    private var shown: URL? { remote ?? coverURL }
     private var lifted: Bool { hovering && !reduceMotion }
 
     var body: some View {
@@ -227,12 +233,26 @@ struct PosterTile: View {
             .animation(.easeOut(duration: 0.16), value: hovering)
             .onHover { hovering = $0 }
             .task(id: slug) {
-                if coverURL != nil { return }
-                if let cached = await CoverIndex.shared.url(for: slug) {
-                    remote = cached
+                // Eine manuelle Auswahl schlägt alles andere.
+                if let chosen = await CoverIndex.shared.override(for: slug) {
+                    remote = chosen
+                    return
+                }
+                if let coverURL {
+                    // Die Detailseite kennt das Cover der Quelle. Merken, damit
+                    // Katalog, Kalender und Merkliste es als Rückfallebene haben.
+                    await CoverIndex.shared.rememberSource(slug: slug, url: coverURL)
+                    return
+                }
+                if let known = await CoverIndex.shared.url(for: slug) {
+                    remote = known
                     return
                 }
                 remote = await CoverIndex.shared.lookup(slug: slug, title: title, kind: kind ?? library.provider)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .noriCoverChanged)) { note in
+                guard note.object as? String == slug else { return }
+                Task { remote = await CoverIndex.shared.url(for: slug) }
             }
     }
 

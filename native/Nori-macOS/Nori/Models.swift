@@ -95,6 +95,10 @@ struct PlaySource: Codable {
     var url: String
     var hoster: String
     var lang: String
+    /// Seite, von der der Stream stammt. Viele Hoster liefern das Video nur
+    /// aus, wenn der Abruf diesen Referer mitschickt — AVPlayer muss ihn
+    /// deshalb am Asset gesetzt bekommen.
+    var referer: String?
 }
 
 struct WatchProgress: Codable, Identifiable, Hashable {

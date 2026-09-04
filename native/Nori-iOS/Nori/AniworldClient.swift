@@ -152,6 +152,8 @@ actor CoverIndex {
     static let shared = CoverIndex()
     private var cache: [String: URL] = [:]
     private var missed: Set<String> = []
+    private var sourceCovers: [String: URL] = [:]
+    private var overrides: [String: URL] = [:]
     private let key = "8265bd1679663a7ea12ac168da84d2e8"
 
     // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
@@ -173,14 +175,46 @@ actor CoverIndex {
            let bag = try? JSONDecoder().decode(Bag.self, from: data) {
             cache = bag.covers.compactMapValues(URL.init(string:))
             missed = Set(bag.missed)
+            sourceCovers = (bag.sourceCovers ?? [:]).compactMapValues(URL.init(string:))
+            overrides = (bag.overrides ?? [:]).compactMapValues(URL.init(string:))
         }
     }
 
-    func url(for slug: String) -> URL? { cache[slug] }
+    /// Reihenfolge: manuelle Auswahl, dann TMDB, dann das Cover der Quelle.
+    /// TMDB liefert die besseren Bilder, trifft aber nicht immer den richtigen
+    /// Titel — deshalb die Möglichkeit, von Hand zu überschreiben.
+    func url(for slug: String) -> URL? {
+        overrides[slug] ?? cache[slug] ?? sourceCovers[slug]
+    }
+
+    func override(for slug: String) -> URL? { overrides[slug] }
+
+    func setOverride(slug: String, url: URL?) {
+        if let url {
+            overrides[slug] = url
+        } else {
+            overrides.removeValue(forKey: slug)
+        }
+        scheduleSave()
+    }
+
+    /// Cover, das AniWorld beziehungsweise Serienstream selbst zur Serie
+    /// ausliefert. Es ist immer das richtige und dient als Rückfallebene, wenn
+    /// TMDB nichts findet.
+    func rememberSource(slug: String, url: URL) {
+        guard sourceCovers[slug] != url else { return }
+        sourceCovers[slug] = url
+        scheduleSave()
+    }
+
+    func sourceCover(for slug: String) -> URL? { sourceCovers[slug] }
 
     private struct Bag: Codable {
         var covers: [String: String]
         var missed: [String]
+        // Ab Cover-Index v2. Optional, damit ältere covers.json weiter lesbar bleibt.
+        var sourceCovers: [String: String]?
+        var overrides: [String: String]?
     }
 
     /// Sammelt Änderungen und schreibt sie gebündelt, damit ein Scroll durch
@@ -203,14 +237,23 @@ actor CoverIndex {
         if misses.count > Self.maxEntries {
             misses = Set(misses.prefix(Self.maxEntries))
         }
-        let bag = Bag(covers: covers.mapValues(\.absoluteString), missed: Array(misses))
+        let bag = Bag(
+            covers: covers.mapValues(\.absoluteString),
+            missed: Array(misses),
+            sourceCovers: sourceCovers.mapValues(\.absoluteString),
+            // Manuelle Auswahl nie deckeln — die hat der Nutzer selbst getroffen.
+            overrides: overrides.mapValues(\.absoluteString)
+        )
         guard let data = try? JSONEncoder().encode(bag) else { return }
         try? data.write(to: storeURL, options: .atomic)
     }
 
     func lookup(slug: String, title: String, kind: CatalogProvider) async -> URL? {
+        if let chosen = overrides[slug] { return chosen }
         if let hit = cache[slug] { return hit }
-        if missed.contains(slug) { return nil }
+        // Bekannter Fehlschlag: nicht erneut anfragen, aber das Cover der Quelle
+        // anbieten, statt die Kachel leer zu lassen.
+        if missed.contains(slug) { return sourceCovers[slug] }
         let cleaned = title
             .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -259,8 +302,54 @@ actor CoverIndex {
             missed.insert(slug)
             scheduleSave()
         } catch {
-            return nil
+            return sourceCovers[slug]
         }
-        return nil
+        return sourceCovers[slug]
     }
+
+    /// Auswahlvorschläge für die manuelle Cover-Zuordnung: die Treffer aus
+    /// TMDB in Rangfolge. Ohne Cache und ohne `missed`-Sperre, weil hier
+    /// bewusst nach einer Alternative gesucht wird.
+    func candidates(title: String, kind: CatalogProvider, limit: Int = 12) async -> [CoverCandidate] {
+        let cleaned = title
+            .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = cleaned.count >= 2 ? cleaned : title
+        guard var comps = URLComponents(string: "https://api.themoviedb.org/3/search/tv") else { return [] }
+        comps.queryItems = [
+            URLQueryItem(name: "api_key", value: key),
+            URLQueryItem(name: "language", value: "de-DE"),
+            URLQueryItem(name: "query", value: q),
+            URLQueryItem(name: "include_adult", value: "false"),
+        ]
+        guard let url = comps.url else { return [] }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let results = json["results"] as? [[String: Any]]
+            else { return [] }
+            var out: [CoverCandidate] = []
+            for row in results {
+                guard let path = row["poster_path"] as? String, !path.isEmpty,
+                      let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)")
+                else { continue }
+                let name = (row["name"] as? String) ?? (row["original_name"] as? String) ?? title
+                let year = (row["first_air_date"] as? String)?.prefix(4)
+                let label = year.map { "\(name) (\($0))" } ?? name
+                out.append(CoverCandidate(url: poster, label: label, source: "TMDB"))
+                if out.count >= limit { break }
+            }
+            return out
+        } catch {
+            return []
+        }
+    }
+}
+
+struct CoverCandidate: Identifiable, Hashable {
+    let url: URL
+    let label: String
+    let source: String
+    var id: URL { url }
 }

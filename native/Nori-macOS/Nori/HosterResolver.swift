@@ -36,7 +36,8 @@ enum HosterResolver {
     static func resolveBest(
         hosters: [HosterOption],
         preferredHoster: String,
-        preferredLang: String
+        preferredLang: String,
+        episodePath: String = ""
     ) async throws -> PlaySource {
         let langMatched = pickLang(hosters, pref: preferredLang)
         let ranked = ordered(langMatched, preferred: preferredHoster)
@@ -49,7 +50,7 @@ enum HosterResolver {
         var failures: [String] = []
         for opt in ranked {
             do {
-                return try await resolve(opt)
+                return try await resolve(opt, episodePath: episodePath)
             } catch {
                 var reason = error.localizedDescription
                 let prefix = "\(opt.name): "
@@ -62,12 +63,12 @@ enum HosterResolver {
         )
     }
 
-    static func resolve(_ opt: HosterOption) async throws -> PlaySource {
-        let embed = try await followRedirect(opt.redirectPath)
+    static func resolve(_ opt: HosterOption, episodePath: String = "") async throws -> PlaySource {
+        let embed = try await followRedirect(opt.redirectPath, episodePath: episodePath)
         return try await extract(embed: embed, hoster: opt.name, lang: opt.lang)
     }
 
-    private static func followRedirect(_ redirectPath: String) async throws -> URL {
+    private static func followRedirect(_ redirectPath: String, episodePath: String = "") async throws -> URL {
         let path = HTML.toAniworldPath(redirectPath)
         let origin: String
         let fullPath: String
@@ -91,7 +92,12 @@ enum HosterResolver {
         var req = URLRequest(url: url)
         req.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")
         req.setValue("de-DE,de;q=0.9", forHTTPHeaderField: "Accept-Language")
-        req.setValue(origin + "/", forHTTPHeaderField: "Referer")
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        // Die Weiterleitung wird aus der Episodenseite heraus aufgerufen. Mit
+        // dem blanken Origin als Referer weist sich der Aufruf als nicht von
+        // dort kommend aus, was manche Quellen abweisen.
+        let referer = episodePath.isEmpty ? origin + "/" : origin + normalizeEpisodePath(episodePath)
+        req.setValue(referer, forHTTPHeaderField: "Referer")
         defer { session.finishTasksAndInvalidate() }
         let payload = try? await session.data(for: req)
 
@@ -116,7 +122,33 @@ enum HosterResolver {
             return target
         }
 
-        throw NoriError.hoster("Weiterleitung endete nicht beim Hoster")
+        throw NoriError.hoster(redirectDiagnosis(payload))
+    }
+
+    /// Ohne Zugriff auf die Quelle ist die Fehlermeldung das einzige
+    /// Diagnosewerkzeug. Sie soll unterscheiden, ob die Anfrage abgewiesen
+    /// wurde, eine Schutzseite kam oder nur die Weiterleitung fehlt.
+    private static func redirectDiagnosis(_ payload: (Data, URLResponse)?) -> String {
+        let base = "Weiterleitung endete nicht beim Hoster"
+        guard let payload else { return "\(base) (keine Antwort)" }
+
+        var parts: [String] = []
+        if let http = payload.1 as? HTTPURLResponse {
+            parts.append("HTTP \(http.statusCode)")
+        }
+        if let host = payload.1.url?.host {
+            parts.append(host)
+        }
+        if let html = String(data: payload.0, encoding: .utf8) {
+            if looksCaptcha(html) {
+                parts.append("Schutzseite/Captcha")
+            } else {
+                parts.append("\(payload.0.count) Bytes ohne Weiterleitung")
+            }
+        } else {
+            parts.append("\(payload.0.count) Bytes, kein Text")
+        }
+        return "\(base) (\(parts.joined(separator: ", ")))"
     }
 
     /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?
@@ -152,20 +184,22 @@ enum HosterResolver {
             if looksCaptcha(html) { throw NoriError.hoster("\(hoster): Captcha") }
         }
 
+        let referer = page.absoluteString
+
         if let voe = extractVoe(html) {
             if let source = voe.source, source.contains(".m3u8"), isAllowed(source) {
-                return PlaySource(kind: .hls, url: source, hoster: hoster, lang: lang)
+                return PlaySource(kind: .hls, url: source, hoster: hoster, lang: lang, referer: referer)
             }
             if let direct = voe.direct, isAllowed(direct) {
-                return PlaySource(kind: .mp4, url: direct, hoster: hoster, lang: lang)
+                return PlaySource(kind: .mp4, url: direct, hoster: hoster, lang: lang, referer: referer)
             }
             if let source = voe.source, source.contains(".mp4"), isAllowed(source) {
-                return PlaySource(kind: .mp4, url: source, hoster: hoster, lang: lang)
+                return PlaySource(kind: .mp4, url: source, hoster: hoster, lang: lang, referer: referer)
             }
         }
 
         if let media = firstMedia(html) {
-            return PlaySource(kind: media.kind, url: media.url, hoster: hoster, lang: lang)
+            return PlaySource(kind: media.kind, url: media.url, hoster: hoster, lang: lang, referer: referer)
         }
         throw NoriError.hoster("\(hoster) liefert keinen Stream")
     }
