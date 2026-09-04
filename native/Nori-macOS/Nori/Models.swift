@@ -95,6 +95,10 @@ struct PlaySource: Codable {
     var url: String
     var hoster: String
     var lang: String
+    /// Seite, von der der Stream stammt. Viele Hoster liefern das Video nur
+    /// aus, wenn der Abruf diesen Referer mitschickt — AVPlayer muss ihn
+    /// deshalb am Asset gesetzt bekommen.
+    var referer: String?
 }
 
 struct WatchProgress: Codable, Identifiable, Hashable {
@@ -132,6 +136,10 @@ struct AiringEntry: Codable, Identifiable, Hashable {
     var languages: [String]
     var dayKey: String
     var dayLabel: String
+    /// Coverpfad, sofern die Quelle im Kalender einen mitliefert. Damit haben
+    /// Kalendereinträge ein richtiges Bild, ohne dass die Serie erst geöffnet
+    /// werden muss.
+    var coverPath: String?
     var id: String { "\(slug)|\(season)|\(episode)|\(dayKey)" }
 }
 

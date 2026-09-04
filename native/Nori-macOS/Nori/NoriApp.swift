@@ -6,6 +6,7 @@ import SwiftUI
 enum NoriSection: String, CaseIterable, Identifiable, Hashable {
     case home
     case catalog
+    case categories
     case calendar
     case watchlist
 
@@ -13,8 +14,9 @@ enum NoriSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .home: return "Start"
+        case .home: return "Entdecken"
         case .catalog: return "Katalog"
+        case .categories: return "Kategorien"
         case .calendar: return "Kalender"
         case .watchlist: return "Merkliste"
         }
@@ -24,8 +26,9 @@ enum NoriSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: return "house"
         case .catalog: return "square.grid.2x2"
+        case .categories: return "rectangle.grid.3x2"
         case .calendar: return "calendar"
-        case .watchlist: return "heart"
+        case .watchlist: return "bookmark"
         }
     }
 
@@ -33,8 +36,9 @@ enum NoriSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .home: return "1"
         case .catalog: return "2"
-        case .calendar: return "3"
-        case .watchlist: return "4"
+        case .categories: return "3"
+        case .calendar: return "4"
+        case .watchlist: return "5"
         }
     }
 }
@@ -58,6 +62,27 @@ final class PlayerHost {
     var request: PlayerRequest?
 }
 
+/// Der geladene Katalog, damit auch Ansichten außerhalb der Hauptnavigation
+/// darauf zugreifen können — die Detailseite baut daraus ihre Empfehlungen.
+@Observable
+final class CatalogStore {
+    var items: [CatalogItem] = []
+    var provider: CatalogProvider = .aniworld
+
+    /// Titel mit den meisten gemeinsamen Genres, ohne den Titel selbst.
+    func similar(to slug: String, genres: [String], limit: Int = 18) -> [CatalogItem] {
+        guard !genres.isEmpty else { return [] }
+        let wanted = Set(genres)
+        return items
+            .filter { $0.slug != slug }
+            .map { (item: $0, shared: wanted.intersection($0.genres).count) }
+            .filter { $0.shared > 0 }
+            .sorted { $0.shared > $1.shared }
+            .prefix(limit)
+            .map(\.item)
+    }
+}
+
 enum NoriWindow {
     static let player = "nori.player"
 }
@@ -68,12 +93,14 @@ enum NoriWindow {
 struct NoriApp: App {
     @State private var library = LibraryStore()
     @State private var playerHost = PlayerHost()
+    @State private var catalogStore = CatalogStore()
 
     var body: some Scene {
         WindowGroup("Nori") {
             RootView()
                 .environment(library)
                 .environment(playerHost)
+                .environment(catalogStore)
         }
         .defaultSize(width: 1180, height: 780)
         .windowToolbarStyle(.unified)
@@ -145,6 +172,7 @@ extension FocusedValues {
 
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(CatalogStore.self) private var catalogStore
 
     @State private var section: NoriSection = .home
     @State private var catalog: [CatalogItem] = []
@@ -214,6 +242,8 @@ struct RootView: View {
             HomeView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
         case .catalog:
             CatalogView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
+        case .categories:
+            CategoriesView(catalog: catalog, loading: loading)
         case .calendar:
             CalendarView()
         case .watchlist:
@@ -227,6 +257,8 @@ struct RootView: View {
         do {
             let result = try await AniworldClient.shared.getCatalog(provider: library.provider, force: force)
             catalog = result.items
+            catalogStore.items = result.items
+            catalogStore.provider = library.provider
         } catch {
             self.error = error.localizedDescription
         }

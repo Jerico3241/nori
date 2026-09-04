@@ -17,10 +17,10 @@ struct CatalogView: View {
     let reload: () async -> Void
 
     @State private var q = ""
-    @AppStorage("nori.catalog.layout") private var layoutRaw = CatalogLayout.list.rawValue
+    @AppStorage("nori.catalog.layout") private var layoutRaw = CatalogLayout.grid.rawValue
 
-    private var layout: CatalogLayout { CatalogLayout(rawValue: layoutRaw) ?? .list }
-    private let grid = [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 18)]
+    private var layout: CatalogLayout { CatalogLayout(rawValue: layoutRaw) ?? .grid }
+    private let grid = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 18)]
 
     var filtered: [CatalogItem] {
         let needle = q.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -92,6 +92,8 @@ struct CatalogView: View {
             ForEach(filtered) { item in
                 NoriSeriesLink(slug: item.slug, titleHint: item.title) {
                     HStack(spacing: 10) {
+                        PosterTile(title: item.title, slug: item.slug, compact: true)
+                            .frame(width: 30)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.title)
                                 .font(.body)
@@ -125,16 +127,7 @@ struct CatalogView: View {
         ScrollView {
             LazyVGrid(columns: grid, alignment: .leading, spacing: 20) {
                 ForEach(filtered) { item in
-                    NoriSeriesLink(slug: item.slug, titleHint: item.title) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            PosterTile(title: item.title, slug: item.slug)
-                            Text(item.title)
-                                .font(.caption)
-                                .lineLimit(2, reservesSpace: true)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                    .help(item.title)
+                    PosterCell(item: item)
                 }
             }
             .padding(20)

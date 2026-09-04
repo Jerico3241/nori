@@ -4,7 +4,7 @@ struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.1"
     }
 
     var body: some View {

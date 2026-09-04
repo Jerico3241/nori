@@ -11,12 +11,14 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 
 > **Privates Projekt.** Nori ist nicht mit AniWorld oder Serienstream verbunden.
 
+Änderungen je Version: [CHANGELOG.md](CHANGELOG.md)
+
 ## Aktueller Stand
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.9.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.9.0** | Native SwiftUI-App, funktionsgleich mit iOS, eigene Mac-Oberfläche |
+| iOS / iPadOS | **1.9.1** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.10.0** | Native SwiftUI-App mit eigener Mac-Oberfläche, aktuell der weiteste Stand |
 | Windows | **1.8.0** | Electron / Node Portable Build |
 
 Die nativen Apple-Versionen liegen unter `native/`.

@@ -36,36 +36,53 @@ enum HosterResolver {
     static func resolveBest(
         hosters: [HosterOption],
         preferredHoster: String,
-        preferredLang: String
+        preferredLang: String,
+        episodePath: String = ""
     ) async throws -> PlaySource {
         let langMatched = pickLang(hosters, pref: preferredLang)
         let ranked = ordered(langMatched, preferred: preferredHoster)
-        var last = "Kein spielbarer Hoster"
+        guard !ranked.isEmpty else {
+            throw NoriError.hoster("Für diese Folge ist kein Hoster eingetragen.")
+        }
+        // Jeden Fehlschlag mit Hoster und Grund festhalten. Vorher blieb nur die
+        // Meldung des zuletzt versuchten Hosters übrig, was nicht erkennen ließ,
+        // ob ein einzelner Hoster klemmt oder alle.
+        var failures: [String] = []
         for opt in ranked {
             do {
-                return try await resolve(opt)
+                return try await resolve(opt, episodePath: episodePath)
             } catch {
-                last = error.localizedDescription
+                var reason = error.localizedDescription
+                let prefix = "\(opt.name): "
+                if reason.hasPrefix(prefix) { reason.removeFirst(prefix.count) }
+                failures.append("\(opt.name) (\(opt.lang)): \(reason)")
             }
         }
-        throw NoriError.hoster(last)
+        throw NoriError.hoster(
+            "Kein Hoster lieferte einen Stream.\n" + failures.joined(separator: "\n")
+        )
     }
 
-    static func resolve(_ opt: HosterOption) async throws -> PlaySource {
-        let embed = try await followRedirect(opt.redirectPath)
+    static func resolve(_ opt: HosterOption, episodePath: String = "") async throws -> PlaySource {
+        let embed = try await followRedirect(opt.redirectPath, episodePath: episodePath)
         return try await extract(embed: embed, hoster: opt.name, lang: opt.lang)
     }
 
-    private static func followRedirect(_ redirectPath: String) async throws -> URL {
+    private static func followRedirect(_ redirectPath: String, episodePath: String = "") async throws -> URL {
         let path = HTML.toAniworldPath(redirectPath)
         let origin: String
         let fullPath: String
-        if redirectPath.hasPrefix("/r") || path.hasPrefix("/r") {
-            origin = NoriOrigin.serienstream
-            fullPath = redirectPath.hasPrefix("/r") ? redirectPath : path
-        } else if path.hasPrefix("/redirect/") {
+        // AniWorld zuerst prüfen: dessen Pfade beginnen mit „/redirect/", was
+        // ebenfalls mit „/r" anfängt. Die alte Reihenfolge schickte deshalb
+        // jede AniWorld-Weiterleitung an serienstream.to, wo sie mit 404
+        // endete — AniWorld war dadurch durchgehend nicht abspielbar.
+        // Serienstream verwendet „/r?…", entsprechend genau darauf prüfen.
+        if path.hasPrefix("/redirect/") {
             origin = NoriOrigin.aniworld
             fullPath = path
+        } else if isSerienstreamRedirect(redirectPath) || isSerienstreamRedirect(path) {
+            origin = NoriOrigin.serienstream
+            fullPath = isSerienstreamRedirect(redirectPath) ? redirectPath : path
         } else {
             throw NoriError.hoster("Ungültiger Hoster")
         }
@@ -80,11 +97,88 @@ enum HosterResolver {
         var req = URLRequest(url: url)
         req.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")
         req.setValue("de-DE,de;q=0.9", forHTTPHeaderField: "Accept-Language")
-        req.setValue(origin + "/", forHTTPHeaderField: "Referer")
-        _ = try? await session.data(for: req)
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        // Die Weiterleitung wird aus der Episodenseite heraus aufgerufen. Mit
+        // dem blanken Origin als Referer weist sich der Aufruf als nicht von
+        // dort kommend aus, was manche Quellen abweisen.
+        let referer = episodePath.isEmpty ? origin + "/" : origin + normalizeEpisodePath(episodePath)
+        req.setValue(referer, forHTTPHeaderField: "Referer")
+        defer { session.finishTasksAndInvalidate() }
+        let payload = try? await session.data(for: req)
+
+        // 1. Vom Delegate abgefangene Weiterleitung.
         if let landed = tap.externalURL { return landed }
-        if let last = tap.lastURL, !last.hostContains("aniworld"), !last.hostContains("serienstream") { return last }
-        throw NoriError.hoster("Hoster-URL nicht lesbar")
+
+        // 2. Die tatsächlich angesteuerte Adresse. URLSession folgt
+        //    Weiterleitungen von sich aus; löst der Delegate dabei nicht aus,
+        //    steht das Ziel nur hier. Vorher wurde die Antwort komplett
+        //    verworfen, weshalb für jeden Hoster derselbe Fehler ankam.
+        if let final = payload?.1.url, isExternalOrigin(final) { return final }
+
+        if let last = tap.lastURL, isExternalOrigin(last) { return last }
+
+        // 3. Manche Quellen liefern statt eines 302 eine HTML-Seite mit
+        //    meta-refresh, JS-Sprung oder iframe.
+        if let data = payload?.0,
+           let html = String(data: data, encoding: .utf8),
+           let target = htmlRedirectTarget(html),
+           isExternalOrigin(target)
+        {
+            return target
+        }
+
+        throw NoriError.hoster(redirectDiagnosis(payload))
+    }
+
+    /// Ohne Zugriff auf die Quelle ist die Fehlermeldung das einzige
+    /// Diagnosewerkzeug. Sie soll unterscheiden, ob die Anfrage abgewiesen
+    /// wurde, eine Schutzseite kam oder nur die Weiterleitung fehlt.
+    private static func redirectDiagnosis(_ payload: (Data, URLResponse)?) -> String {
+        let base = "Weiterleitung endete nicht beim Hoster"
+        guard let payload else { return "\(base) (keine Antwort)" }
+
+        var parts: [String] = []
+        if let http = payload.1 as? HTTPURLResponse {
+            parts.append("HTTP \(http.statusCode)")
+        }
+        if let host = payload.1.url?.host {
+            parts.append(host)
+        }
+        if let html = String(data: payload.0, encoding: .utf8) {
+            if looksCaptcha(html) {
+                parts.append("Schutzseite/Captcha")
+            } else {
+                parts.append("\(payload.0.count) Bytes ohne Weiterleitung")
+            }
+        } else {
+            parts.append("\(payload.0.count) Bytes, kein Text")
+        }
+        return "\(base) (\(parts.joined(separator: ", ")))"
+    }
+
+    /// Serienstream-Weiterleitungen sind „/r?…" oder „/r/…" — nicht jeder Pfad,
+    /// der mit „/r" beginnt. „/redirect/…" gehört zu AniWorld.
+    private static func isSerienstreamRedirect(_ path: String) -> Bool {
+        path.hasPrefix("/r?") || path.hasPrefix("/r/") || path == "/r"
+    }
+
+    /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?
+    private static func isExternalOrigin(_ url: URL) -> Bool {
+        guard let host = url.host, !host.isEmpty else { return false }
+        return !url.hostContains("aniworld") && !url.hostContains("serienstream")
+    }
+
+    private static func htmlRedirectTarget(_ html: String) -> URL? {
+        let patterns = [
+            #"<meta[^>]+http-equiv\s*=\s*["']refresh["'][^>]+content\s*=\s*["'][^"']*url\s*=\s*([^"'>\s]+)"#,
+            #"window\.location\.(?:href|replace)\s*[=(]\s*["'](https?://[^"']+)["']"#,
+            #"location\.href\s*=\s*["'](https?://[^"']+)["']"#,
+            #"<iframe[^>]+src\s*=\s*["'](https?://[^"']+)["']"#,
+        ]
+        for pattern in patterns {
+            if let raw = firstGroup(html, pattern), let url = URL(string: raw) { return url }
+        }
+        return nil
     }
 
     private static func extract(embed: URL, hoster: String, lang: String) async throws -> PlaySource {
@@ -101,20 +195,22 @@ enum HosterResolver {
             if looksCaptcha(html) { throw NoriError.hoster("\(hoster): Captcha") }
         }
 
+        let referer = page.absoluteString
+
         if let voe = extractVoe(html) {
             if let source = voe.source, source.contains(".m3u8"), isAllowed(source) {
-                return PlaySource(kind: .hls, url: source, hoster: hoster, lang: lang)
+                return PlaySource(kind: .hls, url: source, hoster: hoster, lang: lang, referer: referer)
             }
             if let direct = voe.direct, isAllowed(direct) {
-                return PlaySource(kind: .mp4, url: direct, hoster: hoster, lang: lang)
+                return PlaySource(kind: .mp4, url: direct, hoster: hoster, lang: lang, referer: referer)
             }
             if let source = voe.source, source.contains(".mp4"), isAllowed(source) {
-                return PlaySource(kind: .mp4, url: source, hoster: hoster, lang: lang)
+                return PlaySource(kind: .mp4, url: source, hoster: hoster, lang: lang, referer: referer)
             }
         }
 
         if let media = firstMedia(html) {
-            return PlaySource(kind: media.kind, url: media.url, hoster: hoster, lang: lang)
+            return PlaySource(kind: media.kind, url: media.url, hoster: hoster, lang: lang, referer: referer)
         }
         throw NoriError.hoster("\(hoster) liefert keinen Stream")
     }
@@ -277,7 +373,11 @@ private final class RedirectTap: NSObject, URLSessionTaskDelegate, @unchecked Se
         newRequest request: URLRequest
     ) async -> URLRequest? {
         lastURL = request.url
-        if let url = request.url, !url.hostContains("aniworld") {
+        // Beide Quell-Domains ausschließen: bei Serienstream läuft die
+        // Weiterleitung über serienstream.to/r?... und macht unterwegs Sprünge
+        // innerhalb der eigenen Domain. Ohne die zweite Prüfung wurde so ein
+        // Zwischenschritt fälschlich als Hoster-Adresse genommen.
+        if let url = request.url, !url.hostContains("aniworld"), !url.hostContains("serienstream") {
             externalURL = url
             return nil
         }

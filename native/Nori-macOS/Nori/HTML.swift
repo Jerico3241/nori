@@ -339,6 +339,33 @@ enum HTML {
         }
     }
 
+    /// Notnagel, wenn ein Kalendereintrag keine URL mitliefert. Vorher wurde der
+    /// Teil vor dem ersten Bindestrich des Poster-Dateinamens genommen — bei
+    /// „attack-on-titan.jpg" ergab das den Slug „attack", und der Eintrag führte
+    /// auf eine Seite, die es nicht gibt. Lieber nicht verlinken als falsch.
+    /// Nur übernehmen, was tatsächlich eine Adresse ist. Das Feld enthält je
+    /// nach Datensatz einen Pfad, eine volle URL oder nur einen Dateinamen —
+    /// aus letzterem lässt sich keine gültige Adresse bauen.
+    static func coverPathFromCalendar(_ poster: String) -> String? {
+        let trimmed = poster.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") || trimmed.hasPrefix("/") {
+            return trimmed
+        }
+        return nil
+    }
+
+    static func slugFromPoster(_ poster: String) -> String? {
+        let file = poster.split(separator: "/").last.map(String.init) ?? poster
+        let base = file.split(separator: ".").first.map(String.init) ?? file
+        let trimmed = base.trimmingCharacters(in: CharacterSet(charactersIn: "-_ ")).lowercased()
+        guard trimmed.count >= 3,
+              trimmed.contains(where: { $0.isLetter }),
+              trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" })
+        else { return nil }
+        return trimmed
+    }
+
     static func slugFromHref(_ href: String) -> String? {
         let cleaned = href.replacingOccurrences(of: "&", with: "&")
         if let m = cleaned.range(of: #"/anime/stream/([^/?#]+)"#, options: .regularExpression) {
@@ -636,9 +663,20 @@ enum HTML {
                         flagLabel(((try? img.attr("title")) ?? "") + " " + ((try? img.attr("alt")) ?? "") + " " + ((try? img.attr("src")) ?? ""))
                     }
                 )
+                // Cover aus dem Eintrag, sofern vorhanden — Sprachfähnchen
+                // ausgenommen.
+                let cover = try a.select("img").array().compactMap { img -> String? in
+                    if (try? img.className())?.contains("flag") == true { return nil }
+                    let src = ((try? img.attr("data-src")) ?? "").isEmpty
+                        ? ((try? img.attr("src")) ?? "")
+                        : ((try? img.attr("data-src")) ?? "")
+                    return coverPathFromCalendar(src)
+                }.first
+
                 let key = "\(slug)|\(season)|\(episode)|\(dayKey)"
                 if var existing = merged[key] {
                     existing.languages = unique(existing.languages + languages)
+                    if existing.coverPath == nil { existing.coverPath = cover }
                     merged[key] = existing
                     continue
                 }
@@ -651,7 +689,8 @@ enum HTML {
                     slug: slug,
                     languages: languages,
                     dayKey: dayKey,
-                    dayLabel: dayLabel
+                    dayLabel: dayLabel,
+                    coverPath: cover
                 )
             }
         }
@@ -672,7 +711,7 @@ enum HTML {
             for row in rows {
                 let url = (row["url"] as? String) ?? ""
                 let poster = (row["poster"] as? String) ?? ""
-                let slug = slugFromHref(url) ?? poster.split(separator: "-").first.map(String.init) ?? ""
+                let slug = slugFromHref(url) ?? slugFromPoster(poster) ?? ""
                 guard !slug.isEmpty else { continue }
                 let time = (row["time"] as? String) ?? "00:00"
                 let hm = time.split(separator: ":")
@@ -706,7 +745,8 @@ enum HTML {
                     slug: slug,
                     languages: lang.map { [$0] } ?? [],
                     dayKey: dayKey,
-                    dayLabel: dayLabel
+                    dayLabel: dayLabel,
+                    coverPath: coverPathFromCalendar(poster)
                 )
             }
         }
