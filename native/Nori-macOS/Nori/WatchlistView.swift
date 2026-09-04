@@ -51,7 +51,7 @@ struct WatchlistView: View {
         }
         .navigationTitle("Merkliste")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 KindSwitch(provider: Bindable(library).provider)
             }
         }
