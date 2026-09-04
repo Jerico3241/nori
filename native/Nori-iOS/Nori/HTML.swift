@@ -13,7 +13,7 @@ enum HTML {
         if let range = cleaned.range(of: #"/redirect/\d+"#, options: .regularExpression) {
             return String(cleaned[range])
         }
-        if cleaned == "/r" || cleaned.hasPrefix("/r?") || cleaned.hasPrefix("/r/") {
+        if cleaned.hasPrefix("/r") {
             return cleaned.split(separator: "#").first.map(String.init) ?? cleaned
         }
         if cleaned.hasPrefix("/") { return cleaned.split(separator: "?").first.map(String.init) ?? cleaned }

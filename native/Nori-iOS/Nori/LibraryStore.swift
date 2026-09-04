@@ -3,6 +3,8 @@ import Observation
 
 @Observable
 final class LibraryStore {
+    static let schemaVersion = 2
+
     var favorites: [String] = []
     var recents: [RecentItem] = []
     var titles: [String: String] = [:]
@@ -12,9 +14,11 @@ final class LibraryStore {
     var hosterPref: String = "VOE" { didSet { persist() } }
     var resumeEnabled: Bool = true { didSet { persist() } }
     var autoplayNext: Bool = true { didSet { persist() } }
+    var playbackSpeed: Float = 1.0 { didSet { persist() } }
     var provider: CatalogProvider = .aniworld { didSet { persist() } }
 
     private let url: URL
+    private var isLoading = false
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -46,28 +50,53 @@ final class LibraryStore {
     func remember(slug: String, title: String, provider: CatalogProvider? = nil) {
         titles[slug] = title
         recents.removeAll { $0.slug == slug }
-        recents.insert(RecentItem(slug: slug, title: title, viewedAt: Date().timeIntervalSince1970 * 1000, provider: provider ?? self.provider), at: 0)
-        if recents.count > 40 { recents = Array(recents.prefix(40)) }
+        recents.insert(
+            RecentItem(
+                slug: slug,
+                title: title,
+                viewedAt: Date().timeIntervalSince1970 * 1000,
+                provider: provider ?? self.provider
+            ),
+            at: 0
+        )
+        if recents.count > 100 { recents = Array(recents.prefix(100)) }
         persist()
     }
 
-    func progress(forPath path: String, lang: String? = nil) -> WatchProgress? {
+    func progress(forPath path: String, lang: String? = nil, provider: CatalogProvider? = nil) -> WatchProgress? {
         let clean = normalizeEpisodePath(path)
-        if let lang {
-            if let keyed = progress[progressKey(path: clean, lang: lang)] { return keyed }
+        let expectedProvider = provider
+        if let expectedProvider, let direct = progress[progressKey(path: clean, provider: expectedProvider)] {
+            return direct
         }
-        if let direct = progress[clean] ?? progress[path] { return direct }
+        if let direct = progress[clean] { return direct }
+
         var best: WatchProgress?
-        for (key, item) in progress where key == clean || key == path || key.hasPrefix("\(clean)::") || key.hasPrefix("\(path)::") {
+        for item in progress.values {
+            guard normalizeEpisodePath(item.episodePath) == clean else { continue }
+            if let expectedProvider {
+                let itemProvider = item.provider ?? providerFromPath(item.episodePath)
+                guard itemProvider == expectedProvider else { continue }
+            }
             if best == nil || item.updatedAt > best!.updatedAt { best = item }
         }
         return best
     }
 
-    func progress(slug: String, season: String, episode: Int, path: String? = nil) -> WatchProgress? {
-        if let path, let byPath = self.progress(forPath: path) { return byPath }
+    func progress(
+        slug: String,
+        season: String,
+        episode: Int,
+        path: String? = nil,
+        provider: CatalogProvider? = nil
+    ) -> WatchProgress? {
+        if let path, let byPath = self.progress(forPath: path, provider: provider) { return byPath }
         var best: WatchProgress?
         for item in progress.values where item.slug == slug && item.season == season && item.episode == episode {
+            if let provider {
+                let itemProvider = item.provider ?? providerFromPath(item.episodePath)
+                guard itemProvider == provider else { continue }
+            }
             if best == nil || item.updatedAt > best!.updatedAt { best = item }
         }
         return best
@@ -77,19 +106,23 @@ final class LibraryStore {
         let path = normalizeEpisodePath(item.episodePath)
         var next = item
         next.episodePath = path
+        next.provider = next.provider ?? providerFromPath(path)
         if next.durationSec >= 20, next.positionSec >= next.durationSec * 0.9 {
             next.completed = true
         }
-        progress[progressKey(path: path, lang: next.lang)] = next
-        progress[path] = next
+        // Schema v2 stores exactly one record per provider + episode. Language is last-used metadata.
+        progress[progressKey(path: path, provider: next.provider)] = next
+        removeLegacyDuplicates(for: next)
         persist()
     }
 
     func continueWatching() -> [WatchProgress] {
         var latest: [String: WatchProgress] = [:]
         for item in progress.values {
-            if latest[item.slug] == nil || item.updatedAt > latest[item.slug]!.updatedAt {
-                latest[item.slug] = item
+            let itemProvider = item.provider ?? providerFromPath(item.episodePath)
+            let key = "\(itemProvider.rawValue)|\(item.slug)"
+            if latest[key] == nil || item.updatedAt > latest[key]!.updatedAt {
+                latest[key] = item
             }
         }
         return latest.values
@@ -102,7 +135,7 @@ final class LibraryStore {
     func seasonStats(slug: String, season: String, episodes: [Episode]) -> (watched: Int, total: Int, pct: Int) {
         var watched = 0
         for ep in episodes {
-            if isEpisodeComplete(progress(slug: slug, season: season, episode: ep.number, path: ep.path)) {
+            if isEpisodeComplete(progress(slug: slug, season: season, episode: ep.number, path: ep.path, provider: provider)) {
                 watched += 1
             }
         }
@@ -112,7 +145,10 @@ final class LibraryStore {
 
     func nextPlay(slug: String, season: String, episodes: [Episode]) -> (episode: Int, resumeAt: Double, kind: String) {
         guard !episodes.isEmpty else { return (1, 0, "play") }
-        if let latest = progress.values.filter({ $0.slug == slug }).max(by: { $0.updatedAt < $1.updatedAt }),
+        let relevant = progress.values.filter {
+            $0.slug == slug && ($0.provider ?? providerFromPath($0.episodePath)) == provider
+        }
+        if let latest = relevant.max(by: { $0.updatedAt < $1.updatedAt }),
            latest.season == season,
            !isEpisodeComplete(latest),
            episodes.contains(where: { $0.number == latest.episode })
@@ -120,14 +156,21 @@ final class LibraryStore {
             let at = resumeEnabled ? resumePosition(latest) : 0
             return (latest.episode, at, at >= 8 ? "resume" : "play")
         }
-        for ep in episodes {
-            let item = progress(slug: slug, season: season, episode: ep.number, path: ep.path)
+        for ep in episodes.sorted(by: { $0.number < $1.number }) {
+            let item = progress(slug: slug, season: season, episode: ep.number, path: ep.path, provider: provider)
             if !isEpisodeComplete(item) {
                 let at = resumeEnabled ? resumePosition(item) : 0
                 return (ep.number, at, at >= 8 ? "resume" : "next")
             }
         }
-        return (episodes[0].number, 0, "play")
+        return (episodes.sorted(by: { $0.number < $1.number })[0].number, 0, "play")
+    }
+
+    func nextEpisode(after episode: Episode, in episodes: [Episode]) -> Episode? {
+        let sorted = episodes.sorted { $0.number < $1.number }
+        guard let index = sorted.firstIndex(where: { $0.number == episode.number }) else { return nil }
+        let next = sorted.index(after: index)
+        return next < sorted.endIndex ? sorted[next] : nil
     }
 
     func clearHistory() {
@@ -144,24 +187,58 @@ final class LibraryStore {
         guard let data = try? Data(contentsOf: url),
               let bag = try? JSONDecoder().decode(Bag.self, from: data)
         else { return }
+
+        isLoading = true
         favorites = bag.favorites
         recents = bag.recents
         titles = bag.titles
-        progress = bag.progress
         langPref = bag.langPref ?? "DE"
         hosterPref = bag.hosterPref ?? "VOE"
         resumeEnabled = bag.resumeEnabled ?? true
         autoplayNext = bag.autoplayNext ?? true
-        if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) {
-            provider = next
-        }
+        playbackSpeed = bag.playbackSpeed ?? 1.0
+        if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) { provider = next }
         if let sources = bag.favoriteSource {
             favoriteSource = sources.compactMapValues { CatalogProvider(rawValue: $0) }
         }
+        progress = migrateProgress(bag.progress)
+        isLoading = false
+
+        // Rewrites v1 libraries once, removing language-key duplicates and adding schema metadata.
+        if (bag.version ?? 1) < Self.schemaVersion || progress.count != bag.progress.count {
+            persist()
+        }
+    }
+
+    private func migrateProgress(_ old: [String: WatchProgress]) -> [String: WatchProgress] {
+        var migrated: [String: WatchProgress] = [:]
+        for value in old.values {
+            var item = value
+            item.episodePath = normalizeEpisodePath(item.episodePath)
+            item.provider = item.provider ?? providerFromPath(item.episodePath)
+            let key = progressKey(path: item.episodePath, provider: item.provider)
+            if migrated[key] == nil || item.updatedAt > migrated[key]!.updatedAt {
+                migrated[key] = item
+            }
+        }
+        return migrated
+    }
+
+    private func removeLegacyDuplicates(for item: WatchProgress) {
+        let clean = normalizeEpisodePath(item.episodePath)
+        let keep = progressKey(path: clean, provider: item.provider)
+        let matching = progress.keys.filter { key in
+            guard key != keep, let existing = progress[key] else { return false }
+            return normalizeEpisodePath(existing.episodePath) == clean
+                && (existing.provider ?? providerFromPath(existing.episodePath)) == item.provider
+        }
+        for key in matching { progress.removeValue(forKey: key) }
     }
 
     private func persist() {
+        guard !isLoading else { return }
         let bag = Bag(
+            version: Self.schemaVersion,
             favorites: favorites,
             recents: recents,
             titles: titles,
@@ -170,6 +247,7 @@ final class LibraryStore {
             hosterPref: hosterPref,
             resumeEnabled: resumeEnabled,
             autoplayNext: autoplayNext,
+            playbackSpeed: playbackSpeed,
             provider: provider.rawValue,
             favoriteSource: favoriteSource.mapValues(\.rawValue)
         )
@@ -179,6 +257,7 @@ final class LibraryStore {
     }
 
     private struct Bag: Codable {
+        var version: Int?
         var favorites: [String]
         var recents: [RecentItem]
         var titles: [String: String]
@@ -187,6 +266,7 @@ final class LibraryStore {
         var hosterPref: String?
         var resumeEnabled: Bool?
         var autoplayNext: Bool?
+        var playbackSpeed: Float?
         var provider: String?
         var favoriteSource: [String: String]?
     }

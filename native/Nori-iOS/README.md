@@ -1,38 +1,41 @@
-# Nori für iPhone (SwiftUI)
+# Nori für iPhone (SwiftUI) — 1.9.0
 
-Native App. Kein Safari, kein Home-Bildschirm-Trick, kein Server.
+Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeitet lokal; Merkliste und Fortschritt benötigen keinen Account.
+
+## Nori 1.9
+
+- echtes Autoplay der nächsten Folge mit 8-Sekunden-Countdown und Abbrechen/sofort Abspielen
+- Hosterwechsel direkt im Player
+- Sprachwechsel direkt im Player
+- Wiedergabegeschwindigkeit 0,75× / 1× / 1,25× / 1,5× / 2×
+- Retry und alternativer Hoster bei Wiedergabefehlern
+- Library-Schema v2 mit automatischer Migration bestehender 1.x-Daten
+- nur noch ein Progress-Datensatz pro Provider + Episode; Sprache bleibt Metadatum
+- Provider wird bei neuen Progress-Einträgen explizit gespeichert
+- bis zu 100 zuletzt geöffnete Titel
+- härtere Prüfung externer Hoster-/Stream-URLs gegen lokale/private Zieladressen
+- Versionsanzeige kommt aus `CFBundleShortVersionString` statt aus einem hart codierten UI-String
+- `contract.json` auf Contract v2 / App 1.9.0 aktualisiert
 
 ## IPA (unsigniert)
 
-Die `.ipa` kann **nicht** in der Grok-Umgebung entstehen — dafür braucht es Xcode auf dem Mac.
+Die `.ipa` kann außerhalb von macOS/Xcode nicht gebaut werden.
 
-1. Diesen Ordner auf den Mac mini legen.
-2. `IPA-bauen.command` doppelklicken.
-3. Es entsteht `Nori.ipa` daneben (arm64, ohne Signatur).
-4. IPA aufs iPhone, dort mit Feather / ESign / SideStore signieren und installieren.
+1. Diesen Ordner auf einen Mac legen.
+2. `IPA-bauen.command` ausführen.
+3. Xcode lädt beim ersten Build SwiftSoup.
+4. Die erzeugte IPA anschließend mit dem gewünschten Signing-Verfahren installieren.
 
-Beim ersten Lauf holt Xcode SwiftSoup aus dem Netz.
-
-## Direkt aus Xcode (Kabel)
+## Direkt aus Xcode
 
 1. `Nori.xcodeproj` öffnen.
-2. Signing: Team = deine Apple-ID.
-3. iPhone per Kabel, Entwicklermodus, Run.
+2. Unter Signing ein Development Team auswählen.
+3. iPhone/iPad als Ziel auswählen und Run starten.
 
-## Was drin ist
+## Datenmigration
 
-- Cover zoomt von der Übersicht in die Serie (iOS 18)
-- Serienseite färbt sich nach dem Cover
-- Weiche Übergänge, reduzierte Bewegung wird beachtet
-- Quelle: AniWorld (Anime) oder Serienstream (Serien)
-- Katalog, Suche, Kalender, Serie, Staffeln, Folgen
-- Merkliste und Fortschritt lokal
-- Resume, Haken bei ≥90 %
-- Hoster: VOE zuerst, dann Vidmoly / Filemoon
-- AVPlayer, HLS direkt, Bild-in-Bild
+Nori 1.9 liest bestehende `library.json`-Dateien aus 1.x weiter. Beim ersten Start werden alte doppelte Progress-Schlüssel (`path` und `path::language`) zusammengeführt; der Datensatz mit dem neuesten `updatedAt` gewinnt. Danach wird Schema v2 atomar gespeichert.
 
-## Vertrag mit der Web-App
+## Noch nicht Bestandteil dieses Sourcepakets
 
-- `contract.json`
-- Swift: `Nori/Models.swift`
-- Web: `src/lib/aniworld/types.ts` + `src/lib/library.ts` + `src/lib/provider.ts`
+Account-/Cloud-Sync, serverseitiger gemeinsamer Resolver und serverseitige TMDB/AniList-Metadaten benötigen die ursprünglichen Backend-/Web-Quellen. Diese sind im bereitgestellten Workspace nicht enthalten; die Portable-Version liegt nur als gebautes Electron-Artefakt vor.

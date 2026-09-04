@@ -60,10 +60,9 @@ enum HosterResolver {
         let path = HTML.toAniworldPath(redirectPath)
         let origin: String
         let fullPath: String
-        // /r?t=… / /r/  = Serienstream. Nicht /redirect/ (AniWorld) — hasPrefix("/r") wäre true für beides.
-        if Self.isSerienstreamPlayPath(redirectPath) || Self.isSerienstreamPlayPath(path) {
+        if redirectPath.hasPrefix("/r") || path.hasPrefix("/r") {
             origin = NoriOrigin.serienstream
-            fullPath = Self.isSerienstreamPlayPath(redirectPath) ? redirectPath : path
+            fullPath = redirectPath.hasPrefix("/r") ? redirectPath : path
         } else if path.hasPrefix("/redirect/") {
             origin = NoriOrigin.aniworld
             fullPath = path
@@ -89,11 +88,14 @@ enum HosterResolver {
     }
 
     private static func extract(embed: URL, hoster: String, lang: String) async throws -> PlaySource {
+        guard isSafeRemoteURL(embed) else { throw NoriError.hoster("\(hoster): unsichere Ziel-URL") }
         var page = toEmbed(embed, hoster: hoster)
+        guard isSafeRemoteURL(page) else { throw NoriError.hoster("\(hoster): unsichere Embed-URL") }
         var html = try await AniworldClient.shared.fetchExternal(page, referer: page.absoluteString)
         if looksCaptcha(html) { throw NoriError.hoster("\(hoster): Captcha") }
 
         if let bounce = extractBounce(html), bounce != page {
+            guard isSafeRemoteURL(bounce) else { throw NoriError.hoster("\(hoster): unsichere Weiterleitung") }
             html = try await AniworldClient.shared.fetchExternal(bounce, referer: page.absoluteString)
             page = bounce
             if looksCaptcha(html) { throw NoriError.hoster("\(hoster): Captcha") }
@@ -227,11 +229,34 @@ enum HosterResolver {
     }
 
     private static func isAllowed(_ raw: String) -> Bool {
-        guard let url = URL(string: raw), let host = url.host, url.scheme == "https" else { return false }
-        if host == "localhost" || host.hasSuffix(".local") || host.hasPrefix("127.") { return false }
+        guard let url = URL(string: raw), isSafeRemoteURL(url) else { return false }
         let path = (url.path + (url.query.map { "?\($0)" } ?? "")).lowercased()
         return path.contains(".m3u8") || path.contains(".mp4") || path.contains(".m4s") || path.contains(".ts")
             || path.contains("urlset") || path.contains("/hls") || path.contains("playlist")
+    }
+
+    private static func isSafeRemoteURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              url.user == nil, url.password == nil,
+              let host = url.host?.lowercased(), !host.isEmpty
+        else { return false }
+
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") { return false }
+        if host == "::1" || host == "0.0.0.0" { return false }
+
+        let octets = host.split(separator: ".").compactMap { Int($0) }
+        if octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) {
+            let a = octets[0], b = octets[1]
+            if a == 10 || a == 127 || a == 0 { return false }
+            if a == 169 && b == 254 { return false }
+            if a == 172 && (16...31).contains(b) { return false }
+            if a == 192 && b == 168 { return false }
+            if a == 100 && (64...127).contains(b) { return false }
+            if a >= 224 { return false }
+        }
+
+        if host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80:") { return false }
+        return true
     }
 
     private static func looksCaptcha(_ html: String) -> Bool {

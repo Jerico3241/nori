@@ -6,7 +6,7 @@ Quellen: [AniWorld](https://aniworld.to) (Anime) und [Serienstream](https://seri
 
 **Privat.** Windows-Build liegt unter [Releases](https://github.com/Jerico3241/nori/releases).
 
-Aktuell: **1.8.0** (Windows) · **1.9.0** (macOS) · native Quellen im Ordner `native/`.
+Aktuell: **1.8.0** (Windows) · **1.9.0** (iOS / macOS) · native Quellen im Ordner `native/`.
 
 ## Inhalt
 

@@ -3,6 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0"
+    }
+
     var body: some View {
         NoriScreen {
             List {
@@ -21,7 +25,7 @@ struct SettingsView: View {
                     .listRowBackground(NoriTheme.surface)
                 }
                 Section("Dieses Gerät") {
-                    LabeledContent("Version", value: "1.8.0")
+                    LabeledContent("Version", value: appVersion)
                         .listRowBackground(NoriTheme.surface)
                     Text("Läuft nativ auf dem iPhone. Kein Browser, kein Server. Merkliste und Fortschritt liegen nur hier.")
                         .font(.footnote)
@@ -86,6 +90,9 @@ struct PlaybackSettingsView: View {
                     Picker("Hoster", selection: $library.hosterPref) {
                         Text("VOE").tag("VOE")
                         Text("Vidmoly").tag("Vidmoly")
+                        Text("Vidoza").tag("Vidoza")
+                        Text("Lulustream").tag("Lulustream")
+                        Text("SpeedFiles").tag("SpeedFiles")
                         Text("Filemoon").tag("Filemoon")
                         Text("Doodstream").tag("Doodstream")
                     }
@@ -93,6 +100,13 @@ struct PlaybackSettingsView: View {
                 Section("Wiedergabe") {
                     Toggle("Weiterschauen an der letzten Stelle", isOn: $library.resumeEnabled)
                     Toggle("Nächste Folge automatisch", isOn: $library.autoplayNext)
+                    Picker("Geschwindigkeit", selection: $library.playbackSpeed) {
+                        Text("0,75×").tag(Float(0.75))
+                        Text("1×").tag(Float(1.0))
+                        Text("1,25×").tag(Float(1.25))
+                        Text("1,5×").tag(Float(1.5))
+                        Text("2×").tag(Float(2.0))
+                    }
                 }
             }
             .scrollContentBackground(.hidden)

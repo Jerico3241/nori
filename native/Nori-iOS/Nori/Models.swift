@@ -110,7 +110,9 @@ struct WatchProgress: Codable, Identifiable, Hashable {
     var updatedAt: Double
     var lang: String?
     var completed: Bool?
-    var id: String { episodePath }
+    // Added in library schema v2. Optional so existing 1.x library.json files decode cleanly.
+    var provider: CatalogProvider?
+    var id: String { "\(provider?.rawValue ?? providerFromPath(episodePath).rawValue)|\(episodePath)" }
 }
 
 struct RecentItem: Codable, Hashable {
@@ -163,9 +165,10 @@ func normalizeEpisodePath(_ raw: String) -> String {
     return path
 }
 
-func progressKey(path: String, lang: String?) -> String {
-    if let lang, !lang.isEmpty { return "\(path)::\(lang)" }
-    return path
+func progressKey(path: String, provider: CatalogProvider? = nil) -> String {
+    let clean = normalizeEpisodePath(path)
+    guard let provider else { return clean }
+    return "\(provider.rawValue)|\(clean)"
 }
 
 func isEpisodeComplete(_ item: WatchProgress?) -> Bool {
