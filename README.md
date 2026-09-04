@@ -16,7 +16,7 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 | Plattform | Version | Status |
 | --- | --- | --- |
 | iOS / iPadOS | **1.9.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.9.0** | Native SwiftUI-App, weitgehend funktionsgleich mit iOS |
+| macOS | **1.9.0** | Native SwiftUI-App, funktionsgleich mit iOS, eigene Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build |
 
 Die nativen Apple-Versionen liegen unter `native/`.
@@ -174,8 +174,9 @@ Die Electron-Hülle erwartet denselben Server packaged unter `resources/nori-ser
 
 ## Technische Hinweise
 
-- iOS und macOS teilen große Teile der Modelle, Netzwerklogik, Bibliotheksverwaltung und Oberfläche.
-- Plattformspezifisch bleiben unter anderem Player-Integration, App-Lifecycle, Xcode-Projekte und Info.plist-Konfiguration.
+- iOS und macOS teilen Modelle, Netzwerklogik und Bibliotheksverwaltung (`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`, `HTML`).
+- Die **Oberfläche ist getrennt**: macOS nutzt eine Seitenleiste (`NavigationSplitView`) statt Tab-Bar, ein eigenes Wiedergabefenster statt Sheet, das Systemeinstellungsfenster (⌘,) statt eines Einstellungs-Tabs sowie eine an das Systemerscheinungsbild angepasste Farbpalette.
+- Plattformspezifisch bleiben außerdem Player-Integration, App-Lifecycle, Xcode-Projekte und Info.plist-Konfiguration.
 - AniWorld-Weiterleitungen (`/redirect/...`) und Serienstream-Weiterleitungen (`/r?...`) werden getrennt behandelt.
 - Der Hoster-Resolver akzeptiert nur sichere HTTPS-Ziele und blockiert lokale/private Netzwerkadressen.
 - Hoster können ihre Seiten oder Schutzmechanismen jederzeit ändern. Dadurch kann die Stream-Auflösung trotz unverändertem Nori-Code zeitweise ausfallen.

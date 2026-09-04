@@ -1,73 +1,234 @@
+import Observation
 import SwiftUI
 
-@main
-struct NoriApp: App {
-    @State private var library = LibraryStore()
+// MARK: - Navigation
 
-    var body: some Scene {
-        WindowGroup {
-            RootView()
-                .environment(library)
-                .preferredColorScheme(.dark)
-                .frame(minWidth: 960, minHeight: 640)
+enum NoriSection: String, CaseIterable, Identifiable, Hashable {
+    case home
+    case catalog
+    case calendar
+    case watchlist
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .home: return "Start"
+        case .catalog: return "Katalog"
+        case .calendar: return "Kalender"
+        case .watchlist: return "Merkliste"
         }
-        .defaultSize(width: 1280, height: 820)
-        .commands {
-            CommandGroup(after: .appInfo) {
-                Button("Nori neu laden") {
-                    NotificationCenter.default.post(name: .noriReloadRequested, object: nil)
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-            }
+    }
+
+    var symbol: String {
+        switch self {
+        case .home: return "house"
+        case .catalog: return "square.grid.2x2"
+        case .calendar: return "calendar"
+        case .watchlist: return "heart"
+        }
+    }
+
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .home: return "1"
+        case .catalog: return "2"
+        case .calendar: return "3"
+        case .watchlist: return "4"
         }
     }
 }
 
+// MARK: - Wiedergabe-Fenster
+
+/// Beschreibt, was im Player-Fenster laufen soll.
+struct PlayerRequest: Hashable, Identifiable {
+    var series: SeriesDetail
+    var episode: Episode
+    var season: String
+    var resumeAt: Double
+
+    var id: String { "\(series.slug)|\(season)|\(episode.number)|\(Int(resumeAt))" }
+}
+
+/// Der Player ist auf dem Mac ein eigenes Fenster statt eines Sheets: eigene
+/// Titelleiste, Vollbild über den grünen Knopf, ⌘W zum Schließen.
+@Observable
+final class PlayerHost {
+    var request: PlayerRequest?
+}
+
+enum NoriWindow {
+    static let player = "nori.player"
+}
+
+// MARK: - App
+
+@main
+struct NoriApp: App {
+    @State private var library = LibraryStore()
+    @State private var playerHost = PlayerHost()
+
+    var body: some Scene {
+        WindowGroup("Nori") {
+            RootView()
+                .environment(library)
+                .environment(playerHost)
+        }
+        .defaultSize(width: 1180, height: 780)
+        .windowToolbarStyle(.unified)
+        .commands { NoriCommands() }
+
+        Window("Wiedergabe", id: NoriWindow.player) {
+            PlayerWindowView()
+                .environment(library)
+                .environment(playerHost)
+        }
+        .defaultSize(width: 1100, height: 660)
+
+        Settings {
+            SettingsView()
+                .environment(library)
+        }
+    }
+}
+
+// MARK: - Menübefehle
+
+/// Menübefehle wirken auf das gerade aktive Fenster, deshalb laufen sie über
+/// `focusedSceneValue` und nicht über globalen Zustand.
+struct NoriCommands: Commands {
+    @FocusedBinding(\.noriSection) private var section
+    @FocusedValue(\.noriReload) private var reload
+
+    var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            ForEach(NoriSection.allCases) { item in
+                Button(item.title) { section = item }
+                    .keyboardShortcut(item.shortcut, modifiers: [.command])
+                    .disabled(section == nil)
+            }
+            Divider()
+            Button("Aktualisieren") { reload?.run() }
+                .keyboardShortcut("r", modifiers: [.command])
+                .disabled(reload == nil)
+            Divider()
+        }
+    }
+}
+
+struct NoriReloadAction {
+    var run: () -> Void
+}
+
+private struct NoriSectionKey: FocusedValueKey {
+    typealias Value = Binding<NoriSection>
+}
+
+private struct NoriReloadKey: FocusedValueKey {
+    typealias Value = NoriReloadAction
+}
+
+extension FocusedValues {
+    var noriSection: Binding<NoriSection>? {
+        get { self[NoriSectionKey.self] }
+        set { self[NoriSectionKey.self] = newValue }
+    }
+
+    var noriReload: NoriReloadAction? {
+        get { self[NoriReloadKey.self] }
+        set { self[NoriReloadKey.self] = newValue }
+    }
+}
+
+// MARK: - Hauptfenster
+
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(\.openSettings) private var openSettings
+
+    @State private var section: NoriSection = .home
     @State private var catalog: [CatalogItem] = []
     @State private var error: String?
     @State private var loading = true
+    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        TabView {
+        NavigationSplitView(columnVisibility: $columns) {
+            sidebar
+        } detail: {
             NavigationStack {
-                HomeView(catalog: catalog, loading: loading, error: error, reload: load)
+                detail
             }
-            .tabItem { Label("Start", systemImage: "house") }
-
-            NavigationStack {
-                CatalogView(catalog: catalog, loading: loading, error: error, reload: load)
-            }
-            .tabItem { Label("Katalog", systemImage: "square.grid.2x2") }
-
-            NavigationStack {
-                CalendarView()
-            }
-            .tabItem { Label("Kalender", systemImage: "calendar") }
-
-            NavigationStack {
-                WatchlistView(catalog: catalog)
-            }
-            .tabItem { Label("Merkliste", systemImage: "heart") }
-
-            NavigationStack {
-                SettingsView()
-            }
-            .tabItem { Label("Mehr", systemImage: "gearshape") }
+            .id(section)
         }
-        .tint(NoriTheme.accent)
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 720, minHeight: 460)
         .task(id: library.provider) { await load() }
-        .onReceive(NotificationCenter.default.publisher(for: .noriReloadRequested)) { _ in
-            Task { await load() }
+        .focusedSceneValue(\.noriSection, $section)
+        .focusedSceneValue(\.noriReload, NoriReloadAction {
+            Task { await load(force: true) }
+            NotificationCenter.default.post(name: .noriRefreshRequested, object: nil)
+        })
+    }
+
+    private var sidebar: some View {
+        List(selection: Binding<NoriSection?>(
+            get: { section },
+            set: { if let next = $0 { section = next } }
+        )) {
+            Section("Mediathek") {
+                ForEach(NoriSection.allCases) { item in
+                    Label(item.title, systemImage: item.symbol)
+                        .tag(item)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 176, ideal: 208, max: 280)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                Divider()
+                ProviderPicker()
+                    .padding(.horizontal, 10)
+                HStack(spacing: 6) {
+                    Text(library.provider.label)
+                        .font(.caption2)
+                        .foregroundStyle(NoriTheme.muted)
+                    Spacer()
+                    Button {
+                        openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Einstellungen (⌘,)")
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
         }
     }
 
-    func load() async {
+    @ViewBuilder
+    private var detail: some View {
+        switch section {
+        case .home:
+            HomeView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
+        case .catalog:
+            CatalogView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
+        case .calendar:
+            CalendarView()
+        case .watchlist:
+            WatchlistView(catalog: catalog)
+        }
+    }
+
+    func load(force: Bool = false) async {
         loading = catalog.isEmpty
         error = nil
         do {
-            let result = try await AniworldClient.shared.getCatalog(provider: library.provider)
+            let result = try await AniworldClient.shared.getCatalog(provider: library.provider, force: force)
             catalog = result.items
         } catch {
             self.error = error.localizedDescription
@@ -75,6 +236,28 @@ struct RootView: View {
         loading = false
     }
 }
-private extension Notification.Name {
-    static let noriReloadRequested = Notification.Name("NoriReloadRequested")
+
+// MARK: - Wiedergabefenster-Inhalt
+
+struct PlayerWindowView: View {
+    @Environment(PlayerHost.self) private var host
+
+    var body: some View {
+        Group {
+            if let request = host.request {
+                PlayerScreen(request: request)
+                    .id(request.id)
+            } else {
+                ContentUnavailableView(
+                    "Keine Wiedergabe",
+                    systemImage: "play.slash",
+                    description: Text("Wähle im Hauptfenster eine Folge aus.")
+                )
+            }
+        }
+        .frame(minWidth: 560, minHeight: 340)
+        // Beim Schließen des Fensters die Wiedergabe wirklich beenden, damit
+        // kein Stream im Hintergrund weiterläuft.
+        .onDisappear { host.request = nil }
+    }
 }

@@ -1,6 +1,9 @@
 import AVKit
 import SwiftUI
 
+/// Der Player läuft auf dem Mac in einem eigenen Fenster. Die Bedienelemente
+/// von AVKit bleiben unangetastet – Hoster, Sprache und Tempo sitzen in der
+/// Fenster-Symbolleiste statt in einem Overlay über den Systemreglern.
 struct PlayerScreen: View {
     @Environment(LibraryStore.self) private var library
     @Environment(\.dismiss) private var dismiss
@@ -22,12 +25,13 @@ struct PlayerScreen: View {
     @State private var autoplaySeconds: Int?
     @State private var autoplayTask: Task<Void, Never>?
     @State private var isSwitching = false
+    @State private var sleepActivity: NSObjectProtocol?
 
-    init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double) {
-        self.series = series
-        self.season = season
-        _currentEpisode = State(initialValue: episode)
-        _currentResumeAt = State(initialValue: resumeAt)
+    init(request: PlayerRequest) {
+        self.series = request.series
+        self.season = request.season
+        _currentEpisode = State(initialValue: request.episode)
+        _currentResumeAt = State(initialValue: request.resumeAt)
     }
 
     var body: some View {
@@ -35,7 +39,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             if let player {
-                PlayerLayer(player: player)
+                VideoPlayer(player: player)
                     .ignoresSafeArea()
             } else if let error {
                 errorView(error)
@@ -43,16 +47,50 @@ struct PlayerScreen: View {
                 loadingView
             }
 
-            playerChrome
-
             if let seconds = autoplaySeconds,
                let next = library.nextEpisode(after: currentEpisode, in: series.episodes)
             {
                 autoplayCard(seconds: seconds, next: next)
             }
         }
+        .navigationTitle(series.title)
+        .navigationSubtitle(episodeSubtitle)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Button {
+                    Task { await playPreviousEpisode() }
+                } label: {
+                    Label("Vorherige Folge", systemImage: "backward.end")
+                }
+                .help("Vorherige Folge")
+                .disabled(previousEpisode == nil)
+            }
+            ToolbarItem(placement: .principal) {
+                Button {
+                    Task { await playNextEpisode() }
+                } label: {
+                    Label("Nächste Folge", systemImage: "forward.end")
+                }
+                .help("Nächste Folge")
+                .disabled(library.nextEpisode(after: currentEpisode, in: series.episodes) == nil)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                playbackMenu
+            }
+        }
         .task { await startPlayback(resumeAt: currentResumeAt) }
         .onDisappear { teardown(saveCurrent: true) }
+    }
+
+    private var episodeSubtitle: String {
+        let name = currentEpisode.germanTitle.isEmpty ? "" : " · \(currentEpisode.germanTitle)"
+        return "Staffel \(season) · Folge \(currentEpisode.number)\(name)"
+    }
+
+    private var previousEpisode: Episode? {
+        let sorted = series.episodes.sorted { $0.number < $1.number }
+        guard let index = sorted.firstIndex(where: { $0.number == currentEpisode.number }), index > 0 else { return nil }
+        return sorted[index - 1]
     }
 
     private var loadingView: some View {
@@ -72,54 +110,19 @@ struct PlayerScreen: View {
             Text(message)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: 420)
             HStack(spacing: 12) {
-                Button("Erneut versuchen") {
-                    Task { await retry() }
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Anderen Hoster") {
-                    Task { await tryAlternativeHoster() }
-                }
-                .buttonStyle(.bordered)
-
-                Button("Schließen") { dismiss() }
+                Button("Erneut versuchen") { Task { await retry() } }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                Button("Anderen Hoster") { Task { await tryAlternativeHoster() } }
+                    .buttonStyle(.bordered)
+                Button("Fenster schließen") { dismiss() }
                     .buttonStyle(.bordered)
             }
         }
         .padding(24)
-    }
-
-    private var playerChrome: some View {
-        VStack {
-            HStack(spacing: 12) {
-                Button {
-                    save(forceComplete: false)
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .padding(12)
-                        .background(.black.opacity(0.45), in: Circle())
-                }
-
-                Spacer()
-
-                VStack(spacing: 2) {
-                    Text(series.title)
-                        .font(.caption.weight(.semibold))
-                    Text("Folge \(currentEpisode.number)")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.65))
-                }
-                .foregroundStyle(.white.opacity(0.9))
-
-                Spacer()
-
-                playbackMenu
-            }
-            .padding()
-            Spacer()
-        }
     }
 
     private var playbackMenu: some View {
@@ -163,9 +166,7 @@ struct PlayerScreen: View {
             Section("Geschwindigkeit") {
                 ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
                     Button {
-                        Task { @MainActor in
-                            setPlaybackSpeed(speed)
-                        }
+                        Task { @MainActor in setPlaybackSpeed(speed) }
                     } label: {
                         if abs(library.playbackSpeed - speed) < 0.01 {
                             Label(speedLabel(speed), systemImage: "checkmark")
@@ -179,45 +180,40 @@ struct PlayerScreen: View {
             HStack(spacing: 5) {
                 if isSwitching { ProgressView().controlSize(.small) }
                 Text(source?.hoster ?? "Optionen")
-                    .font(.caption2)
-                Image(systemName: "ellipsis.circle")
             }
-            .foregroundStyle(.white.opacity(0.8))
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(.black.opacity(0.4), in: Capsule())
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Hoster, Sprache und Wiedergabegeschwindigkeit")
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
         VStack {
-            Spacer()
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Spacer()
+                VStack(alignment: .leading, spacing: 10) {
                     Text("Nächste Folge")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.65))
                     Text("Folge \(next.number) startet in \(seconds) s")
                         .font(.headline)
                         .foregroundStyle(.white)
-                }
-                Spacer()
-                Button("Abbrechen") {
-                    Task { @MainActor in
-                        cancelAutoplay()
+                    HStack(spacing: 10) {
+                        Button("Abbrechen") { Task { @MainActor in cancelAutoplay() } }
+                            .buttonStyle(.bordered)
+                        Button("Jetzt abspielen") {
+                            autoplayTask?.cancel()
+                            autoplaySeconds = nil
+                            Task { await playNextEpisode() }
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 }
-                .buttonStyle(.bordered)
-                Button("Jetzt abspielen") {
-                    autoplayTask?.cancel()
-                    autoplaySeconds = nil
-                    Task { await playNextEpisode() }
-                }
-                .buttonStyle(.borderedProminent)
+                .padding(16)
+                .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(20)
             }
-            .padding(16)
-            .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
-            .padding()
+            Spacer()
         }
     }
 
@@ -295,6 +291,7 @@ struct PlayerScreen: View {
 
             player = av
             currentResumeAt = 0
+            beginSleepBlock()
         } catch {
             self.error = error.localizedDescription
         }
@@ -375,9 +372,20 @@ struct PlayerScreen: View {
             autoplaySeconds = nil
             return
         }
+        await switchEpisode(to: next)
+    }
+
+    @MainActor
+    func playPreviousEpisode() async {
+        guard let previous = previousEpisode else { return }
+        await switchEpisode(to: previous)
+    }
+
+    @MainActor
+    private func switchEpisode(to next: Episode) async {
         autoplayTask?.cancel()
         autoplaySeconds = nil
-        clearPlayer(saveCurrent: false)
+        clearPlayer(saveCurrent: true)
         currentEpisode = next
         currentResumeAt = library.resumeEnabled
             ? resumePosition(library.progress(slug: series.slug, season: season, episode: next.number, path: next.path, provider: library.provider))
@@ -444,6 +452,22 @@ struct PlayerScreen: View {
         return pos.isFinite ? pos : 0
     }
 
+    /// Verhindert, dass der Bildschirm während der Wiedergabe schlafen geht.
+    @MainActor
+    private func beginSleepBlock() {
+        guard sleepActivity == nil else { return }
+        sleepActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.idleDisplaySleepDisabled, .idleSystemSleepDisabled, .userInitiated],
+            reason: "Nori Wiedergabe"
+        )
+    }
+
+    @MainActor
+    private func endSleepBlock() {
+        if let sleepActivity { ProcessInfo.processInfo.endActivity(sleepActivity) }
+        sleepActivity = nil
+    }
+
     @MainActor
     func clearPlayer(saveCurrent: Bool) {
         if saveCurrent { save(forceComplete: false) }
@@ -453,6 +477,7 @@ struct PlayerScreen: View {
         endObserver = nil
         player?.pause()
         player = nil
+        endSleepBlock()
     }
 
     @MainActor
@@ -473,13 +498,5 @@ struct PlayerScreen: View {
     func speedLabel(_ speed: Float) -> String {
         if abs(speed - 1) < 0.01 { return "1×" }
         return String(format: "%g×", speed)
-    }
-}
-
-struct PlayerLayer: View {
-    let player: AVPlayer
-
-    var body: some View {
-        VideoPlayer(player: player)
     }
 }
