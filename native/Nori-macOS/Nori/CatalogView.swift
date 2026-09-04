@@ -110,10 +110,12 @@ struct CatalogView: View {
                             Image(systemName: "heart.fill")
                                 .font(.caption)
                                 .foregroundStyle(NoriTheme.accent)
+                                .accessibilityLabel("Gemerkt")
                         }
                         Image(systemName: "chevron.right")
                             .font(.caption2)
                             .foregroundStyle(NoriTheme.muted)
+                            .accessibilityHidden(true)
                     }
                     .padding(.vertical, 3)
                 }

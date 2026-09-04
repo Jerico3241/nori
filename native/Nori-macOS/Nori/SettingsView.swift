@@ -13,8 +13,12 @@ struct SettingsView: View {
                 .tabItem { Label("Synchronisation", systemImage: "icloud") }
             PrivacySettingsTab()
                 .tabItem { Label("Daten", systemImage: "lock") }
+            WhatsNewSettingsTab()
+                .tabItem { Label("Neuerungen", systemImage: "sparkles") }
         }
-        .frame(width: 520, height: 340)
+        // Höhe am längsten Bereich ausgerichtet. Mit 340 pt wurde der
+        // Allgemein-Bereich beschnitten, sobald die Neuerungen dazukamen.
+        .frame(width: 540, height: 430)
     }
 }
 
@@ -45,6 +49,14 @@ private struct GeneralSettingsTab: View {
                 LabeledContent("Bibliotheksschema", value: "v\(LibraryStore.schemaVersion)")
             }
 
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct WhatsNewSettingsTab: View {
+    var body: some View {
+        Form {
             Section("Neu in \(NoriRelease.version)") {
                 ForEach(NoriRelease.highlights, id: \.self) { line in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -54,6 +66,10 @@ private struct GeneralSettingsTab: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } footer: {
+                Text("Vollständige Liste aller Änderungen: CHANGELOG.md im Projektverzeichnis.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
             }
         }
         .formStyle(.grouped)
@@ -71,8 +87,8 @@ enum NoriRelease {
         "Streams starten zuverlässiger: Der Player schickt jetzt Referer und User-Agent mit.",
         "Cover werden richtig zugeordnet und dauerhaft gespeichert; fehlt ein TMDB-Treffer, greift das Cover der Quelle.",
         "Cover lassen sich in der Detailansicht von Hand auswählen.",
-        "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter\" und Genre-Zeilen.",
-        "Neuer Bereich „Kategorien\" und „Ähnliche Titel\" auf der Detailseite.",
+        "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter“ und Genre-Zeilen.",
+        "Neuer Bereich „Kategorien“ und „Ähnliche Titel“ auf der Detailseite.",
         "Wiedergabe läuft in einem eigenen Fenster mit Vollbild und ⌘W.",
     ]
 }

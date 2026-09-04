@@ -75,6 +75,7 @@ struct WatchlistView: View {
                 Image(systemName: "heart.slash")
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel("Aus Merkliste entfernen")
             .foregroundStyle(NoriTheme.muted)
             .help("Aus Merkliste entfernen")
         }
