@@ -333,6 +333,21 @@ enum HTML {
         }
     }
 
+    /// Notnagel, wenn ein Kalendereintrag keine URL mitliefert. Vorher wurde der
+    /// Teil vor dem ersten Bindestrich des Poster-Dateinamens genommen — bei
+    /// „attack-on-titan.jpg" ergab das den Slug „attack", und der Eintrag führte
+    /// auf eine Seite, die es nicht gibt. Lieber nicht verlinken als falsch.
+    static func slugFromPoster(_ poster: String) -> String? {
+        let file = poster.split(separator: "/").last.map(String.init) ?? poster
+        let base = file.split(separator: ".").first.map(String.init) ?? file
+        let trimmed = base.trimmingCharacters(in: CharacterSet(charactersIn: "-_ ")).lowercased()
+        guard trimmed.count >= 3,
+              trimmed.contains(where: { $0.isLetter }),
+              trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" })
+        else { return nil }
+        return trimmed
+    }
+
     static func slugFromHref(_ href: String) -> String? {
         let cleaned = href.replacingOccurrences(of: "&", with: "&")
         if let m = cleaned.range(of: #"/anime/stream/([^/?#]+)"#, options: .regularExpression) {
@@ -657,7 +672,7 @@ enum HTML {
             for row in rows {
                 let url = (row["url"] as? String) ?? ""
                 let poster = (row["poster"] as? String) ?? ""
-                let slug = slugFromHref(url) ?? poster.split(separator: "-").first.map(String.init) ?? ""
+                let slug = slugFromHref(url) ?? slugFromPoster(poster) ?? ""
                 guard !slug.isEmpty else { continue }
                 let time = (row["time"] as? String) ?? "00:00"
                 let hm = time.split(separator: ":")

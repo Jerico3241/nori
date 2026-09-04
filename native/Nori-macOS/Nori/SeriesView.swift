@@ -231,16 +231,25 @@ struct SeriesView: View {
             detail = loaded
             self.season = loaded.activeSeason
             library.remember(slug: slug, title: loaded.title, provider: first)
-        } catch {
-            let other: CatalogProvider = first == .aniworld ? .serienstream : .aniworld
-            do {
-                let loaded = try await AniworldClient.shared.getSeries(provider: other, slug: slug, season: season)
-                library.provider = other
-                detail = loaded
-                self.season = loaded.activeSeason
-                library.remember(slug: slug, title: loaded.title, provider: other)
-            } catch {
-                self.error = error.localizedDescription
+        } catch let firstError {
+            // Die andere Quelle nur probieren, wenn der Aufrufer keine genannt
+            // hat. Mit ausdrücklich übergebener Quelle — Kalender, Merkliste,
+            // Weiterschauen — stellte ein einmaliger Fehler sonst die ganze App
+            // auf die falsche Quelle um, und der nächste Aufruf landete auf
+            // einer Seite, die es dort nicht gibt.
+            if providerOverride != nil {
+                self.error = firstError.localizedDescription
+            } else {
+                let other: CatalogProvider = first == .aniworld ? .serienstream : .aniworld
+                do {
+                    let loaded = try await AniworldClient.shared.getSeries(provider: other, slug: slug, season: season)
+                    library.provider = other
+                    detail = loaded
+                    self.season = loaded.activeSeason
+                    library.remember(slug: slug, title: loaded.title, provider: other)
+                } catch {
+                    self.error = firstError.localizedDescription
+                }
             }
         }
         loading = false

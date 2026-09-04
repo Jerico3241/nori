@@ -93,10 +93,49 @@ enum HosterResolver {
         req.setValue("de-DE,de;q=0.9", forHTTPHeaderField: "Accept-Language")
         req.setValue(origin + "/", forHTTPHeaderField: "Referer")
         defer { session.finishTasksAndInvalidate() }
-        _ = try? await session.data(for: req)
+        let payload = try? await session.data(for: req)
+
+        // 1. Vom Delegate abgefangene Weiterleitung.
         if let landed = tap.externalURL { return landed }
-        if let last = tap.lastURL, !last.hostContains("aniworld"), !last.hostContains("serienstream") { return last }
+
+        // 2. Die tatsächlich angesteuerte Adresse. URLSession folgt
+        //    Weiterleitungen von sich aus; löst der Delegate dabei nicht aus,
+        //    steht das Ziel nur hier. Vorher wurde die Antwort komplett
+        //    verworfen, weshalb für jeden Hoster derselbe Fehler ankam.
+        if let final = payload?.1.url, isExternalOrigin(final) { return final }
+
+        if let last = tap.lastURL, isExternalOrigin(last) { return last }
+
+        // 3. Manche Quellen liefern statt eines 302 eine HTML-Seite mit
+        //    meta-refresh, JS-Sprung oder iframe.
+        if let data = payload?.0,
+           let html = String(data: data, encoding: .utf8),
+           let target = htmlRedirectTarget(html),
+           isExternalOrigin(target)
+        {
+            return target
+        }
+
         throw NoriError.hoster("Weiterleitung endete nicht beim Hoster")
+    }
+
+    /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?
+    private static func isExternalOrigin(_ url: URL) -> Bool {
+        guard let host = url.host, !host.isEmpty else { return false }
+        return !url.hostContains("aniworld") && !url.hostContains("serienstream")
+    }
+
+    private static func htmlRedirectTarget(_ html: String) -> URL? {
+        let patterns = [
+            #"<meta[^>]+http-equiv\s*=\s*["']refresh["'][^>]+content\s*=\s*["'][^"']*url\s*=\s*([^"'>\s]+)"#,
+            #"window\.location\.(?:href|replace)\s*[=(]\s*["'](https?://[^"']+)["']"#,
+            #"location\.href\s*=\s*["'](https?://[^"']+)["']"#,
+            #"<iframe[^>]+src\s*=\s*["'](https?://[^"']+)["']"#,
+        ]
+        for pattern in patterns {
+            if let raw = firstGroup(html, pattern), let url = URL(string: raw) { return url }
+        }
+        return nil
     }
 
     private static func extract(embed: URL, hoster: String, lang: String) async throws -> PlaySource {

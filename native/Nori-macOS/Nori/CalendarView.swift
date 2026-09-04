@@ -22,7 +22,7 @@ struct CalendarView: View {
                     ForEach(grouped(payload.upcoming), id: \.label) { group in
                         Section(group.label) {
                             ForEach(group.rows) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title) {
+                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
                                     CalendarRow(entry: row)
                                 }
                                 .help(row.title)
@@ -32,7 +32,7 @@ struct CalendarView: View {
                     if !payload.recent.isEmpty {
                         Section("Zuletzt") {
                             ForEach(payload.recent) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title) {
+                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
                                     CalendarRow(entry: row)
                                 }
                                 .help(row.title)

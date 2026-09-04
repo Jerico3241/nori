@@ -22,7 +22,12 @@ actor AniworldClient {
         let items = provider == .serienstream
             ? try HTML.parseCatalogSerienstream(html)
             : try HTML.parseCatalog(html)
-        guard items.count >= 20 else { throw NoriError.parse("Katalog unvollständig") }
+        // Anzahl mitgeben: 0 heißt blockiert oder Markup geändert, eine kleine
+        // Zahl heißt, dass der Parser nur noch teilweise greift. Ohne die Zahl
+        // war beides dieselbe Meldung.
+        guard items.count >= 20 else {
+            throw NoriError.parse("\(provider.label): Katalog unvollständig, nur \(items.count) Einträge gelesen")
+        }
         let result = CatalogResult(items: items, source: "live", fetchedAt: Date().timeIntervalSince1970 * 1000)
         catalogs[provider] = (result, Date().addingTimeInterval(30 * 60))
         return result
