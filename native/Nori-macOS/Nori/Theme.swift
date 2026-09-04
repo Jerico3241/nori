@@ -28,7 +28,6 @@ struct NoriSeriesLink<Label: View>: View {
     var scaleOnPress: Bool = false
     var provider: CatalogProvider? = nil
     var onOpen: (() -> Void)? = nil
-    @Namespace private var noriZoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder var label: () -> Label
 
@@ -36,11 +35,9 @@ struct NoriSeriesLink<Label: View>: View {
         NavigationLink {
             SeriesView(slug: slug, titleHint: titleHint, providerOverride: provider)
                 .onAppear { onOpen?() }
-                .modifier(NoriZoomDest(id: slug, namespace: noriZoom, enabled: !reduceMotion))
         } label: {
             label()
                 .contentShape(Rectangle())
-                .modifier(NoriZoomSource(id: slug, namespace: noriZoom, enabled: !reduceMotion))
         }
         .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress && !reduceMotion))
     }
@@ -55,36 +52,6 @@ private struct NoriLinkChrome: ViewModifier {
             content.buttonStyle(NoriPressStyle(enabled: true))
         } else {
             content.buttonStyle(.plain)
-        }
-    }
-}
-
-private struct NoriZoomSource: ViewModifier {
-    let id: String
-    let namespace: Namespace.ID
-    let enabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(macOS 15.0, *), enabled {
-            content.matchedTransitionSource(id: id, in: namespace)
-        } else {
-            content
-        }
-    }
-}
-
-private struct NoriZoomDest: ViewModifier {
-    let id: String
-    let namespace: Namespace.ID
-    let enabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(macOS 15.0, *), enabled {
-            content.navigationTransition(.zoom(sourceID: id, in: namespace))
-        } else {
-            content
         }
     }
 }
