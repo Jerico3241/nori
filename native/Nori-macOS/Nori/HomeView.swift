@@ -1,80 +1,5 @@
 import SwiftUI
 
-struct KindSwitch: View {
-    @Binding var provider: CatalogProvider
-    @State private var drag: CGFloat? = nil
-    @State private var armed = false
-    @State private var startX: CGFloat = 0
-
-    private let width: CGFloat = 168
-    private let height: CGFloat = 36
-    private let pad: CGFloat = 2
-
-    private var thumb: CGFloat { (width / 2) - pad }
-    private var travelMax: CGFloat { width - thumb - pad * 2 }
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(NoriTheme.surface)
-            Capsule()
-                .fill(NoriTheme.accent)
-                .frame(width: thumb, height: height - pad * 2)
-                .offset(x: pad + travel)
-            HStack(spacing: 0) {
-                Text("Anime")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(provider == .aniworld ? NoriTheme.bg : NoriTheme.muted)
-                    .frame(maxWidth: .infinity)
-                Text("Serien")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(provider == .serienstream ? NoriTheme.bg : NoriTheme.muted)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-        .frame(width: width, height: height)
-        .overlay {
-            Capsule().strokeBorder(NoriTheme.border, lineWidth: 1)
-        }
-        .contentShape(Capsule())
-        .gesture(
-            DragGesture(minimumDistance: 8)
-                .onChanged { value in
-                    if !armed {
-                        armed = true
-                        startX = value.startLocation.x
-                    }
-                    drag = value.translation.width
-                }
-                .onEnded { value in
-                    let projected = travelBase + value.translation.width
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                        provider = projected > travelMax / 2 ? .serienstream : .aniworld
-                        drag = nil
-                        armed = false
-                    }
-                }
-        )
-        .onTapGesture { location in
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                provider = location.x < width / 2 ? .aniworld : .serienstream
-            }
-        }
-        .animation(drag == nil ? .spring(response: 0.32, dampingFraction: 0.86) : nil, value: provider)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Anime oder Serien")
-        .accessibilityValue(provider == .aniworld ? "Anime" : "Serien")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private var travelBase: CGFloat {
-        provider == .serienstream ? travelMax : 0
-    }
-
-    private var travel: CGFloat {
-        min(max(travelBase + (drag ?? 0), 0), travelMax)
-    }
-}
-
 struct HomeView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
@@ -82,74 +7,132 @@ struct HomeView: View {
     let error: String?
     let reload: () async -> Void
 
+    private let grid = [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 18)]
+
     var body: some View {
         NoriScreen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    Text("Nori")
-                        .font(.largeTitle.weight(.semibold))
+                VStack(alignment: .leading, spacing: 26) {
                     if let error {
-                        Text(error).font(.subheadline).foregroundStyle(.red)
-                        Button("Erneut laden") { Task { await reload() } }
+                        ErrorBanner(message: error) { Task { await reload() } }
                     }
+
                     let watching = library.continueWatching()
                     if !watching.isEmpty {
-                        Text("Weiterschauen")
-                            .font(.title3.weight(.semibold))
+                        NoriSectionHeader("Weiterschauen")
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
+                            HStack(alignment: .top, spacing: 16) {
                                 ForEach(watching) { item in
                                     NoriSeriesLink(
                                         slug: item.slug,
                                         titleHint: item.title,
-                                        scaleOnPress: true,
-                                        provider: providerFromPath(item.episodePath)
+                                        provider: item.provider ?? providerFromPath(item.episodePath)
                                     ) {
                                         ContinueCard(item: item)
                                     }
+                                    .help(item.title)
                                 }
                             }
+                            .padding(.vertical, 4)
                         }
                     }
-                    Text("Beliebte \(library.provider.kind)")
-                        .font(.title3.weight(.semibold))
+
+                    NoriSectionHeader(
+                        "Beliebte \(library.provider.kind)",
+                        trailing: catalog.isEmpty ? nil : "\(catalog.count) Titel"
+                    )
+
                     if loading && catalog.isEmpty {
                         ProgressView("Nori wird geladen")
-                            .frame(maxWidth: .infinity, minHeight: 120)
+                            .frame(maxWidth: .infinity, minHeight: 200)
+                    } else if catalog.isEmpty {
+                        ContentUnavailableView(
+                            "Nichts geladen",
+                            systemImage: "tray",
+                            description: Text("Der Katalog von \(library.provider.label) ist gerade leer.")
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 200)
                     } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 12)], spacing: 14) {
-                            ForEach(catalog.prefix(36)) { item in
-                                NoriSeriesLink(slug: item.slug, titleHint: item.title, scaleOnPress: true) {
-                                    PosterTile(title: item.title, slug: item.slug)
+                        LazyVGrid(columns: grid, alignment: .leading, spacing: 20) {
+                            ForEach(catalog.prefix(48)) { item in
+                                NoriSeriesLink(slug: item.slug, titleHint: item.title) {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        PosterTile(title: item.title, slug: item.slug)
+                                        Text(item.title)
+                                            .font(.caption)
+                                            .lineLimit(2, reservesSpace: true)
+                                            .multilineTextAlignment(.leading)
+                                    }
                                 }
+                                .help(item.title)
                             }
                         }
                     }
                 }
-                .padding(20)
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .navigationTitle("Start")
+        .navigationSubtitle(library.provider.label)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                KindSwitch(provider: Bindable(library).provider)
+                Button {
+                    Task { await reload() }
+                } label: {
+                    Label("Aktualisieren", systemImage: "arrow.clockwise")
+                }
+                .help("Katalog neu laden (⌘R)")
+                .disabled(loading)
             }
         }
     }
 }
 
-struct ContinueCard: View {
-    @Environment(LibraryStore.self) private var library
-    let item: WatchProgress
+struct ErrorBanner: View {
+    let message: String
+    let retry: () -> Void
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PosterTile(title: item.title, slug: item.slug, compact: true)
-            Text(item.title).font(.caption.weight(.medium)).lineLimit(1)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+                .textSelection(.enabled)
+            Spacer(minLength: 12)
+            Button("Erneut laden", action: retry)
+        }
+        .padding(12)
+        .background(NoriTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(NoriTheme.border)
+        }
+    }
+}
+
+struct ContinueCard: View {
+    let item: WatchProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            PosterTile(
+                title: item.title,
+                slug: item.slug,
+                compact: true,
+                kind: item.provider ?? providerFromPath(item.episodePath)
+            )
+            Text(item.title)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
             Text("S\(item.season) · F\(item.episode) · \(formatClock(item.positionSec))")
                 .font(.caption2)
                 .foregroundStyle(NoriTheme.muted)
             ProgressView(value: watchRatio(item))
-                .tint(NoriTheme.accent)
+                .progressViewStyle(.linear)
+                .controlSize(.small)
         }
-        .frame(width: 140)
+        .frame(width: 132)
     }
 }

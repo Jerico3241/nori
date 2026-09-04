@@ -1,6 +1,24 @@
 import SwiftUI
 
+/// Einstellungen liegen auf dem Mac im Einstellungsfenster (⌘,) und nicht in
+/// einem Tab der Hauptnavigation.
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettingsTab()
+                .tabItem { Label("Allgemein", systemImage: "gearshape") }
+            PlaybackSettingsTab()
+                .tabItem { Label("Wiedergabe", systemImage: "play.rectangle") }
+            SyncSettingsTab()
+                .tabItem { Label("Synchronisation", systemImage: "icloud") }
+            PrivacySettingsTab()
+                .tabItem { Label("Daten", systemImage: "lock") }
+        }
+        .frame(width: 520, height: 340)
+    }
+}
+
+private struct GeneralSettingsTab: View {
     @Environment(LibraryStore.self) private var library
 
     private var appVersion: String {
@@ -9,156 +27,141 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var library = library
-        NoriScreen {
-            List {
-                Section("Quelle") {
-                    NavigationLink {
-                        QuelleSettingsView()
-                    } label: {
-                        LabeledContent("Aktive Quelle", value: library.provider.label)
+        Form {
+            Section {
+                Picker("Aktive Quelle", selection: $library.provider) {
+                    ForEach(CatalogProvider.allCases) { item in
+                        Text(item.label).tag(item)
                     }
-                    .listRowBackground(NoriTheme.surface)
                 }
-                Section("Wiedergabe") {
-                    NavigationLink("Sprache, Hoster, Resume") {
-                        PlaybackSettingsView()
-                    }
-                    .listRowBackground(NoriTheme.surface)
+            } footer: {
+                Text("AniWorld zeigt Anime, Serienstream zeigt Serien. Katalog, Kalender und Player folgen der Auswahl.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+
+            Section {
+                LabeledContent("Version", value: appVersion)
+                LabeledContent("Bibliotheksschema", value: "v\(LibraryStore.schemaVersion)")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct PlaybackSettingsTab: View {
+    @Environment(LibraryStore.self) private var library
+
+    var body: some View {
+        @Bindable var library = library
+        Form {
+            Section("Sprache") {
+                Picker("Bevorzugte Sprache", selection: $library.langPref) {
+                    Text("GerDub").tag("DE")
+                    Text("GerSub").tag("GerSub")
+                    Text("EN").tag("EN")
                 }
-                Section("Synchronisation") {
-                    Toggle("Mit iCloud synchronisieren", isOn: $library.cloudSyncEnabled)
-                        .listRowBackground(NoriTheme.surface)
-                    if library.cloudSyncEnabled {
+                .pickerStyle(.segmented)
+            }
+
+            Section("Hoster") {
+                Picker("Bevorzugter Hoster", selection: $library.hosterPref) {
+                    Text("VOE").tag("VOE")
+                    Text("Vidmoly").tag("Vidmoly")
+                    Text("Vidoza").tag("Vidoza")
+                    Text("Lulustream").tag("Lulustream")
+                    Text("SpeedFiles").tag("SpeedFiles")
+                    Text("Filemoon").tag("Filemoon")
+                    Text("Doodstream").tag("Doodstream")
+                }
+            }
+
+            Section("Wiedergabe") {
+                Toggle("Weiterschauen an der letzten Stelle", isOn: $library.resumeEnabled)
+                Toggle("Nächste Folge automatisch starten", isOn: $library.autoplayNext)
+                Picker("Geschwindigkeit", selection: $library.playbackSpeed) {
+                    Text("0,75×").tag(Float(0.75))
+                    Text("1×").tag(Float(1.0))
+                    Text("1,25×").tag(Float(1.25))
+                    Text("1,5×").tag(Float(1.5))
+                    Text("2×").tag(Float(2.0))
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct SyncSettingsTab: View {
+    @Environment(LibraryStore.self) private var library
+
+    var body: some View {
+        @Bindable var library = library
+        Form {
+            Section {
+                Toggle("Mit iCloud synchronisieren", isOn: $library.cloudSyncEnabled)
+                if library.cloudSyncEnabled {
+                    HStack {
                         Button("Jetzt synchronisieren") { library.syncNow() }
-                            .listRowBackground(NoriTheme.surface)
+                        Spacer()
                         if let stamp = library.cloudLastSync {
-                            LabeledContent("Letzter Stand", value: Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
+                            Text(Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
                                 .font(.footnote)
-                                .listRowBackground(NoriTheme.surface)
+                                .foregroundStyle(NoriTheme.muted)
                         }
                     }
-                    Text("Synchronisiert Merkliste, Verlauf, Wiedergabefortschritt und Einstellungen zwischen deinen Apple-Geräten mit derselben Apple-ID.")
-                        .font(.footnote)
-                        .foregroundStyle(NoriTheme.muted)
-                        .listRowBackground(NoriTheme.surface)
                 }
-                Section("Dieses Gerät") {
-                    LabeledContent("Version", value: appVersion)
-                        .listRowBackground(NoriTheme.surface)
-                    Text("Nori läuft nativ. Ohne aktivierte iCloud-Synchronisation bleiben Merkliste und Fortschritt ausschließlich auf diesem Gerät.")
-                        .font(.footnote)
-                        .foregroundStyle(NoriTheme.muted)
-                        .listRowBackground(NoriTheme.surface)
-                }
-                Section("Datenschutz") {
-                    NavigationLink("Verlauf und Fortschritt") {
-                        PrivacySettingsView()
-                    }
-                    .listRowBackground(NoriTheme.surface)
-                }
+            } footer: {
+                Text("Synchronisiert Merkliste, Verlauf, Wiedergabefortschritt und Einstellungen zwischen Apple-Geräten mit derselben Apple-ID. Ohne aktivierte Synchronisation bleiben alle Daten auf diesem Mac.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
             }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Einstellungen")
+        .formStyle(.grouped)
     }
 }
 
-struct QuelleSettingsView: View {
-    @Environment(LibraryStore.self) private var library
-
-    var body: some View {
-        @Bindable var library = library
-        NoriScreen {
-            Form {
-                Section {
-                    Picker("Quelle", selection: $library.provider) {
-                        ForEach(CatalogProvider.allCases) { item in
-                            Text(item.label).tag(item)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                } footer: {
-                    Text("AniWorld zeigt Anime, Serienstream zeigt Serien. Katalog, Kalender und Player folgen der Auswahl.")
-                }
-            }
-            .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("Quelle")
-    }
-}
-
-struct PlaybackSettingsView: View {
-    @Environment(LibraryStore.self) private var library
-
-    var body: some View {
-        @Bindable var library = library
-        NoriScreen {
-            Form {
-                Section("Sprache") {
-                    Picker("Sprache", selection: $library.langPref) {
-                        Text("GerDub").tag("DE")
-                        Text("GerSub").tag("GerSub")
-                        Text("EN").tag("EN")
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Section("Hoster") {
-                    Picker("Hoster", selection: $library.hosterPref) {
-                        Text("VOE").tag("VOE")
-                        Text("Vidmoly").tag("Vidmoly")
-                        Text("Vidoza").tag("Vidoza")
-                        Text("Lulustream").tag("Lulustream")
-                        Text("SpeedFiles").tag("SpeedFiles")
-                        Text("Filemoon").tag("Filemoon")
-                        Text("Doodstream").tag("Doodstream")
-                    }
-                }
-                Section("Wiedergabe") {
-                    Toggle("Weiterschauen an der letzten Stelle", isOn: $library.resumeEnabled)
-                    Toggle("Nächste Folge automatisch", isOn: $library.autoplayNext)
-                    Picker("Geschwindigkeit", selection: $library.playbackSpeed) {
-                        Text("0,75×").tag(Float(0.75))
-                        Text("1×").tag(Float(1.0))
-                        Text("1,25×").tag(Float(1.25))
-                        Text("1,5×").tag(Float(1.5))
-                        Text("2×").tag(Float(2.0))
-                    }
-                }
-            }
-            .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("Wiedergabe")
-    }
-}
-
-struct PrivacySettingsView: View {
+private struct PrivacySettingsTab: View {
     @Environment(LibraryStore.self) private var library
     @State private var confirm: String?
 
     var body: some View {
-        NoriScreen {
-            Form {
-                Section {
-                    Button("Verlauf löschen", role: .destructive) { confirm = "history" }
-                    Button("Fortschritt löschen", role: .destructive) { confirm = "progress" }
-                } footer: {
-                    Text(library.cloudSyncEnabled ? "Bei aktivierter Synchronisation wird der gelöschte Stand auch mit iCloud abgeglichen." : "Die Daten werden nur auf diesem Gerät gelöscht.")
+        Form {
+            Section {
+                LabeledContent("Verlauf") {
+                    HStack(spacing: 10) {
+                        Text("\(library.recents.count) Einträge")
+                            .foregroundStyle(NoriTheme.muted)
+                        Button("Löschen…", role: .destructive) { confirm = "history" }
+                    }
                 }
+                LabeledContent("Wiedergabefortschritt") {
+                    HStack(spacing: 10) {
+                        Text("\(library.progress.count) Folgen")
+                            .foregroundStyle(NoriTheme.muted)
+                        Button("Löschen…", role: .destructive) { confirm = "progress" }
+                    }
+                }
+            } footer: {
+                Text(library.cloudSyncEnabled
+                     ? "Bei aktivierter Synchronisation wird der gelöschte Stand auch mit iCloud abgeglichen."
+                     : "Die Daten werden nur auf diesem Mac gelöscht.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
             }
-            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Datenschutz")
-        .confirmationDialog("Wirklich löschen?", isPresented: Binding(
-            get: { confirm != nil },
-            set: { if !$0 { confirm = nil } }
-        )) {
+        .formStyle(.grouped)
+        .confirmationDialog(
+            confirm == "progress" ? "Wiedergabefortschritt wirklich löschen?" : "Verlauf wirklich löschen?",
+            isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })
+        ) {
             Button("Löschen", role: .destructive) {
-                if confirm == "progress" { library.clearProgress() }
-                else { library.clearHistory() }
+                if confirm == "progress" { library.clearProgress() } else { library.clearHistory() }
                 confirm = nil
             }
             Button("Abbrechen", role: .cancel) { confirm = nil }
+        } message: {
+            Text("Das lässt sich nicht rückgängig machen.")
         }
     }
 }

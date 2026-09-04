@@ -4,63 +4,80 @@ struct WatchlistView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
 
-    private var anime: [(slug: String, title: String)] {
-        items(for: .aniworld)
+    private var anime: [WatchlistEntry] { items(for: .aniworld) }
+    private var serien: [WatchlistEntry] { items(for: .serienstream) }
+
+    struct WatchlistEntry: Identifiable, Hashable {
+        let slug: String
+        let title: String
+        var id: String { slug }
     }
 
-    private var serien: [(slug: String, title: String)] {
-        items(for: .serienstream)
-    }
-
-    private func items(for provider: CatalogProvider) -> [(slug: String, title: String)] {
+    private func items(for provider: CatalogProvider) -> [WatchlistEntry] {
         library.favorites.compactMap { slug in
-            let source = library.source(of: slug)
-            if source != provider { return nil }
+            guard library.source(of: slug) == provider else { return nil }
             let title = library.titles[slug]
                 ?? catalog.first(where: { $0.slug == slug })?.title
                 ?? slug
-            return (slug, title)
+            return WatchlistEntry(slug: slug, title: title)
         }
     }
 
     var body: some View {
-        NoriScreen {
+        Group {
             if library.favorites.isEmpty {
                 ContentUnavailableView(
                     "Keine Merkliste",
                     systemImage: "heart",
-                    description: Text("Titel über das Herz merken. Anime und Serien bleiben getrennt gespeichert.")
+                    description: Text("Titel über das Herz in der Detailansicht merken. Anime und Serien bleiben getrennt gespeichert.")
                 )
-                .foregroundStyle(NoriTheme.muted)
             } else {
                 List {
                     if !anime.isEmpty {
                         Section("Anime") {
-                            ForEach(anime, id: \.slug) { item in row(item, .aniworld) }
+                            ForEach(anime) { row($0, .aniworld) }
                         }
                     }
                     if !serien.isEmpty {
                         Section("Serien") {
-                            ForEach(serien, id: \.slug) { item in row(item, .serienstream) }
+                            ForEach(serien) { row($0, .serienstream) }
                         }
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                .listStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
         .navigationTitle("Merkliste")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                KindSwitch(provider: Bindable(library).provider)
-            }
-        }
+        .navigationSubtitle("\(library.favorites.count) gemerkt")
     }
 
-    private func row(_ item: (slug: String, title: String), _ src: CatalogProvider) -> some View {
-        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: src, onOpen: { library.provider = src }) {
-            Text(item.title)
+    private func row(_ item: WatchlistEntry, _ src: CatalogProvider) -> some View {
+        HStack(spacing: 10) {
+            NoriSeriesLink(
+                slug: item.slug,
+                titleHint: item.title,
+                provider: src,
+                onOpen: { library.provider = src }
+            ) {
+                HStack(spacing: 10) {
+                    PosterTile(title: item.title, slug: item.slug, compact: true, kind: src)
+                        .frame(width: 32)
+                    Text(item.title)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                }
+            }
+            .help(item.title)
+
+            Button {
+                library.toggleFavorite(item.slug)
+            } label: {
+                Image(systemName: "heart.slash")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(NoriTheme.muted)
+            .help("Aus Merkliste entfernen")
         }
-        .listRowBackground(NoriTheme.surface)
+        .padding(.vertical, 3)
     }
 }

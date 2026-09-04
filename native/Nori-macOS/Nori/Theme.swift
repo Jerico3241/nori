@@ -1,15 +1,61 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Farben
+
+/// Nori behält seine dunkle Identität im Dark Mode, folgt aber der
+/// Systemeinstellung: im hellen Erscheinungsbild wird eine echte helle
+/// Palette benutzt, statt ein dunkles Fenster in eine helle Umgebung zu setzen.
 enum NoriTheme {
-    static let bg = Color(red: 0.020, green: 0.024, blue: 0.039)
-    static let surface = Color(red: 0.047, green: 0.055, blue: 0.078)
-    static let elevated = Color(red: 0.078, green: 0.094, blue: 0.133)
-    static let fg = Color(red: 0.933, green: 0.945, blue: 0.965)
-    static let muted = Color(red: 0.545, green: 0.576, blue: 0.655)
-    static let accent = Color(red: 0.843, green: 0.871, blue: 0.918)
-    static let border = Color.white.opacity(0.08)
+    static let bg = dynamic(
+        light: NSColor(srgbRed: 0.965, green: 0.969, blue: 0.980, alpha: 1),
+        dark: NSColor(srgbRed: 0.020, green: 0.024, blue: 0.039, alpha: 1)
+    )
+    static let surface = dynamic(
+        light: NSColor(srgbRed: 1.000, green: 1.000, blue: 1.000, alpha: 1),
+        dark: NSColor(srgbRed: 0.047, green: 0.055, blue: 0.078, alpha: 1)
+    )
+    static let elevated = dynamic(
+        light: NSColor(srgbRed: 0.902, green: 0.914, blue: 0.937, alpha: 1),
+        dark: NSColor(srgbRed: 0.078, green: 0.094, blue: 0.133, alpha: 1)
+    )
+    static let fg = dynamic(
+        light: NSColor(srgbRed: 0.071, green: 0.086, blue: 0.129, alpha: 1),
+        dark: NSColor(srgbRed: 0.933, green: 0.945, blue: 0.965, alpha: 1)
+    )
+    static let muted = dynamic(
+        light: NSColor(srgbRed: 0.365, green: 0.400, blue: 0.463, alpha: 1),
+        dark: NSColor(srgbRed: 0.545, green: 0.576, blue: 0.655, alpha: 1)
+    )
+    static let accent = Color.accentColor
+    static let border = dynamic(
+        light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.10),
+        dark: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.08)
+    )
+    /// Lesbare Schriftfarbe auf accent-gefüllten Flächen.
+    static let onAccent = dynamic(
+        light: NSColor.white,
+        dark: NSColor(srgbRed: 0.020, green: 0.024, blue: 0.039, alpha: 1)
+    )
+    static let hover = dynamic(
+        light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.05),
+        dark: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.06)
+    )
+
+    private static func dynamic(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
 }
+
+extension Notification.Name {
+    /// Wird von „Ablage › Aktualisieren“ (⌘R) gesendet, damit auch Ansichten
+    /// mit eigener Datenquelle (Kalender) neu laden.
+    static let noriRefreshRequested = Notification.Name("NoriRefreshRequested")
+}
+
+// MARK: - Bausteine
 
 struct NoriScreen<Content: View>: View {
     let content: Content
@@ -17,18 +63,57 @@ struct NoriScreen<Content: View>: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(NoriTheme.bg.ignoresSafeArea())
+            .background(NoriTheme.bg)
             .foregroundStyle(NoriTheme.fg)
+    }
+}
+
+struct NoriSectionHeader: View {
+    let title: String
+    var trailing: String?
+
+    init(_ title: String, trailing: String? = nil) {
+        self.title = title
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+            if let trailing {
+                Spacer()
+                Text(trailing)
+                    .font(.caption)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+        }
+    }
+}
+
+/// Quellenumschalter. Auf dem Mac ein normaler segmentierter Picker statt der
+/// per Drag bedienten Kapsel aus der iOS-App – die Geste gibt es hier nicht.
+struct ProviderPicker: View {
+    @Environment(LibraryStore.self) private var library
+
+    var body: some View {
+        @Bindable var library = library
+        Picker("Quelle", selection: $library.provider) {
+            ForEach(CatalogProvider.allCases) { provider in
+                Text(provider.kind).tag(provider)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .help("Zwischen Anime (AniWorld) und Serien (Serienstream) wechseln")
     }
 }
 
 struct NoriSeriesLink<Label: View>: View {
     let slug: String
     let titleHint: String
-    var scaleOnPress: Bool = false
     var provider: CatalogProvider? = nil
     var onOpen: (() -> Void)? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder var label: () -> Label
 
     var body: some View {
@@ -39,20 +124,30 @@ struct NoriSeriesLink<Label: View>: View {
             label()
                 .contentShape(Rectangle())
         }
-        .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress && !reduceMotion))
+        .buttonStyle(.plain)
+        .noriSeriesMenu(slug: slug, title: titleHint)
     }
 }
 
-private struct NoriLinkChrome: ViewModifier {
-    let scaleOnPress: Bool
+/// Rechtsklick-Menü. Auf dem Mac erwartet man ein Kontextmenü überall dort,
+/// wo iOS ein Long-Press-Menü hätte.
+private struct SeriesContextMenu: ViewModifier {
+    @Environment(LibraryStore.self) private var library
+    let slug: String
+    let title: String
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if scaleOnPress {
-            content.buttonStyle(NoriPressStyle(enabled: true))
-        } else {
-            content.buttonStyle(.plain)
+        content.contextMenu {
+            Button(library.isFavorite(slug) ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen") {
+                library.toggleFavorite(slug, title: title)
+            }
         }
+    }
+}
+
+extension View {
+    func noriSeriesMenu(slug: String, title: String) -> some View {
+        modifier(SeriesContextMenu(slug: slug, title: title))
     }
 }
 
@@ -61,8 +156,30 @@ struct NoriPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(enabled && configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .opacity(enabled && configuration.isPressed ? 0.75 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Zeilen-Hintergrund mit Hover – auf dem Mac gibt es einen Mauszeiger, also
+/// sollen anklickbare Zeilen darauf reagieren.
+struct NoriHoverRow: ViewModifier {
+    var radius: CGFloat = 8
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(hovering ? NoriTheme.hover : Color.clear)
+            )
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func noriHoverRow(radius: CGFloat = 8) -> some View {
+        modifier(NoriHoverRow(radius: radius))
     }
 }
 
@@ -75,9 +192,11 @@ struct PosterTile: View {
     @Environment(LibraryStore.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var remote: URL?
+    @State private var hovering = false
 
-    private var radius: CGFloat { compact ? 10 : 14 }
+    private var radius: CGFloat { compact ? 8 : 12 }
     private var shown: URL? { coverURL ?? remote }
+    private var lifted: Bool { hovering && !reduceMotion }
 
     var body: some View {
         Color.clear
@@ -101,9 +220,12 @@ struct PosterTile: View {
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(NoriTheme.border)
+                    .strokeBorder(hovering ? NoriTheme.accent.opacity(0.8) : NoriTheme.border, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.28), radius: compact ? 6 : 10, y: 6)
+            .shadow(color: .black.opacity(lifted ? 0.34 : 0.20), radius: lifted ? 14 : 6, y: lifted ? 8 : 3)
+            .scaleEffect(lifted ? 1.025 : 1)
+            .animation(.easeOut(duration: 0.16), value: hovering)
+            .onHover { hovering = $0 }
             .task(id: slug) {
                 if coverURL != nil { return }
                 if let cached = await CoverIndex.shared.url(for: slug) {
@@ -118,9 +240,9 @@ struct PosterTile: View {
         ZStack(alignment: .topLeading) {
             NoriTheme.elevated
             Text(String(title.prefix(1)))
-                .font(.system(size: compact ? 36 : 44, weight: .semibold, design: .rounded))
-                .foregroundStyle(NoriTheme.fg.opacity(0.16))
-                .padding(compact ? 8 : 12)
+                .font(.system(size: compact ? 30 : 44, weight: .semibold, design: .rounded))
+                .foregroundStyle(NoriTheme.fg.opacity(0.18))
+                .padding(compact ? 6 : 12)
         }
     }
 }

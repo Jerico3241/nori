@@ -26,18 +26,31 @@ No Apple Developer membership is required for running the app locally from Xcode
 - Local library schema v3 with optional iCloud sync code
 - Hardened resolver URL validation
 
-## macOS adaptations
+## macOS interface
+
+The macOS target no longer mirrors the iOS layout. It uses desktop conventions:
+
+- `NavigationSplitView` with a source list sidebar (Start, Katalog, Kalender, Merkliste) instead of an iOS tab bar
+- Source switch (Anime / Serien) lives once at the bottom of the sidebar as a segmented picker, instead of a drag-operated capsule repeated in every toolbar
+- Preferences live in the standard `Settings` scene (`⌘,`) with tab panes, not in a navigation tab
+- Playback runs in its own window (own title bar, green-button full screen, `⌘W`) instead of a modal sheet; hoster, language, speed and episode skip sit in the window toolbar so they no longer cover the AVKit transport controls
+- Explicit refresh buttons in the toolbar plus `⌘R`, because pull-to-refresh does not exist on macOS
+- Adaptive color palette: the app follows the system appearance instead of forcing dark mode
+- Hover states on posters and rows, right-click context menus, tooltips (`help`)
+- Keyboard shortcuts: `⌘1`–`⌘4` for the sidebar sections, `⌘R` refresh, `⌘,` settings, `Return` plays the highlighted episode
+- Catalog can be shown as list or poster grid (choice is remembered)
+- Native list styling (`inset`, alternating rows) instead of iOS row backgrounds
+- Display sleep is blocked while a stream is playing
+- Window minimum reduced to 720 × 460 so the app fits smaller displays
+
+## Other macOS adaptations
 - UIKit dependencies replaced with AppKit
 - iOS AVPlayerViewController wrapper replaced by SwiftUI `VideoPlayer`
 - Native macOS application target (`macosx`), not Mac Catalyst
-- macOS-compatible toolbar placements and list styles
-- Unsupported iOS zoom/navigation transitions removed from the macOS target
 - Complete classic macOS AppIcon asset set (16–1024 px)
-- Desktop minimum/default window sizing
-- `⌘R` reload command
 
 ## Current test status
-The project is being tested with Xcode on a real Mac. Recent compatibility fixes removed iOS-only SwiftUI APIs from Home, Watchlist, Calendar, Catalog, Series and Theme and rebuilt the AppIcon asset catalog for macOS.
+The macOS interface was rebuilt around desktop conventions (see above). The rewrite targets macOS 14 APIs only and has **not** been compiled yet — it still needs one `⌘B` in Xcode on a real Mac before it can be considered verified.
 
 ## Note
 The iCloud key-value sync implementation still requires the corresponding Xcode capability/entitlement before it can be considered production-ready.
