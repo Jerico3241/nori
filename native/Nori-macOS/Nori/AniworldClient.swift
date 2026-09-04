@@ -154,6 +154,9 @@ actor CoverIndex {
     private var missed: Set<String> = []
     private var sourceCovers: [String: URL] = [:]
     private var overrides: [String: URL] = [:]
+    /// Breitbild aus demselben TMDB-Treffer. Trägt den Hero-Bereich der
+    /// Startseite, für den ein 2:3-Poster die falsche Form hat.
+    private var backdrops: [String: URL] = [:]
     private let key = "8265bd1679663a7ea12ac168da84d2e8"
 
     // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
@@ -163,6 +166,17 @@ actor CoverIndex {
     private let storeURL: URL
     private var saveTask: Task<Void, Never>?
     private static let maxEntries = 4000
+    /// Erhöhen, wenn sich die automatische Zuordnung ändert — verwirft die
+    /// gecachten TMDB-Treffer, ohne manuelle Auswahl anzutasten.
+    private static let storeVersion = 2
+
+    /// Laufende Anfragen je Slug. Dieselbe Serie steht oft gleichzeitig in
+    /// Startseite, Katalog und Kalender; ohne das ginge pro Kachel eine eigene
+    /// TMDB-Anfrage raus.
+    private var inFlight: [String: Task<URL?, Never>] = [:]
+    private var activeLookups = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private static let maxConcurrentLookups = 4
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -173,10 +187,17 @@ actor CoverIndex {
 
         if let data = try? Data(contentsOf: storeURL),
            let bag = try? JSONDecoder().decode(Bag.self, from: data) {
-            cache = bag.covers.compactMapValues(URL.init(string:))
-            missed = Set(bag.missed)
             sourceCovers = (bag.sourceCovers ?? [:]).compactMapValues(URL.init(string:))
             overrides = (bag.overrides ?? [:]).compactMapValues(URL.init(string:))
+            // Die automatischen TMDB-Treffer aus älteren Ständen entstanden mit
+            // einer Bewertung, die Beliebtheit als Treffer zählte, und sind
+            // deshalb teilweise falsch. Sie werden verworfen und neu gesucht;
+            // manuelle Auswahl und Quellcover bleiben erhalten.
+            if (bag.version ?? 1) >= Self.storeVersion {
+                cache = bag.covers.compactMapValues(URL.init(string:))
+                missed = Set(bag.missed)
+                backdrops = (bag.backdrops ?? [:]).compactMapValues(URL.init(string:))
+            }
         }
     }
 
@@ -209,12 +230,16 @@ actor CoverIndex {
 
     func sourceCover(for slug: String) -> URL? { sourceCovers[slug] }
 
+    func backdrop(for slug: String) -> URL? { backdrops[slug] }
+
     private struct Bag: Codable {
         var covers: [String: String]
         var missed: [String]
         // Ab Cover-Index v2. Optional, damit ältere covers.json weiter lesbar bleibt.
         var sourceCovers: [String: String]?
         var overrides: [String: String]?
+        var backdrops: [String: String]?
+        var version: Int?
     }
 
     /// Sammelt Änderungen und schreibt sie gebündelt, damit ein Scroll durch
@@ -242,7 +267,9 @@ actor CoverIndex {
             missed: Array(misses),
             sourceCovers: sourceCovers.mapValues(\.absoluteString),
             // Manuelle Auswahl nie deckeln — die hat der Nutzer selbst getroffen.
-            overrides: overrides.mapValues(\.absoluteString)
+            overrides: overrides.mapValues(\.absoluteString),
+            backdrops: backdrops.mapValues(\.absoluteString),
+            version: Self.storeVersion
         )
         guard let data = try? JSONEncoder().encode(bag) else { return }
         try? data.write(to: storeURL, options: .atomic)
@@ -254,6 +281,42 @@ actor CoverIndex {
         // Bekannter Fehlschlag: nicht erneut anfragen, aber das Cover der Quelle
         // anbieten, statt die Kachel leer zu lassen.
         if missed.contains(slug) { return sourceCovers[slug] }
+
+        if let running = inFlight[slug] { return await running.value }
+        let task = Task<URL?, Never> {
+            await self.search(slug: slug, title: title, kind: kind)
+        }
+        inFlight[slug] = task
+        let result = await task.value
+        inFlight.removeValue(forKey: slug)
+        return result
+    }
+
+    /// Begrenzt, wie viele TMDB-Anfragen gleichzeitig laufen. Ein Raster mit
+    /// sechzig Kacheln würde sonst sechzig Anfragen auf einmal auslösen und
+    /// dabei in die Ratenbegrenzung laufen — Kacheln blieben dann leer.
+    private func acquireSlot() async {
+        if activeLookups < Self.maxConcurrentLookups {
+            activeLookups += 1
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            waiting.append(continuation)
+        }
+        activeLookups += 1
+    }
+
+    private func releaseSlot() {
+        activeLookups -= 1
+        if !waiting.isEmpty {
+            let next = waiting.removeFirst()
+            next.resume()
+        }
+    }
+
+    private func search(slug: String, title: String, kind: CatalogProvider) async -> URL? {
+        await acquireSlot()
+        defer { releaseSlot() }
         let cleaned = title
             .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -272,16 +335,22 @@ actor CoverIndex {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let results = json["results"] as? [[String: Any]]
             else { return nil }
-            var best: (score: Double, path: String)?
+            var best: (score: Double, path: String, titleBonus: Double, backdrop: String?)?
             let nq = q.lowercased()
             for row in results {
                 guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
                 let name = (row["name"] as? String ?? "").lowercased()
                 let orig = (row["original_name"] as? String ?? "").lowercased()
-                var score = row["popularity"] as? Double ?? 0
-                if name == nq || orig == nq { score += 400 }
-                else if name.hasPrefix(nq) || orig.hasPrefix(nq) { score += 180 }
-                else if name.contains(nq) || orig.contains(nq) { score += 80 }
+                // Beliebtheit ist nur Stichentscheid, kein Treffer. Vorher ging
+                // sie voll in die Wertung ein, weshalb eine bekannte, völlig
+                // andere Serie die 45-Punkte-Schwelle allein durch Popularität
+                // riss — genau so entstanden die falschen Cover.
+                var titleBonus: Double = 0
+                if name == nq || orig == nq { titleBonus = 400 }
+                else if name.hasPrefix(nq) || orig.hasPrefix(nq) { titleBonus = 180 }
+                else if name.contains(nq) || orig.contains(nq) { titleBonus = 80 }
+                else if nq.contains(name) && name.count >= 4 { titleBonus = 60 }
+                var score = titleBonus + min(row["popularity"] as? Double ?? 0, 40)
                 let genres = row["genre_ids"] as? [Int] ?? []
                 let countries = row["origin_country"] as? [String] ?? []
                 if kind == .aniworld {
@@ -292,10 +361,19 @@ actor CoverIndex {
                     else if countries.contains("JP") { score -= 20 }
                     if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
                 }
-                if best == nil || score > best!.score { best = (score, path) }
+                if best == nil || score > best!.score {
+                    best = (score, path, titleBonus, row["backdrop_path"] as? String)
+                }
             }
-            if let path = best?.path, (best?.score ?? 0) >= 45, let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)") {
+            // Ohne echte Titelübereinstimmung lieber kein Cover als ein
+            // falsches — dann greift das Cover der Quelle.
+            if let best, best.titleBonus >= 80,
+               let poster = URL(string: "https://image.tmdb.org/t/p/w780\(best.path)") {
                 cache[slug] = poster
+                if let backdropPath = best.backdrop, !backdropPath.isEmpty,
+                   let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
+                    backdrops[slug] = wide
+                }
                 scheduleSave()
                 return poster
             }

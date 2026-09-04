@@ -72,12 +72,17 @@ enum HosterResolver {
         let path = HTML.toAniworldPath(redirectPath)
         let origin: String
         let fullPath: String
-        if redirectPath.hasPrefix("/r") || path.hasPrefix("/r") {
-            origin = NoriOrigin.serienstream
-            fullPath = redirectPath.hasPrefix("/r") ? redirectPath : path
-        } else if path.hasPrefix("/redirect/") {
+        // AniWorld zuerst prüfen: dessen Pfade beginnen mit „/redirect/", was
+        // ebenfalls mit „/r" anfängt. Die alte Reihenfolge schickte deshalb
+        // jede AniWorld-Weiterleitung an serienstream.to, wo sie mit 404
+        // endete — AniWorld war dadurch durchgehend nicht abspielbar.
+        // Serienstream verwendet „/r?…", entsprechend genau darauf prüfen.
+        if path.hasPrefix("/redirect/") {
             origin = NoriOrigin.aniworld
             fullPath = path
+        } else if isSerienstreamRedirect(redirectPath) || isSerienstreamRedirect(path) {
+            origin = NoriOrigin.serienstream
+            fullPath = isSerienstreamRedirect(redirectPath) ? redirectPath : path
         } else {
             throw NoriError.hoster("Ungültiger Hoster")
         }
@@ -149,6 +154,12 @@ enum HosterResolver {
             parts.append("\(payload.0.count) Bytes, kein Text")
         }
         return "\(base) (\(parts.joined(separator: ", ")))"
+    }
+
+    /// Serienstream-Weiterleitungen sind „/r?…" oder „/r/…" — nicht jeder Pfad,
+    /// der mit „/r" beginnt. „/redirect/…" gehört zu AniWorld.
+    private static func isSerienstreamRedirect(_ path: String) -> Bool {
+        path.hasPrefix("/r?") || path.hasPrefix("/r/") || path == "/r"
     }
 
     /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?

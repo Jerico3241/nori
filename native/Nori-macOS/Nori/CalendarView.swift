@@ -23,7 +23,7 @@ struct CalendarView: View {
                         Section(group.label) {
                             ForEach(group.rows) { row in
                                 NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
-                                    CalendarRow(entry: row)
+                                    CalendarRow(entry: row, provider: library.provider)
                                 }
                                 .help(row.title)
                             }
@@ -33,7 +33,7 @@ struct CalendarView: View {
                         Section("Zuletzt") {
                             ForEach(payload.recent) { row in
                                 NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
-                                    CalendarRow(entry: row)
+                                    CalendarRow(entry: row, provider: library.provider)
                                 }
                                 .help(row.title)
                             }
@@ -86,11 +86,18 @@ struct CalendarView: View {
 
 struct CalendarRow: View {
     let entry: AiringEntry
+    var provider: CatalogProvider = .aniworld
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            PosterTile(title: entry.title, slug: entry.slug, compact: true)
-                .frame(width: 34)
+            PosterTile(
+                title: entry.title,
+                slug: entry.slug,
+                compact: true,
+                coverURL: AniworldClient.coverURL(entry.coverPath, provider: provider),
+                kind: provider
+            )
+            .frame(width: 34)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.title)

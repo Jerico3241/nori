@@ -15,19 +15,20 @@ struct HomeView: View {
 
     @State private var genreRows: [GenreRow] = []
 
-    private let grid = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 18)]
+    private let grid = [GridItem(.adaptive(minimum: 152, maximum: 196), spacing: 16)]
 
     var body: some View {
         NoriScreen {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 30) {
+                LazyVStack(alignment: .leading, spacing: 34) {
                     if let error {
                         ErrorBanner(message: error) { Task { await reload() } }
+                            .padding(.horizontal, 28)
                     }
 
                     if loading && catalog.isEmpty {
                         ProgressView("Nori wird geladen")
-                            .frame(maxWidth: .infinity, minHeight: 320)
+                            .frame(maxWidth: .infinity, minHeight: 360)
                     } else {
                         let watching = library.continueWatching()
 
@@ -46,26 +47,29 @@ struct HomeView: View {
                         }
 
                         if !catalog.isEmpty {
-                            NoriSectionHeader(
-                                "Alle \(library.provider.kind)",
-                                trailing: "\(catalog.count) Titel"
-                            )
-                            LazyVGrid(columns: grid, alignment: .leading, spacing: 20) {
-                                ForEach(catalog.prefix(60)) { item in
-                                    PosterCell(item: item)
+                            VStack(alignment: .leading, spacing: 14) {
+                                NoriSectionHeader(
+                                    "Alle \(library.provider.kind)",
+                                    trailing: "\(catalog.count) Titel"
+                                )
+                                LazyVGrid(columns: grid, alignment: .leading, spacing: 22) {
+                                    ForEach(catalog.prefix(60)) { item in
+                                        PosterCell(item: item)
+                                    }
                                 }
                             }
+                            .padding(.horizontal, 28)
                         } else {
                             ContentUnavailableView(
                                 "Nichts geladen",
                                 systemImage: "tray",
                                 description: Text("Der Katalog von \(library.provider.label) ist gerade leer.")
                             )
-                            .frame(maxWidth: .infinity, minHeight: 200)
+                            .frame(maxWidth: .infinity, minHeight: 220)
                         }
                     }
                 }
-                .padding(24)
+                .padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -123,14 +127,21 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Bausteine
+// MARK: - Hero
 
+/// Breiter Kopfbereich nach dem Vorbild gängiger Streaming-Startseiten:
+/// Hintergrundbild über die volle Breite, von unten abgedunkelt, darauf Titel,
+/// Metazeile und ein prominenter Abspielknopf.
 struct ExploreHero: View {
     private let title: String
     private let slug: String
     private let kind: CatalogProvider
     private let progress: WatchProgress?
     private let subtitle: String
+    private let badge: String
+
+    @State private var backdrop: URL?
+    @State private var poster: URL?
 
     init(progress: WatchProgress) {
         self.title = progress.title
@@ -139,6 +150,7 @@ struct ExploreHero: View {
         self.progress = progress
         let episode = progress.germanTitle.isEmpty ? "" : " · \(progress.germanTitle)"
         self.subtitle = "Staffel \(progress.season) · Folge \(progress.episode)\(episode)"
+        self.badge = "Weiterschauen"
     }
 
     init(item: CatalogItem, kind: CatalogProvider) {
@@ -147,63 +159,105 @@ struct ExploreHero: View {
         self.kind = kind
         self.progress = nil
         self.subtitle = item.genres.prefix(4).joined(separator: " · ")
+        self.badge = "Vorgeschlagen"
     }
 
     var body: some View {
         NoriSeriesLink(slug: slug, titleHint: title, provider: kind) {
-            HStack(alignment: .top, spacing: 22) {
-                PosterTile(title: title, slug: slug, kind: kind)
-                    .frame(width: 150)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(progress == nil ? "Vorgeschlagen" : "Weiterschauen")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(NoriTheme.accent)
-                        .textCase(.uppercase)
-
-                    Text(title)
-                        .font(.title.weight(.semibold))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                    if !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.callout)
-                            .foregroundStyle(NoriTheme.muted)
-                            .lineLimit(2)
-                    }
-
-                    if let progress {
-                        HStack(spacing: 10) {
-                            ProgressView(value: watchRatio(progress))
-                                .frame(width: 200)
-                            Text("\(formatClock(progress.positionSec)) von \(formatClock(progress.durationSec))")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(NoriTheme.muted)
-                        }
-                    }
-
-                    Label(progress == nil ? "Ansehen" : "Fortsetzen", systemImage: "play.fill")
-                        .font(.callout.weight(.medium))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(NoriTheme.accent, in: Capsule())
-                        .foregroundStyle(NoriTheme.onAccent)
-                        .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
+            ZStack(alignment: .bottomLeading) {
+                background
+                LinearGradient(
+                    colors: [.black.opacity(0.05), .black.opacity(0.55), .black.opacity(0.9)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                content
             }
-            .padding(20)
-            .frame(maxWidth: 860, alignment: .leading)
-            .background(NoriTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(NoriTheme.border)
-            }
+            .frame(height: 380)
+            .frame(maxWidth: .infinity)
+            .clipped()
         }
         .help(title)
+        .task(id: slug) { await loadImages() }
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if let image = backdrop ?? poster {
+            AsyncImage(url: image) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    NoriTheme.elevated
+                }
+            }
+        } else {
+            LinearGradient(
+                colors: [NoriTheme.elevated, NoriTheme.bg],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(badge)
+                .font(.caption.weight(.bold))
+                .tracking(1.2)
+                .foregroundStyle(NoriTheme.accent)
+
+            Text(title)
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .shadow(color: .black.opacity(0.5), radius: 8, y: 2)
+
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(2)
+            }
+
+            if let progress {
+                HStack(spacing: 12) {
+                    ProgressView(value: watchRatio(progress))
+                        .frame(width: 220)
+                        .tint(NoriTheme.accent)
+                    Text("Noch \(formatClock(max(0, progress.durationSec - progress.positionSec)))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+            }
+
+            Label(progress == nil ? "Ansehen" : "Fortsetzen", systemImage: "play.fill")
+                .font(.headline)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 11)
+                .background(NoriTheme.accent, in: Capsule())
+                .foregroundStyle(NoriTheme.onAccent)
+                .padding(.top, 4)
+        }
+        .padding(32)
+        .frame(maxWidth: 720, alignment: .leading)
+    }
+
+    private func loadImages() async {
+        backdrop = await CoverIndex.shared.backdrop(for: slug)
+        poster = await CoverIndex.shared.url(for: slug)
+        if backdrop == nil {
+            // Noch kein Treffer im Index: einmal nachschlagen, damit der Hero
+            // nicht dauerhaft grau bleibt.
+            _ = await CoverIndex.shared.lookup(slug: slug, title: title, kind: kind)
+            backdrop = await CoverIndex.shared.backdrop(for: slug)
+            poster = await CoverIndex.shared.url(for: slug)
+        }
     }
 }
+
+// MARK: - Zeilen und Kacheln
 
 struct PosterCell: View {
     let item: CatalogItem
@@ -211,10 +265,10 @@ struct PosterCell: View {
 
     var body: some View {
         NoriSeriesLink(slug: item.slug, titleHint: item.title) {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 8) {
                 PosterTile(title: item.title, slug: item.slug)
                 Text(item.title)
-                    .font(.caption)
+                    .font(.callout.weight(.medium))
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
                 if !item.genres.isEmpty {
@@ -235,15 +289,17 @@ struct PosterRow: View {
     let items: [CatalogItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             NoriSectionHeader(title)
+                .padding(.horizontal, 28)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 16) {
+                LazyHStack(alignment: .top, spacing: 18) {
                     ForEach(items) { item in
-                        PosterCell(item: item, width: 124)
+                        PosterCell(item: item, width: 152)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -253,10 +309,11 @@ struct ContinueRow: View {
     let items: [WatchProgress]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             NoriSectionHeader("Weiterschauen")
+                .padding(.horizontal, 28)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 16) {
+                LazyHStack(alignment: .top, spacing: 18) {
                     ForEach(items) { item in
                         NoriSeriesLink(
                             slug: item.slug,
@@ -268,7 +325,8 @@ struct ContinueRow: View {
                         .help(item.title)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -278,23 +336,28 @@ struct ContinueCard: View {
     let item: WatchProgress
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             PosterTile(
                 title: item.title,
                 slug: item.slug,
                 kind: item.provider ?? providerFromPath(item.episodePath)
             )
+            .overlay(alignment: .bottom) {
+                ProgressView(value: watchRatio(item))
+                    .progressViewStyle(.linear)
+                    .tint(NoriTheme.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 6)
+            }
             Text(item.title)
-                .font(.caption.weight(.medium))
+                .font(.callout.weight(.medium))
                 .lineLimit(1)
             Text("S\(item.season) · F\(item.episode) · \(formatClock(item.positionSec))")
                 .font(.caption2)
                 .foregroundStyle(NoriTheme.muted)
-            ProgressView(value: watchRatio(item))
-                .progressViewStyle(.linear)
-                .controlSize(.small)
+                .lineLimit(1)
         }
-        .frame(width: 124)
+        .frame(width: 152)
     }
 }
 
