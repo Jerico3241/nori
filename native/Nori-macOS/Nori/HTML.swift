@@ -16,7 +16,9 @@ enum HTML {
         if cleaned.hasPrefix("/r") {
             return cleaned.split(separator: "#").first.map(String.init) ?? cleaned
         }
-        if cleaned.hasPrefix("/") { return cleaned.split(separator: "?").first.map(String.init) ?? cleaned }
+        if cleaned.hasPrefix("/") {
+            return cleaned.split(separator: "?").first.map(String.init) ?? cleaned
+        }
         return ""
     }
 
@@ -102,11 +104,10 @@ enum HTML {
     static func parseSeries(_ html: String, slug: String, requestedSeason: String?) throws -> SeriesDetail {
         let doc = try SwiftSoup.parse(html)
         let titleEl = try doc.select(".series-title h1").first()
-        let title =
-            (try titleEl?.select("span").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-            ?? (try titleEl?.text().trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-            ?? (try doc.select("h1").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines))
-            ?? slug
+        let spanTitle = try titleEl?.select("span").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let elementTitle = try titleEl?.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackTitle = try doc.select("h1").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = spanTitle?.nilIfEmpty ?? elementTitle?.nilIfEmpty ?? fallbackTitle?.nilIfEmpty ?? slug
 
         let altRaw = (try? titleEl?.attr("data-alternativeTitles")) ?? (try? titleEl?.attr("title")) ?? ""
         let alts = unique(
@@ -116,13 +117,12 @@ enum HTML {
         ).prefix(8).map { $0 }
 
         let desEl = try doc.select("p.seri_des").first()
-        let description =
-            (try? desEl?.attr("data-full-description")).flatMap { $0.isEmpty ? nil : $0 }
-            ?? (try desEl?.text()
-                .replacingOccurrences(of: "mehr anzeigen", with: "", options: .caseInsensitive)
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            ?? ""
+        let fullDescription = (try? desEl?.attr("data-full-description")) ?? ""
+        let shortDescription = try desEl?.text()
+            .replacingOccurrences(of: "mehr anzeigen", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let description = fullDescription.nilIfEmpty ?? shortDescription
 
         let img = try doc.select(".seriesCoverBox img").first()
         let coverSrc = (try? img?.attr("data-src")).flatMap { $0.isEmpty ? nil : $0 } ?? (try? img?.attr("src"))
@@ -219,16 +219,24 @@ enum HTML {
             if href.isEmpty {
                 href = toAniworldPath(try tr.select("a[href*=/filme/film-]").attr("href"))
             }
+
             let film = href.range(of: #"/filme/film-(\d+)"#, options: .regularExpression)
-            let ep = href.range(of: #"episode-(\d+)"#, options: .regularExpression)
-            let numRaw =
-                film.map { String(href[$0]).split(separator: "-").last.map(String.init) ?? "" }
-                ?? ep.map { String(href[$0]).split(separator: "-").last.map(String.init) ?? "" }
-                ?? (try? tr.select("meta[itemprop=episodeNumber]").attr("content"))
-                ?? (try? tr.select("td").first()?.text())
-                ?? ""
-            let digits = numRaw.filter(\.isNumber)
+            let episodeMatch = href.range(of: #"episode-(\d+)"#, options: .regularExpression)
+            let metaNumber = (try? tr.select("meta[itemprop=episodeNumber]").attr("content")) ?? ""
+            let cellNumber = (try? tr.select("td").first()?.text()) ?? ""
+            var numRaw = ""
+            if let film {
+                numRaw = String(href[film]).split(separator: "-").last.map(String.init) ?? ""
+            } else if let episodeMatch {
+                numRaw = String(href[episodeMatch]).split(separator: "-").last.map(String.init) ?? ""
+            } else if !metaNumber.isEmpty {
+                numRaw = metaNumber
+            } else {
+                numRaw = cellNumber
+            }
+            let digits = numRaw.filter { $0.isNumber }
             let number = Int(digits) ?? (episodes.count + 1)
+
             let germanTitle = try titleLink?.select("strong").text()
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -268,11 +276,9 @@ enum HTML {
         let doc = try SwiftSoup.parse(html)
         let h1 = try doc.select("h1").first()?.text().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let germanTitle =
-            (try doc.select(".seasonEpisodeTitle strong").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines))
-            .flatMap { $0.isEmpty ? nil : $0 }
-            ?? (try doc.select("h2").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines))
-            ?? h1
+        let strongTitle = try doc.select(".seasonEpisodeTitle strong").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let h2Title = try doc.select("h2").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let germanTitle = strongTitle?.nilIfEmpty ?? h2Title?.nilIfEmpty ?? h1
         let englishTitle = try doc.select(".seasonEpisodeTitle span").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         var hosters: [HosterOption] = []
@@ -311,7 +317,7 @@ enum HTML {
         if hosters.isEmpty {
             for a in try doc.select("a[href*=redirect]").array() {
                 let href = (try? a.attr("href")) ?? ""
-                let parent = a.parent() as? Element
+                let parent = a.parent()
                 let langKey = (try? parent?.attr("data-lang-key")).flatMap { $0.isEmpty ? nil : $0 } ?? "1"
                 let name =
                     (try? a.select("h4").first()?.text().trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
@@ -383,13 +389,13 @@ enum HTML {
             if genre.isEmpty || genre.lowercased().hasPrefix("filter.") { continue }
             guard let parent = h3.parent() else { continue }
             var list: Element?
-            var sib = parent.nextElementSibling()
-            while let node = sib {
+            var sibling = try parent.nextElementSibling()
+            while let node = sibling {
                 if try node.tagName() == "ul" && node.className().contains("series-list") {
                     list = node
                     break
                 }
-                sib = node.nextElementSibling()
+                sibling = try node.nextElementSibling()
             }
             guard let list else { continue }
             usedGenre = true
@@ -426,12 +432,14 @@ enum HTML {
         let title = try doc.select("h1").first()?.text()
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? slug
-        let description =
-            (try doc.select(".description-text").first()?.text()
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines))
-            ?? (try doc.select("meta[name=description]").attr("content"))
-            ?? ""
+
+        let visibleDescription = try doc.select(".description-text").first()?.text()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let metaDescription = try doc.select("meta[name=description]").attr("content")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = visibleDescription.nilIfEmpty ?? metaDescription
+
         var coverPath: String?
         let poster = try doc.select("img[src*=/media/images/channel/desktop/]").first()?.attr("src") ?? ""
         if poster.hasPrefix("/media/") {
@@ -483,14 +491,20 @@ enum HTML {
                 href = (try? row.select("a[href*=/filme/]").attr("href")) ?? ""
             }
             href = href.split(separator: "?").first.map(String.init) ?? href
+
             let film = href.range(of: #"/filme/(?:film-)?(\d+)"#, options: .regularExpression)
-            let ep = href.range(of: #"episode-(\d+)"#, options: .regularExpression)
-            let numRaw =
-                film.map { String(href[$0]).split(separator: "-").last.map(String.init) ?? "" }
-                ?? ep.map { String(href[$0]).split(separator: "-").last.map(String.init) ?? "" }
-                ?? (try? row.select(".episode-number-cell").text())
-                ?? ""
-            let number = Int(numRaw.filter(\.isNumber)) ?? (episodes.count + 1)
+            let episodeMatch = href.range(of: #"episode-(\d+)"#, options: .regularExpression)
+            let rowNumber = (try? row.select(".episode-number-cell").text()) ?? ""
+            var numRaw = ""
+            if let film {
+                numRaw = String(href[film]).split(separator: "-").last.map(String.init) ?? ""
+            } else if let episodeMatch {
+                numRaw = String(href[episodeMatch]).split(separator: "-").last.map(String.init) ?? ""
+            } else {
+                numRaw = rowNumber
+            }
+            let number = Int(numRaw.filter { $0.isNumber }) ?? (episodes.count + 1)
+
             let germanTitle = try row.select(".episode-title-ger").text()
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -609,7 +623,8 @@ enum HTML {
                         episode = Int(parts[1].trimmingCharacters(in: .whitespaces)) ?? 0
                     }
                 }
-                var hour = 0, minute = 0
+                var hour = 0
+                var minute = 0
                 if let t = small.range(of: #"(\d{1,2}):(\d{2})"#, options: .regularExpression) {
                     let hm = String(small[t]).split(separator: ":")
                     hour = Int(hm.first.map(String.init) ?? "0") ?? 0
