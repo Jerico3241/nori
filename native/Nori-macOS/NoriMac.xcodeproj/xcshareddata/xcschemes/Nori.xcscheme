@@ -17,7 +17,7 @@
                BlueprintIdentifier = "AE01"
                BuildableName = "Nori.app"
                BlueprintName = "Nori"
-               ReferencedContainer = "container:Nori.xcodeproj">
+               ReferencedContainer = "container:NoriMac.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -47,7 +47,7 @@
             BlueprintIdentifier = "AE01"
             BuildableName = "Nori.app"
             BlueprintName = "Nori"
-            ReferencedContainer = "container:Nori.xcodeproj">
+            ReferencedContainer = "container:NoriMac.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -64,7 +64,7 @@
             BlueprintIdentifier = "AE01"
             BuildableName = "Nori.app"
             BlueprintName = "Nori"
-            ReferencedContainer = "container:Nori.xcodeproj">
+            ReferencedContainer = "container:NoriMac.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
