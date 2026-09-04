@@ -149,7 +149,59 @@ actor CoverIndex {
     private var missed: Set<String> = []
     private let key = "8265bd1679663a7ea12ac168da84d2e8"
 
+    // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
+    // musste jede Kachel erneut bei TMDB nachfragen, weshalb Listen lange
+    // ohne Bild blieben. Jetzt landet er auf der Platte und ist beim nächsten
+    // Start sofort da.
+    private let storeURL: URL
+    private var saveTask: Task<Void, Never>?
+    private static let maxEntries = 4000
+
+    init() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        storeURL = folder.appendingPathComponent("covers.json")
+
+        if let data = try? Data(contentsOf: storeURL),
+           let bag = try? JSONDecoder().decode(Bag.self, from: data) {
+            cache = bag.covers.compactMapValues(URL.init(string:))
+            missed = Set(bag.missed)
+        }
+    }
+
     func url(for slug: String) -> URL? { cache[slug] }
+
+    private struct Bag: Codable {
+        var covers: [String: String]
+        var missed: [String]
+    }
+
+    /// Sammelt Änderungen und schreibt sie gebündelt, damit ein Scroll durch
+    /// den Katalog nicht pro Kachel eine Datei schreibt.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.persist()
+        }
+    }
+
+    private func persist() {
+        var covers = cache
+        var misses = missed
+        if covers.count > Self.maxEntries {
+            covers = Dictionary(uniqueKeysWithValues: covers.prefix(Self.maxEntries).map { ($0.key, $0.value) })
+        }
+        if misses.count > Self.maxEntries {
+            misses = Set(misses.prefix(Self.maxEntries))
+        }
+        let bag = Bag(covers: covers.mapValues(\.absoluteString), missed: Array(misses))
+        guard let data = try? JSONEncoder().encode(bag) else { return }
+        try? data.write(to: storeURL, options: .atomic)
+    }
 
     func lookup(slug: String, title: String, kind: CatalogProvider) async -> URL? {
         if let hit = cache[slug] { return hit }
@@ -196,9 +248,11 @@ actor CoverIndex {
             }
             if let path = best?.path, (best?.score ?? 0) >= 45, let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)") {
                 cache[slug] = poster
+                scheduleSave()
                 return poster
             }
             missed.insert(slug)
+            scheduleSave()
         } catch {
             return nil
         }

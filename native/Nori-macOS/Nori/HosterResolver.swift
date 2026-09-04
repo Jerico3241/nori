@@ -40,15 +40,26 @@ enum HosterResolver {
     ) async throws -> PlaySource {
         let langMatched = pickLang(hosters, pref: preferredLang)
         let ranked = ordered(langMatched, preferred: preferredHoster)
-        var last = "Kein spielbarer Hoster"
+        guard !ranked.isEmpty else {
+            throw NoriError.hoster("Für diese Folge ist kein Hoster eingetragen.")
+        }
+        // Jeden Fehlschlag mit Hoster und Grund festhalten. Vorher blieb nur die
+        // Meldung des zuletzt versuchten Hosters übrig, was nicht erkennen ließ,
+        // ob ein einzelner Hoster klemmt oder alle.
+        var failures: [String] = []
         for opt in ranked {
             do {
                 return try await resolve(opt)
             } catch {
-                last = error.localizedDescription
+                var reason = error.localizedDescription
+                let prefix = "\(opt.name): "
+                if reason.hasPrefix(prefix) { reason.removeFirst(prefix.count) }
+                failures.append("\(opt.name) (\(opt.lang)): \(reason)")
             }
         }
-        throw NoriError.hoster(last)
+        throw NoriError.hoster(
+            "Kein Hoster lieferte einen Stream.\n" + failures.joined(separator: "\n")
+        )
     }
 
     static func resolve(_ opt: HosterOption) async throws -> PlaySource {
@@ -81,10 +92,11 @@ enum HosterResolver {
         req.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")
         req.setValue("de-DE,de;q=0.9", forHTTPHeaderField: "Accept-Language")
         req.setValue(origin + "/", forHTTPHeaderField: "Referer")
+        defer { session.finishTasksAndInvalidate() }
         _ = try? await session.data(for: req)
         if let landed = tap.externalURL { return landed }
         if let last = tap.lastURL, !last.hostContains("aniworld"), !last.hostContains("serienstream") { return last }
-        throw NoriError.hoster("Hoster-URL nicht lesbar")
+        throw NoriError.hoster("Weiterleitung endete nicht beim Hoster")
     }
 
     private static func extract(embed: URL, hoster: String, lang: String) async throws -> PlaySource {
@@ -277,7 +289,11 @@ private final class RedirectTap: NSObject, URLSessionTaskDelegate, @unchecked Se
         newRequest request: URLRequest
     ) async -> URLRequest? {
         lastURL = request.url
-        if let url = request.url, !url.hostContains("aniworld") {
+        // Beide Quell-Domains ausschließen: bei Serienstream läuft die
+        // Weiterleitung über serienstream.to/r?... und macht unterwegs Sprünge
+        // innerhalb der eigenen Domain. Ohne die zweite Prüfung wurde so ein
+        // Zwischenschritt fälschlich als Hoster-Adresse genommen.
+        if let url = request.url, !url.hostContains("aniworld"), !url.hostContains("serienstream") {
             externalURL = url
             return nil
         }

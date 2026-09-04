@@ -88,7 +88,10 @@ struct CalendarRow: View {
     let entry: AiringEntry
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
+            PosterTile(title: entry.title, slug: entry.slug, compact: true)
+                .frame(width: 34)
+
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.title)
                     .font(.body.weight(.medium))
@@ -100,13 +103,16 @@ struct CalendarRow: View {
                         .lineLimit(1)
                 }
             }
+
             Spacer(minLength: 8)
+
             HStack(spacing: 8) {
                 if !entry.season.isEmpty {
                     Text("S\(entry.season) · F\(entry.episode)")
+                        .monospacedDigit()
                 }
-                if !entry.languages.isEmpty {
-                    Text(entry.languages.joined(separator: " · "))
+                ForEach(entry.languages.prefix(3), id: \.self) { lang in
+                    Text(lang)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(NoriTheme.elevated, in: Capsule())
@@ -115,6 +121,6 @@ struct CalendarRow: View {
             .font(.caption)
             .foregroundStyle(NoriTheme.muted)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 }
