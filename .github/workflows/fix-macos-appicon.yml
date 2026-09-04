@@ -15,24 +15,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate 1024px macOS app icon
+      - name: Generate complete macOS app icon set
         shell: bash
         run: |
           set -euo pipefail
-          ICON="native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon.png"
-          CONTENTS="native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/Contents.json"
+          ICON_DIR="native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset"
+          MASTER="$ICON_DIR/icon.png"
+          CONTENTS="$ICON_DIR/Contents.json"
 
-          sips -z 1024 1024 "$ICON" --out "$ICON" >/dev/null
+          # Keep a 1024x1024 master and generate every classic macOS app-icon slot.
+          sips -z 1024 1024 "$MASTER" --out "$MASTER" >/dev/null
+          find "$ICON_DIR" -type f -name 'icon_*' -delete
+
+          sips -z 16 16 "$MASTER" --out "$ICON_DIR/icon_16x16.png" >/dev/null
+          sips -z 32 32 "$MASTER" --out "$ICON_DIR/icon_16x16@2x.png" >/dev/null
+          sips -z 32 32 "$MASTER" --out "$ICON_DIR/icon_32x32.png" >/dev/null
+          sips -z 64 64 "$MASTER" --out "$ICON_DIR/icon_32x32@2x.png" >/dev/null
+          sips -z 128 128 "$MASTER" --out "$ICON_DIR/icon_128x128.png" >/dev/null
+          sips -z 256 256 "$MASTER" --out "$ICON_DIR/icon_128x128@2x.png" >/dev/null
+          sips -z 256 256 "$MASTER" --out "$ICON_DIR/icon_256x256.png" >/dev/null
+          sips -z 512 512 "$MASTER" --out "$ICON_DIR/icon_256x256@2x.png" >/dev/null
+          sips -z 512 512 "$MASTER" --out "$ICON_DIR/icon_512x512.png" >/dev/null
 
           cat > "$CONTENTS" <<'JSON'
           {
             "images": [
-              {
-                "filename": "icon.png",
-                "idiom": "universal",
-                "platform": "macos",
-                "size": "1024x1024"
-              }
+              { "filename": "icon_16x16.png", "idiom": "mac", "scale": "1x", "size": "16x16" },
+              { "filename": "icon_16x16@2x.png", "idiom": "mac", "scale": "2x", "size": "16x16" },
+              { "filename": "icon_32x32.png", "idiom": "mac", "scale": "1x", "size": "32x32" },
+              { "filename": "icon_32x32@2x.png", "idiom": "mac", "scale": "2x", "size": "32x32" },
+              { "filename": "icon_128x128.png", "idiom": "mac", "scale": "1x", "size": "128x128" },
+              { "filename": "icon_128x128@2x.png", "idiom": "mac", "scale": "2x", "size": "128x128" },
+              { "filename": "icon_256x256.png", "idiom": "mac", "scale": "1x", "size": "256x256" },
+              { "filename": "icon_256x256@2x.png", "idiom": "mac", "scale": "2x", "size": "256x256" },
+              { "filename": "icon_512x512.png", "idiom": "mac", "scale": "1x", "size": "512x512" },
+              { "filename": "icon.png", "idiom": "mac", "scale": "2x", "size": "512x512" }
             ],
             "info": {
               "author": "xcode",
@@ -47,10 +64,9 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon.png \
-                  native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/Contents.json
+          git add native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "fix(macOS): provide 1024 app icon"
+          git commit -m "fix(macOS): generate complete app icon set"
           git push
