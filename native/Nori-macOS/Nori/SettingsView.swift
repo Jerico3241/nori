@@ -57,7 +57,7 @@ struct SettingsView: View {
                     .listRowBackground(NoriTheme.surface)
                 }
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.inset)
             .scrollContentBackground(.hidden)
         }
         .navigationTitle("Einstellungen")
