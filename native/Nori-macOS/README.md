@@ -1,6 +1,6 @@
 # Nori macOS 1.9.0
 
-Native macOS test build of the Nori 1.9 SwiftUI client.
+Native macOS build of the Nori 1.9 SwiftUI client.
 
 ## Requirements
 - macOS 14 Sonoma or newer
@@ -23,15 +23,21 @@ No Apple Developer membership is required for running the app locally from Xcode
 - Autoplay next episode countdown
 - Language and hoster switching
 - Playback speed preferences
-- Local library migration v1 -> v2
+- Local library schema v3 with optional iCloud sync code
 - Hardened resolver URL validation
 
 ## macOS adaptations
 - UIKit dependencies replaced with AppKit
 - iOS AVPlayerViewController wrapper replaced by SwiftUI `VideoPlayer`
 - Native macOS application target (`macosx`), not Mac Catalyst
+- macOS-compatible toolbar placements and list styles
+- Unsupported iOS zoom/navigation transitions removed from the macOS target
+- Complete classic macOS AppIcon asset set (16–1024 px)
 - Desktop minimum/default window sizing
 - `⌘R` reload command
 
+## Current test status
+The project is being tested with Xcode on a real Mac. Recent compatibility fixes removed iOS-only SwiftUI APIs from Home, Watchlist, Calendar, Catalog, Series and Theme and rebuilt the AppIcon asset catalog for macOS.
+
 ## Note
-This environment cannot run Xcode or link against the macOS SDK, so the project was parser-checked but the final `.app` must be built on a Mac with Xcode.
+The iCloud key-value sync implementation still requires the corresponding Xcode capability/entitlement before it can be considered production-ready.
