@@ -67,8 +67,9 @@ Key-Value-Store-Capability, die noch nicht eingerichtet ist.
 - Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
 - Commit-Betreff mit Plattform-Präfix: `macOS: …`, `iOS: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- Versionsnummern stehen in `package.json`, in `MARKETING_VERSION` beider
-  pbxproj und in der README-Tabelle — bei einem Wechsel alle drei.
+- Versionsnummern und `CHANGELOG.md` bei jeder Funktionsänderung mitpflegen;
+  die Stellen listet `.claude/skills/steward/SKILL.md`. Die Plattformen haben
+  eigene Stände.
 
 ## Datenmodell
 

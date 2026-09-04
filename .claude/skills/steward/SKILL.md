@@ -75,8 +75,15 @@ Bereits eingetragen:
 
 - Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
 - Commit-Betreff mit Plattform-Präfix, wo es eine gibt: `macOS: …`, `iOS: …`.
-- Versionen stehen an drei Stellen (`package.json`, `MARKETING_VERSION` in
-  beiden pbxproj, README-Tabelle) — bei einem Versionswechsel alle drei.
+- **Versionspflege gehört zu jeder Funktionsänderung.** macOS, iOS und
+  Windows laufen auf eigenen Ständen. Zu ändern sind: `MARKETING_VERSION` und
+  `CURRENT_PROJECT_VERSION` im jeweiligen pbxproj, `appVersion` in der
+  zugehörigen `contract.json`, die Tabelle in `README.md`, die Überschrift im
+  Plattform-README, `NoriRelease` in der macOS-`SettingsView.swift` und ein
+  Eintrag in `CHANGELOG.md`. Die `Info.plist` beider Apple-Targets zieht die
+  Version über `$(MARKETING_VERSION)` — dort nichts fest eintragen.
+- Gegenprobe nach einem Versionswechsel:
+  `grep -rn "<alte Version>" README.md native/ --include=*.md --include=*.json --include=*.pbxproj`
 - Das Bibliotheksschema ist `v3` (`LibraryStore.schemaVersion`). Ein
   Feldwechsel in `WatchProgress` oder `Bag` braucht eine Migration in
   `migrateProgress` und eine Erhöhung von `schemaVersion`; neue Felder immer

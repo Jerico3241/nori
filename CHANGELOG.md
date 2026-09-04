@@ -1,0 +1,103 @@
+# Changelog
+
+Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
+Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
+
+Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
+unterschiedlich schnell bewegen: macOS **1.10.0**, iOS/iPadOS **1.9.1**,
+Windows **1.8.0**.
+
+## [macOS 1.10.0] – 2026-09-04
+
+Die macOS-App war bis dahin eine nahezu wörtliche Kopie der iOS-Oberfläche.
+Dieser Stand macht sie zu einer eigenständigen Mac-App und behebt zwei Fehler,
+die die Wiedergabe komplett verhindert haben.
+
+### Behoben
+
+- **AniWorld war überhaupt nicht abspielbar.** Die Weiterleitung prüfte
+  `hasPrefix("/r")` für Serienstream. AniWorlds Pfade lauten `/redirect/…` und
+  beginnen ebenfalls mit `/r`, liefen damit immer in den Serienstream-Zweig und
+  landeten auf `serienstream.to/redirect/…` mit HTTP 404.
+- **Player blieb leer.** AVPlayer schickte weder Referer noch User-Agent. Die
+  meisten Hoster liefern das Video nur mit passendem Referer aus. Das Asset
+  wird jetzt mit Referer, Origin und User-Agent aufgebaut.
+- **Falsche Cover.** Die Beliebtheit einer Serie floss voll in die
+  TMDB-Bewertung ein und riss die Annahmeschwelle ohne jede
+  Titelübereinstimmung. Beliebtheit ist jetzt gedeckelt und nur noch
+  Stichentscheid.
+- **Fehlende Cover.** Beim Scrollen liefen bis zu sechzig gleichzeitige
+  TMDB-Anfragen und rannten in die Ratenbegrenzung. Jetzt höchstens vier
+  parallel, identische Anfragen werden gebündelt.
+- **Kalendereinträge führten auf falsche Seiten.** Sie gaben ihre Quelle nicht
+  mit, und ein einmaliger Ladefehler stellte die ganze App dauerhaft auf die
+  andere Quelle um.
+- Weiterleitungen, die als HTML statt als HTTP-302 kommen, werden erkannt
+  (meta-refresh, `window.location`, iframe).
+- Fehlermeldungen nennen jetzt Hoster, Sprache und Grund statt einer pauschalen
+  Meldung; bei der Weiterleitung zusätzlich HTTP-Status und Zielhost.
+
+### Neu
+
+- **Seitenleiste statt Tab-Bar** (`NavigationSplitView`) mit Entdecken,
+  Katalog, Kategorien, Kalender und Merkliste.
+- **Eigenes Wiedergabefenster** mit eigener Titelleiste, Vollbild über den
+  grünen Knopf und `⌘W`. Hoster, Sprache, Tempo und Folgenwechsel sitzen in der
+  Fenster-Symbolleiste und verdecken die AVKit-Regler nicht mehr.
+- **Einstellungsfenster** (`⌘,`) mit den Bereichen Allgemein, Wiedergabe,
+  Synchronisation und Daten.
+- **Entdecken-Startseite** mit Kopfkarussell, „Schau weiter" im Querformat mit
+  Fortschritt und Restzeit, Genre-Zeilen und Postern.
+- **Kategorien**: alle Genres als Kacheln, nach Auswahl das Raster der Titel.
+- **Ähnliche Titel** auf der Detailseite, abgeleitet aus der
+  Genre-Überschneidung im geladenen Katalog.
+- **Manuelle Cover-Auswahl** je Serie, wenn die automatische Zuordnung nicht
+  passt. Findet TMDB nichts, wird das Cover von AniWorld oder Serienstream
+  genommen.
+- Infofeld beim Überfahren einer Kachel mit Bewertung, Genres und Beschreibung.
+- Tastenkürzel `⌘1`–`⌘5` für die Bereiche, `⌘R` zum Aktualisieren.
+- Bildschirmruhezustand wird während der Wiedergabe blockiert.
+
+### Geändert
+
+- Farbpalette folgt dem Systemerscheinungsbild statt erzwungenem Dunkelmodus;
+  Akzentfarbe auf Orange umgestellt.
+- Native Listenstile mit alternierenden Zeilen, Hover-Zustände,
+  Rechtsklick-Kontextmenüs und Tooltips.
+- Explizite Aktualisieren-Knöpfe, weil Pull-to-Refresh auf macOS wirkungslos
+  ist.
+- Cover-Index liegt jetzt auf der Platte statt nur im Arbeitsspeicher.
+- Fenstermindestgröße von 960 × 640 auf 720 × 460 gesenkt.
+
+### Hinweis zum Update
+
+Beim ersten Start werden die automatisch zugeordneten Cover verworfen und neu
+gesucht, weil die alte Zuordnung fehlerhaft war. Manuell gewählte Cover,
+Merkliste, Verlauf und Wiedergabefortschritt bleiben erhalten.
+
+## [iOS 1.9.1] – 2026-09-04
+
+Die Oberfläche ist unverändert; iOS erbt die Korrekturen aus den gemeinsamen
+Dateien.
+
+### Behoben
+
+- AniWorld-Weiterleitung landete auf der falschen Domain und war dadurch nicht
+  abspielbar.
+- Serienstream-Weiterleitungen konnten einen Zwischenschritt innerhalb der
+  eigenen Domain als Hoster-Adresse nehmen.
+- Falsche Cover-Zuordnung durch Beliebtheit ohne Titelübereinstimmung.
+- Kalendereinträge ohne URL erzeugten aus dem Poster-Dateinamen einen
+  ungültigen Slug.
+
+### Neu
+
+- Cover-Index wird auf der Platte gespeichert und ist beim nächsten Start
+  sofort verfügbar.
+- Kalendereinträge tragen ein Cover, sofern die Quelle eines mitliefert.
+- Fehlermeldungen nennen Hoster, Sprache und Grund.
+
+## [1.9.0] und früher
+
+Kein gepflegtes Changelog. Der Stand ist über die Git-Historie und die
+GitHub-Releases nachvollziehbar.
