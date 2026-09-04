@@ -242,18 +242,23 @@ actor CoverIndex {
     /// Alles, was die Startseite über einen Titel zeigen kann, in einem Zug —
     /// spart pro Kachel mehrere Sprünge auf den Actor.
     func details(for slug: String) -> CoverDetails {
-        CoverDetails(
+        let text = overviews[slug]
+        return CoverDetails(
             poster: url(for: slug),
             backdrop: backdrops[slug],
-            overview: overviews[slug],
+            // Leerer Eintrag heißt „nachgeschlagen, TMDB hat keine
+            // Beschreibung" — dann nicht bei jedem Aufruf erneut suchen.
+            overview: (text?.isEmpty ?? true) ? nil : text,
             rating: ratings[slug]
         )
     }
 
-    /// Wie `details`, sucht bei Bedarf aber erst nach.
+    /// Wie `details`, sucht bei Bedarf aber erst nach. Die Abfrage darf sich
+    /// nicht am Cover orientieren: ein Titel kann ein Cover aus einem älteren
+    /// Stand haben, aber noch keine Beschreibung.
     func detailsLoading(slug: String, title: String, kind: CatalogProvider) async -> CoverDetails {
-        if overviews[slug] == nil, cache[slug] == nil, !missed.contains(slug) {
-            _ = await lookup(slug: slug, title: title, kind: kind)
+        if overviews[slug] == nil, !missed.contains(slug) {
+            _ = await deduplicatedSearch(slug: slug, title: title, kind: kind)
         }
         return details(for: slug)
     }
@@ -297,6 +302,8 @@ actor CoverIndex {
             // Manuelle Auswahl nie deckeln — die hat der Nutzer selbst getroffen.
             overrides: overrides.mapValues(\.absoluteString),
             backdrops: backdrops.mapValues(\.absoluteString),
+            overviews: overviews,
+            ratings: ratings,
             version: Self.storeVersion
         )
         guard let data = try? JSONEncoder().encode(bag) else { return }
@@ -310,6 +317,12 @@ actor CoverIndex {
         // anbieten, statt die Kachel leer zu lassen.
         if missed.contains(slug) { return sourceCovers[slug] }
 
+        return await deduplicatedSearch(slug: slug, title: title, kind: kind)
+    }
+
+    /// Dieselbe Serie steht oft gleichzeitig in Startseite, Katalog und
+    /// Kalender; ohne Bündelung ginge pro Kachel eine eigene TMDB-Anfrage raus.
+    private func deduplicatedSearch(slug: String, title: String, kind: CatalogProvider) async -> URL? {
         if let running = inFlight[slug] { return await running.value }
         let task = Task<URL?, Never> {
             await self.search(slug: slug, title: title, kind: kind)
@@ -331,14 +344,19 @@ actor CoverIndex {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             waiting.append(continuation)
         }
-        activeLookups += 1
+        // Zähler bleibt unverändert: der Slot wurde in releaseSlot direkt
+        // übergeben, nicht neu vergeben.
     }
 
     private func releaseSlot() {
-        activeLookups -= 1
-        if !waiting.isEmpty {
-            let next = waiting.removeFirst()
-            next.resume()
+        // Den frei werdenden Slot unmittelbar an den nächsten Wartenden
+        // weiterreichen. Erst herunterzuzählen und dann zu wecken ließ einen
+        // neu hinzukommenden Aufrufer dazwischenrutschen, wodurch mehr
+        // Anfragen gleichzeitig liefen als erlaubt.
+        if waiting.isEmpty {
+            activeLookups -= 1
+        } else {
+            waiting.removeFirst().resume()
         }
     }
 
@@ -402,9 +420,10 @@ actor CoverIndex {
                    let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
                     backdrops[slug] = wide
                 }
-                if let overview = best.row["overview"] as? String, !overview.isEmpty {
-                    overviews[slug] = overview
-                }
+                // Auch ohne Text eintragen: der leere Eintrag merkt sich, dass
+                // nachgeschlagen wurde, und verhindert dieselbe Suche bei jedem
+                // Aufbau der Ansicht.
+                overviews[slug] = (best.row["overview"] as? String) ?? ""
                 if let vote = best.row["vote_average"] as? Double, vote > 0 {
                     ratings[slug] = vote
                 }

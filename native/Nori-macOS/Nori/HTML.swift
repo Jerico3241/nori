@@ -357,7 +357,13 @@ enum HTML {
 
     static func slugFromPoster(_ poster: String) -> String? {
         let file = poster.split(separator: "/").last.map(String.init) ?? poster
-        let base = file.split(separator: ".").first.map(String.init) ?? file
+        // Nur die Endung abschneiden. `split(separator: ".").first` machte aus
+        // „one.piece.jpg" den Slug „one" — genau die falschen Verweise, die
+        // diese Funktion verhindern soll.
+        var base = file
+        if let dot = base.lastIndex(of: "."), dot != base.startIndex {
+            base = String(base[base.startIndex ..< dot])
+        }
         let trimmed = base.trimmingCharacters(in: CharacterSet(charactersIn: "-_ ")).lowercased()
         guard trimmed.count >= 3,
               trimmed.contains(where: { $0.isLetter }),

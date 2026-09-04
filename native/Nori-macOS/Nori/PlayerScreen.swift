@@ -248,7 +248,8 @@ struct PlayerScreen: View {
                 hosters: info.hosters,
                 preferredHoster: preferredHoster ?? library.hosterPref,
                 preferredLang: preferredLang ?? library.langPref,
-                episodePath: currentPath
+                episodePath: currentPath,
+                provider: library.provider
             )
             source = play
             library.hosterPref = play.hoster
@@ -289,20 +290,6 @@ struct PlayerScreen: View {
                 }
             }
 
-            statusTask = Task { @MainActor in
-                // AVPlayerItem meldet .failed asynchron, nachdem der erste
-                // Datenabruf fehlgeschlagen ist.
-                for _ in 0 ..< 40 {
-                    if Task.isCancelled { return }
-                    if item.status == .failed {
-                        reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
-                        return
-                    }
-                    if item.status == .readyToPlay { return }
-                    try? await Task.sleep(for: .milliseconds(500))
-                }
-            }
-
             let targetResume = resumeAt ?? currentResumeAt
             if targetResume >= 8 {
                 let t = CMTime(seconds: targetResume, preferredTimescale: 600)
@@ -335,6 +322,24 @@ struct PlayerScreen: View {
             player = av
             currentResumeAt = 0
             beginSleepBlock()
+
+            // Erst jetzt auf Fehler horchen. Vor `player = av` gestartet, konnte
+            // die Überwachung während des Suchlaufs anschlagen, alles wieder
+            // abräumen — und danach lief der restliche Aufbau trotzdem weiter
+            // und setzte Player, Beobachter und Ruhesperre erneut.
+            statusTask = Task { @MainActor in
+                // AVPlayerItem meldet .failed asynchron, nachdem der erste
+                // Datenabruf fehlgeschlagen ist.
+                for _ in 0 ..< 40 {
+                    if Task.isCancelled { return }
+                    if item.status == .failed {
+                        reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
+                        return
+                    }
+                    if item.status == .readyToPlay { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
         } catch {
             self.error = error.localizedDescription
         }

@@ -163,28 +163,6 @@ struct NoriPressStyle: ButtonStyle {
     }
 }
 
-/// Zeilen-Hintergrund mit Hover – auf dem Mac gibt es einen Mauszeiger, also
-/// sollen anklickbare Zeilen darauf reagieren.
-struct NoriHoverRow: ViewModifier {
-    var radius: CGFloat = 8
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(hovering ? NoriTheme.hover : Color.clear)
-            )
-            .onHover { hovering = $0 }
-    }
-}
-
-extension View {
-    func noriHoverRow(radius: CGFloat = 8) -> some View {
-        modifier(NoriHoverRow(radius: radius))
-    }
-}
-
 struct PosterTile: View {
     let title: String
     let slug: String
@@ -228,6 +206,9 @@ struct PosterTile: View {
             }
             .shadow(color: .black.opacity(lifted ? 0.34 : 0.20), radius: lifted ? 14 : 6, y: lifted ? 8 : 3)
             .scaleEffect(lifted ? 1.025 : 1)
+            .accessibilityElement()
+            .accessibilityLabel(Text(title))
+            .accessibilityAddTraits(.isImage)
             .animation(.easeOut(duration: 0.16), value: hovering)
             .onHover { hovering = $0 }
             .task(id: slug) {
