@@ -51,7 +51,7 @@ struct CatalogView: View {
         .searchable(text: $q, prompt: "Suchen")
         .refreshable { await reload() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 KindSwitch(provider: Bindable(library).provider)
             }
         }
