@@ -22,7 +22,12 @@ actor AniworldClient {
         let items = provider == .serienstream
             ? try HTML.parseCatalogSerienstream(html)
             : try HTML.parseCatalog(html)
-        guard items.count >= 20 else { throw NoriError.parse("Katalog unvollständig") }
+        // Anzahl mitgeben: 0 heißt blockiert oder Markup geändert, eine kleine
+        // Zahl heißt, dass der Parser nur noch teilweise greift. Ohne die Zahl
+        // war beides dieselbe Meldung.
+        guard items.count >= 20 else {
+            throw NoriError.parse("\(provider.label): Katalog unvollständig, nur \(items.count) Einträge gelesen")
+        }
         let result = CatalogResult(items: items, source: "live", fetchedAt: Date().timeIntervalSince1970 * 1000)
         catalogs[provider] = (result, Date().addingTimeInterval(30 * 60))
         return result
@@ -147,13 +152,199 @@ actor CoverIndex {
     static let shared = CoverIndex()
     private var cache: [String: URL] = [:]
     private var missed: Set<String> = []
+    private var sourceCovers: [String: URL] = [:]
+    private var overrides: [String: URL] = [:]
+    /// Breitbild aus demselben TMDB-Treffer. Trägt den Hero-Bereich der
+    /// Startseite, für den ein 2:3-Poster die falsche Form hat.
+    private var backdrops: [String: URL] = [:]
+    /// Kurzbeschreibung und Bewertung fallen bei der Cover-Suche ohnehin an.
+    /// Sie tragen den Hero-Text und das Hover-Infofeld, ohne dass dafür die
+    /// Detailseite jeder Serie geladen werden müsste.
+    private var overviews: [String: String] = [:]
+    private var ratings: [String: Double] = [:]
     private let key = "8265bd1679663a7ea12ac168da84d2e8"
 
-    func url(for slug: String) -> URL? { cache[slug] }
+    // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
+    // musste jede Kachel erneut bei TMDB nachfragen, weshalb Listen lange
+    // ohne Bild blieben. Jetzt landet er auf der Platte und ist beim nächsten
+    // Start sofort da.
+    private let storeURL: URL
+    private var saveTask: Task<Void, Never>?
+    private static let maxEntries = 4000
+    /// Erhöhen, wenn sich die automatische Zuordnung ändert — verwirft die
+    /// gecachten TMDB-Treffer, ohne manuelle Auswahl anzutasten.
+    private static let storeVersion = 2
+
+    /// Laufende Anfragen je Slug. Dieselbe Serie steht oft gleichzeitig in
+    /// Startseite, Katalog und Kalender; ohne das ginge pro Kachel eine eigene
+    /// TMDB-Anfrage raus.
+    private var inFlight: [String: Task<URL?, Never>] = [:]
+    private var activeLookups = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private static let maxConcurrentLookups = 4
+
+    init() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        storeURL = folder.appendingPathComponent("covers.json")
+
+        if let data = try? Data(contentsOf: storeURL),
+           let bag = try? JSONDecoder().decode(Bag.self, from: data) {
+            sourceCovers = (bag.sourceCovers ?? [:]).compactMapValues(URL.init(string:))
+            overrides = (bag.overrides ?? [:]).compactMapValues(URL.init(string:))
+            // Die automatischen TMDB-Treffer aus älteren Ständen entstanden mit
+            // einer Bewertung, die Beliebtheit als Treffer zählte, und sind
+            // deshalb teilweise falsch. Sie werden verworfen und neu gesucht;
+            // manuelle Auswahl und Quellcover bleiben erhalten.
+            if (bag.version ?? 1) >= Self.storeVersion {
+                cache = bag.covers.compactMapValues(URL.init(string:))
+                missed = Set(bag.missed)
+                backdrops = (bag.backdrops ?? [:]).compactMapValues(URL.init(string:))
+                overviews = bag.overviews ?? [:]
+                ratings = bag.ratings ?? [:]
+            }
+        }
+    }
+
+    /// Reihenfolge: manuelle Auswahl, dann TMDB, dann das Cover der Quelle.
+    /// TMDB liefert die besseren Bilder, trifft aber nicht immer den richtigen
+    /// Titel — deshalb die Möglichkeit, von Hand zu überschreiben.
+    func url(for slug: String) -> URL? {
+        overrides[slug] ?? cache[slug] ?? sourceCovers[slug]
+    }
+
+    func override(for slug: String) -> URL? { overrides[slug] }
+
+    func setOverride(slug: String, url: URL?) {
+        if let url {
+            overrides[slug] = url
+        } else {
+            overrides.removeValue(forKey: slug)
+        }
+        scheduleSave()
+    }
+
+    /// Cover, das AniWorld beziehungsweise Serienstream selbst zur Serie
+    /// ausliefert. Es ist immer das richtige und dient als Rückfallebene, wenn
+    /// TMDB nichts findet.
+    func rememberSource(slug: String, url: URL) {
+        guard sourceCovers[slug] != url else { return }
+        sourceCovers[slug] = url
+        scheduleSave()
+    }
+
+    func sourceCover(for slug: String) -> URL? { sourceCovers[slug] }
+
+    func backdrop(for slug: String) -> URL? { backdrops[slug] }
+
+    /// Alles, was die Startseite über einen Titel zeigen kann, in einem Zug —
+    /// spart pro Kachel mehrere Sprünge auf den Actor.
+    func details(for slug: String) -> CoverDetails {
+        CoverDetails(
+            poster: url(for: slug),
+            backdrop: backdrops[slug],
+            overview: overviews[slug],
+            rating: ratings[slug]
+        )
+    }
+
+    /// Wie `details`, sucht bei Bedarf aber erst nach.
+    func detailsLoading(slug: String, title: String, kind: CatalogProvider) async -> CoverDetails {
+        if overviews[slug] == nil, cache[slug] == nil, !missed.contains(slug) {
+            _ = await lookup(slug: slug, title: title, kind: kind)
+        }
+        return details(for: slug)
+    }
+
+    private struct Bag: Codable {
+        var covers: [String: String]
+        var missed: [String]
+        // Ab Cover-Index v2. Optional, damit ältere covers.json weiter lesbar bleibt.
+        var sourceCovers: [String: String]?
+        var overrides: [String: String]?
+        var backdrops: [String: String]?
+        var overviews: [String: String]?
+        var ratings: [String: Double]?
+        var version: Int?
+    }
+
+    /// Sammelt Änderungen und schreibt sie gebündelt, damit ein Scroll durch
+    /// den Katalog nicht pro Kachel eine Datei schreibt.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.persist()
+        }
+    }
+
+    private func persist() {
+        var covers = cache
+        var misses = missed
+        if covers.count > Self.maxEntries {
+            covers = Dictionary(uniqueKeysWithValues: covers.prefix(Self.maxEntries).map { ($0.key, $0.value) })
+        }
+        if misses.count > Self.maxEntries {
+            misses = Set(misses.prefix(Self.maxEntries))
+        }
+        let bag = Bag(
+            covers: covers.mapValues(\.absoluteString),
+            missed: Array(misses),
+            sourceCovers: sourceCovers.mapValues(\.absoluteString),
+            // Manuelle Auswahl nie deckeln — die hat der Nutzer selbst getroffen.
+            overrides: overrides.mapValues(\.absoluteString),
+            backdrops: backdrops.mapValues(\.absoluteString),
+            version: Self.storeVersion
+        )
+        guard let data = try? JSONEncoder().encode(bag) else { return }
+        try? data.write(to: storeURL, options: .atomic)
+    }
 
     func lookup(slug: String, title: String, kind: CatalogProvider) async -> URL? {
+        if let chosen = overrides[slug] { return chosen }
         if let hit = cache[slug] { return hit }
-        if missed.contains(slug) { return nil }
+        // Bekannter Fehlschlag: nicht erneut anfragen, aber das Cover der Quelle
+        // anbieten, statt die Kachel leer zu lassen.
+        if missed.contains(slug) { return sourceCovers[slug] }
+
+        if let running = inFlight[slug] { return await running.value }
+        let task = Task<URL?, Never> {
+            await self.search(slug: slug, title: title, kind: kind)
+        }
+        inFlight[slug] = task
+        let result = await task.value
+        inFlight.removeValue(forKey: slug)
+        return result
+    }
+
+    /// Begrenzt, wie viele TMDB-Anfragen gleichzeitig laufen. Ein Raster mit
+    /// sechzig Kacheln würde sonst sechzig Anfragen auf einmal auslösen und
+    /// dabei in die Ratenbegrenzung laufen — Kacheln blieben dann leer.
+    private func acquireSlot() async {
+        if activeLookups < Self.maxConcurrentLookups {
+            activeLookups += 1
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            waiting.append(continuation)
+        }
+        activeLookups += 1
+    }
+
+    private func releaseSlot() {
+        activeLookups -= 1
+        if !waiting.isEmpty {
+            let next = waiting.removeFirst()
+            next.resume()
+        }
+    }
+
+    private func search(slug: String, title: String, kind: CatalogProvider) async -> URL? {
+        await acquireSlot()
+        defer { releaseSlot() }
         let cleaned = title
             .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,16 +363,22 @@ actor CoverIndex {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let results = json["results"] as? [[String: Any]]
             else { return nil }
-            var best: (score: Double, path: String)?
+            var best: (score: Double, path: String, titleBonus: Double, row: [String: Any])?
             let nq = q.lowercased()
             for row in results {
                 guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
                 let name = (row["name"] as? String ?? "").lowercased()
                 let orig = (row["original_name"] as? String ?? "").lowercased()
-                var score = row["popularity"] as? Double ?? 0
-                if name == nq || orig == nq { score += 400 }
-                else if name.hasPrefix(nq) || orig.hasPrefix(nq) { score += 180 }
-                else if name.contains(nq) || orig.contains(nq) { score += 80 }
+                // Beliebtheit ist nur Stichentscheid, kein Treffer. Vorher ging
+                // sie voll in die Wertung ein, weshalb eine bekannte, völlig
+                // andere Serie die 45-Punkte-Schwelle allein durch Popularität
+                // riss — genau so entstanden die falschen Cover.
+                var titleBonus: Double = 0
+                if name == nq || orig == nq { titleBonus = 400 }
+                else if name.hasPrefix(nq) || orig.hasPrefix(nq) { titleBonus = 180 }
+                else if name.contains(nq) || orig.contains(nq) { titleBonus = 80 }
+                else if nq.contains(name) && name.count >= 4 { titleBonus = 60 }
+                var score = titleBonus + min(row["popularity"] as? Double ?? 0, 40)
                 let genres = row["genre_ids"] as? [Int] ?? []
                 let countries = row["origin_country"] as? [String] ?? []
                 if kind == .aniworld {
@@ -192,16 +389,91 @@ actor CoverIndex {
                     else if countries.contains("JP") { score -= 20 }
                     if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
                 }
-                if best == nil || score > best!.score { best = (score, path) }
+                if best == nil || score > best!.score {
+                    best = (score, path, titleBonus, row)
+                }
             }
-            if let path = best?.path, (best?.score ?? 0) >= 45, let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)") {
+            // Ohne echte Titelübereinstimmung lieber kein Cover als ein
+            // falsches — dann greift das Cover der Quelle.
+            if let best, best.titleBonus >= 80,
+               let poster = URL(string: "https://image.tmdb.org/t/p/w780\(best.path)") {
                 cache[slug] = poster
+                if let backdropPath = best.row["backdrop_path"] as? String, !backdropPath.isEmpty,
+                   let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
+                    backdrops[slug] = wide
+                }
+                if let overview = best.row["overview"] as? String, !overview.isEmpty {
+                    overviews[slug] = overview
+                }
+                if let vote = best.row["vote_average"] as? Double, vote > 0 {
+                    ratings[slug] = vote
+                }
+                scheduleSave()
                 return poster
             }
             missed.insert(slug)
+            scheduleSave()
         } catch {
-            return nil
+            return sourceCovers[slug]
         }
-        return nil
+        return sourceCovers[slug]
     }
+
+    /// Auswahlvorschläge für die manuelle Cover-Zuordnung: die Treffer aus
+    /// TMDB in Rangfolge. Ohne Cache und ohne `missed`-Sperre, weil hier
+    /// bewusst nach einer Alternative gesucht wird.
+    func candidates(title: String, kind: CatalogProvider, limit: Int = 12) async -> [CoverCandidate] {
+        let cleaned = title
+            .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = cleaned.count >= 2 ? cleaned : title
+        guard var comps = URLComponents(string: "https://api.themoviedb.org/3/search/tv") else { return [] }
+        comps.queryItems = [
+            URLQueryItem(name: "api_key", value: key),
+            URLQueryItem(name: "language", value: "de-DE"),
+            URLQueryItem(name: "query", value: q),
+            URLQueryItem(name: "include_adult", value: "false"),
+        ]
+        guard let url = comps.url else { return [] }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let results = json["results"] as? [[String: Any]]
+            else { return [] }
+            var out: [CoverCandidate] = []
+            for row in results {
+                guard let path = row["poster_path"] as? String, !path.isEmpty,
+                      let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)")
+                else { continue }
+                let name = (row["name"] as? String) ?? (row["original_name"] as? String) ?? title
+                let year = (row["first_air_date"] as? String)?.prefix(4)
+                let label = year.map { "\(name) (\($0))" } ?? name
+                out.append(CoverCandidate(url: poster, label: label, source: "TMDB"))
+                if out.count >= limit { break }
+            }
+            return out
+        } catch {
+            return []
+        }
+    }
+}
+
+/// Was der Cover-Index über einen Titel weiß. Kommt komplett aus der ohnehin
+/// nötigen TMDB-Suche — keine zusätzlichen Anfragen.
+struct CoverDetails: Hashable {
+    var poster: URL?
+    var backdrop: URL?
+    var overview: String?
+    var rating: Double?
+
+    /// Bewertung als Fünf-Sterne-Skala; TMDB liefert 0–10.
+    var stars: Double? { rating.map { $0 / 2 } }
+}
+
+struct CoverCandidate: Identifiable, Hashable {
+    let url: URL
+    let label: String
+    let source: String
+    var id: URL { url }
 }

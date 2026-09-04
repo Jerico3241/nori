@@ -22,7 +22,7 @@ private struct GeneralSettingsTab: View {
     @Environment(LibraryStore.self) private var library
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? NoriRelease.version
     }
 
     var body: some View {
@@ -44,9 +44,37 @@ private struct GeneralSettingsTab: View {
                 LabeledContent("Version", value: appVersion)
                 LabeledContent("Bibliotheksschema", value: "v\(LibraryStore.schemaVersion)")
             }
+
+            Section("Neu in \(NoriRelease.version)") {
+                ForEach(NoriRelease.highlights, id: \.self) { line in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("•").foregroundStyle(NoriTheme.accent)
+                        Text(line)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }
+}
+
+/// Kurzfassung des Changelogs für das Einstellungsfenster. Die App wird als
+/// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
+/// Vollständig in CHANGELOG.md im Projektverzeichnis.
+enum NoriRelease {
+    static let version = "1.10.0"
+
+    static let highlights = [
+        "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
+        "Streams starten zuverlässiger: Der Player schickt jetzt Referer und User-Agent mit.",
+        "Cover werden richtig zugeordnet und dauerhaft gespeichert; fehlt ein TMDB-Treffer, greift das Cover der Quelle.",
+        "Cover lassen sich in der Detailansicht von Hand auswählen.",
+        "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter\" und Genre-Zeilen.",
+        "Neuer Bereich „Kategorien\" und „Ähnliche Titel\" auf der Detailseite.",
+        "Wiedergabe läuft in einem eigenen Fenster mit Vollbild und ⌘W.",
+    ]
 }
 
 private struct PlaybackSettingsTab: View {

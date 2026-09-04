@@ -26,6 +26,8 @@ struct PlayerScreen: View {
     @State private var autoplayTask: Task<Void, Never>?
     @State private var isSwitching = false
     @State private var sleepActivity: NSObjectProtocol?
+    @State private var failureObserver: NSObjectProtocol?
+    @State private var statusTask: Task<Void, Never>?
 
     init(request: PlayerRequest) {
         self.series = request.series
@@ -245,7 +247,8 @@ struct PlayerScreen: View {
             let play = try await HosterResolver.resolveBest(
                 hosters: info.hosters,
                 preferredHoster: preferredHoster ?? library.hosterPref,
-                preferredLang: preferredLang ?? library.langPref
+                preferredLang: preferredLang ?? library.langPref,
+                episodePath: currentPath
             )
             source = play
             library.hosterPref = play.hoster
@@ -255,10 +258,50 @@ struct PlayerScreen: View {
                 throw NoriError.hoster("Ungültige Stream-URL")
             }
 
-            let item = AVPlayerItem(url: url)
+            // Hoster liefern das Video meist nur mit passendem Referer und
+            // User-Agent aus. AVPlayer schickt von sich aus keinen, weshalb der
+            // Player sonst mit leerem Bild und --:-- stehen bleibt.
+            var headers = ["User-Agent": NoriOrigin.ua]
+            if let referer = play.referer {
+                headers["Referer"] = referer
+                if let refererURL = URL(string: referer), let origin = originHeader(refererURL) {
+                    headers["Origin"] = origin
+                }
+            }
+            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+            let item = AVPlayerItem(asset: asset)
             let av = AVPlayer(playerItem: item)
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
+
+            // Scheitert die Wiedergabe selbst, meldet AVKit das nicht sichtbar.
+            // Den Fehler in die eigene Fehleransicht holen, damit nicht nur ein
+            // graues Bild dasteht.
+            failureObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { note in
+                let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+                    .localizedDescription ?? "Unbekannter Fehler"
+                Task { @MainActor in
+                    reportPlaybackFailure(reason)
+                }
+            }
+
+            statusTask = Task { @MainActor in
+                // AVPlayerItem meldet .failed asynchron, nachdem der erste
+                // Datenabruf fehlgeschlagen ist.
+                for _ in 0 ..< 40 {
+                    if Task.isCancelled { return }
+                    if item.status == .failed {
+                        reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
+                        return
+                    }
+                    if item.status == .readyToPlay { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
 
             let targetResume = resumeAt ?? currentResumeAt
             if targetResume >= 8 {
@@ -296,6 +339,20 @@ struct PlayerScreen: View {
             self.error = error.localizedDescription
         }
         isSwitching = false
+    }
+
+    /// Nur „https://host" — manche Hoster prüfen Origin zusätzlich zum Referer.
+    private func originHeader(_ url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        return "\(scheme)://\(host)"
+    }
+
+    @MainActor
+    private func reportPlaybackFailure(_ reason: String) {
+        guard error == nil else { return }
+        let hoster = source?.hoster ?? "Hoster"
+        clearPlayer(saveCurrent: true)
+        error = "\(hoster) lieferte eine Adresse, die sich nicht abspielen lässt.\n\(reason)"
     }
 
     @MainActor
@@ -475,6 +532,10 @@ struct PlayerScreen: View {
         observer = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
+        failureObserver = nil
+        statusTask?.cancel()
+        statusTask = nil
         player?.pause()
         player = nil
         endSleepBlock()

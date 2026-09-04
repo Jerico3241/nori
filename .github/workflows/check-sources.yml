@@ -1,0 +1,25 @@
+name: Check Apple sources
+
+on:
+  push:
+    paths:
+      - 'native/**'
+      - 'tools/check-apple-sources.py'
+      - '.github/workflows/check-sources.yml'
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'tools/check-apple-sources.py'
+      - '.github/workflows/check-sources.yml'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check iOS/macOS source parity
+        run: python3 tools/check-apple-sources.py
