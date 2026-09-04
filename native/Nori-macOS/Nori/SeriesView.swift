@@ -124,8 +124,9 @@ struct SeriesView: View {
                 coverColor = tone
             }
         }
-        .fullScreenCover(item: $play) { target in
+        .sheet(item: $play) { target in
             PlayerScreen(series: target.series, episode: target.episode, season: season, resumeAt: target.resumeAt)
+                .frame(minWidth: 960, minHeight: 600)
         }
     }
 
