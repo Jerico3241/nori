@@ -1,0 +1,63 @@
+{
+  "name": "nori",
+  "contractVersion": 2,
+  "appVersion": "1.9.0",
+  "note": "Nori 1.9 native contract. Library schema v2 migrates 1.x progress automatically.",
+  "providers": {
+    "aniworld": {
+      "origin": "https://aniworld.to",
+      "kind": "Anime",
+      "paths": {
+        "catalog": "/animes",
+        "calendar": "/animekalender",
+        "series": "/anime/stream/{slug}",
+        "season": "/anime/stream/{slug}/staffel-{id}",
+        "films": "/anime/stream/{slug}/filme",
+        "episode": "/anime/stream/{slug}/staffel-{season}/episode-{n}",
+        "film": "/anime/stream/{slug}/filme/film-{n}",
+        "redirect": "/redirect/{id}"
+      }
+    },
+    "serienstream": {
+      "origin": "https://serienstream.to",
+      "kind": "Serien",
+      "paths": {
+        "catalog": "/serien",
+        "calendar": "/api/calendar",
+        "series": "/serie/{slug}",
+        "season": "/serie/{slug}/staffel-{id}",
+        "films": "/serie/{slug}/filme",
+        "episode": "/serie/{slug}/staffel-{season}/episode-{n}",
+        "film": "/serie/{slug}/filme/film-{n}",
+        "redirect": "/r?t={token}"
+      }
+    }
+  },
+  "models": {
+    "CatalogItem": ["slug", "title", "alts", "genres"],
+    "SeasonRef": ["id", "label"],
+    "Episode": ["number", "germanTitle", "englishTitle", "path", "hosters", "languages"],
+    "SeriesDetail": ["slug", "title", "alts", "description", "coverPath", "yearStart", "yearEnd", "fsk", "imdb", "genres", "seasons", "activeSeason", "episodes"],
+    "HosterOption": ["name", "lang", "langKey", "redirectPath"],
+    "WatchInfo": ["path", "title", "germanTitle", "englishTitle", "hosters"],
+    "PlaySource": ["kind", "url", "hoster", "lang"],
+    "WatchProgress": ["slug", "title", "season", "episode", "episodePath", "germanTitle", "englishTitle", "positionSec", "durationSec", "updatedAt", "lang", "completed", "provider"],
+    "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel"]
+  },
+  "library": {
+    "schemaVersion": 2,
+    "progressIdentity": "provider + normalized episodePath",
+    "language": "last-used playback metadata, not part of progress identity",
+    "migration": "v1 language/path duplicate records are collapsed by latest updatedAt"
+  },
+  "rules": {
+    "complete": "completed == true OR (durationSec >= 20 AND positionSec >= durationSec * 0.9)",
+    "resume": "if complete then 0; if positionSec < 8 then 0; else positionSec",
+    "autoplay": "when enabled and a following episode exists, show an 8 second countdown and start the next episode",
+    "playbackSpeeds": [0.75, 1.0, 1.25, 1.5, 2.0],
+    "langOrder": ["DE", "GerSub", "EN"],
+    "hosterOrder": ["voe", "vidmoly", "vidoza", "lulustream", "speedfiles", "filemoon", "doodstream"],
+    "nativePlay": "AVPlayer plays the resolved HTTPS media URL directly.",
+    "provider": "CatalogProvider aniworld|serienstream is persisted explicitly on new WatchProgress records."
+  }
+}
