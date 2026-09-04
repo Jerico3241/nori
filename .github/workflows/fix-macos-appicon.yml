@@ -1,0 +1,56 @@
+name: Fix macOS App Icon
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-macos-appicon.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-icon:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate 1024px macOS app icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          ICON="native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon.png"
+          CONTENTS="native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/Contents.json"
+
+          sips -z 1024 1024 "$ICON" --out "$ICON" >/dev/null
+
+          cat > "$CONTENTS" <<'JSON'
+          {
+            "images": [
+              {
+                "filename": "icon.png",
+                "idiom": "universal",
+                "platform": "macos",
+                "size": "1024x1024"
+              }
+            ],
+            "info": {
+              "author": "xcode",
+              "version": 1
+            }
+          }
+          JSON
+
+      - name: Commit corrected asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon.png \
+                  native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/Contents.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(macOS): provide 1024 app icon"
+          git push
