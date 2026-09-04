@@ -1,6 +1,6 @@
-# Nori macOS 1.9.0
+# Nori macOS 1.10.0
 
-Native macOS build of the Nori 1.9 SwiftUI client.
+Native macOS build of the Nori SwiftUI client. Changes per release: [../../CHANGELOG.md](../../CHANGELOG.md)
 
 ## Requirements
 - macOS 14 Sonoma or newer
