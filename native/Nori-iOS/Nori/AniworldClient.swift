@@ -157,6 +157,11 @@ actor CoverIndex {
     /// Breitbild aus demselben TMDB-Treffer. Trägt den Hero-Bereich der
     /// Startseite, für den ein 2:3-Poster die falsche Form hat.
     private var backdrops: [String: URL] = [:]
+    /// Kurzbeschreibung und Bewertung fallen bei der Cover-Suche ohnehin an.
+    /// Sie tragen den Hero-Text und das Hover-Infofeld, ohne dass dafür die
+    /// Detailseite jeder Serie geladen werden müsste.
+    private var overviews: [String: String] = [:]
+    private var ratings: [String: Double] = [:]
     private let key = "8265bd1679663a7ea12ac168da84d2e8"
 
     // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
@@ -197,6 +202,8 @@ actor CoverIndex {
                 cache = bag.covers.compactMapValues(URL.init(string:))
                 missed = Set(bag.missed)
                 backdrops = (bag.backdrops ?? [:]).compactMapValues(URL.init(string:))
+                overviews = bag.overviews ?? [:]
+                ratings = bag.ratings ?? [:]
             }
         }
     }
@@ -232,6 +239,25 @@ actor CoverIndex {
 
     func backdrop(for slug: String) -> URL? { backdrops[slug] }
 
+    /// Alles, was die Startseite über einen Titel zeigen kann, in einem Zug —
+    /// spart pro Kachel mehrere Sprünge auf den Actor.
+    func details(for slug: String) -> CoverDetails {
+        CoverDetails(
+            poster: url(for: slug),
+            backdrop: backdrops[slug],
+            overview: overviews[slug],
+            rating: ratings[slug]
+        )
+    }
+
+    /// Wie `details`, sucht bei Bedarf aber erst nach.
+    func detailsLoading(slug: String, title: String, kind: CatalogProvider) async -> CoverDetails {
+        if overviews[slug] == nil, cache[slug] == nil, !missed.contains(slug) {
+            _ = await lookup(slug: slug, title: title, kind: kind)
+        }
+        return details(for: slug)
+    }
+
     private struct Bag: Codable {
         var covers: [String: String]
         var missed: [String]
@@ -239,6 +265,8 @@ actor CoverIndex {
         var sourceCovers: [String: String]?
         var overrides: [String: String]?
         var backdrops: [String: String]?
+        var overviews: [String: String]?
+        var ratings: [String: Double]?
         var version: Int?
     }
 
@@ -335,7 +363,7 @@ actor CoverIndex {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let results = json["results"] as? [[String: Any]]
             else { return nil }
-            var best: (score: Double, path: String, titleBonus: Double, backdrop: String?)?
+            var best: (score: Double, path: String, titleBonus: Double, row: [String: Any])?
             let nq = q.lowercased()
             for row in results {
                 guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
@@ -362,7 +390,7 @@ actor CoverIndex {
                     if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
                 }
                 if best == nil || score > best!.score {
-                    best = (score, path, titleBonus, row["backdrop_path"] as? String)
+                    best = (score, path, titleBonus, row)
                 }
             }
             // Ohne echte Titelübereinstimmung lieber kein Cover als ein
@@ -370,9 +398,15 @@ actor CoverIndex {
             if let best, best.titleBonus >= 80,
                let poster = URL(string: "https://image.tmdb.org/t/p/w780\(best.path)") {
                 cache[slug] = poster
-                if let backdropPath = best.backdrop, !backdropPath.isEmpty,
+                if let backdropPath = best.row["backdrop_path"] as? String, !backdropPath.isEmpty,
                    let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
                     backdrops[slug] = wide
+                }
+                if let overview = best.row["overview"] as? String, !overview.isEmpty {
+                    overviews[slug] = overview
+                }
+                if let vote = best.row["vote_average"] as? Double, vote > 0 {
+                    ratings[slug] = vote
                 }
                 scheduleSave()
                 return poster
@@ -423,6 +457,18 @@ actor CoverIndex {
             return []
         }
     }
+}
+
+/// Was der Cover-Index über einen Titel weiß. Kommt komplett aus der ohnehin
+/// nötigen TMDB-Suche — keine zusätzlichen Anfragen.
+struct CoverDetails: Hashable {
+    var poster: URL?
+    var backdrop: URL?
+    var overview: String?
+    var rating: Double?
+
+    /// Bewertung als Fünf-Sterne-Skala; TMDB liefert 0–10.
+    var stars: Double? { rating.map { $0 / 2 } }
 }
 
 struct CoverCandidate: Identifiable, Hashable {

@@ -3,6 +3,7 @@ import SwiftUI
 struct SeriesView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerHost.self) private var playerHost
+    @Environment(CatalogStore.self) private var catalogStore
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,19 +17,13 @@ struct SeriesView: View {
     @State private var loading = true
     @State private var coverColor = NoriTheme.accent
     @State private var pickingCover = false
+    @State private var details = CoverDetails()
 
     var body: some View {
+        // Der Kopfbereich bringt sein eigenes Bild mit und läuft über die volle
+        // Breite, deshalb hier nur noch der Grundhintergrund.
         ZStack(alignment: .top) {
             NoriTheme.bg
-            LinearGradient(
-                colors: [coverColor.opacity(0.30), NoriTheme.bg.opacity(0)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 360)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: coverColor)
-
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .foregroundStyle(NoriTheme.fg)
@@ -65,6 +60,14 @@ struct SeriesView: View {
             await CoverIndex.shared.rememberSource(slug: slug, url: url)
             if let tone = await CoverToneSampler.sample(url: url) { coverColor = tone }
         }
+        .task(id: detail?.title) {
+            guard let loaded = detail else { return }
+            details = await CoverIndex.shared.detailsLoading(
+                slug: slug,
+                title: loaded.title,
+                kind: providerOverride ?? library.provider
+            )
+        }
         .sheet(isPresented: $pickingCover) {
             CoverPicker(
                 slug: slug,
@@ -96,90 +99,197 @@ struct SeriesView: View {
             )
         } else if let detail {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 30) {
                     header(detail)
-                    if !detail.description.isEmpty {
-                        Text(detail.description)
-                            .font(.callout)
-                            .foregroundStyle(NoriTheme.muted)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: 760, alignment: .leading)
-                    }
+                    facts(detail)
                     episodes(detail)
+                    similar(detail)
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 34)
-                .padding(.bottom, 28)
+                .padding(.bottom, 36)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
+    /// Kopfbereich über die volle Breite: Breitbild im Hintergrund, davor
+    /// Poster, Titel, Metazeile, Bewertung und der Abspielknopf.
     private func header(_ detail: SeriesDetail) -> some View {
-        HStack(alignment: .top, spacing: 22) {
-            PosterTile(
-                title: detail.title,
-                slug: detail.slug,
-                coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
+        ZStack(alignment: .bottomLeading) {
+            if let wide = details.backdrop {
+                AsyncImage(url: wide) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    default:
+                        NoriTheme.elevated
+                    }
+                }
+            } else {
+                LinearGradient(
+                    colors: [coverColor.opacity(0.55), NoriTheme.bg],
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
+                )
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: coverColor)
+            }
+
+            LinearGradient(
+                colors: [.black.opacity(0.9), .black.opacity(0.5), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
             )
-            .frame(width: 176)
-            .contextMenu {
-                Button("Cover wählen…") { pickingCover = true }
-            }
-            .help("Rechtsklick, um das Cover manuell zu wählen")
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.85)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text(detail.title)
-                    .font(.title.weight(.semibold))
-                    .textSelection(.enabled)
-
-                HStack(spacing: 10) {
-                    ForEach(metaChips(detail), id: \.self) { chip in
-                        Text(chip)
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(NoriTheme.elevated, in: Capsule())
-                    }
+            HStack(alignment: .bottom, spacing: 22) {
+                PosterTile(
+                    title: detail.title,
+                    slug: detail.slug,
+                    coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
+                )
+                .frame(width: 168)
+                .contextMenu {
+                    Button("Cover wählen…") { pickingCover = true }
                 }
+                .help("Rechtsklick, um das Cover manuell zu wählen")
 
-                let stats = library.seasonStats(slug: slug, season: season, episodes: detail.episodes)
-                if stats.total > 0 {
-                    HStack(spacing: 10) {
-                        ProgressView(value: Double(stats.watched), total: Double(stats.total))
-                            .frame(width: 160)
-                        Text("\(stats.pct) % · \(stats.watched)/\(stats.total) Folgen")
-                            .font(.caption)
-                            .foregroundStyle(NoriTheme.muted)
-                    }
-                }
+                VStack(alignment: .leading, spacing: 11) {
+                    Text(detail.title)
+                        .font(.system(size: 38, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                        .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
 
-                HStack(spacing: 12) {
-                    let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
-                    Button {
-                        guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
-                        open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
-                    } label: {
-                        Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-
-                    if detail.seasons.count > 1 {
-                        Picker("Staffel", selection: seasonBinding) {
-                            ForEach(detail.seasons) { item in
-                                Text(item.label).tag(item.id)
-                            }
+                    HStack(spacing: 8) {
+                        ForEach(metaChips(detail), id: \.self) { chip in
+                            Text(chip)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(.white.opacity(0.16), in: Capsule())
+                                .foregroundStyle(.white.opacity(0.92))
                         }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 190)
+                    }
+
+                    MetaLine(kind: library.provider, genres: detail.genres, stars: details.stars)
+
+                    let stats = library.seasonStats(slug: slug, season: season, episodes: detail.episodes)
+                    if stats.total > 0 {
+                        HStack(spacing: 10) {
+                            ProgressView(value: Double(stats.watched), total: Double(stats.total))
+                                .frame(width: 170)
+                                .tint(NoriTheme.accent)
+                            Text("\(stats.pct) % · \(stats.watched)/\(stats.total) Folgen")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.75))
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
+                        Button {
+                            guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
+                            open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
+                        } label: {
+                            Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
+                                .font(.headline)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 11)
+                                .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .foregroundStyle(NoriTheme.onAccent)
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.defaultAction)
+
+                        BookmarkButton(slug: slug, title: detail.title, large: true)
+
+                        if detail.seasons.count > 1 {
+                            Picker("Staffel", selection: seasonBinding) {
+                                ForEach(detail.seasons) { item in
+                                    Text(item.label).tag(item.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 170)
+                        }
                     }
                 }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, NoriLayout.gutter)
+            .padding(.bottom, 26)
         }
-        .frame(maxWidth: 900, alignment: .leading)
+        .frame(height: 430)
+        .frame(maxWidth: .infinity)
+        .clipped()
+    }
+
+    /// Beschreibung links, harte Fakten rechts.
+    @ViewBuilder
+    private func facts(_ detail: SeriesDetail) -> some View {
+        let text = detail.description.isEmpty ? (details.overview ?? "") : detail.description
+        if !text.isEmpty || !detail.genres.isEmpty {
+            HStack(alignment: .top, spacing: 40) {
+                if !text.isEmpty {
+                    Text(text)
+                        .font(.callout)
+                        .foregroundStyle(NoriTheme.muted)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: 620, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    if !detail.genres.isEmpty {
+                        factRow("Genres", detail.genres.joined(separator: ", "))
+                    }
+                    if let fsk = detail.fsk, !fsk.isEmpty {
+                        factRow("Altersfreigabe", "FSK \(fsk)")
+                    }
+                    let langs = uniqueLanguages(detail)
+                    if !langs.isEmpty {
+                        factRow("Sprachen", langs.joined(separator: ", "))
+                    }
+                    factRow("Quelle", library.provider.label)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NoriLayout.gutter)
+        }
+    }
+
+    private func factRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(label):")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NoriTheme.fg)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(NoriTheme.muted)
+        }
+    }
+
+    private func uniqueLanguages(_ detail: SeriesDetail) -> [String] {
+        var seen: [String] = []
+        for episode in detail.episodes {
+            for lang in episode.languages where !seen.contains(lang) {
+                seen.append(lang)
+            }
+        }
+        return seen
+    }
+
+    /// Empfehlungen aus dem geladenen Katalog nach Genre-Überschneidung. Damit
+    /// führt jeder Vorschlag garantiert auf einen Titel, den die Quelle auch
+    /// wirklich hat.
+    @ViewBuilder
+    private func similar(_ detail: SeriesDetail) -> some View {
+        let items = catalogStore.similar(to: slug, genres: detail.genres)
+        if !items.isEmpty {
+            PosterRow(title: "Ähnliche Titel", items: items)
+        }
     }
 
     private func metaChips(_ detail: SeriesDetail) -> [String] {
@@ -224,7 +334,8 @@ struct SeriesView: View {
                     .strokeBorder(NoriTheme.border)
             }
         }
-        .frame(maxWidth: 900, alignment: .leading)
+        .frame(maxWidth: 980, alignment: .leading)
+        .padding(.horizontal, NoriLayout.gutter)
     }
 
     private func open(series: SeriesDetail, episode: Episode, resumeAt: Double) {

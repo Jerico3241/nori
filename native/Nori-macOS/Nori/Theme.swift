@@ -32,11 +32,9 @@ enum NoriTheme {
         light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.10),
         dark: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.08)
     )
-    /// Lesbare Schriftfarbe auf accent-gefüllten Flächen.
-    static let onAccent = dynamic(
-        light: NSColor.white,
-        dark: NSColor(srgbRed: 0.020, green: 0.024, blue: 0.039, alpha: 1)
-    )
+    /// Lesbare Schriftfarbe auf accent-gefüllten Flächen. Der Akzent ist ein
+    /// kräftiges Orange, auf dem Weiß in beiden Erscheinungsbildern trägt.
+    static let onAccent = Color.white
     static let hover = dynamic(
         light: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.05),
         dark: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.06)

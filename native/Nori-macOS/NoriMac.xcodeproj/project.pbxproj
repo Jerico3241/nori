@@ -21,6 +21,7 @@
 		AB12 /* PlayerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC12 /* PlayerScreen.swift */; };
 		AB13 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC13 /* SettingsView.swift */; };
 		AB14 /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC14 /* CalendarView.swift */; };
+		AB15 /* CategoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC15 /* CategoriesView.swift */; };
 		AB20 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC20 /* Assets.xcassets */; };
 		AB30 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AP02 /* SwiftSoup */; };
 /* End PBXBuildFile section */
@@ -41,6 +42,7 @@
 		AC12 /* PlayerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerScreen.swift; sourceTree = "<group>"; };
 		AC13 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AC14 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarView.swift; sourceTree = "<group>"; };
+		AC15 /* CategoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoriesView.swift; sourceTree = "<group>"; };
 		AC20 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AC21 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -82,6 +84,7 @@
 				AC12 /* PlayerScreen.swift */,
 				AC13 /* SettingsView.swift */,
 				AC14 /* CalendarView.swift */,
+				AC15 /* CategoriesView.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -186,6 +189,7 @@
 				AB12 /* PlayerScreen.swift in Sources */,
 				AB13 /* SettingsView.swift in Sources */,
 				AB14 /* CalendarView.swift in Sources */,
+				AB15 /* CategoriesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

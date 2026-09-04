@@ -6,6 +6,16 @@ struct GenreRow: Identifiable, Hashable {
     var id: String { title }
 }
 
+/// Ein Titel im Kopfkarussell — entweder angefangen oder vorgeschlagen.
+struct HeroItem: Identifiable, Hashable {
+    let slug: String
+    let title: String
+    let kind: CatalogProvider
+    let genres: [String]
+    let progress: WatchProgress?
+    var id: String { "\(kind.rawValue)|\(slug)" }
+}
+
 struct HomeView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
@@ -15,31 +25,29 @@ struct HomeView: View {
 
     @State private var genreRows: [GenreRow] = []
 
-    private let grid = [GridItem(.adaptive(minimum: 152, maximum: 196), spacing: 16)]
+    private let grid = [GridItem(.adaptive(minimum: 158, maximum: 200), spacing: 18)]
 
     var body: some View {
         NoriScreen {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 34) {
+                LazyVStack(alignment: .leading, spacing: 36) {
                     if let error {
                         ErrorBanner(message: error) { Task { await reload() } }
-                            .padding(.horizontal, 28)
+                            .padding(.horizontal, NoriLayout.gutter)
                     }
 
                     if loading && catalog.isEmpty {
                         ProgressView("Nori wird geladen")
-                            .frame(maxWidth: .infinity, minHeight: 360)
+                            .frame(maxWidth: .infinity, minHeight: 420)
                     } else {
                         let watching = library.continueWatching()
 
-                        if let hero = watching.first {
-                            ExploreHero(progress: hero)
-                        } else if let featured = catalog.first {
-                            ExploreHero(item: featured, kind: library.provider)
+                        if !heroItems.isEmpty {
+                            HeroCarousel(items: heroItems)
                         }
 
-                        if watching.count > 1 {
-                            ContinueRow(items: Array(watching.dropFirst()))
+                        if !watching.isEmpty {
+                            ContinueRow(items: watching)
                         }
 
                         ForEach(genreRows) { row in
@@ -47,18 +55,18 @@ struct HomeView: View {
                         }
 
                         if !catalog.isEmpty {
-                            VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 16) {
                                 NoriSectionHeader(
                                     "Alle \(library.provider.kind)",
                                     trailing: "\(catalog.count) Titel"
                                 )
-                                LazyVGrid(columns: grid, alignment: .leading, spacing: 22) {
+                                LazyVGrid(columns: grid, alignment: .leading, spacing: 24) {
                                     ForEach(catalog.prefix(60)) { item in
                                         PosterCell(item: item)
                                     }
                                 }
                             }
-                            .padding(.horizontal, 28)
+                            .padding(.horizontal, NoriLayout.gutter)
                         } else {
                             ContentUnavailableView(
                                 "Nichts geladen",
@@ -69,7 +77,7 @@ struct HomeView: View {
                         }
                     }
                 }
-                .padding(.bottom, 32)
+                .padding(.bottom, 40)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -89,6 +97,30 @@ struct HomeView: View {
         .task(id: rowsKey) {
             genreRows = Self.buildRows(from: catalog)
         }
+    }
+
+    /// Angefangene Titel zuerst, danach mit Katalogtiteln auf sechs auffüllen.
+    private var heroItems: [HeroItem] {
+        var out: [HeroItem] = []
+        var used: Set<String> = []
+        for item in library.continueWatching().prefix(3) {
+            let kind = item.provider ?? providerFromPath(item.episodePath)
+            let genres = catalog.first(where: { $0.slug == item.slug })?.genres ?? []
+            out.append(HeroItem(slug: item.slug, title: item.title, kind: kind, genres: genres, progress: item))
+            used.insert(item.slug)
+        }
+        for item in catalog where !used.contains(item.slug) {
+            out.append(HeroItem(
+                slug: item.slug,
+                title: item.title,
+                kind: library.provider,
+                genres: item.genres,
+                progress: nil
+            ))
+            used.insert(item.slug)
+            if out.count >= 6 { break }
+        }
+        return out
     }
 
     /// Neu gruppieren, wenn sich Quelle oder Katalogumfang ändert. Ein
@@ -127,63 +159,119 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Hero
+enum NoriLayout {
+    static let gutter: CGFloat = 28
+    static let cardWidth: CGFloat = 168
+}
 
-/// Breiter Kopfbereich nach dem Vorbild gängiger Streaming-Startseiten:
-/// Hintergrundbild über die volle Breite, von unten abgedunkelt, darauf Titel,
-/// Metazeile und ein prominenter Abspielknopf.
-struct ExploreHero: View {
-    private let title: String
-    private let slug: String
-    private let kind: CatalogProvider
-    private let progress: WatchProgress?
-    private let subtitle: String
-    private let badge: String
+// MARK: - Hero-Karussell
 
-    @State private var backdrop: URL?
-    @State private var poster: URL?
+struct HeroCarousel: View {
+    let items: [HeroItem]
 
-    init(progress: WatchProgress) {
-        self.title = progress.title
-        self.slug = progress.slug
-        self.kind = progress.provider ?? providerFromPath(progress.episodePath)
-        self.progress = progress
-        let episode = progress.germanTitle.isEmpty ? "" : " · \(progress.germanTitle)"
-        self.subtitle = "Staffel \(progress.season) · Folge \(progress.episode)\(episode)"
-        self.badge = "Weiterschauen"
-    }
-
-    init(item: CatalogItem, kind: CatalogProvider) {
-        self.title = item.title
-        self.slug = item.slug
-        self.kind = kind
-        self.progress = nil
-        self.subtitle = item.genres.prefix(4).joined(separator: " · ")
-        self.badge = "Vorgeschlagen"
-    }
+    @State private var index = 0
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NoriSeriesLink(slug: slug, titleHint: title, provider: kind) {
+        ZStack(alignment: .bottomLeading) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { position, item in
+                if position == index {
+                    HeroSlide(item: item)
+                        .transition(.opacity)
+                }
+            }
+
+            HStack(spacing: 6) {
+                ForEach(items.indices, id: \.self) { position in
+                    Capsule()
+                        .fill(position == index ? NoriTheme.accent : Color.white.opacity(0.35))
+                        .frame(width: position == index ? 26 : 12, height: 4)
+                        .onTapGesture { select(position) }
+                }
+            }
+            .padding(.leading, NoriLayout.gutter)
+            .padding(.bottom, 22)
+        }
+        .frame(height: 460)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .leading) { arrow(-1, symbol: "chevron.left") }
+        .overlay(alignment: .trailing) { arrow(1, symbol: "chevron.right") }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: index)
+        .onHover { hovering = $0 }
+        .task(id: index) {
+            // Selbsttätig weiterblättern, solange der Zeiger nicht darauf liegt.
+            guard items.count > 1, !reduceMotion else { return }
+            try? await Task.sleep(for: .seconds(9))
+            guard !Task.isCancelled, !hovering else { return }
+            index = (index + 1) % items.count
+        }
+    }
+
+    @ViewBuilder
+    private func arrow(_ direction: Int, symbol: String) -> some View {
+        if items.count > 1, hovering {
+            Button {
+                select((index + direction + items.count) % items.count)
+            } label: {
+                Image(systemName: symbol)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(14)
+                    .background(.black.opacity(0.35), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .transition(.opacity)
+        }
+    }
+
+    private func select(_ position: Int) {
+        index = position
+    }
+}
+
+/// Ein Bild über die volle Breite, von unten und links abgedunkelt, mit Titel,
+/// Metazeile, Beschreibung und Abspielknopf.
+struct HeroSlide: View {
+    @Environment(LibraryStore.self) private var library
+    let item: HeroItem
+
+    @State private var details = CoverDetails()
+
+    var body: some View {
+        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
             ZStack(alignment: .bottomLeading) {
                 background
                 LinearGradient(
-                    colors: [.black.opacity(0.05), .black.opacity(0.55), .black.opacity(0.9)],
-                    startPoint: .top,
+                    colors: [.black.opacity(0.92), .black.opacity(0.55), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.75)],
+                    startPoint: .center,
                     endPoint: .bottom
                 )
-                content
+                text
             }
-            .frame(height: 380)
-            .frame(maxWidth: .infinity)
-            .clipped()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
-        .help(title)
-        .task(id: slug) { await loadImages() }
+        .help(item.title)
+        .task(id: item.id) {
+            details = await CoverIndex.shared.detailsLoading(
+                slug: item.slug,
+                title: item.title,
+                kind: item.kind
+            )
+        }
     }
 
     @ViewBuilder
     private var background: some View {
-        if let image = backdrop ?? poster {
+        if let image = details.backdrop ?? details.poster {
             AsyncImage(url: image) { phase in
                 switch phase {
                 case .success(let img):
@@ -201,30 +289,28 @@ struct ExploreHero: View {
         }
     }
 
-    private var content: some View {
+    private var text: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(badge)
-                .font(.caption.weight(.bold))
-                .tracking(1.2)
-                .foregroundStyle(NoriTheme.accent)
-
-            Text(title)
-                .font(.system(size: 40, weight: .bold))
+            Text(item.title)
+                .font(.system(size: 44, weight: .heavy))
                 .foregroundStyle(.white)
                 .lineLimit(2)
-                .shadow(color: .black.opacity(0.5), radius: 8, y: 2)
+                .shadow(color: .black.opacity(0.6), radius: 10, y: 3)
 
-            if !subtitle.isEmpty {
-                Text(subtitle)
+            MetaLine(kind: item.kind, genres: item.genres, stars: details.stars)
+
+            if let overview = details.overview, !overview.isEmpty {
+                Text(overview)
                     .font(.callout)
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(2)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(4)
+                    .frame(maxWidth: 620, alignment: .leading)
             }
 
-            if let progress {
+            if let progress = item.progress {
                 HStack(spacing: 12) {
                     ProgressView(value: watchRatio(progress))
-                        .frame(width: 220)
+                        .frame(width: 200)
                         .tint(NoriTheme.accent)
                     Text("Noch \(formatClock(max(0, progress.durationSec - progress.positionSec)))")
                         .font(.caption.monospacedDigit())
@@ -232,57 +318,199 @@ struct ExploreHero: View {
                 }
             }
 
-            Label(progress == nil ? "Ansehen" : "Fortsetzen", systemImage: "play.fill")
+            HStack(spacing: 10) {
+                Label(
+                    item.progress == nil ? "Jetzt ansehen" : "Folge \(item.progress!.episode) fortsetzen",
+                    systemImage: "play.fill"
+                )
                 .font(.headline)
                 .padding(.horizontal, 22)
-                .padding(.vertical, 11)
-                .background(NoriTheme.accent, in: Capsule())
+                .padding(.vertical, 12)
+                .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .foregroundStyle(NoriTheme.onAccent)
-                .padding(.top, 4)
+
+                BookmarkButton(slug: item.slug, title: item.title, large: true)
+            }
+            .padding(.top, 4)
         }
-        .padding(32)
+        .padding(.horizontal, NoriLayout.gutter)
+        .padding(.bottom, 54)
         .frame(maxWidth: 720, alignment: .leading)
     }
+}
 
-    private func loadImages() async {
-        backdrop = await CoverIndex.shared.backdrop(for: slug)
-        poster = await CoverIndex.shared.url(for: slug)
-        if backdrop == nil {
-            // Noch kein Treffer im Index: einmal nachschlagen, damit der Hero
-            // nicht dauerhaft grau bleibt.
-            _ = await CoverIndex.shared.lookup(slug: slug, title: title, kind: kind)
-            backdrop = await CoverIndex.shared.backdrop(for: slug)
-            poster = await CoverIndex.shared.url(for: slug)
+/// „16+ • Untertitel | Synchro • Drama, Thriller" plus Sternebewertung.
+struct MetaLine: View {
+    var kind: CatalogProvider
+    var genres: [String]
+    var stars: Double?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let stars {
+                HStack(spacing: 2) {
+                    ForEach(0 ..< 5, id: \.self) { i in
+                        Image(systemName: Double(i) + 0.5 < stars ? "star.fill" : "star")
+                            .font(.caption2)
+                    }
+                }
+                .foregroundStyle(NoriTheme.accent)
+                Text(String(format: "%.1f", stars))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("•").foregroundStyle(.white.opacity(0.4))
+            }
+            Text(kind.label)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+            if !genres.isEmpty {
+                Text("•").foregroundStyle(.white.opacity(0.4))
+                Text(genres.prefix(3).joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
         }
     }
 }
 
-// MARK: - Zeilen und Kacheln
-
-struct PosterCell: View {
-    let item: CatalogItem
-    var width: CGFloat?
+struct BookmarkButton: View {
+    @Environment(LibraryStore.self) private var library
+    let slug: String
+    let title: String
+    var large = false
 
     var body: some View {
-        NoriSeriesLink(slug: item.slug, titleHint: item.title) {
-            VStack(alignment: .leading, spacing: 8) {
-                PosterTile(title: item.title, slug: item.slug)
-                Text(item.title)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                if !item.genres.isEmpty {
-                    Text(item.genres.prefix(2).joined(separator: " · "))
+        Button {
+            library.toggleFavorite(slug, title: title)
+        } label: {
+            Image(systemName: library.isFavorite(slug) ? "bookmark.fill" : "bookmark")
+                .font(large ? .body.weight(.semibold) : .caption)
+                .foregroundStyle(library.isFavorite(slug) ? NoriTheme.accent : .white)
+                .padding(large ? 12 : 7)
+                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(library.isFavorite(slug) ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen")
+    }
+}
+
+// MARK: - Kacheln mit Hover-Infofeld
+
+struct PosterCell: View {
+    @Environment(LibraryStore.self) private var library
+    let item: CatalogItem
+    var width: CGFloat = NoriLayout.cardWidth
+
+    @State private var hovering = false
+    @State private var details = CoverDetails()
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            NoriSeriesLink(slug: item.slug, titleHint: item.title) {
+                VStack(alignment: .leading, spacing: 8) {
+                    PosterTile(title: item.title, slug: item.slug)
+                        .overlay {
+                            if hovering {
+                                HoverInfo(
+                                    title: item.title,
+                                    genres: item.genres,
+                                    details: details
+                                )
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                            }
+                        }
+                    Text(item.title)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(2, reservesSpace: true)
+                        .multilineTextAlignment(.leading)
+                    Text(item.genres.prefix(2).joined(separator: " | "))
                         .font(.caption2)
                         .foregroundStyle(NoriTheme.muted)
                         .lineLimit(1)
                 }
+                .frame(width: width, alignment: .leading)
             }
-            .frame(width: width, alignment: .leading)
+            .help(item.title)
+
+            if hovering {
+                BookmarkButton(slug: item.slug, title: item.title)
+                    .padding(8)
+            }
         }
-        .help(item.title)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .onHover { inside in
+            hovering = inside
+            if inside, details.overview == nil {
+                Task {
+                    details = await CoverIndex.shared.detailsLoading(
+                        slug: item.slug,
+                        title: item.title,
+                        kind: library.provider
+                    )
+                }
+            }
+        }
     }
 }
+
+/// Legt sich beim Überfahren über das Poster und zeigt, was wir über den Titel
+/// wissen — wie die aufklappende Kachel auf gängigen Streaming-Startseiten.
+struct HoverInfo: View {
+    let title: String
+    let genres: [String]
+    let details: CoverDetails
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            if let stars = details.stars {
+                HStack(spacing: 3) {
+                    Image(systemName: "star.fill")
+                        .font(.caption2)
+                        .foregroundStyle(NoriTheme.accent)
+                    Text(String(format: "%.1f", stars))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            if !genres.isEmpty {
+                Text(genres.prefix(3).joined(separator: " · "))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+
+            if let overview = details.overview, !overview.isEmpty {
+                Text(overview)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(7)
+            } else {
+                Text("Keine Beschreibung hinterlegt.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Spacer(minLength: 0)
+
+            Label("Öffnen", systemImage: "play.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NoriTheme.accent)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.black.opacity(0.86))
+    }
+}
+
+// MARK: - Zeilen
 
 struct PosterRow: View {
     let title: String
@@ -291,14 +519,14 @@ struct PosterRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             NoriSectionHeader(title)
-                .padding(.horizontal, 28)
+                .padding(.horizontal, NoriLayout.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 18) {
                     ForEach(items) { item in
-                        PosterCell(item: item, width: 152)
+                        PosterCell(item: item)
                     }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, NoriLayout.gutter)
                 .padding(.vertical, 6)
             }
         }
@@ -310,54 +538,108 @@ struct ContinueRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            NoriSectionHeader("Weiterschauen")
-                .padding(.horizontal, 28)
+            NoriSectionHeader("Schau weiter")
+                .padding(.horizontal, NoriLayout.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 18) {
                     ForEach(items) { item in
-                        NoriSeriesLink(
-                            slug: item.slug,
-                            titleHint: item.title,
-                            provider: item.provider ?? providerFromPath(item.episodePath)
-                        ) {
-                            ContinueCard(item: item)
-                        }
-                        .help(item.title)
+                        ContinueCard(item: item)
                     }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, NoriLayout.gutter)
                 .padding(.vertical, 6)
             }
         }
     }
 }
 
+/// Querformat wie bei Streaming-Diensten üblich: Standbild, Abspielsymbol,
+/// Fortschrittsbalken und Restzeit. Als Bild dient das Breitbild aus TMDB —
+/// die Quellen liefern keine Standbilder je Folge.
 struct ContinueCard: View {
     let item: WatchProgress
 
+    @State private var details = CoverDetails()
+    @State private var hovering = false
+
+    private var kind: CatalogProvider { item.provider ?? providerFromPath(item.episodePath) }
+    private var remaining: Double { max(0, item.durationSec - item.positionSec) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PosterTile(
-                title: item.title,
-                slug: item.slug,
-                kind: item.provider ?? providerFromPath(item.episodePath)
-            )
-            .overlay(alignment: .bottom) {
-                ProgressView(value: watchRatio(item))
-                    .progressViewStyle(.linear)
-                    .tint(NoriTheme.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
+        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: kind) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    still
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
+                        .shadow(color: .black.opacity(0.5), radius: 6)
+                }
+                .frame(width: 284, height: 160)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(alignment: .bottomTrailing) {
+                    if remaining > 60, item.durationSec > 0 {
+                        Text("\(Int(remaining / 60)) min verbleibend")
+                            .font(.caption2.weight(.medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(.white.opacity(0.25))
+                            Rectangle()
+                                .fill(NoriTheme.accent)
+                                .frame(width: geo.size.width * watchRatio(item))
+                        }
+                    }
+                    .frame(height: 4)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(hovering ? NoriTheme.accent.opacity(0.8) : .clear, lineWidth: 2)
+                }
+
+                Text(item.title.uppercased())
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .lineLimit(1)
+                Text("S\(item.season) E\(item.episode)\(item.germanTitle.isEmpty ? "" : " – \(item.germanTitle)")")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
             }
-            Text(item.title)
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-            Text("S\(item.season) · F\(item.episode) · \(formatClock(item.positionSec))")
-                .font(.caption2)
-                .foregroundStyle(NoriTheme.muted)
-                .lineLimit(1)
+            .frame(width: 284, alignment: .leading)
         }
-        .frame(width: 152)
+        .help(item.title)
+        .onHover { hovering = $0 }
+        .task(id: item.id) {
+            details = await CoverIndex.shared.detailsLoading(
+                slug: item.slug,
+                title: item.title,
+                kind: kind
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var still: some View {
+        if let image = details.backdrop ?? details.poster {
+            AsyncImage(url: image) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    NoriTheme.elevated
+                }
+            }
+        } else {
+            NoriTheme.elevated
+        }
     }
 }
 
