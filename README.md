@@ -1,66 +1,191 @@
 # Nori
 
-Anime- und Serien-App. Katalog, Suche, Merkliste, Fortschritt, Player.
+Nori ist eine native Anime- und Serien-App mit Katalog, Suche, Merkliste, Verlauf, Wiedergabefortschritt, Resume, Kalender und integriertem Player.
 
-Quellen: [AniWorld](https://aniworld.to) (Anime) und [Serienstream](https://serienstream.to) (Serien). Hoster bevorzugt VOE, dann Vidmoly / Filemoon.
+Unterstützte Quellen:
 
-**Privat.** Windows-Build liegt unter [Releases](https://github.com/Jerico3241/nori/releases).
+- **AniWorld** für Anime
+- **Serienstream** für Serien
 
-Aktuell: **1.8.0** (Windows) · **1.9.0** (iOS / macOS) · native Quellen im Ordner `native/`.
+Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt während der Wiedergabe den Wechsel von Hoster und Sprache.
 
-## Inhalt
+> **Privates Projekt.** Nori ist nicht mit AniWorld oder Serienstream verbunden.
 
-| Ordner | Was |
+## Aktueller Stand
+
+| Plattform | Version | Status |
+| --- | --- | --- |
+| iOS / iPadOS | **1.9.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.9.0** | Native SwiftUI-App, weitgehend funktionsgleich mit iOS |
+| Windows | **1.8.0** | Electron / Node Portable Build |
+
+Die nativen Apple-Versionen liegen unter `native/`.
+
+## Funktionen
+
+### Katalog & Navigation
+
+- Anime-Katalog über AniWorld
+- Serien-Katalog über Serienstream
+- Suche
+- Detailseiten für Serien und Anime
+- Staffeln, Episoden und Filme
+- Umschalter zwischen Anime und Serien
+- Cover und Metadaten
+
+### Wiedergabe
+
+- Nativer Player über AVPlayer / AVKit
+- HLS- und MP4-Wiedergabe
+- Automatische Hoster-Auswahl
+- Manueller Hoster-Wechsel während der Wiedergabe
+- Sprachwechsel während der Wiedergabe
+- GerDub, GerSub und EN
+- Wiedergabegeschwindigkeit von 0,75× bis 2×
+- Picture-in-Picture, soweit vom System und Stream unterstützt
+- Automatischer Start der nächsten Folge
+
+### Fortschritt & Bibliothek
+
+- Merkliste
+- Verlauf / zuletzt angesehen
+- Automatisches Speichern des Wiedergabefortschritts
+- **Weiterschauen / Resume** an der letzten Position
+- Folgen werden ab ca. 90 % Wiedergabe als abgeschlossen behandelt
+- Fortschritt wird nach Quelle und Episode getrennt gespeichert
+- Migration älterer lokaler Bibliotheksdaten auf das aktuelle Datenmodell
+
+Aktuelles Library-Schema: **v3**.
+
+### Kalender
+
+- Anime-Kalender
+- Serien-Kalender, soweit von der jeweiligen Quelle unterstützt
+- Gruppierung nach Tagen
+- Anzeige von Staffel, Folge und verfügbaren Sprachen
+- Pull-to-Refresh / manuelles Aktualisieren
+
+### Synchronisation
+
+Nori enthält inzwischen eine optionale **iCloud-Key-Value-Synchronisation** für:
+
+- Merkliste
+- Verlauf
+- Wiedergabefortschritt
+- ausgewählte Quelle
+- Sprache
+- bevorzugten Hoster
+- Resume- und Autoplay-Einstellungen
+- Wiedergabegeschwindigkeit
+
+Damit ist die gemeinsame Datenbasis für iPhone/iPad und Mac im Code vorhanden.
+
+**Wichtig:** Für echte iCloud-Synchronisation müssen in Xcode für die verwendeten Targets noch die passenden iCloud-/Key-Value-Store-Capabilities und Signing-Einstellungen aktiviert werden. Ohne diese Entitlements bleibt die lokale Speicherung weiterhin funktionsfähig, die Geräte-Synchronisation ist aber nicht garantiert.
+
+## Projektstruktur
+
+| Ordner | Inhalt |
 | --- | --- |
-| `native/Nori-iOS/` | SwiftUI-App (Xcode). Native Streams über AVPlayer. |
-| `native/Nori-macOS/` | Native macOS-App 1.9.0 (SwiftUI / AVKit, Xcode). |
-| `desktop/` | Electron-Hülle für Windows (startet den Node-Server, eigenes Fenster). |
-| `server/` | Nitro-Build der Web-App (Node). Wird von der Windows-App mitgeliefert. |
+| `native/Nori-iOS/` | Native iOS/iPadOS-App mit SwiftUI und AVPlayer |
+| `native/Nori-macOS/` | Native macOS-App mit SwiftUI und AVKit |
+| `desktop/` | Electron-Hülle für Windows |
+| `server/` | Gebauter Nitro/Node-Webserver für die Windows-Version |
 
-Gemeinsames Datenmodell: [`native/Nori-iOS/contract.json`](native/Nori-iOS/contract.json).
+Gemeinsames Datenmodell / Contract:
 
-## Windows
+- `native/Nori-iOS/contract.json`
+- `native/Nori-macOS/contract.json`
 
-Fertiges Paket: **Releases → `Nori-Portable-x64.zip`**.
+## iPhone / iPad
 
-1. ZIP entpacken.
-2. Entweder `Installieren.cmd` (legt Nori unter `%LOCALAPPDATA%\Nori` an) oder `Nori.exe` direkt starten (portable).
-3. Merkliste und Verlauf liegen im Ordner `Nori-Daten` neben der EXE.
+Voraussetzungen:
 
-SmartScreen: *Weitere Informationen → Trotzdem ausführen*.
+- macOS mit Xcode
+- iOS/iPadOS 17 oder neuer
 
-## iPhone
+### Mit Xcode
 
-1. `native/Nori-iOS` auf den Mac legen.
-2. `IPA-bauen.command` doppelklicken **oder** `Nori.xcodeproj` in Xcode öffnen.
-3. Signing: eigene Apple-ID. iPhone per Kabel, Entwicklermodus, Run.
-4. Unsignierte IPA mit Feather / ESign / SideStore signieren.
+1. `native/Nori-iOS/Nori.xcodeproj` öffnen.
+2. SwiftSoup auflösen lassen.
+3. Unter **Signing & Capabilities** eine eigene Apple-ID / ein Development Team auswählen.
+4. iPhone oder iPad als Zielgerät auswählen.
+5. Mit `⌘R` bauen und starten.
 
-Beim ersten Xcode-Lauf wird SwiftSoup geholt.
+Alternativ kann `native/Nori-iOS/IPA-bauen.command` verwendet werden.
+
+Für iCloud-Sync müssen zusätzlich die entsprechenden iCloud-/Key-Value-Store-Capabilities für den iOS-Target eingerichtet werden.
 
 ## macOS
 
-Voraussetzungen: macOS 14 oder neuer und Xcode 15.4 oder neuer.
+Voraussetzungen:
 
-1. `native/Nori-macOS/NoriMac.xcodeproj` in Xcode öffnen.
-2. SwiftSoup auflösen lassen, Scheme `Nori` und Ziel `My Mac` auswählen.
-3. Mit `⌘R` starten. Alternativ `native/Nori-macOS/Mac-App-bauen.command` ausführen.
+- macOS 14 oder neuer
+- Xcode 15.4 oder neuer
 
-Das Build-Skript erzeugt `native/Nori-macOS/DerivedData/Build/Products/Debug/Nori.app`.
-Weitere Details und Funktionen: [macOS-README](native/Nori-macOS/README.md). Der macOS-Datenvertrag liegt unter [native/Nori-macOS/contract.json](native/Nori-macOS/contract.json).
+### Mit Xcode
 
-## Web-Server lokal
+1. `native/Nori-macOS/NoriMac.xcodeproj` öffnen.
+2. SwiftSoup auflösen lassen.
+3. Scheme `Nori` auswählen.
+4. Ziel `My Mac` auswählen.
+5. Mit `⌘R` starten.
 
-Der Ordner `server/` ist der gebaute Node-Server (kein TypeScript-Quellbaum). Start:
+Alternativ:
+
+```text
+native/Nori-macOS/Mac-App-bauen.command
+```
+
+Das lokale Build-Skript erzeugt die App normalerweise unter:
+
+```text
+native/Nori-macOS/DerivedData/Build/Products/Debug/Nori.app
+```
+
+Für iCloud-Sync müssen auch beim macOS-Target die passenden Capabilities und Signing-Einstellungen aktiviert werden.
+
+## Automatisches macOS-Quellpaket
+
+Unter `.github/workflows/package-macos-source.yml` befindet sich ein GitHub-Actions-Workflow.
+
+Bei Änderungen an der macOS-App bzw. am Workflow wird automatisch ein Artefakt namens **`Nori-macOS`** erzeugt. Dieses enthält ein aktuelles `Nori-macOS.zip` mit dem macOS-Xcode-Projekt und dem zugehörigen Quellcode.
+
+Das Artefakt kann über den jeweiligen erfolgreichen GitHub-Actions-Lauf heruntergeladen werden.
+
+## Windows
+
+Der Windows-Stand ist aktuell **1.8.0**.
+
+Ein fertiges Portable-Paket liegt unter den GitHub-Releases als `Nori-Portable-x64.zip`, sofern der entsprechende Release vorhanden ist.
+
+Nach dem Entpacken kann entweder die portable Anwendung direkt gestartet oder das enthaltene Installationsskript verwendet werden.
+
+Lokale Daten werden bei der Windows-Version separat gespeichert und sind derzeit nicht Teil der nativen Apple-iCloud-Synchronisation.
+
+## Lokaler Web-Server
+
+Der Ordner `server/` enthält den gebauten Node-Server. Start:
 
 ```bash
 node server/server/index.mjs
 ```
 
-Die Electron-Hülle erwartet denselben Server unter `resources/nori-server/` (packaged) bzw. `.output/server/` (dev).
+Die Electron-Hülle erwartet denselben Server packaged unter `resources/nori-server/` beziehungsweise im Entwicklungsstand unter `.output/server/`.
 
-## Hinweis zum Quellcode
+## Technische Hinweise
 
-Die iOS-App, die macOS-App und die Windows-Hülle liegen als lesbarer Quellcode hier. Die Web-Oberfläche (TanStack / React) ist als Nitro-Build unter `server/` enthalten — so läuft Windows 1.8.0. Der TypeScript-Quellbaum der Web-App ist in diesem Stand nicht separat ausgecheckt.
+- iOS und macOS teilen große Teile der Modelle, Netzwerklogik, Bibliotheksverwaltung und Oberfläche.
+- Plattformspezifisch bleiben unter anderem Player-Integration, App-Lifecycle, Xcode-Projekte und Info.plist-Konfiguration.
+- AniWorld-Weiterleitungen (`/redirect/...`) und Serienstream-Weiterleitungen (`/r?...`) werden getrennt behandelt.
+- Der Hoster-Resolver akzeptiert nur sichere HTTPS-Ziele und blockiert lokale/private Netzwerkadressen.
+- Hoster können ihre Seiten oder Schutzmechanismen jederzeit ändern. Dadurch kann die Stream-Auflösung trotz unverändertem Nori-Code zeitweise ausfallen.
 
-In der iOS-Hoster-Auflösung ist `/redirect/…` (AniWorld) von `/r?t=…` (Serienstream) getrennt, damit Anime-Folgen nicht fälschlich an Serienstream gehen.
+## Noch offen
+
+Für einen vollständig verifizierten Release-Stand stehen insbesondere noch an:
+
+- iCloud-Capabilities und Signing für iOS und macOS final konfigurieren
+- Sync auf echten Geräten testen
+- iOS- und macOS-Builds in Xcode vollständig verifizieren
+- Hoster unter realen Bedingungen testen
+- anschließend einen sauber versionierten nächsten Release vorbereiten
