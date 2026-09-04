@@ -1,0 +1,1 @@
+import{o as e}from"./useStore-DCim0WvV.js";var t=e();function n(){return(0,t.jsx)(`div`,{className:`aspect-poster animate-pulse rounded-xl bg-elevated`})}function r(){return(0,t.jsx)(`div`,{className:`space-y-3`,children:Array.from({length:5}).map((e,n)=>(0,t.jsx)(`div`,{className:`h-20 animate-pulse rounded-xl bg-surface`},n))})}export{n,r as t};

@@ -1,0 +1,9 @@
+{
+  "name": "nori",
+  "version": "1.8.0",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.mjs",
+  "productName": "Nori",
+  "description": "Nori – Anime- und Serien-App"
+}

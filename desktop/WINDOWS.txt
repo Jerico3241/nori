@@ -1,0 +1,18 @@
+Nori für Windows
+================
+
+Variante A — installieren
+  1. ZIP entpacken
+  2. Installieren.cmd doppelklicken
+  3. Nori liegt dann unter %LOCALAPPDATA%\Nori
+     Desktop- und Startmenü-Verknüpfung werden angelegt.
+
+Variante B — portable
+  Nori.exe im entpackten Ordner starten. Nichts wird installiert.
+
+Daten (Merkliste, Verlauf) liegen im Ordner Nori-Daten neben der EXE.
+
+Falls Windows SmartScreen kommt:
+  Weitere Informationen → Trotzdem ausführen.
+
+Paket 1.8.0 · 2026-09-04

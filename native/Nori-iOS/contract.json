@@ -1,0 +1,54 @@
+{
+  "name": "nori",
+  "version": "1.4.0",
+  "note": "Gemeinsamer Vertrag Web (src/lib) und SwiftUI (native/Nori-iOS). Feldnamen 1:1.",
+  "providers": {
+    "aniworld": {
+      "origin": "https://aniworld.to",
+      "kind": "Anime",
+      "paths": {
+        "catalog": "/animes",
+        "calendar": "/animekalender",
+        "series": "/anime/stream/{slug}",
+        "season": "/anime/stream/{slug}/staffel-{id}",
+        "films": "/anime/stream/{slug}/filme",
+        "episode": "/anime/stream/{slug}/staffel-{season}/episode-{n}",
+        "film": "/anime/stream/{slug}/filme/film-{n}",
+        "redirect": "/redirect/{id}"
+      }
+    },
+    "serienstream": {
+      "origin": "https://serienstream.to",
+      "kind": "Serien",
+      "paths": {
+        "catalog": "/serien",
+        "calendar": "/api/calendar",
+        "series": "/serie/{slug}",
+        "season": "/serie/{slug}/staffel-{id}",
+        "films": "/serie/{slug}/filme",
+        "episode": "/serie/{slug}/staffel-{season}/episode-{n}",
+        "film": "/serie/{slug}/filme/film-{n}",
+        "redirect": "/r?t={token}"
+      }
+    }
+  },
+  "models": {
+    "CatalogItem": ["slug", "title", "alts", "genres"],
+    "SeasonRef": ["id", "label"],
+    "Episode": ["number", "germanTitle", "englishTitle", "path", "hosters", "languages"],
+    "SeriesDetail": ["slug", "title", "alts", "description", "coverPath", "yearStart", "yearEnd", "fsk", "imdb", "genres", "seasons", "activeSeason", "episodes"],
+    "HosterOption": ["name", "lang", "langKey", "redirectPath"],
+    "WatchInfo": ["path", "title", "germanTitle", "englishTitle", "hosters"],
+    "PlaySource": ["kind", "url", "hoster", "lang"],
+    "WatchProgress": ["slug", "title", "season", "episode", "episodePath", "germanTitle", "englishTitle", "positionSec", "durationSec", "updatedAt", "lang", "completed"],
+    "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel"]
+  },
+  "rules": {
+    "complete": "completed == true OR (durationSec >= 20 AND positionSec >= durationSec * 0.9)",
+    "resume": "if complete then 0; if positionSec < 8 then 0; else positionSec",
+    "langOrder": ["DE", "GerSub", "EN"],
+    "hosterOrder": ["voe", "vidmoly", "vidoza", "lulustream", "filemoon", "doodstream"],
+    "nativePlay": "AVPlayer plays url directly. No HLS-Proxy, no CORS.",
+    "provider": "CatalogProvider aniworld|serienstream. Native LibraryStore.provider, Web nori-provider."
+  }
+}

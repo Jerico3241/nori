@@ -1,0 +1,209 @@
+import Foundation
+
+enum CatalogProvider: String, Codable, CaseIterable, Identifiable {
+    case aniworld
+    case serienstream
+
+    var id: String { rawValue }
+    var label: String { self == .aniworld ? "AniWorld" : "Serienstream" }
+    var kind: String { self == .aniworld ? "Anime" : "Serien" }
+    var origin: String { self == .aniworld ? "https://aniworld.to" : "https://serienstream.to" }
+    var catalogPath: String { self == .aniworld ? "/animes" : "/serien?by=genre" }
+    var calendarPath: String { self == .aniworld ? "/animekalender" : "/api/calendar" }
+    var streamPrefix: String { self == .aniworld ? "/anime/stream" : "/serie" }
+
+    func seriesPath(slug: String, season: String? = nil) -> String {
+        let base = "\(streamPrefix)/\(slug)"
+        guard let season, !season.isEmpty else { return base }
+        if season == "filme" { return "\(base)/filme" }
+        return "\(base)/staffel-\(season)"
+    }
+
+    func episodePath(slug: String, season: String, episode: Int) -> String {
+        if season == "filme" { return "\(streamPrefix)/\(slug)/filme/film-\(episode)" }
+        return "\(streamPrefix)/\(slug)/staffel-\(season.isEmpty ? "1" : season)/episode-\(episode)"
+    }
+}
+
+struct CatalogItem: Codable, Identifiable, Hashable {
+    var slug: String
+    var title: String
+    var alts: [String]
+    var genres: [String]
+    var id: String { slug }
+}
+
+struct CatalogResult: Codable {
+    var items: [CatalogItem]
+    var source: String
+    var fetchedAt: Double
+}
+
+struct SeasonRef: Codable, Identifiable, Hashable {
+    var id: String
+    var label: String
+}
+
+struct Episode: Codable, Identifiable, Hashable {
+    var number: Int
+    var germanTitle: String
+    var englishTitle: String
+    var path: String
+    var hosters: [String]
+    var languages: [String]
+    var id: String { path.isEmpty ? "\(number)" : path }
+}
+
+struct SeriesDetail: Codable, Hashable {
+    var slug: String
+    var title: String
+    var alts: [String]
+    var description: String
+    var coverPath: String?
+    var yearStart: String?
+    var yearEnd: String?
+    var fsk: String?
+    var imdb: String?
+    var genres: [String]
+    var seasons: [SeasonRef]
+    var activeSeason: String
+    var episodes: [Episode]
+}
+
+struct HosterOption: Codable, Hashable {
+    var name: String
+    var lang: String
+    var langKey: String
+    var redirectPath: String
+}
+
+struct WatchInfo: Codable {
+    var path: String
+    var title: String
+    var germanTitle: String
+    var englishTitle: String
+    var hosters: [HosterOption]
+}
+
+enum PlayKind: String, Codable {
+    case hls
+    case mp4
+}
+
+struct PlaySource: Codable {
+    var kind: PlayKind
+    var url: String
+    var hoster: String
+    var lang: String
+}
+
+struct WatchProgress: Codable, Identifiable, Hashable {
+    var slug: String
+    var title: String
+    var season: String
+    var episode: Int
+    var episodePath: String
+    var germanTitle: String
+    var englishTitle: String
+    var positionSec: Double
+    var durationSec: Double
+    var updatedAt: Double
+    var lang: String?
+    var completed: Bool?
+    var id: String { episodePath }
+}
+
+struct RecentItem: Codable, Hashable {
+    var slug: String
+    var title: String
+    var viewedAt: Double
+    var provider: CatalogProvider?
+}
+
+struct AiringEntry: Codable, Identifiable, Hashable {
+    var airingAt: Double
+    var episode: Int
+    var season: String
+    var title: String
+    var english: String?
+    var slug: String
+    var languages: [String]
+    var dayKey: String
+    var dayLabel: String
+    var id: String { "\(slug)|\(season)|\(episode)|\(dayKey)" }
+}
+
+struct CalendarPayload: Codable {
+    var upcoming: [AiringEntry]
+    var recent: [AiringEntry]
+    var fetchedAt: Double
+}
+
+enum NoriOrigin {
+    static let aniworld = "https://aniworld.to"
+    static let serienstream = "https://serienstream.to"
+    static let ua =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+}
+
+func guessEpisodePath(slug: String, season: String, episode: Int, provider: CatalogProvider = .aniworld) -> String {
+    provider.episodePath(slug: slug, season: season, episode: episode)
+}
+
+func providerFromPath(_ path: String) -> CatalogProvider {
+    path.contains("/serie/") ? .serienstream : .aniworld
+}
+
+func normalizeEpisodePath(_ raw: String) -> String {
+    var path = raw
+    if path.hasPrefix("http"), let url = URL(string: path) {
+        path = url.path
+    }
+    while path.hasSuffix("/") { path.removeLast() }
+    return path
+}
+
+func progressKey(path: String, lang: String?) -> String {
+    if let lang, !lang.isEmpty { return "\(path)::\(lang)" }
+    return path
+}
+
+func isEpisodeComplete(_ item: WatchProgress?) -> Bool {
+    guard let item else { return false }
+    if item.completed == true { return true }
+    return item.durationSec >= 20 && item.positionSec >= item.durationSec * 0.9
+}
+
+func watchRatio(_ item: WatchProgress?) -> Double {
+    guard let item else { return 0 }
+    if isEpisodeComplete(item) { return 1 }
+    if item.durationSec < 8 { return 0 }
+    return min(1, max(0, item.positionSec / item.durationSec))
+}
+
+func resumePosition(_ item: WatchProgress?) -> Double {
+    guard let item, !isEpisodeComplete(item) else { return 0 }
+    if item.positionSec < 8 { return 0 }
+    return item.positionSec
+}
+
+func formatClock(_ sec: Double) -> String {
+    let s = max(0, Int(sec.rounded(.down)))
+    let h = s / 3600
+    let m = (s % 3600) / 60
+    let r = s % 60
+    if h > 0 { return String(format: "%d:%02d:%02d", h, m, r) }
+    return String(format: "%d:%02d", m, r)
+}
+
+func berlinDate(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0) -> Date {
+    var parts = DateComponents()
+    parts.calendar = Calendar(identifier: .gregorian)
+    parts.timeZone = TimeZone(identifier: "Europe/Berlin")
+    parts.year = year
+    parts.month = month
+    parts.day = day
+    parts.hour = hour
+    parts.minute = minute
+    return parts.date ?? Date()
+}
