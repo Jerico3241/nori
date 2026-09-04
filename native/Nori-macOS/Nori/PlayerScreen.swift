@@ -51,8 +51,6 @@ struct PlayerScreen: View {
                 autoplayCard(seconds: seconds, next: next)
             }
         }
-        .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
         .task { await startPlayback(resumeAt: currentResumeAt) }
         .onDisappear { teardown(saveCurrent: true) }
     }
