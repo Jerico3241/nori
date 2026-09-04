@@ -105,9 +105,8 @@ struct SeriesView: View {
             .foregroundStyle(NoriTheme.fg)
         }
         .navigationTitle(detail?.title ?? titleHint)
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     library.toggleFavorite(slug, title: detail?.title ?? titleHint)
                 } label: {
