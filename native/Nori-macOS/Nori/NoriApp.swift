@@ -145,7 +145,6 @@ extension FocusedValues {
 
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
-    @Environment(\.openSettings) private var openSettings
 
     @State private var section: NoriSection = .home
     @State private var catalog: [CatalogItem] = []
@@ -196,9 +195,7 @@ struct RootView: View {
                         .font(.caption2)
                         .foregroundStyle(NoriTheme.muted)
                     Spacer()
-                    Button {
-                        openSettings()
-                    } label: {
+                    SettingsLink {
                         Image(systemName: "gearshape")
                     }
                     .buttonStyle(.borderless)
