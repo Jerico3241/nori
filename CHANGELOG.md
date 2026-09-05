@@ -4,8 +4,30 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.0**, iOS/iPadOS **1.9.5**,
+unterschiedlich schnell bewegen: macOS **1.11.1**, iOS/iPadOS **1.9.6**,
 Windows **1.8.0**.
+
+## [macOS 1.11.1] · [iOS 1.9.6] – 2026-09-05
+
+### Behoben
+
+- **Die Kacheln blieben fast alle leer.** Nicht die Adresse war falsch,
+  sondern die Anfrage: `AsyncImage` schickt weder User-Agent noch Referer,
+  und beide Quellen beantworten eine Bildanfrage ohne diese Kopfzeilen
+  anders als dem Browser. Genau deshalb schickt der Player sie längst mit
+  und baut `CoverToneSampler` seine Anfrage selbst — nur die Kacheln hingen
+  noch an `AsyncImage`. Cover werden jetzt über einen eigenen Lader geholt,
+  mit denselben Kopfzeilen wie jeder andere Abruf, samt Zwischenspeicher
+  und gemerkter Fehlschläge.
+- Für Serienstream wird zusätzlich `s.to` probiert — die Seiten nennen ihre
+  Bilder dort selbst, erreichbar sind sie unter beiden Namen. Eine einzige
+  geratene Adresse hieß: trifft sie nicht, bleibt die Kachel leer.
+- **Die iOS-App blieb nach der Installation als Platzhalter auf dem
+  Home-Bildschirm stehen** und sah aus, als lade sie endlos. In der
+  Info.plist fehlte `CFBundleIconName`; Xcode trägt den Schlüssel nur bei
+  generierter Info.plist nach, und beide Targets pflegen sie von Hand. Ohne
+  ihn findet iOS kein App-Icon. Auf macOS zeigte dieselbe Lücke das graue
+  Standardsymbol in Dock und Finder.
 
 ## [macOS 1.11.0] – 2026-09-05
 

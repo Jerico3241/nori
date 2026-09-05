@@ -475,6 +475,44 @@ def check_app_icons() -> None:
                 )
 
 
+def check_icon_declared() -> None:
+    """Eine handgepflegte Info.plist muss ihren Iconsatz selbst nennen.
+
+    `CFBundleIconName` verweist auf den Iconsatz im Assetkatalog. Xcode trägt
+    den Schlüssel nur bei `GENERATE_INFOPLIST_FILE = YES` nach — beide Targets
+    stehen hier auf `NO`. Fehlt er, findet iOS kein Icon: die installierte App
+    bleibt als Platzhalterkachel auf dem Home-Bildschirm stehen und sieht aus,
+    als lade sie endlos. Auf macOS zeigen Dock und Finder das graue
+    Standardsymbol.
+    """
+    targets = [
+        ("iOS", IOS, ROOT / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj"),
+        ("macOS", MAC, ROOT / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj"),
+    ]
+    for label, folder, pbx in targets:
+        plist = folder / "Info.plist"
+        iconset = folder / "Assets.xcassets/AppIcon.appiconset"
+        if not plist.exists() or not iconset.is_dir() or not pbx.exists():
+            continue
+
+        # Bei generierter Info.plist erledigt Xcode das selbst.
+        generated = set(re.findall(r"GENERATE_INFOPLIST_FILE\s*=\s*(\w+)", pbx.read_text()))
+        if generated and generated != {"NO"}:
+            continue
+
+        text = plist.read_text()
+        if "CFBundleIconName" in text:
+            continue
+        add(
+            "ERROR",
+            f"{label}/Info.plist",
+            "CFBundleIconName fehlt, obwohl GENERATE_INFOPLIST_FILE auf NO steht "
+            "und ein AppIcon.appiconset vorliegt. Ohne den Schlüssel bleibt das "
+            "Icon leer — auf iOS hängt die App als Platzhalter auf dem "
+            "Home-Bildschirm.",
+        )
+
+
 def check_deployment_targets() -> None:
     """Die Regeln oben sind auf macOS 14 / iOS 17 geeicht."""
     expectations = [
@@ -511,6 +549,7 @@ def main() -> int:
     check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()
     check_app_icons()
+    check_icon_declared()
     check_deployment_targets()
 
     errors = [p for p in problems if p[0] == "ERROR"]

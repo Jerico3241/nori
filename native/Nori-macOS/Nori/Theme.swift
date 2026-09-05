@@ -168,6 +168,40 @@ struct NoriPressStyle: ButtonStyle {
     }
 }
 
+/// Ein Cover, geladen über `CoverImageLoader` statt über `AsyncImage`.
+///
+/// `AsyncImage` lässt sich keine Kopfzeilen mitgeben. Beide Quellen brauchen
+/// aber User-Agent und Referer, sonst antworten sie auf eine Bildanfrage
+/// anders als dem Browser. Deshalb dieser kleine Umweg — sichtbar ist er
+/// nicht, das Verhalten ist dasselbe: solange kein Bild da ist, steht der
+/// Rückfall (in aller Regel der Buchstabe).
+struct NoriCoverImage<Fallback: View>: View {
+    let candidates: [URL]
+    let referer: String
+    @ViewBuilder let fallback: () -> Fallback
+
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                fallback()
+            }
+        }
+        // Über die erste Adresse geschlüsselt: ändert sich das Cover einer
+        // Kachel (manuelle Auswahl, TMDB-Treffer trifft ein), läuft die
+        // Aufgabe neu.
+        .task(id: candidates.first) {
+            image = nil
+            guard !candidates.isEmpty else { return }
+            guard let data = await CoverImageLoader.shared.data(for: candidates, referer: referer) else { return }
+            image = NSImage(data: data)
+        }
+    }
+}
+
 struct PosterTile: View {
     let title: String
     let slug: String
@@ -187,12 +221,17 @@ struct PosterTile: View {
     /// trägt kein Bild, und ohne TMDB-Treffer blieb hier bisher nur der
     /// Buchstabe. Trifft die Ableitung nicht, antwortet die Quelle mit 404 und
     /// es bleibt beim Buchstaben — nicht schlechter als vorher.
-    private var shown: URL? { remote ?? coverURL ?? guessed }
+    private var shown: [URL] {
+        if let remote { return [remote] }
+        if let coverURL { return [coverURL] }
+        return guessed
+    }
 
-    private var guessed: URL? {
-        let source = kind ?? library.provider
-        guard let path = source.guessedCoverPath(slug: slug) else { return nil }
-        return AniworldClient.coverURL(path, provider: source)
+    private var source: CatalogProvider { kind ?? library.provider }
+
+    private var guessed: [URL] {
+        guard let path = source.guessedCoverPath(slug: slug) else { return [] }
+        return AniworldClient.coverCandidates(path, provider: source)
     }
     private var lifted: Bool { hovering && !reduceMotion }
 
@@ -201,17 +240,12 @@ struct PosterTile: View {
             .aspectRatio(2 / 3, contentMode: .fit)
             .overlay {
                 Group {
-                    if let shown {
-                        AsyncImage(url: shown) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFill()
-                            default:
-                                letter
-                            }
-                        }
-                    } else {
+                    if shown.isEmpty {
                         letter
+                    } else {
+                        NoriCoverImage(candidates: shown, referer: source.origin + "/") {
+                            letter
+                        }
                     }
                 }
             }
