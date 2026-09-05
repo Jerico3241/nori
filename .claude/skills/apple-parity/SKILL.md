@@ -11,9 +11,10 @@ einsortieren, in welche der drei Klassen die Datei fällt.
 
 ## 1. Wortgleich geteilt — Änderung immer in beide Targets
 
-`Models.swift` · `LibraryStore.swift` · `AniworldClient.swift` · `HosterResolver.swift`
+`Models.swift` · `LibraryStore.swift` · `AniworldClient.swift` ·
+`HosterResolver.swift` · `HTML.swift`
 
-Diese vier Dateien enthalten keine einzige plattformspezifische Zeile und sind
+Diese fünf Dateien enthalten keine einzige plattformspezifische Zeile und sind
 Byte für Byte identisch. Wer eine davon nur in einem Target ändert, erzeugt
 still divergierende Datenmodelle — der Bibliotheksstand wird dann zwischen
 iPhone und Mac über iCloud inkompatibel.
@@ -26,16 +27,19 @@ diff native/Nori-iOS/Nori/<Datei> native/Nori-macOS/Nori/<Datei>   # muss leer s
 
 ## 2. Logisch geteilt, unterschiedlich formuliert
 
-`HTML.swift`
+Zurzeit leer.
 
-Beide Fassungen parsen dasselbe HTML, aber die macOS-Fassung wurde
-umstrukturiert (lange Optional-Ketten in Zwischenvariablen aufgelöst, um
-Typechecker-Timeouts zu vermeiden). Sie sind deshalb **nicht** byte-gleich —
-trotzdem gehört jede Änderung an der Parsing-Logik in beide Targets, sonst
-bricht die Stream-Auflösung auf genau einer Plattform.
+`HTML.swift` gehörte bis zum ersten iOS-Build hierher: beide Fassungen
+parsten dasselbe HTML, die macOS-Fassung war aber bereits umstrukturiert.
+Der iOS-Build zeigte, dass die iOS-Fassung gar nicht übersetzte — lange
+Optional-Ketten mit `try`, an denen der Typechecker abbrach, und fehlende
+`try` an `nextElementSibling()`. Seitdem ist die macOS-Fassung in beiden
+Targets, und die Datei steht in Klasse 1.
 
-`tools/check-apple-sources.py` vergleicht hier die Menge der Deklarationen und
-meldet, wenn eine Funktion nur in einem Target existiert.
+Die Klasse bleibt beschrieben, weil sie jederzeit wieder entstehen kann:
+sobald eine geteilte Datei aus Plattformgründen auseinanderlaufen muss,
+gehört sie in `SHARED_STRUCTURE` in `tools/check-apple-sources.py` — dort
+wird dann nur noch die Menge der Deklarationen verglichen.
 
 ## 3. Bewusst getrennt — nicht angleichen
 

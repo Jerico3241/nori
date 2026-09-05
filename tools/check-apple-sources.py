@@ -32,12 +32,15 @@ SHARED_IDENTICAL = [
     "LibraryStore.swift",
     "AniworldClient.swift",
     "HosterResolver.swift",
+    # Seit dem ersten iOS-Build byte-gleich: die iOS-Fassung hatte lange
+    # Optional-Ketten, an denen der Typechecker abbrach, und fehlende `try`.
+    # Die macOS-Fassung hatte dieselbe Logik bereits aufgelöst.
+    "HTML.swift",
 ]
 
-# Gleiche Aufgabe, aber unterschiedlich formuliert (die macOS-Fassung wurde
-# umgebaut, um Typechecker-Timeouts zu vermeiden). Byte-Gleichheit ist hier
-# nicht zu erwarten – wohl aber die gleiche Menge an Deklarationen.
-SHARED_STRUCTURE = ["HTML.swift"]
+# Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag
+# bleibt, weil diese Klasse jederzeit wieder entstehen kann.
+SHARED_STRUCTURE: list[str] = []
 
 # APIs, die es schlicht nicht gibt. Jede Zeile hier hat einmal einen Build
 # gekostet.
@@ -190,6 +193,47 @@ def check_section_initializers(folder: Path, label: str) -> None:
                 break
 
 
+# APIs, die erst das iOS-18-SDK kennt. `#available(iOS 18.0, *)` schützt nur
+# zur Laufzeit — übersetzt wird trotzdem gegen das SDK des Runners.
+NEEDS_XCODE_16 = {
+    r"\.matchedTransitionSource\s*\(": "matchedTransitionSource",
+    r"\.navigationTransition\s*\(\s*\.zoom": "navigationTransition(.zoom:)",
+}
+
+
+def check_ios_runner() -> None:
+    """Der iOS-Runner muss zum verwendeten SDK passen.
+
+    macos-14 liefert Xcode 15.4 mit iOS-SDK 17.5 und meldet iOS-18-APIs als
+    „has no member" — auch dann, wenn sie sauber hinter `#available` stehen.
+    """
+    workflow = ROOT / ".github/workflows/build-ios.yml"
+    if not workflow.exists():
+        return
+
+    used = set()
+    for path in swift_files(IOS):
+        src = strip_comments_and_strings(path.read_text())
+        for pattern, name in NEEDS_XCODE_16.items():
+            if re.search(pattern, src):
+                used.add(f"{name} ({path.name})")
+    if not used:
+        return
+
+    runner = re.search(r"^\s*runs-on:\s*(\S+)", workflow.read_text(), re.MULTILINE)
+    if not runner:
+        return
+    label = runner.group(1)
+    match = re.fullmatch(r"macos-(\d+)", label)
+    if match and int(match.group(1)) < 15:
+        add(
+            "ERROR",
+            "build-ios.yml",
+            f"runs-on: {label} bringt Xcode 15 mit iOS-SDK 17. Die App verwendet "
+            f"iOS-18-APIs: {', '.join(sorted(used))}. Mindestens macos-15 nötig.",
+        )
+
+
 def check_main_actor_calls(folder: Path, label: str) -> None:
     """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
 
@@ -338,6 +382,7 @@ def main() -> int:
     check_section_initializers(MAC, "macOS")
     check_main_actor_calls(IOS, "iOS")
     check_main_actor_calls(MAC, "macOS")
+    check_ios_runner()
     check_app_icons()
     check_deployment_targets()
 

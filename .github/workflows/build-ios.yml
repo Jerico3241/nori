@@ -13,7 +13,12 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    # macos-15 wegen Xcode 16: die App nutzt hinter `#available(iOS 18.0, *)`
+    # die Zoom-Übergänge (matchedTransitionSource, navigationTransition(.zoom)).
+    # `#available` prüft nur zur Laufzeit — übersetzt werden muss trotzdem
+    # gegen ein SDK, das die Symbole kennt. macos-14 liefert Xcode 15.4 mit
+    # iOS-SDK 17.5 und scheitert daran mit „has no member".
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -22,7 +27,7 @@ jobs:
       - name: Show toolchain
         run: |
           xcodebuild -version
-          xcrun simctl list runtimes | grep -i ios || true
+          xcodebuild -showsdks | grep -i iphonesimulator || true
 
       - name: Resolve Swift packages
         run: |

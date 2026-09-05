@@ -60,6 +60,8 @@ Bereits eingetragen:
 | --- | --- | --- |
 | `generic parameter 'T' could not be inferred` an `@Environment(\.openSettings)` | `EnvironmentValues.openSettings` existiert nicht | `SettingsLink { … }` (macOS 14+) |
 | `missing argument label 'content:'` an `Section("Titel") { … } footer: { … }` | Diese Überladung gibt es nicht | `Section { … } header: { … } footer: { … }` |
+| `has no member 'matchedTransitionSource'` / `'navigationTransition'` im iOS-Build | `#available(iOS 18.0, *)` schützt nur zur Laufzeit; übersetzt wird gegen das SDK des Runners, und macos-14 bringt Xcode 15.4 mit iOS-SDK 17.5 | `runs-on: macos-15` in `build-ios.yml` (`check_ios_runner()` prüft das) |
+| `operator can throw but expression is not marked with 'try'` / `unable to type-check this expression in reasonable time` | Lange `??`-Kette, in der ein Glied `try` enthält | Kette in einzelne `let` mit eigenem `try` auflösen — so wie in `HTML.swift` bereits geschehen |
 | `call to main actor-isolated instance method '…' in a synchronous nonisolated context` | `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine ausgelagerte `private var chrome: some View` aber nicht | `Task { @MainActor in methode() }` (`check_main_actor_calls()` prüft das) |
 | `The stickers icon set or app icon set named "AppIcon" did not have any applicable content` | Bild kleiner als in `Contents.json` eingetragen (iOS: 256×256 statt 1024×1024) — die Meldung nennt die Ursache nicht | Bild in der deklarierten Größe hinterlegen, iOS zusätzlich ohne Alphakanal (`check_app_icons()` prüft das) |
 
