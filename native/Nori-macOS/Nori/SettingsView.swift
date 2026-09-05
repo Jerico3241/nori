@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.10.3"
+    static let version = "1.10.4"
 
     static let highlights = [
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
@@ -97,6 +97,7 @@ enum NoriRelease {
         "TMDB-Schlüssel liegt jetzt im Schlüsselbund statt im Programm — einzutragen unter Einstellungen › Daten.",
         "Detailseite: der Kopfbereich schneidet den Abspielknopf nicht mehr ab.",
         "Das Banner zeigt jetzt Empfehlungen statt angefangener Folgen — die stehen darunter in „Schau weiter“.",
+        "Kacheln ohne TMDB-Treffer zeigen jetzt das Cover der Quelle statt eines Buchstabens.",
     ]
 }
 

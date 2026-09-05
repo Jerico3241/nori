@@ -17,8 +17,8 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.9.4** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.10.3** | Native SwiftUI-App mit eigener Mac-Oberfläche, aktuell der weiteste Stand |
+| iOS / iPadOS | **1.9.5** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.10.4** | Native SwiftUI-App mit eigener Mac-Oberfläche, aktuell der weiteste Stand |
 | Windows | **1.8.0** | Electron / Node Portable Build |
 
 Die nativen Apple-Versionen liegen unter `native/`.

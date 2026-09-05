@@ -76,4 +76,46 @@ final class ProviderPathTests: XCTestCase {
         XCTAssertEqual(formatClock(3661), "1:01:01")
         XCTAssertEqual(formatClock(-5), "0:00")
     }
+
+    // MARK: - Abgeleiteter Coverpfad
+
+    /// Ein Katalogeintrag trägt kein Bild. Ohne diese Ableitung bleibt im
+    /// Raster nur TMDB, und findet TMDB nichts, ein Buchstabe.
+    func testGuessedCoverPathPerProvider() {
+        XCTAssertEqual(
+            CatalogProvider.aniworld.guessedCoverPath(slug: "one-piece"),
+            "/public/img/cover/one-piece.jpg"
+        )
+        XCTAssertEqual(
+            CatalogProvider.serienstream.guessedCoverPath(slug: "dexter"),
+            "/media/images/channel/desktop/dexter.jpg"
+        )
+    }
+
+    /// Der Pfad wird aus dem Slug zusammengesetzt — ein Slug mit Schrägstrich
+    /// oder Punkt führte aus dem Cover-Verzeichnis heraus.
+    func testGuessedCoverPathRejectsUnusualSlugs() {
+        for slug in ["", "../../etc/passwd", "a/b", "one.piece", "one piece", "one?x=1"] {
+            XCTAssertNil(
+                CatalogProvider.aniworld.guessedCoverPath(slug: slug),
+                "\(slug) hätte abgelehnt werden müssen"
+            )
+        }
+    }
+
+    func testGuessedCoverPathAllowsDigitsAndUnderscore() {
+        XCTAssertEqual(
+            CatalogProvider.aniworld.guessedCoverPath(slug: "86_eighty-six2"),
+            "/public/img/cover/86_eighty-six2.jpg"
+        )
+    }
+
+    /// Gegenprobe zur Annahme, auf der die Ableitung beruht: `slugFromPoster`
+    /// gewinnt aus dem Posternamen den Slug. Beide Richtungen müssen sich
+    /// treffen, sonst stimmt die Vermutung nicht.
+    func testGuessAndSlugFromPosterAreInverse() {
+        let slug = "one-piece"
+        let path = CatalogProvider.aniworld.guessedCoverPath(slug: slug)
+        XCTAssertEqual(HTML.slugFromPoster(path ?? ""), slug)
+    }
 }

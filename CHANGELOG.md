@@ -4,8 +4,30 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.3**, iOS/iPadOS **1.9.4**,
+unterschiedlich schnell bewegen: macOS **1.10.4**, iOS/iPadOS **1.9.5**,
 Windows **1.8.0**.
+
+## [macOS 1.10.4] · [iOS 1.9.5] – 2026-09-05
+
+### Behoben
+
+- **Viele Kacheln blieben ohne Cover.** Der Grund liegt nicht bei TMDB: ein
+  Katalogeintrag trägt überhaupt kein Bild, weil die Katalogseite der
+  Quellen eine reine Titelliste ist. Das Cover der Quelle lernte Nori erst,
+  wenn man die Serie öffnete — im Raster gab es bis dahin nur TMDB, und
+  ohne Treffer blieb der Buchstabe.
+
+  Der Coverpfad wird jetzt aus dem Slug abgeleitet. Dass der Dateiname der
+  Slug ist, nutzt der Kalender-Parser bereits in der Gegenrichtung. Trifft
+  die Ableitung nicht, antwortet die Quelle mit 404 und es bleibt beim
+  Buchstaben — also nicht schlechter als vorher, aber in den meisten Fällen
+  mit Bild.
+
+### Geändert
+
+- Die Besonderheiten der Hoster stehen je Anbieter in einer Registry statt
+  verstreut im Ablauf. Ein neuer Hoster ist ein Eintrag mehr, ein kaputter
+  betrifft nur seinen eigenen.
 
 ## [macOS 1.10.3] – 2026-09-05
 
