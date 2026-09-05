@@ -110,7 +110,17 @@ struct PosterTile: View {
     @State private var remote: URL?
 
     private var radius: CGFloat { compact ? 10 : 14 }
-    private var shown: URL? { coverURL ?? remote }
+    /// Zuletzt der aus dem Slug abgeleitete Coverpfad: ein Katalogeintrag
+    /// trägt kein Bild, und ohne TMDB-Treffer blieb hier bisher nur der
+    /// Buchstabe. Trifft die Ableitung nicht, antwortet die Quelle mit 404 und
+    /// es bleibt beim Buchstaben — nicht schlechter als vorher.
+    private var shown: URL? { coverURL ?? remote ?? guessed }
+
+    private var guessed: URL? {
+        let source = kind ?? library.provider
+        guard let path = source.guessedCoverPath(slug: slug) else { return nil }
+        return AniworldClient.coverURL(path, provider: source)
+    }
 
     var body: some View {
         Color.clear

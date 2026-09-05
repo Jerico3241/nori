@@ -177,7 +177,18 @@ struct PosterTile: View {
     private var radius: CGFloat { compact ? 8 : 12 }
     /// `remote` deckt manuelle Auswahl und Nachschlagen ab und hat deshalb
     /// Vorrang vor dem mitgegebenen Cover der Quelle.
-    private var shown: URL? { remote ?? coverURL }
+    ///
+    /// Zuletzt der aus dem Slug abgeleitete Coverpfad: ein Katalogeintrag
+    /// trägt kein Bild, und ohne TMDB-Treffer blieb hier bisher nur der
+    /// Buchstabe. Trifft die Ableitung nicht, antwortet die Quelle mit 404 und
+    /// es bleibt beim Buchstaben — nicht schlechter als vorher.
+    private var shown: URL? { remote ?? coverURL ?? guessed }
+
+    private var guessed: URL? {
+        let source = kind ?? library.provider
+        guard let path = source.guessedCoverPath(slug: slug) else { return nil }
+        return AniworldClient.coverURL(path, provider: source)
+    }
     private var lifted: Bool { hovering && !reduceMotion }
 
     var body: some View {
