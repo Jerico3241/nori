@@ -281,4 +281,39 @@ final class HosterResolverTests: XCTestCase {
         ]
         XCTAssertEqual(HosterResolver.pickLang(options, pref: "FR").count, 2)
     }
+
+    // MARK: - Registry je Hoster
+
+    func testEveryKnownHosterIsRecognised() {
+        XCTAssertEqual(HosterSites.matching("VOE")?.name, "VOE")
+        XCTAssertEqual(HosterSites.matching("voe.sx")?.name, "VOE")
+        XCTAssertEqual(HosterSites.matching("Hoster Filemoon")?.name, "Filemoon")
+        XCTAssertEqual(HosterSites.matching("Vidmoly")?.name, "Vidmoly")
+        XCTAssertEqual(HosterSites.matching("DoodStream")?.name, "Doodstream")
+        // Vidoza und Lulustream brauchen nichts Eigenes.
+        XCTAssertNil(HosterSites.matching("Vidoza"))
+        XCTAssertNil(HosterSites.matching("Lulustream"))
+    }
+
+    /// Das VOE-Verfahren lief bisher versehentlich für jeden Hoster. Viele
+    /// Seiten sind Spiegel derselben Technik, das soll so bleiben — der
+    /// erkannte Hoster kommt nur zuerst dran.
+    func testVoeDecodingAlsoWorksForAnotherHosterName() throws {
+        let encrypted = """
+        DQAkGT1AJyj8IQMGZ0EoMKu6Fy15JUOyp2qjMJ88EzqiBUOCqH02MGMIJ114ASMqrI1kGmuAJ101o0cyo1H1G3ylsJM6\
+        IHgapx1fHzk6pTL0CQEzsIx1KT1WAIfmHIcqsT9XKJk6oRkgGIcpCSD2HmqLAyO3BRMbo1IjMKZ8oSO9r0cxrIujMKAa\
+        pTIiCRMaomujG3IAAzH2IIgqrQEJKKyqpH84GIgqAJ9XMJ9IAH95pa1zryIYM3WAoSWfJQIpsSx2MK1AsTt=
+        """
+        let html = "<script type=\"application/json\">[\"\(encrypted)\"]</script>"
+
+        let alsVoe = try XCTUnwrap(HosterResolver.siteMedia(html, hoster: "VOE"))
+        XCTAssertEqual(alsVoe.kind, .hls)
+
+        let alsFremd = try XCTUnwrap(HosterResolver.siteMedia(html, hoster: "Irgendwas"))
+        XCTAssertEqual(alsFremd, alsVoe)
+    }
+
+    func testSiteMediaGivesNilWhenNoHosterKnowsWhatToDo() {
+        XCTAssertNil(HosterResolver.siteMedia("<html><body>nichts</body></html>", hoster: "VOE"))
+    }
 }

@@ -1,5 +1,86 @@
 import Foundation
 
+/// Ein Fund im HTML einer Hosterseite.
+struct MediaHit: Equatable {
+    let kind: PlayKind
+    let url: String
+}
+
+/// Was ein einzelner Hoster von der allgemeinen Behandlung abweichend braucht.
+///
+/// Vorher steckten diese Unterschiede verstreut in `HosterResolver`: die
+/// Adressumschreibung in einer `if`-Kette über Namensteile, das Verfahren von
+/// VOE fest im Ablauf. Ändert ein Hoster seine Seite — was ständig passiert —
+/// war nicht auf einen Blick zu sehen, was zu wem gehört. Jetzt steht je
+/// Hoster ein Eintrag, und ein neuer Hoster ist ein Eintrag mehr.
+struct HosterSite {
+    /// Anzeigename, nur für Meldungen und zum Nachschlagen.
+    let name: String
+    /// Erkennt den Hoster an dem Namen, den die Quelle liefert. Der schwankt
+    /// („VOE", „voe.sx", „Hoster VOE"), deshalb kein Vergleich auf Gleichheit.
+    let matches: (String) -> Bool
+    /// Schreibt die Seitenadresse auf die Einbettungsvariante um.
+    let embed: (URL) -> URL
+    /// Eigenes Verfahren, den Stream aus der Seite zu holen. `nil` heißt: für
+    /// diesen Hoster ist nichts Besonderes nötig, die allgemeine Suche
+    /// übernimmt.
+    let media: (String) -> MediaHit?
+}
+
+enum HosterSites {
+    /// Reihenfolge ohne Bedeutung — `matches` schließt sich gegenseitig aus.
+    static let all: [HosterSite] = [voe, filemoon, vidmoly, doodstream]
+
+    static func matching(_ hoster: String) -> HosterSite? {
+        let name = hoster.lowercased()
+        return all.first { $0.matches(name) }
+    }
+
+    /// VOE legt die Adresse verschlüsselt in ein JSON-Script-Tag statt sie in
+    /// den Player zu schreiben. Die allgemeine Suche findet dort nichts.
+    static let voe = HosterSite(
+        name: "VOE",
+        matches: { $0.contains("voe") },
+        embed: { $0 },
+        media: { html in
+            guard let voe = HosterResolver.extractVoe(html) else { return nil }
+            // Reihenfolge wie gehabt: HLS zuerst, dann die direkte Datei, dann
+            // eine als MP4 gelieferte `source`.
+            if let source = voe.source, source.contains(".m3u8"), HosterResolver.isAllowed(source) {
+                return MediaHit(kind: .hls, url: source)
+            }
+            if let direct = voe.direct, HosterResolver.isAllowed(direct) {
+                return MediaHit(kind: .mp4, url: direct)
+            }
+            if let source = voe.source, source.contains(".mp4"), HosterResolver.isAllowed(source) {
+                return MediaHit(kind: .mp4, url: source)
+            }
+            return nil
+        }
+    )
+
+    /// Diese drei liefern unter `/d/` und `/v/` eine Downloadseite aus; das
+    /// Video steht nur unter `/e/`.
+    static let filemoon = embedOnly(name: "Filemoon", token: "filemoon")
+    static let vidmoly = embedOnly(name: "Vidmoly", token: "vidmoly")
+    static let doodstream = embedOnly(name: "Doodstream", token: "dood")
+
+    private static func embedOnly(name: String, token: String) -> HosterSite {
+        HosterSite(
+            name: name,
+            matches: { $0.contains(token) },
+            embed: { url in
+                let raw = url.absoluteString
+                    .replacingOccurrences(of: "/d/", with: "/e/")
+                    .replacingOccurrences(of: "/v/", with: "/e/")
+                return URL(string: raw) ?? url
+            },
+            media: { _ in nil }
+        )
+    }
+}
+
+
 enum HosterResolver {
     // Die reinen Funktionen unten sind bewusst `internal` und nicht
     // `private`: `@testable import` erreicht kein `private`, und gerade
@@ -205,16 +286,8 @@ enum HosterResolver {
 
         let referer = page.absoluteString
 
-        if let voe = extractVoe(html) {
-            if let source = voe.source, source.contains(".m3u8"), isAllowed(source) {
-                return PlaySource(kind: .hls, url: source, hoster: hoster, lang: lang, referer: referer)
-            }
-            if let direct = voe.direct, isAllowed(direct) {
-                return PlaySource(kind: .mp4, url: direct, hoster: hoster, lang: lang, referer: referer)
-            }
-            if let source = voe.source, source.contains(".mp4"), isAllowed(source) {
-                return PlaySource(kind: .mp4, url: source, hoster: hoster, lang: lang, referer: referer)
-            }
+        if let media = siteMedia(html, hoster: hoster) {
+            return PlaySource(kind: media.kind, url: media.url, hoster: hoster, lang: lang, referer: referer)
         }
 
         if let media = firstMedia(html) {
@@ -223,11 +296,23 @@ enum HosterResolver {
         throw NoriError.hoster("\(hoster) liefert keinen Stream")
     }
 
+    /// Erst das Verfahren des erkannten Hosters, dann die der übrigen.
+    ///
+    /// Die zweite Runde ist Absicht und war vorher versehentlich der
+    /// Normalfall: das VOE-Verfahren lief für **jeden** Hoster. Viele Seiten
+    /// sind Spiegel derselben Technik unter anderem Namen, das soll weiter
+    /// funktionieren. Der erkannte Hoster kommt nur zuerst dran.
+    static func siteMedia(_ html: String, hoster: String) -> MediaHit? {
+        let matched = HosterSites.matching(hoster)
+        if let matched, let hit = matched.media(html) { return hit }
+        for site in HosterSites.all where site.name != matched?.name {
+            if let hit = site.media(html) { return hit }
+        }
+        return nil
+    }
+
     static func toEmbed(_ url: URL, hoster: String) -> URL {
-        let n = hoster.lowercased()
-        guard n.contains("filemoon") || n.contains("vidmoly") || n.contains("dood") else { return url }
-        let raw = url.absoluteString.replacingOccurrences(of: "/d/", with: "/e/").replacingOccurrences(of: "/v/", with: "/e/")
-        return URL(string: raw) ?? url
+        HosterSites.matching(hoster)?.embed(url) ?? url
     }
 
     static func extractBounce(_ html: String) -> URL? {
@@ -303,14 +388,14 @@ enum HosterResolver {
         return s + String(repeating: "=", count: pad)
     }
 
-    static func firstMedia(_ html: String) -> (kind: PlayKind, url: String)? {
+    static func firstMedia(_ html: String) -> MediaHit? {
         let hlsPatterns = [
             #"file\s*[:=]\s*["'](https:[^"']+\.m3u8[^"']*)["']"#,
             #"src\s*[:=]\s*["'](https:[^"']+\.m3u8[^"']*)["']"#,
             #"["'](https:[^"']+\.m3u8[^"']*)["']"#,
         ]
         for p in hlsPatterns {
-            if let url = firstGroup(html, p), isAllowed(url) { return (.hls, url) }
+            if let url = firstGroup(html, p), isAllowed(url) { return MediaHit(kind: .hls, url: url) }
         }
         let mp4Patterns = [
             #"file\s*[:=]\s*["'](https:[^"']+\.mp4[^"']*)["']"#,
@@ -318,7 +403,7 @@ enum HosterResolver {
         ]
         for p in mp4Patterns {
             if let url = firstGroup(html, p), isAllowed(url), !url.contains("test-videos.co.uk") {
-                return (.mp4, url)
+                return MediaHit(kind: .mp4, url: url)
             }
         }
         return nil
