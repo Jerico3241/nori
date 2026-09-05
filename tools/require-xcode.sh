@@ -50,13 +50,17 @@ if [ -z "$DEV_DIR" ]; then
 fi
 
 # Der häufigste Fall auf einem frischen Mac: es sind nur die Command Line
-# Tools da. `swift` und `git` laufen damit, `xcodebuild` nicht — es meldet
-# dann bloß „requires Xcode, but active developer directory … is a command
-# line tools instance", ohne zu sagen, was fehlt.
+# Tools da. `git` und `swiftc` laufen damit, aber
+#
+#   - `xcodebuild` meldet bloß „requires Xcode, but active developer directory
+#     … is a command line tools instance", ohne zu sagen, was fehlt;
+#   - `swift test` übersetzt Paket und Abhängigkeiten anstandslos und bricht
+#     erst am Testziel ab: „unable to resolve module dependency: 'XCTest'".
+#     XCTest liegt ebenfalls nur im vollständigen Xcode.
 case "$DEV_DIR" in
     *CommandLineTools*)
         fail "Nur die Command Line Tools sind aktiv ($DEV_DIR), kein vollständiges Xcode." \
-            "xcodebuild braucht Xcode selbst. Auswählen mit:" \
+            "xcodebuild und XCTest gibt es nur dort. Auswählen mit:" \
             "$SELECT_HINT" \
             "  sudo xcodebuild -license accept" \
             "  xcodebuild -runFirstLaunch" \

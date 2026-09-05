@@ -29,6 +29,11 @@ einen Runner, die Jobs laufen also nacheinander.
 > directory '/Library/Developer/CommandLineTools' is a command line tools instance
 > ```
 >
+> Dieselbe Ursache traf auch die Tests, nur mit anderem Gesicht: `swift test`
+> übersetzte Paket und Abhängigkeiten anstandslos und brach erst am Testziel
+> ab mit `unable to resolve module dependency: 'XCTest'`. XCTest gehört
+> ebenfalls zu Xcode.
+>
 > Seitdem prüft `tools/require-xcode.sh` das vorweg und sagt statt dessen, was
 > zu tun ist.
 

@@ -32,8 +32,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Show toolchain
-        run: swift --version
+      # `swift test` läuft nicht mit den Command Line Tools allein: Paket und
+      # Abhängigkeiten übersetzen zwar, das Testziel scheitert dann aber an
+      # „unable to resolve module dependency: 'XCTest'" — XCTest gehört zu
+      # Xcode. Vorher prüfen, sonst steht der Grund erst am Ende eines
+      # mehrminütigen Laufs zwischen tausend Compilerzeilen.
+      - name: Toolchain prüfen
+        run: |
+          tools/require-xcode.sh 15
+          swift --version
 
       # Das Paket bindet Models.swift aus dem macOS-Target ein, ohne sie zu
       # kopieren. Die Datei ist zwischen iOS und macOS byte-gleich, der Test
