@@ -221,33 +221,26 @@ actor AniworldClient {
 
     static func coverURL(_ path: String?, provider: CatalogProvider) -> URL? {
         guard let path else { return nil }
-        if path.hasPrefix("http") { return URL(string: path) }
-        guard path.hasPrefix("/") else { return URL(string: path) }
-        var raw = provider.origin + path
-        if provider == .serienstream, !raw.contains("format=") {
-            raw += raw.contains("?") ? "&format=jpg" : "?format=jpg"
+        var raw: String
+        if path.hasPrefix("http") {
+            raw = path
+        } else if path.hasPrefix("/") {
+            raw = provider.origin + path
+        } else {
+            return URL(string: path)
+        }
+
+        // Serienstream liefert nach `format` aus und nennt in den eigenen
+        // Seiten `format=avif`. AVIF decodieren die Systembibliotheken zwar,
+        // aber jpg tut es überall und kostet nichts — deshalb hier
+        // festgeschrieben statt nur ergänzt, wenn gar kein Format dasteht.
+        if provider == .serienstream, var parts = URLComponents(string: raw) {
+            var items = (parts.queryItems ?? []).filter { $0.name != "format" }
+            items.append(URLQueryItem(name: "format", value: "jpg"))
+            parts.queryItems = items
+            raw = parts.url?.absoluteString ?? raw
         }
         return URL(string: raw)
-    }
-
-    /// Alle Adressen, unter denen dasselbe Cover liegen kann — in der
-    /// Reihenfolge, in der sie probiert werden.
-    ///
-    /// Serienstream nennt seine Bilder auf den eigenen Seiten unter `s.to`
-    /// (so steht es im `og:image` der Detailseiten), erreichbar sind sie aber
-    /// auch über `serienstream.to`. Welche der beiden antwortet, entscheidet
-    /// die Quelle. Eine einzige geratene Adresse hieß: trifft sie nicht,
-    /// bleibt die Kachel leer.
-    static func coverCandidates(_ path: String?, provider: CatalogProvider) -> [URL] {
-        guard let first = coverURL(path, provider: provider) else { return [] }
-        var urls = [first]
-        if provider == .serienstream,
-           var parts = URLComponents(url: first, resolvingAgainstBaseURL: false),
-           parts.host == "serienstream.to" {
-            parts.host = "s.to"
-            if let alternative = parts.url { urls.append(alternative) }
-        }
-        return urls
     }
 
     private func looksBlocked(_ html: String) -> Bool {
@@ -282,9 +275,9 @@ enum NoriError: LocalizedError {
 /// mitschickt und `CoverToneSampler` seit jeher eine eigene `URLRequest`
 /// baut. Die Kacheln blieben als einzige bei `AsyncImage`.
 ///
-/// Der Lader probiert mehrere Adressen durch (siehe `coverCandidates`), merkt
-/// sich Fehlschläge, damit eine Kachel beim Scrollen nicht immer wieder
-/// dieselbe 404 holt, und hält die zuletzt geladenen Bilder im Speicher.
+/// Der Lader merkt sich Fehlschläge, damit eine Kachel beim Scrollen nicht
+/// immer wieder dieselbe 404 holt, und hält die zuletzt geladenen Bilder im
+/// Speicher.
 actor CoverImageLoader {
     static let shared = CoverImageLoader()
 
@@ -310,16 +303,12 @@ actor CoverImageLoader {
         session = URLSession(configuration: config)
     }
 
-    /// Erste Adresse, die ein Bild liefert. `nil` heißt: keine hat geantwortet
-    /// — dann bleibt es beim Buchstaben.
-    func data(for candidates: [URL], referer: String) async -> Data? {
-        for url in candidates {
-            if let hit = cache[url] { return hit }
-        }
-        for url in candidates where !failed.contains(url) {
-            if let data = await load(url, referer: referer) { return data }
-        }
-        return nil
+    /// Bilddaten zur Adresse. `nil` heißt: nichts Verwertbares — dann bleibt
+    /// es beim Buchstaben.
+    func data(for url: URL, referer: String) async -> Data? {
+        if let hit = cache[url] { return hit }
+        if failed.contains(url) { return nil }
+        return await load(url, referer: referer)
     }
 
     private func load(_ url: URL, referer: String) async -> Data? {
@@ -402,6 +391,11 @@ actor CoverIndex {
     /// Startseite, Katalog und Kalender; ohne das ginge pro Kachel eine eigene
     /// TMDB-Anfrage raus.
     private var inFlight: [String: Task<URL?, Never>] = [:]
+    /// Dasselbe für das Nachladen der Quellcover aus den Detailseiten.
+    private var sourceInFlight: [String: Task<URL?, Never>] = [:]
+    /// Slugs, deren Detailseite kein Cover hergab. Nur im Arbeitsspeicher: ein
+    /// Neustart darf es erneut versuchen, die Seite kann sich geändert haben.
+    private var missedSource: Set<String> = []
     private var activeLookups = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
     private static let maxConcurrentLookups = 4
@@ -459,6 +453,52 @@ actor CoverIndex {
     }
 
     func sourceCover(for slug: String) -> URL? { sourceCovers[slug] }
+
+    /// Cover der Quelle beschaffen, indem die Detailseite gelesen wird.
+    ///
+    /// Nötig, weil die Katalogseiten reine Titellisten sind **und** sich die
+    /// Adresse des Covers nicht aus dem Slug ergibt. Beide Quellen hängen
+    /// einen Zufallsanteil an den Dateinamen:
+    ///
+    ///     /media/images/channel/desktop/black-mirror-7sqv7dhs
+    ///     /public/img/cover/black-clover-stream-cover-WWoAujz6fnp…_220x330.jpg
+    ///
+    /// Eine geratene Adresse war deshalb ausnahmslos eine 404 — die einzige
+    /// verlässliche Angabe steht auf der Detailseite selbst, die `parseSeries`
+    /// ohnehin auswertet.
+    ///
+    /// Das kostet eine Seite pro Titel, aber nur einmal: das Ergebnis liegt
+    /// danach in `covers.json` und übersteht den Neustart. Gleichzeitige
+    /// Anfragen teilen sich denselben Deckel wie die TMDB-Suche.
+    func fetchSourceCover(slug: String, provider: CatalogProvider) async -> URL? {
+        if let known = sourceCovers[slug] { return known }
+        // Ein Titel, dessen Detailseite kein Cover hergab, wird nicht bei
+        // jedem Scrollen erneut geladen.
+        if missedSource.contains(slug) { return nil }
+        if let running = sourceInFlight[slug] { return await running.value }
+
+        let task = Task<URL?, Never> {
+            await self.loadSourceCover(slug: slug, provider: provider)
+        }
+        sourceInFlight[slug] = task
+        let result = await task.value
+        sourceInFlight.removeValue(forKey: slug)
+        return result
+    }
+
+    private func loadSourceCover(slug: String, provider: CatalogProvider) async -> URL? {
+        await acquireSlot()
+        defer { releaseSlot() }
+        guard let detail = try? await AniworldClient.shared.getSeries(provider: provider, slug: slug),
+              let url = AniworldClient.coverURL(detail.coverPath, provider: provider)
+        else {
+            missedSource.insert(slug)
+            return nil
+        }
+        sourceCovers[slug] = url
+        scheduleSave()
+        return url
+    }
 
     func backdrop(for slug: String) -> URL? { backdrops[slug] }
 

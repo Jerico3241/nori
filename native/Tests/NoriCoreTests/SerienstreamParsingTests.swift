@@ -56,7 +56,8 @@ final class SerienstreamParsingTests: XCTestCase {
     /// und speichert nur den Pfad, nicht die vollständige Adresse.
     func testSeriesFallsBackToTheOpenGraphImage() throws {
         let detail = try HTML.parseSeriesSerienstream(Fixtures.serienstreamSeries, slug: "dexter", requestedSeason: nil)
-        XCTAssertEqual(detail.coverPath, "/media/images/channel/desktop/dexter.jpg")
+        // Aus dem og:image: Host und Abfrage fallen weg, der Pfad bleibt.
+        XCTAssertEqual(detail.coverPath, "/media/images/channel/desktop/dexter-7sqv7dhs")
     }
 
     func testSeasonsAreSortedWithFilmsLast() throws {

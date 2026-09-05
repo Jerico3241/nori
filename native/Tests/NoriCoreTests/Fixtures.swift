@@ -41,7 +41,7 @@ enum Fixtures {
     <html><body>
       <div class="series-title"><h1 data-alternativeTitles="Animes Stream: Wan Pisu, One Piece"><span>One Piece</span></h1></div>
       <p class="seri_des" data-full-description="Ruffy will Piratenkönig werden.">Ruffy will Piratenkönig werden. mehr anzeigen</p>
-      <div class="seriesCoverBox"><img data-src="/public/img/cover/one-piece.jpg"></div>
+      <div class="seriesCoverBox"><img data-src="/public/img/cover/one-piece-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg"></div>
       <span itemprop="startDate">1999</span>
       <span itemprop="endDate">2026</span>
       <div data-fsk="12"></div>
@@ -105,7 +105,7 @@ enum Fixtures {
         <a href="/anime/stream/one-piece/staffel-21/episode-1120">
           <h3 class="seriesTitle">One Piece</h3>
           <small>S21E1120 · 09:30</small>
-          <img data-src="/public/img/cover/one-piece.jpg">
+          <img data-src="/public/img/cover/one-piece-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg">
           <img class="flag" title="Deutsch">
         </a>
         <a href="/anime/stream/one-piece/staffel-21/episode-1120">
@@ -146,7 +146,7 @@ enum Fixtures {
     static let serienstreamSeries = """
     <html><head>
       <meta name="description" content="Aus dem Kopf der Suchmaschine.">
-      <meta property="og:image" content="https://s.to/media/images/channel/desktop/dexter.jpg">
+      <meta property="og:image" content="https://s.to/media/images/channel/desktop/dexter-7sqv7dhs?format=avif">
     </head><body>
       <h1>Dexter</h1>
       <div class="description-text">Ein Forensiker mit einem Nebengewerbe.</div>
@@ -196,7 +196,7 @@ enum Fixtures {
       "2026-09-14": [
         {
           "url": "/serie/dexter/staffel-2/episode-3",
-          "poster": "/media/images/channel/desktop/dexter.jpg",
+          "poster": "/media/images/channel/desktop/dexter-7sqv7dhs?format=avif",
           "title": "Dexter",
           "time": "20:15",
           "season": 2,
@@ -205,7 +205,7 @@ enum Fixtures {
         },
         {
           "url": "/serie/dexter/staffel-2/episode-3",
-          "poster": "/media/images/channel/desktop/dexter.jpg",
+          "poster": "/media/images/channel/desktop/dexter-7sqv7dhs?format=avif",
           "title": "Dexter",
           "time": "20:15",
           "season": 2,

@@ -4,8 +4,32 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.1**, iOS/iPadOS **1.9.6**,
+unterschiedlich schnell bewegen: macOS **1.11.2**, iOS/iPadOS **1.9.7**,
 Windows **1.8.0**.
+
+## [macOS 1.11.2] · [iOS 1.9.7] – 2026-09-05
+
+### Behoben
+
+- **Die Kacheln blieben leer — der Grund war ein anderer als gedacht.** Die
+  Adresse eines Covers lässt sich nicht aus dem Slug bilden, weil beide
+  Quellen einen Zufallsanteil an den Dateinamen hängen:
+
+  ```
+  /media/images/channel/desktop/black-mirror-7sqv7dhs
+  /public/img/cover/black-clover-stream-cover-WWoAujz6fnp…_220x330.jpg
+  ```
+
+  Jede geratene Adresse war also eine 404. Nori liest die Adresse jetzt bei
+  Bedarf aus der Detailseite — dort steht sie — und legt sie dauerhaft in
+  `covers.json` ab. Das kostet beim ersten Anzeigen eines Titels eine
+  Seite, danach nie wieder; geladen wird nur, was auch stehen bleibt, ein
+  schneller Scroll löst gar keine Anfrage aus.
+- Für Serienstream wird `format=jpg` festgeschrieben. Die Seiten liefern
+  `format=avif` aus; jpg decodiert überall.
+- Die Testfixtures trugen vereinfachte Dateinamen (`one-piece.jpg`) und
+  bestätigten dadurch eine Annahme, die die Wirklichkeit nicht hergibt.
+  Jetzt stehen dort die echten Namen.
 
 ## [macOS 1.11.1] · [iOS 1.9.6] – 2026-09-05
 

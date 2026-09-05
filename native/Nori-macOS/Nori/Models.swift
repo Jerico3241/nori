@@ -24,31 +24,18 @@ enum CatalogProvider: String, Codable, CaseIterable, Identifiable {
         return "\(streamPrefix)/\(slug)/staffel-\(season.isEmpty ? "1" : season)/episode-\(episode)"
     }
 
-    /// Verzeichnis, in dem die Quelle ihre Cover ablegt.
-    var coverDirectory: String {
-        self == .aniworld ? "/public/img/cover/" : "/media/images/channel/desktop/"
-    }
-
-    /// Wahrscheinlicher Coverpfad, allein aus dem Slug gebildet.
-    ///
-    /// Warum das nötig ist: ein Katalogeintrag trägt kein Bild — die
-    /// Katalogseite der Quellen ist eine reine Titelliste. Das Cover lernt Nori
-    /// sonst erst, wenn die Serie geöffnet wird. Im Raster bleibt bis dahin nur
-    /// TMDB, und findet TMDB nichts, ein Buchstabe. Genau das waren die leeren
-    /// Kacheln.
-    ///
-    /// Dass der Dateiname der Slug ist, verlässt `HTML.slugFromPoster` bereits
-    /// in der Gegenrichtung: dort wird aus dem Posternamen der Slug gewonnen.
-    /// Trifft die Vermutung nicht, antwortet die Quelle mit 404 und es bleibt
-    /// beim Buchstaben — also nicht schlechter als vorher.
-    func guessedCoverPath(slug: String) -> String? {
-        // Nur unauffällige Slugs. Ein Slug mit Schrägstrich oder Punkt würde
-        // sonst aus dem Cover-Verzeichnis herausführen.
-        guard !slug.isEmpty,
-              slug.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
-        else { return nil }
-        return coverDirectory + slug + ".jpg"
-    }
+    // Es gab hier einmal `coverDirectory` und `guessedCoverPath(slug:)`: den
+    // Versuch, die Adresse des Covers allein aus dem Slug zu bilden, weil die
+    // Katalogseiten reine Titellisten sind. Das war falsch, und zwar immer.
+    // Beide Quellen hängen einen Zufallsanteil an den Dateinamen:
+    //
+    //     /media/images/channel/desktop/black-mirror-7sqv7dhs
+    //     /public/img/cover/black-clover-stream-cover-WWoAujz6fnp…_220x330.jpg
+    //
+    // Jede geratene Adresse war eine 404 — deshalb blieben im Katalog fast
+    // alle Kacheln leer. Die Adresse steht nur auf der Detailseite; sie holt
+    // `CoverIndex.fetchSourceCover(slug:provider:)` bei Bedarf nach und legt
+    // sie dauerhaft ab.
 }
 
 /// Was die Bibliothek zeigt.
