@@ -53,11 +53,19 @@ final class SerienstreamParsingTests: XCTestCase {
     }
 
     /// Ohne `<img>` im Seiteninhalt zieht der Parser das Cover aus og:image —
-    /// und speichert nur den Pfad, nicht die vollständige Adresse.
+    /// und erhält Host und Abfrageparameter.
     func testSeriesFallsBackToTheOpenGraphImage() throws {
         let detail = try HTML.parseSeriesSerienstream(Fixtures.serienstreamSeries, slug: "dexter", requestedSeason: nil)
-        // Aus dem og:image: Host und Abfrage fallen weg, der Pfad bleibt.
-        XCTAssertEqual(detail.coverPath, "/media/images/channel/desktop/dexter-7sqv7dhs")
+        // Host und Abfrage können für das ausgelieferte Bild entscheidend sein.
+        XCTAssertEqual(detail.coverPath, "https://s.to/media/images/channel/desktop/dexter-7sqv7dhs?format=avif")
+    }
+
+    func testLazyPosterPreservesActualProviderURL() throws {
+        let url = "https://serienstream.to/media/images/channel/desktop/LncybuDhVyRqLvqUCV7a6XusndhCq78E-1775376693?format=avif"
+        let html = "<html><body><h1>Serie</h1><img src='/placeholder.svg' data-src='\(url)'></body></html>"
+        let detail = try HTML.parseSeriesSerienstream(html, slug: "serie", requestedSeason: nil)
+        XCTAssertEqual(detail.coverPath, url)
+        XCTAssertEqual(AniworldClient.coverURL(detail.coverPath, provider: .serienstream)?.absoluteString, url)
     }
 
     func testSeasonsAreSortedWithFilmsLast() throws {
@@ -125,3 +133,4 @@ final class SerienstreamParsingTests: XCTestCase {
         XCTAssertEqual(info.englishTitle, "It's Alive")
     }
 }
+

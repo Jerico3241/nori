@@ -126,6 +126,7 @@ struct NoriCoverImage<Fallback: View>: View {
         .task(id: url) {
             image = nil
             guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
+            guard !Task.isCancelled else { return }
             image = UIImage(data: data)
         }
     }
@@ -170,7 +171,8 @@ struct PosterTile: View {
                     .strokeBorder(NoriTheme.border)
             }
             .shadow(color: .black.opacity(0.28), radius: compact ? 6 : 10, y: 6)
-            .task(id: slug) {
+            .task(id: source.rawValue + "|" + slug + "|" + (coverURL?.absoluteString ?? "")) {
+                remote = nil
                 if coverURL != nil { return }
                 if let cached = await CoverIndex.shared.url(for: slug) {
                     remote = cached
@@ -261,3 +263,4 @@ enum CoverToneSampler {
         return Color(red: bestR, green: bestG, blue: bestB)
     }
 }
+
