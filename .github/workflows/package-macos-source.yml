@@ -1,5 +1,8 @@
 name: Package macOS Source
 
+# Zwischenstand von main als Quellpaket — praktisch, um kurz etwas
+# auszuprobieren. Das dauerhafte Paket entsteht im Release-Workflow aus einem
+# Tag; dieses hier verfällt nach 30 Tagen.
 on:
   push:
     branches: [main]
@@ -18,14 +21,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      # Der Name trug bisher keine Version. Wer zwei Pakete nebeneinander
+      # liegen hatte, konnte nicht sagen, welches welches ist.
+      - name: Version lesen
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -oE 'MARKETING_VERSION = [0-9.]+' \
+            native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj | head -1 | awk '{print $3}')"
+          test -n "$VERSION"
+          echo "name=Nori-macOS-$VERSION-source" >> "$GITHUB_OUTPUT"
+
       - name: Create macOS source package
         run: |
-          ditto -c -k --sequesterRsrc --keepParent native/Nori-macOS Nori-macOS.zip
+          ditto -c -k --sequesterRsrc --keepParent native/Nori-macOS \
+            "${{ steps.meta.outputs.name }}.zip"
 
       - name: Upload package
         uses: actions/upload-artifact@v5
         with:
-          name: Nori-macOS
-          path: Nori-macOS.zip
+          name: ${{ steps.meta.outputs.name }}
+          path: ${{ steps.meta.outputs.name }}.zip
           if-no-files-found: error
           retention-days: 30
