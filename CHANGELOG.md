@@ -13,12 +13,13 @@ Vier Anzeigefehler, alle aus Screenshots gemeldet.
 
 ### Behoben
 
-- **Der Kopfbereich der Detailseite schnitt seinen eigenen Inhalt ab.** Er
-  hatte eine feste Höhe von 430 pt und `clipped()`. Ist der Inhalt höher —
-  langer Titel, viele Chips, Staffelauswahl — zentriert SwiftUI ihn in
-  diesem Rahmen und schneidet oben und unten ab; der Abspielknopf war zur
-  Hälfte weg. Der Bereich wächst jetzt mit seinem Inhalt und hat nur noch
-  eine Mindesthöhe.
+- **Der Kopfbereich der Detailseite schnitt seinen eigenen Inhalt ab.**
+  Das Breitbild lag mit `scaledToFill` im selben Stapel wie der Text. Ein
+  so skaliertes Bild meldet nach außen eine *größere* Größe, als ihm
+  angeboten wurde — der Stapel wuchs mit, das feste `frame(height: 430)`
+  zentrierte den zu großen Stapel darin, und `clipped()` schnitt an beiden
+  Rändern ab; der Abspielknopf war zur Hälfte weg. Das Bild liegt jetzt als
+  Hintergrund hinter dem Inhalt, wo es die Größe nicht beeinflusst.
 - **Dieselben Angaben standen dreimal auf der Detailseite**: als Chips, in
   der Zeile darunter und in der Faktenspalte rechts. Jetzt trägt der
   Kopfbereich Titel, Jahr, Altersfreigabe und Bewertung, die Faktenspalte
