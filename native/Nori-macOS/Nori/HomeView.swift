@@ -100,43 +100,48 @@ struct HomeView: View {
         }
     }
 
-    /// Angefangene Titel zuerst, danach mit Katalogtiteln auf sechs auffüllen.
-    /// Läuft in einer Aufgabe statt bei jedem Rendern: die Suche nach den
-    /// Genres eines angefangenen Titels geht durch den gesamten Katalog.
+    /// Sechs Empfehlungen fürs Banner.
+    ///
+    /// Angefangene Titel gehören hier **nicht** hinein: sie stehen direkt
+    /// darunter in „Schau weiter". Im Banner wiederholten sie nur, was man
+    /// ohnehin schon kennt, und ein „Folge 1 fortsetzen" ist keine Empfehlung.
+    ///
+    /// Läuft in einer Aufgabe statt bei jedem Rendern — die Auswahl geht durch
+    /// den gesamten Katalog.
     private func buildHero() -> [HeroItem] {
-        var out: [HeroItem] = []
-        var used: Set<String> = []
-        var genresBySlug: [String: [String]] = [:]
-        for item in catalog { genresBySlug[item.slug] = item.genres }
+        // Titel ohne Genre sagen im Banner nichts aus; nur wenn zu wenige mit
+        // Genre da sind, wird der ganze Katalog genommen.
+        let described = catalog.filter { !$0.genres.isEmpty }
+        let source = described.count >= 6 ? described : catalog
+        guard !source.isEmpty else { return [] }
 
-        for item in library.continueWatching().prefix(3) {
-            let kind = item.provider ?? providerFromPath(item.episodePath)
-            out.append(HeroItem(
-                slug: item.slug,
-                title: item.title,
-                kind: kind,
-                genres: genresBySlug[item.slug] ?? []
-            ))
-            used.insert(item.slug)
+        // Ohne das stünden dort immer dieselben sechs Titel vom Anfang des
+        // Alphabets. Der Tag geht in die Reihenfolge ein, innerhalb eines Tages
+        // bleibt sie gleich.
+        let day = Int(Date().timeIntervalSince1970 / 86_400)
+        return source
+            .sorted { Self.featureRank($0.slug, day: day) < Self.featureRank($1.slug, day: day) }
+            .prefix(6)
+            .map {
+                HeroItem(slug: $0.slug, title: $0.title, kind: library.provider, genres: $0.genres)
+            }
+    }
+
+    /// `hashValue` ist pro Prozess anders gesalzen — die Reihenfolge wechselte
+    /// damit bei jedem Start der App. Diese Streuung ist es nicht.
+    static func featureRank(_ slug: String, day: Int) -> Int {
+        var acc = day &* 2_654_435_761
+        for scalar in slug.unicodeScalars {
+            acc = (acc &* 31 &+ Int(scalar.value)) % 1_000_003
         }
-        for item in catalog where !used.contains(item.slug) {
-            out.append(HeroItem(
-                slug: item.slug,
-                title: item.title,
-                kind: library.provider,
-                genres: item.genres
-            ))
-            used.insert(item.slug)
-            if out.count >= 6 { break }
-        }
-        return out
+        return acc < 0 ? -acc : acc
     }
 
     /// Neu gruppieren, wenn sich Quelle oder Katalogumfang ändert. Ein
     /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
     /// Einträge vergleichen.
     private var rowsKey: String {
-        "\(library.provider.rawValue)|\(catalog.count)|\(library.progress.count)"
+        "\(library.provider.rawValue)|\(catalog.count)"
     }
 
     static func buildRows(from catalog: [CatalogItem]) -> [GenreRow] {
@@ -263,16 +268,9 @@ struct HeroCarousel: View {
 /// Ein Bild über die volle Breite, von unten und links abgedunkelt, mit Titel,
 /// Metazeile, Beschreibung und Abspielknopf.
 struct HeroSlide: View {
-    @Environment(LibraryStore.self) private var library
     let item: HeroItem
 
     @State private var details = CoverDetails()
-
-    /// Live aus der Bibliothek statt eingefroren im HeroItem — sonst stünde
-    /// nach der Rückkehr aus dem Player noch der alte Fortschritt da.
-    private var progress: WatchProgress? {
-        library.continueWatching().first { $0.slug == item.slug }
-    }
 
     var body: some View {
         // Hintergrund und Text sind bewusst nicht anklickbar: Knopf und
@@ -303,24 +301,48 @@ struct HeroSlide: View {
         }
     }
 
+    /// Vollflächig darf nur ein Breitbild.
+    ///
+    /// Vorher stand hier `details.backdrop ?? details.poster`. Fehlt das
+    /// Breitbild, landete damit ein 2:3-Poster in einer etwa 2:1 breiten
+    /// Fläche: `scaledToFill` zeigte dann einen winzigen Ausschnitt aus der
+    /// Bildmitte — meist ein Stück Kleidung, und der Titel ging darin unter.
+    /// Ein Poster wird deshalb nur noch unscharf und abgedunkelt als Untergrund
+    /// verwendet, wo der Ausschnitt keine Rolle spielt.
     @ViewBuilder
     private var background: some View {
-        if let image = details.backdrop ?? details.poster {
-            AsyncImage(url: image) { phase in
+        if let wide = details.backdrop {
+            AsyncImage(url: wide) { phase in
                 switch phase {
                 case .success(let img):
                     img.resizable().scaledToFill()
                 default:
-                    NoriTheme.elevated
+                    fallback
+                }
+            }
+        } else if let poster = details.poster {
+            AsyncImage(url: poster) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable()
+                        .scaledToFill()
+                        .blur(radius: 44)
+                        .overlay(NoriTheme.bg.opacity(0.45))
+                default:
+                    fallback
                 }
             }
         } else {
-            LinearGradient(
-                colors: [NoriTheme.elevated, NoriTheme.bg],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            fallback
         }
+    }
+
+    private var fallback: some View {
+        LinearGradient(
+            colors: [NoriTheme.elevated, NoriTheme.bg],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     private var text: some View {
@@ -345,23 +367,9 @@ struct HeroSlide: View {
                     .frame(maxWidth: 620, alignment: .leading)
             }
 
-            if let progress {
-                HStack(spacing: 12) {
-                    ProgressView(value: watchRatio(progress))
-                        .frame(width: 200)
-                        .tint(NoriTheme.accent)
-                    Text("Noch \(formatClock(max(0, progress.durationSec - progress.positionSec)))")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.75))
-                }
-            }
-
             HStack(spacing: 10) {
                 NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
-                    Label(
-                        progress.map { "Folge \($0.episode) fortsetzen" } ?? "Jetzt ansehen",
-                        systemImage: "play.fill"
-                    )
+                    Label("Jetzt ansehen", systemImage: "play.fill")
                     .font(.headline)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 12)
@@ -546,7 +554,16 @@ struct HoverInfo: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.black.opacity(0.86))
+        // Deckend, nicht durchscheinend: mit 86 % Schwarz stand die Schrift auf
+        // dem Poster und war kaum zu lesen. Das Feld ersetzt die Kachel, es
+        // liegt nicht darüber.
+        .background(NoriTheme.elevated)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(NoriTheme.accent)
+                .frame(height: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -666,13 +683,33 @@ struct ContinueCard: View {
         }
     }
 
+    /// Die Karte ist quer, ein Poster ist hochkant. `scaledToFill` schnitt
+    /// daraus einen schmalen Streifen aus der Bildmitte — bei einfarbigen
+    /// Covern eine leere Fläche. Ohne Breitbild steht das Poster deshalb
+    /// vollständig in der Mitte, davor ein unscharfer Untergrund aus demselben
+    /// Bild, damit die Karte gefüllt wirkt.
     @ViewBuilder
     private var still: some View {
-        if let image = details.backdrop ?? details.poster {
-            AsyncImage(url: image) { phase in
+        if let wide = details.backdrop {
+            AsyncImage(url: wide) { phase in
                 switch phase {
                 case .success(let img):
                     img.resizable().scaledToFill()
+                default:
+                    NoriTheme.elevated
+                }
+            }
+        } else if let poster = details.poster {
+            AsyncImage(url: poster) { phase in
+                switch phase {
+                case .success(let img):
+                    ZStack {
+                        img.resizable()
+                            .scaledToFill()
+                            .blur(radius: 28)
+                            .overlay(NoriTheme.bg.opacity(0.35))
+                        img.resizable().scaledToFit()
+                    }
                 default:
                     NoriTheme.elevated
                 }

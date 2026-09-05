@@ -4,8 +4,44 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.2**, iOS/iPadOS **1.9.4**,
+unterschiedlich schnell bewegen: macOS **1.10.3**, iOS/iPadOS **1.9.4**,
 Windows **1.8.0**.
+
+## [macOS 1.10.3] – 2026-09-05
+
+Vier Anzeigefehler, alle aus Screenshots gemeldet.
+
+### Behoben
+
+- **Der Kopfbereich der Detailseite schnitt seinen eigenen Inhalt ab.** Er
+  hatte eine feste Höhe von 430 pt und `clipped()`. Ist der Inhalt höher —
+  langer Titel, viele Chips, Staffelauswahl — zentriert SwiftUI ihn in
+  diesem Rahmen und schneidet oben und unten ab; der Abspielknopf war zur
+  Hälfte weg. Der Bereich wächst jetzt mit seinem Inhalt und hat nur noch
+  eine Mindesthöhe.
+- **Dieselben Angaben standen dreimal auf der Detailseite**: als Chips, in
+  der Zeile darunter und in der Faktenspalte rechts. Jetzt trägt der
+  Kopfbereich Titel, Jahr, Altersfreigabe und Bewertung, die Faktenspalte
+  Genres, Sprachen und Quelle — jede Angabe an genau einer Stelle.
+- **Das Banner zeigte bei fehlendem Breitbild ein Hochkant-Poster
+  vollflächig.** In einer etwa 2:1 breiten Fläche blieb davon ein winziger
+  Ausschnitt aus der Bildmitte übrig, in dem der Titel unterging. Ohne
+  Breitbild dient das Poster jetzt nur noch unscharf und abgedunkelt als
+  Untergrund. Dasselbe in den Karten von „Schau weiter": dort steht das
+  Poster vollständig vor seinem eigenen unscharfen Untergrund.
+- **Das Hover-Infofeld auf den Kacheln war durchscheinend.** Mit 86 %
+  Schwarz stand die Schrift auf dem Poster und war kaum zu lesen. Es ist
+  jetzt deckend, hat abgerundete Ecken wie die Kachel und eine Akzentkante
+  oben.
+
+### Geändert
+
+- **Das Banner zeigt nur noch Empfehlungen.** Angefangene Titel standen
+  dort mit „Folge N fortsetzen" — und gleich darunter noch einmal in
+  „Schau weiter". Die Auswahl wechselt täglich, bleibt innerhalb eines
+  Tages aber gleich; vorher standen dort immer dieselben sechs Titel vom
+  Anfang des Alphabets. Sie mischt sich auch nicht mehr neu, sobald man
+  etwas anschaut.
 
 ## [macOS 1.10.2] · [iOS 1.9.4] – 2026-09-05
 
