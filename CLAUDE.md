@@ -88,3 +88,14 @@ Stand.
 Netzwerkadressen. Diese Prüfung nicht aufweichen. Hoster ändern ihre Seiten
 jederzeit — schlägt die Stream-Auflösung fehl, liegt das häufig dort und nicht
 am Nori-Code.
+
+## Schlüssel
+
+Keine Schlüssel im Quelltext — `tools/check-apple-sources.py` meldet lange
+Hex-Zeichenketten und Zuweisungen an Namen wie `apiKey`.
+
+Der TMDB-Schlüssel kommt aus `TMDBKeyStore` (in `AniworldClient.swift`):
+Schlüsselbund zuerst, sonst `TMDBAPIKey` aus der Info.plist, die aus der
+Build-Einstellung `TMDB_API_KEY` gefüllt wird. Ohne Schlüssel fragt die App
+TMDB gar nicht erst an und zeigt die Cover von AniWorld und Serienstream — das
+ist ein gültiger Zustand, kein Fehler.

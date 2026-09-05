@@ -137,10 +137,46 @@ struct PlaybackSettingsView: View {
 struct PrivacySettingsView: View {
     @Environment(LibraryStore.self) private var library
     @State private var confirm: String?
+    @State private var keyDraft = ""
+    @State private var keyStored = TMDBKeyStore.isUserProvided
+    @State private var keyNote: String?
 
     var body: some View {
         NoriScreen {
             Form {
+                Section {
+                    if keyStored {
+                        LabeledContent("Schlüssel", value: "hinterlegt")
+                        Button("Schlüssel entfernen", role: .destructive) {
+                            TMDBKeyStore.clear()
+                            keyStored = false
+                            keyDraft = ""
+                            keyNote = "Entfernt. Nori zeigt jetzt die Cover der Quellen."
+                        }
+                    } else {
+                        SecureField("TMDB-Schlüssel", text: $keyDraft)
+                        Button("Sichern") {
+                            if TMDBKeyStore.save(keyDraft) {
+                                keyStored = TMDBKeyStore.isUserProvided
+                                keyDraft = ""
+                                keyNote = "Gesichert. Neue Cover werden ab sofort bei TMDB gesucht."
+                            } else {
+                                keyNote = "Der Schlüsselbund hat die Ablage abgelehnt."
+                            }
+                        }
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    if let keyNote {
+                        Text(keyNote)
+                            .font(.footnote)
+                            .foregroundStyle(NoriTheme.muted)
+                    }
+                } header: {
+                    Text("Cover von TMDB")
+                } footer: {
+                    Text("Ohne Schlüssel nutzt Nori die Cover von AniWorld und Serienstream. Ein eigener Schlüssel (kostenlos bei themoviedb.org) liefert zusätzlich Breitbilder, Kurzbeschreibungen und Bewertungen. Er liegt im Schlüsselbund, nicht im Programm.")
+                }
+
                 Section {
                     Button("Verlauf löschen", role: .destructive) { confirm = "history" }
                     Button("Fortschritt löschen", role: .destructive) { confirm = "progress" }

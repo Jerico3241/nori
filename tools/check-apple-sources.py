@@ -201,6 +201,40 @@ NEEDS_XCODE_16 = {
 }
 
 
+def check_no_secrets() -> None:
+    """Kein Schlüssel im Quelltext.
+
+    Der TMDB-Schlüssel stand als Zeichenkette in `AniworldClient.swift`. Ein
+    Schlüssel im Quelltext liegt in jedem Klon, in jedem Build und dauerhaft in
+    der Git-Historie — wer ihn sperrt, sperrt alle Installationen zugleich.
+    Schlüssel gehören in den Schlüsselbund oder in eine Build-Einstellung.
+
+    Gesucht wird nach langen Hex- oder Base64-artigen Zeichenketten und nach
+    Zuweisungen an offensichtlich benannte Variablen. Kommentare zählen nicht.
+    """
+    long_hex = re.compile(r'"[0-9a-f]{32,}"')
+    named = re.compile(
+        r'\b(?:apiKey|api_key|apiSecret|clientSecret|accessToken|refreshToken|password)\b'
+        r'\s*(?:=|:)\s*"[^"\n]{8,}"',
+        re.IGNORECASE,
+    )
+    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+        for path in swift_files(folder):
+            raw = path.read_text()
+            # Zeichenketten hier absichtlich stehen lassen — sie sind der Fund.
+            without_comments = re.sub(r"//[^\n]*", " ", re.sub(r"/\*.*?\*/", " ", raw, flags=re.S))
+            for pattern, what in ((long_hex, "lange Hex-Zeichenkette"), (named, "Zuweisung an einen Schlüsselnamen")):
+                if pattern.search(without_comments):
+                    add(
+                        "ERROR",
+                        f"{label}/{path.name}",
+                        f"Sieht nach einem fest einkompilierten Schlüssel aus ({what}). "
+                        "Schlüssel gehören in den Schlüsselbund (siehe TMDBKeyStore) "
+                        "oder in eine Build-Einstellung, nicht in den Quelltext.",
+                    )
+                    break
+
+
 def check_ios_runner() -> None:
     """Der iOS-Runner muss zum verwendeten SDK passen.
 
@@ -383,6 +417,7 @@ def main() -> int:
     check_main_actor_calls(IOS, "iOS")
     check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
+    check_no_secrets()
     check_app_icons()
     check_deployment_targets()
 

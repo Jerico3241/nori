@@ -4,8 +4,26 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.0**, iOS/iPadOS **1.9.2**,
+unterschiedlich schnell bewegen: macOS **1.10.1**, iOS/iPadOS **1.9.3**,
 Windows **1.8.0**.
+
+## [macOS 1.10.1] · [iOS 1.9.3] – 2026-09-05
+
+### Geändert
+
+- **Der TMDB-Schlüssel steht nicht mehr im Quelltext.** Er lag als
+  Zeichenkette in `AniworldClient.swift` und damit in jedem Klon, in jedem
+  Build und in der Git-Historie; gesperrt wird er für alle Installationen
+  zugleich. Er kommt jetzt aus dem Schlüsselbund oder, für Builds mit
+  gesetzter Build-Einstellung `TMDB_API_KEY`, aus der Info.plist.
+- **Ohne Schlüssel bleibt die App vollständig benutzbar.** Sie fragt TMDB
+  dann gar nicht erst an und zeigt die Cover von AniWorld und Serienstream,
+  die sie ohnehin einliest. Ein Schlüssel bringt zusätzlich Breitbilder für
+  den Kopfbereich, Kurzbeschreibungen und Bewertungen.
+- Eintragen und Entfernen unter **Einstellungen › Daten** (macOS) bzw.
+  **Einstellungen › Datenschutz** (iOS). Die manuelle Cover-Auswahl sagt
+  jetzt, dass ohne Schlüssel nichts zur Auswahl steht, statt „keine
+  Treffer" zu melden, obwohl gar nicht gesucht wurde.
 
 ## [iOS 1.9.2] – 2026-09-05
 

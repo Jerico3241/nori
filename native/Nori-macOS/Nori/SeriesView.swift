@@ -442,6 +442,13 @@ struct CoverPicker: View {
                                 .font(.caption)
                                 .foregroundStyle(NoriTheme.muted)
                         }
+                    } else if !CoverIndex.shared.hasKey {
+                        // Ohne Schlüssel fragt Nori TMDB gar nicht erst an. Das
+                        // sähe sonst wie „keine Treffer" aus, obwohl gar nicht
+                        // gesucht wurde.
+                        Text("Ohne TMDB-Schlüssel gibt es hier nichts zur Auswahl. Einen Schlüssel trägt man unter Einstellungen › Daten ein.")
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
                     } else if candidates.isEmpty {
                         Text("TMDB liefert für diesen Titel keine Treffer.")
                             .font(.caption)
