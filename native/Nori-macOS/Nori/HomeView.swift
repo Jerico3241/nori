@@ -123,7 +123,12 @@ struct HomeView: View {
             .sorted { Self.featureRank($0.slug, day: day) < Self.featureRank($1.slug, day: day) }
             .prefix(6)
             .map {
-                HeroItem(slug: $0.slug, title: $0.title, kind: library.provider, genres: $0.genres)
+                HeroItem(
+                    slug: $0.slug,
+                    title: $0.title,
+                    kind: $0.provider ?? library.provider,
+                    genres: $0.genres
+                )
             }
     }
 
@@ -158,15 +163,18 @@ struct HomeView: View {
             .prefix(6)
             .map(\.key)
 
+        // Über die Kennung entdoppeln, nicht über den Slug: beide Quellen
+        // können denselben Slug führen, und in einer gemeinsamen Liste fiele
+        // sonst einer der beiden Titel aus allen Zeilen heraus.
         var used: Set<String> = []
         var rows: [GenreRow] = []
         for genre in top {
             let items = catalog
-                .filter { $0.genres.contains(genre) && !used.contains($0.slug) }
+                .filter { $0.genres.contains(genre) && !used.contains($0.id) }
                 .prefix(18)
                 .map { $0 }
             guard items.count >= 6 else { continue }
-            used.formUnion(items.map(\.slug))
+            used.formUnion(items.map(\.id))
             rows.append(GenreRow(title: genre, items: items))
         }
         return rows
@@ -455,9 +463,12 @@ struct PosterCell: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            NoriSeriesLink(slug: item.slug, titleHint: item.title) {
+            // Die Quelle kommt aus dem Eintrag, nicht aus dem globalen
+            // Umschalter: nur so führt eine Kachel auch dann richtig, wenn die
+            // Liste Titel beider Quellen enthält.
+            NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.provider) {
                 VStack(alignment: .leading, spacing: 8) {
-                    PosterTile(title: item.title, slug: item.slug)
+                    PosterTile(title: item.title, slug: item.slug, kind: item.provider)
                         .overlay {
                             if hovering {
                                 HoverInfo(
@@ -495,7 +506,7 @@ struct PosterCell: View {
                     details = await CoverIndex.shared.detailsLoading(
                         slug: item.slug,
                         title: item.title,
-                        kind: library.provider
+                        kind: item.provider ?? library.provider
                     )
                 }
             }

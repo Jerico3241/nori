@@ -90,9 +90,9 @@ struct CatalogView: View {
                     .listRowSeparator(.hidden)
             }
             ForEach(filtered) { item in
-                NoriSeriesLink(slug: item.slug, titleHint: item.title) {
+                NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.provider) {
                     HStack(spacing: 10) {
-                        PosterTile(title: item.title, slug: item.slug, compact: true)
+                        PosterTile(title: item.title, slug: item.slug, compact: true, kind: item.provider)
                             .frame(width: 30)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.title)

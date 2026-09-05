@@ -118,4 +118,26 @@ final class ProviderPathTests: XCTestCase {
         let path = CatalogProvider.aniworld.guessedCoverPath(slug: slug)
         XCTAssertEqual(HTML.slugFromPoster(path ?? ""), slug)
     }
+
+    // MARK: - Gemeinsame Bibliothek
+
+    /// Beide Quellen können denselben Slug führen. Ohne die Quelle in der
+    /// Kennung fiele in einer gemeinsamen Liste einer der beiden Titel weg.
+    func testCatalogItemIdSeparatesProviders() {
+        let anime = CatalogItem(slug: "gantz", title: "Gantz", alts: [], genres: [], provider: .aniworld)
+        let serie = CatalogItem(slug: "gantz", title: "Gantz", alts: [], genres: [], provider: .serienstream)
+
+        XCTAssertNotEqual(anime.id, serie.id)
+        XCTAssertEqual(Set([anime, serie]).count, 2)
+    }
+
+    /// Ältere gespeicherte Kataloge kennen das Feld nicht.
+    func testCatalogItemDecodesWithoutProvider() throws {
+        let json = Data("""
+        {"slug":"one-piece","title":"One Piece","alts":[],"genres":["Action"]}
+        """.utf8)
+        let item = try JSONDecoder().decode(CatalogItem.self, from: json)
+        XCTAssertNil(item.provider)
+        XCTAssertEqual(item.slug, "one-piece")
+    }
 }

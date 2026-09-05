@@ -118,9 +118,13 @@ actor AniworldClient {
     func getCatalog(provider: CatalogProvider, force: Bool = false) async throws -> CatalogResult {
         if !force, let hit = catalogs[provider], hit.1 > Date() { return hit.0 }
         let html = try await fetchPage(provider.catalogPath, provider: provider)
-        let items = provider == .serienstream
+        var items = provider == .serienstream
             ? try HTML.parseCatalogSerienstream(html)
             : try HTML.parseCatalog(html)
+        // Der Parser sieht nur HTML und weiß nicht, welche Seite er liest.
+        // Die Quelle kommt deshalb hier dazu — ab hier weiß jeder Eintrag,
+        // wohin er führt, auch in einer gemeinsamen Liste.
+        for index in items.indices { items[index].provider = provider }
         // Anzahl mitgeben: 0 heißt blockiert oder Markup geändert, eine kleine
         // Zahl heißt, dass der Parser nur noch teilweise greift. Ohne die Zahl
         // war beides dieselbe Meldung.
