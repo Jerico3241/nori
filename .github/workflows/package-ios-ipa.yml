@@ -97,6 +97,43 @@ jobs:
           echo "path=$WORK/${{ steps.meta.outputs.name }}.ipa" >> "$GITHUB_OUTPUT"
           ls -lh "$WORK/${{ steps.meta.outputs.name }}.ipa"
 
+      # Ohne Gerät in Reichweite ist das Log die einzige Quelle darüber, was in
+      # der IPA tatsächlich steckt. Genau die Werte, an denen eine Installation
+      # scheitert, stehen hier: gegen welches SDK gebaut wurde, ab welcher
+      # iOS-Version die App laufen will, ob ein Icon eingebettet ist und ob der
+      # Payload-Aufbau stimmt.
+      - name: Inhalt der IPA protokollieren
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/payload/Payload/Nori.app"
+          PLIST="$APP/Info.plist"
+
+          echo "── Info.plist ───────────────────────────────"
+          for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion \
+                     CFBundleIconName CFBundleExecutable MinimumOSVersion \
+                     DTPlatformName DTPlatformVersion DTSDKName DTXcode \
+                     LSRequiresIPhoneOS UIDeviceFamily; do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || echo "— fehlt —")"
+            printf '%-30s %s\n' "$key" "$value"
+          done
+
+          echo "── Icons im Bundle ──────────────────────────"
+          # Der Assetkatalog liegt als Assets.car; einzelne AppIcon-PNGs legt
+          # der Compiler zusätzlich ab. Fehlt beides, hat das Gerät kein Icon.
+          ls "$APP" | grep -i -E 'assets\.car|appicon' || echo "weder Assets.car noch AppIcon-Dateien"
+
+          echo "── Signatur ─────────────────────────────────"
+          codesign -dv "$APP" 2>&1 | head -5 || echo "nicht signiert (erwartet)"
+
+          echo "── Architektur und Build-Version ────────────"
+          otool -l "$APP/Nori" 2>/dev/null \
+            | grep -A 5 LC_BUILD_VERSION | head -12 || echo "LC_BUILD_VERSION nicht lesbar"
+          file "$APP/Nori" 2>/dev/null || true
+
+          echo "── Aufbau der IPA ───────────────────────────"
+          unzip -l "${{ steps.pack.outputs.path }}" | head -8
+
       - name: IPA hochladen
         uses: actions/upload-artifact@v5
         with:
