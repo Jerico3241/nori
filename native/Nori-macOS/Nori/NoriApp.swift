@@ -51,8 +51,9 @@ struct PlayerRequest: Hashable, Identifiable {
     var episode: Episode
     var season: String
     var resumeAt: Double
+    var provider: CatalogProvider
 
-    var id: String { "\(series.slug)|\(season)|\(episode.number)|\(Int(resumeAt))" }
+    var id: String { "\(provider.rawValue)|\(series.slug)|\(season)|\(episode.number)|\(Int(resumeAt))" }
 }
 
 /// Der Player ist auf dem Mac ein eigenes Fenster statt eines Sheets: eigene
@@ -341,3 +342,4 @@ struct PlayerWindowView: View {
         .onDisappear { host.request = nil }
     }
 }
+

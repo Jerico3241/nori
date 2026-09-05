@@ -4,8 +4,37 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.3**, iOS/iPadOS **1.9.7**,
+unterschiedlich schnell bewegen: macOS **1.11.5**, iOS/iPadOS **1.9.9**,
 Windows **1.8.0**.
+
+## [macOS 1.11.5] · [iOS 1.9.9] – 2026-09-05
+
+- Cover: Originaladressen einschließlich Host, PNG-Endung und AVIF-Query erhalten; keine pauschale JPG-Umschreibung.
+- Parser: Lazy-Load-Bilder und Open-Graph-Fallback für beide Quellen auswerten.
+- Bilddaten vor dem Cachen mit ImageIO decodieren; HTML-Fehlerseiten nicht als Bilder speichern.
+- Vorübergehende Bild-/Detailseitenfehler nach 30 Sekunden erneut zulassen; abgebrochene Bildanfragen nicht als Fehler merken.
+- Alte, umgeschriebene Coveradressen einmalig verwerfen; manuelle Auswahl erhalten. Coveraufgaben bei Quellenwechsel neu starten und verspätete Bilder verwerfen.
+- Regressionstests mit den gemeldeten PNG-/AVIF-Adressen ergänzt. Xcode-/Swift-Tests und Live-Bildabrufe noch ausstehend; keine Workflows gestartet.
+
+## [macOS 1.11.4] · [iOS 1.9.8] – 2026-09-05
+
+### Behoben
+
+- Beide Player halten die Quelle des Wiedergabeauftrags fest. Navigation zu
+  einem Titel der anderen Quelle ändert weder den gespeicherten Fortschritt
+  noch Hoster-Auflösung, Resume oder den automatischen Folgenwechsel.
+- iOS übergibt Quelle und Episodenpfad auch an den Hoster-Resolver. Zuvor
+  griff dort die AniWorld-Vorgabe auch bei Serienstream-Wiedergaben.
+- iOS übergibt wie macOS User-Agent und den vom Resolver gelieferten Referer
+  samt Origin an das Video-Asset und zeigt asynchrone Wiedergabefehler an.
+- Abgeschlossene Ladeversuche und Player-Rückmeldungen werden verworfen,
+  wenn inzwischen eine andere Wiedergabe gestartet oder der Player geschlossen
+  wurde. Fehlerbeobachter werden erst nach dem Resume-Suchlauf eingerichtet.
+
+### Prüfstand
+
+- Quellcodeprüfung lokal; Xcode-Builds, Swift-Tests und Geräteprüfungen für
+  diesen Stand stehen aus. Auf Wunsch wurden keine Workflows gestartet.
 
 ## [macOS 1.11.3] – 2026-09-05
 
@@ -315,3 +344,4 @@ Dateien.
 
 Kein gepflegtes Changelog. Der Stand ist über die Git-Historie und die
 GitHub-Releases nachvollziehbar.
+

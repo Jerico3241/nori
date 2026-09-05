@@ -7,6 +7,14 @@ final class AniworldParsingTests: XCTestCase {
 
     // MARK: - Katalog
 
+    func testPNGPosterFromOpenGraph() throws {
+        let url = "https://aniworld.to/public/img/cover/black-torch-stream-cover-iAHy4ncsjbRBCRgrkdKeKD2zwa4uvP69_220x330.png"
+        let html = "<html><head><meta property='og:image' content='\(url)'></head><body></body></html>"
+        let detail = try HTML.parseSeries(html, slug: "black-torch", requestedSeason: nil)
+        XCTAssertEqual(detail.coverPath, url)
+        XCTAssertEqual(AniworldClient.coverURL(detail.coverPath, provider: .aniworld)?.absoluteString, url)
+    }
+
     func testCatalogReadsSlugAndTitle() throws {
         let items = try HTML.parseCatalog(Fixtures.aniworldCatalog)
         XCTAssertEqual(items.map(\.slug), ["one-piece", "naruto"])
@@ -170,3 +178,4 @@ final class AniworldParsingTests: XCTestCase {
         XCTAssertEqual(HTML.unique(["a", " a ", "", "b"]), ["a", "b"])
     }
 }
+

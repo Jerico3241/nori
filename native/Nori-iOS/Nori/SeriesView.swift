@@ -19,6 +19,7 @@ struct SeriesView: View {
         let series: SeriesDetail
         let episode: Episode
         let resumeAt: Double
+        let provider: CatalogProvider
     }
 
     var body: some View {
@@ -63,7 +64,7 @@ struct SeriesView: View {
                                     Button {
                                         let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
                                         if let ep = detail.episodes.first(where: { $0.number == target.episode }) {
-                                            play = PlayTarget(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
+                                            play = PlayTarget(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0, provider: library.provider)
                                         }
                                     } label: {
                                         let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
@@ -92,7 +93,7 @@ struct SeriesView: View {
                             }
                             ForEach(detail.episodes) { ep in
                                 EpisodeRow(series: detail, episode: ep, season: season) { resumeAt in
-                                    play = PlayTarget(series: detail, episode: ep, resumeAt: resumeAt)
+                                    play = PlayTarget(series: detail, episode: ep, resumeAt: resumeAt, provider: library.provider)
                                 }
                             }
                         }
@@ -126,7 +127,7 @@ struct SeriesView: View {
             }
         }
         .fullScreenCover(item: $play) { target in
-            PlayerScreen(series: target.series, episode: target.episode, season: season, resumeAt: target.resumeAt)
+            PlayerScreen(series: target.series, episode: target.episode, season: season, resumeAt: target.resumeAt, provider: target.provider)
         }
     }
 
@@ -209,3 +210,4 @@ struct EpisodeRow: View {
         .buttonStyle(NoriPressStyle(enabled: !reduceMotion))
     }
 }
+

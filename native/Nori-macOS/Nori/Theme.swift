@@ -195,6 +195,7 @@ struct NoriCoverImage<Fallback: View>: View {
         .task(id: url) {
             image = nil
             guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
+            guard !Task.isCancelled else { return }
             image = NSImage(data: data)
         }
     }
@@ -250,7 +251,8 @@ struct PosterTile: View {
             .accessibilityAddTraits(.isImage)
             .animation(.easeOut(duration: 0.16), value: hovering)
             .onHover { hovering = $0 }
-            .task(id: slug) {
+            .task(id: source.rawValue + "|" + slug + "|" + (coverURL?.absoluteString ?? "")) {
+                remote = nil
                 // Eine manuelle Auswahl schlägt alles andere.
                 if let chosen = await CoverIndex.shared.override(for: slug) {
                     remote = chosen
@@ -356,3 +358,4 @@ enum CoverToneSampler {
         return Color(red: bestR, green: bestG, blue: bestB)
     }
 }
+

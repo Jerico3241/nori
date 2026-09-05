@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import ImageIO
 
 /// Zugang zum TMDB-Schlüssel.
 ///
@@ -221,26 +222,13 @@ actor AniworldClient {
 
     static func coverURL(_ path: String?, provider: CatalogProvider) -> URL? {
         guard let path else { return nil }
-        var raw: String
-        if path.hasPrefix("http") {
-            raw = path
-        } else if path.hasPrefix("/") {
-            raw = provider.origin + path
-        } else {
-            return URL(string: path)
-        }
-
-        // Serienstream liefert nach `format` aus und nennt in den eigenen
-        // Seiten `format=avif`. AVIF decodieren die Systembibliotheken zwar,
-        // aber jpg tut es überall und kostet nichts — deshalb hier
-        // festgeschrieben statt nur ergänzt, wenn gar kein Format dasteht.
-        if provider == .serienstream, var parts = URLComponents(string: raw) {
-            var items = (parts.queryItems ?? []).filter { $0.name != "format" }
-            items.append(URLQueryItem(name: "format", value: "jpg"))
-            parts.queryItems = items
-            raw = parts.url?.absoluteString ?? raw
-        }
-        return URL(string: raw)
+        let raw = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty,
+              let url = URL(string: raw, relativeTo: URL(string: provider.origin + "/"))?.absoluteURL,
+              ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        // Host, Dateiendung und Query gehören zur vom Anbieter gelieferten Adresse.
+        // Insbesondere AVIF nicht ungeprüft durch ein anderes Format ersetzen.
+        return url
     }
 
     private func looksBlocked(_ html: String) -> Bool {
@@ -291,7 +279,7 @@ actor CoverImageLoader {
 
     private var cache: [URL: Data] = [:]
     private var order: [URL] = []
-    private var failed: Set<URL> = []
+    private var failed: [URL: Date] = [:]
     private let session: URLSession
 
     init() {
@@ -307,7 +295,8 @@ actor CoverImageLoader {
     /// es beim Buchstaben.
     func data(for url: URL, referer: String) async -> Data? {
         if let hit = cache[url] { return hit }
-        if failed.contains(url) { return nil }
+        if let until = failed[url], until > Date() { return nil }
+        failed[url] = nil
         return await load(url, referer: referer)
     }
 
@@ -321,16 +310,17 @@ actor CoverImageLoader {
         request.setValue(referer, forHTTPHeaderField: "Referer")
 
         guard let result = try? await session.data(for: request) else {
+            if !Task.isCancelled { remember(failure: url) }
+            return nil
+        }
+        if let http = result.1 as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             remember(failure: url)
             return nil
         }
-        if let http = result.1 as? HTTPURLResponse, http.statusCode >= 400 {
-            remember(failure: url)
-            return nil
-        }
-        // Eine Fehlerseite ist kein Bild. Ohne diese Schranke landet HTML im
-        // Bilddecoder, und die Kachel bliebe ohne erkennbaren Grund leer.
-        guard result.0.count > 512 else {
+        // Auch HTTP 200 kann HTML enthalten. Nur decodierbare Bilder cachen;
+        // eine willkürliche Mindestgröße erkennt keine Fehlerseite.
+        guard let imageSource = CGImageSourceCreateWithData(result.0 as CFData, nil),
+              CGImageSourceCreateImageAtIndex(imageSource, 0, nil) != nil else {
             remember(failure: url)
             return nil
         }
@@ -349,7 +339,7 @@ actor CoverImageLoader {
 
     private func remember(failure url: URL) {
         if failed.count >= failureCapacity { failed.removeAll(keepingCapacity: true) }
-        failed.insert(url)
+        failed[url] = Date().addingTimeInterval(30)
     }
 
     /// Wie `load`, aber mit Befund statt nur Ergebnis — für die Cover-Diagnose
@@ -405,7 +395,7 @@ actor CoverIndex {
     private static let maxEntries = 4000
     /// Erhöhen, wenn sich die automatische Zuordnung ändert — verwirft die
     /// gecachten TMDB-Treffer, ohne manuelle Auswahl anzutasten.
-    private static let storeVersion = 2
+    private static let storeVersion = 3
 
     /// Laufende Anfragen je Slug. Dieselbe Serie steht oft gleichzeitig in
     /// Startseite, Katalog und Kalender; ohne das ginge pro Kachel eine eigene
@@ -415,7 +405,7 @@ actor CoverIndex {
     private var sourceInFlight: [String: Task<URL?, Never>] = [:]
     /// Slugs, deren Detailseite kein Cover hergab. Nur im Arbeitsspeicher: ein
     /// Neustart darf es erneut versuchen, die Seite kann sich geändert haben.
-    private var missedSource: Set<String> = []
+    private var missedSource: [String: Date] = [:]
     private var activeLookups = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
     private static let maxConcurrentLookups = 4
@@ -429,7 +419,10 @@ actor CoverIndex {
 
         if let data = try? Data(contentsOf: storeURL),
            let bag = try? JSONDecoder().decode(Bag.self, from: data) {
-            sourceCovers = (bag.sourceCovers ?? [:]).compactMapValues(URL.init(string:))
+            // Alte Quelladressen hatten entfernte Queries bzw. erzwungenes JPG.
+            if (bag.version ?? 1) >= Self.storeVersion {
+                sourceCovers = (bag.sourceCovers ?? [:]).compactMapValues(URL.init(string:))
+            }
             overrides = (bag.overrides ?? [:]).compactMapValues(URL.init(string:))
             // Die automatischen TMDB-Treffer aus älteren Ständen entstanden mit
             // einer Bewertung, die Beliebtheit als Treffer zählte, und sind
@@ -494,7 +487,8 @@ actor CoverIndex {
         if let known = sourceCovers[slug] { return known }
         // Ein Titel, dessen Detailseite kein Cover hergab, wird nicht bei
         // jedem Scrollen erneut geladen.
-        if missedSource.contains(slug) { return nil }
+        if let until = missedSource[slug], until > Date() { return nil }
+        missedSource[slug] = nil
         if let running = sourceInFlight[slug] { return await running.value }
 
         let task = Task<URL?, Never> {
@@ -512,7 +506,7 @@ actor CoverIndex {
         guard let detail = try? await AniworldClient.shared.getSeries(provider: provider, slug: slug),
               let url = AniworldClient.coverURL(detail.coverPath, provider: provider)
         else {
-            missedSource.insert(slug)
+            missedSource[slug] = Date().addingTimeInterval(30)
             return nil
         }
         sourceCovers[slug] = url
