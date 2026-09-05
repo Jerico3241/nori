@@ -49,7 +49,10 @@ final class AniworldParsingTests: XCTestCase {
 
     func testSeriesReadsMetadata() throws {
         let detail = try HTML.parseSeries(Fixtures.aniworldSeries, slug: "one-piece", requestedSeason: nil)
-        XCTAssertEqual(detail.coverPath, "/public/img/cover/one-piece.jpg")
+        XCTAssertEqual(
+            detail.coverPath,
+            "/public/img/cover/one-piece-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg"
+        )
         XCTAssertEqual(detail.yearStart, "1999")
         XCTAssertEqual(detail.yearEnd, "2026")
         XCTAssertEqual(detail.fsk, "12")

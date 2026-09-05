@@ -44,7 +44,10 @@ final class CalendarParsingTests: XCTestCase {
     func testAniworldCalendarTakesTheCoverNotTheFlag() throws {
         let payload = try HTML.parseAniworldCalendar(Fixtures.aniworldCalendar, now: morning)
         let onePiece = try XCTUnwrap(payload.upcoming.first { $0.slug == "one-piece" })
-        XCTAssertEqual(onePiece.coverPath, "/public/img/cover/one-piece.jpg")
+        XCTAssertEqual(
+            onePiece.coverPath,
+            "/public/img/cover/one-piece-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg"
+        )
     }
 
     func testAniworldCalendarReadsSubtitleFlag() throws {
@@ -70,7 +73,13 @@ final class CalendarParsingTests: XCTestCase {
         XCTAssertEqual(dexter.title, "Dexter")
         XCTAssertEqual(dexter.season, "2")
         XCTAssertEqual(dexter.episode, 3)
-        XCTAssertEqual(dexter.coverPath, "/media/images/channel/desktop/dexter.jpg")
+        // Der Kalender reicht den Poster unverändert durch — samt Abfrage.
+        // Das ist in Ordnung: `AniworldClient.coverURL` schreibt `format`
+        // später auf jpg um, egal was hier steht (siehe
+        // ProviderPathTests.testCoverURLForcesJpegOnSerienstream).
+        // Die Detailseite schneidet die Abfrage dagegen ab; beide Wege enden
+        // deshalb bei derselben Adresse.
+        XCTAssertEqual(dexter.coverPath, "/media/images/channel/desktop/dexter-7sqv7dhs?format=avif")
         XCTAssertEqual(
             dexter.airingAt,
             berlinDate(year: 2026, month: 9, day: 14, hour: 20, minute: 15).timeIntervalSince1970 * 1000

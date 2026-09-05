@@ -77,46 +77,69 @@ final class ProviderPathTests: XCTestCase {
         XCTAssertEqual(formatClock(-5), "0:00")
     }
 
-    // MARK: - Abgeleiteter Coverpfad
+    // MARK: - Coveradressen
 
-    /// Ein Katalogeintrag trägt kein Bild. Ohne diese Ableitung bleibt im
-    /// Raster nur TMDB, und findet TMDB nichts, ein Buchstabe.
-    func testGuessedCoverPathPerProvider() {
-        XCTAssertEqual(
-            CatalogProvider.aniworld.guessedCoverPath(slug: "one-piece"),
-            "/public/img/cover/one-piece.jpg"
+    /// Warum es `guessedCoverPath` nicht mehr gibt.
+    ///
+    /// Die Adresse eines Covers lässt sich **nicht** aus dem Slug bilden:
+    /// beide Quellen hängen einen Zufallsanteil an den Dateinamen. Dieser Test
+    /// hält die tatsächlich ausgelieferten Namen fest — er schlägt fehl, wenn
+    /// jemand die Ableitung wieder einführt, weil sie „naheliegend" aussieht.
+    func testCoverFileNamesCarryAnUnguessableSuffix() {
+        let aniworld = "/public/img/cover/black-clover-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg"
+        let serienstream = "/media/images/channel/desktop/black-mirror-7sqv7dhs"
+
+        XCTAssertFalse(aniworld.hasSuffix("/black-clover.jpg"))
+        XCTAssertFalse(serienstream.hasSuffix("/black-mirror"))
+        // Und die Gegenrichtung trägt auch nicht: aus dem Dateinamen ist der
+        // Slug nicht sauber zu gewinnen. Bei AniWorld scheitert es am
+        // Unterstrich, bei Serienstream käme der Zufallsanteil mit.
+        XCTAssertNil(HTML.slugFromPoster(aniworld))
+        XCTAssertEqual(HTML.slugFromPoster(serienstream), "black-mirror-7sqv7dhs")
+        XCTAssertNotEqual(HTML.slugFromPoster(serienstream), "black-mirror")
+    }
+
+    /// Serienstream liefert nach `format` aus und nennt in den eigenen Seiten
+    /// `format=avif`. Nori schreibt jpg fest — das decodiert überall.
+    func testCoverURLForcesJpegOnSerienstream() {
+        let url = AniworldClient.coverURL(
+            "/media/images/channel/desktop/black-mirror-7sqv7dhs?format=avif",
+            provider: .serienstream
         )
         XCTAssertEqual(
-            CatalogProvider.serienstream.guessedCoverPath(slug: "dexter"),
-            "/media/images/channel/desktop/dexter.jpg"
+            url?.absoluteString,
+            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs?format=jpg"
         )
     }
 
-    /// Der Pfad wird aus dem Slug zusammengesetzt — ein Slug mit Schrägstrich
-    /// oder Punkt führte aus dem Cover-Verzeichnis heraus.
-    func testGuessedCoverPathRejectsUnusualSlugs() {
-        for slug in ["", "../../etc/passwd", "a/b", "one.piece", "one piece", "one?x=1"] {
-            XCTAssertNil(
-                CatalogProvider.aniworld.guessedCoverPath(slug: slug),
-                "\(slug) hätte abgelehnt werden müssen"
-            )
-        }
-    }
-
-    func testGuessedCoverPathAllowsDigitsAndUnderscore() {
+    func testCoverURLAddsFormatWhenMissing() {
+        let url = AniworldClient.coverURL(
+            "/media/images/channel/desktop/black-mirror-7sqv7dhs",
+            provider: .serienstream
+        )
         XCTAssertEqual(
-            CatalogProvider.aniworld.guessedCoverPath(slug: "86_eighty-six2"),
-            "/public/img/cover/86_eighty-six2.jpg"
+            url?.absoluteString,
+            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs?format=jpg"
         )
     }
 
-    /// Gegenprobe zur Annahme, auf der die Ableitung beruht: `slugFromPoster`
-    /// gewinnt aus dem Posternamen den Slug. Beide Richtungen müssen sich
-    /// treffen, sonst stimmt die Vermutung nicht.
-    func testGuessAndSlugFromPosterAreInverse() {
-        let slug = "one-piece"
-        let path = CatalogProvider.aniworld.guessedCoverPath(slug: slug)
-        XCTAssertEqual(HTML.slugFromPoster(path ?? ""), slug)
+    /// AniWorld liefert fertige Dateien — dort nichts anhängen.
+    func testCoverURLLeavesAniworldAlone() {
+        let path = "/public/img/cover/black-clover-stream-cover-WWoAujz6fnp93s8iZ3F9iqqjO7WtXiIV_220x330.jpg"
+        XCTAssertEqual(
+            AniworldClient.coverURL(path, provider: .aniworld)?.absoluteString,
+            "https://aniworld.to" + path
+        )
+    }
+
+    /// Eine bereits vollständige Adresse bleibt vollständig — sonst stünde der
+    /// Host doppelt davor.
+    func testCoverURLKeepsAbsoluteAddresses() {
+        let absolute = "https://image.tmdb.org/t/p/w500/abc.jpg"
+        XCTAssertEqual(
+            AniworldClient.coverURL(absolute, provider: .aniworld)?.absoluteString,
+            absolute
+        )
     }
 
     // MARK: - Gemeinsame Bibliothek
