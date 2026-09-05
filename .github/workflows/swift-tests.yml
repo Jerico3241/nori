@@ -1,11 +1,12 @@
 name: Swift tests
 
+# Nur `push`, kein `pull_request`: Für Branches in diesem Repository laufen
+# beide Ereignisse auf demselben Baum — der Zweig sitzt auf main auf, der
+# Merge-Commit ist der Branch-Kopf. Das prüfte alles doppelt und kostete die
+# doppelten Minuten. GitHub ordnet die push-Läufe dem Pull Request ohnehin zu,
+# sie erscheinen dort also weiterhin als Prüfungen.
 on:
   push:
-    paths:
-      - 'native/**'
-      - '.github/workflows/swift-tests.yml'
-  pull_request:
     paths:
       - 'native/**'
       - '.github/workflows/swift-tests.yml'

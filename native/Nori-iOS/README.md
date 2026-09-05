@@ -19,12 +19,29 @@ Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeite
 
 ## IPA (unsigniert)
 
-Die `.ipa` kann außerhalb von macOS/Xcode nicht gebaut werden.
+### Ohne eigenen Mac: aus der CI herunterladen
+
+Der Workflow **Package iOS IPA** legt bei jedem Push auf `main`, der den
+iOS-Ordner berührt, eine unsignierte IPA als Artefakt ab. Unter *Actions →
+Package iOS IPA → letzter Lauf → Artifacts* liegt sie als
+`Nori-iOS-<Version>-unsigned`. Haltbarkeit 30 Tage. Von Hand anstoßen geht über
+*Run workflow*.
+
+### Auf einem Mac mit Xcode
 
 1. Diesen Ordner auf einen Mac legen.
 2. `IPA-bauen.command` ausführen.
 3. Xcode lädt beim ersten Build SwiftSoup.
-4. Die erzeugte IPA anschließend mit dem gewünschten Signing-Verfahren installieren.
+
+Beide Wege bauen dasselbe: `-sdk iphoneos`, ohne Signatur, ohne
+`embedded.mobileprovision`.
+
+### Danach
+
+Die IPA ist **unsigniert** und lässt sich so nicht installieren. Signieren auf
+dem Gerät (Feather, ESign, SideStore …) oder mit einem eigenen Zertifikat.
+Wer ein Apple-Entwicklerkonto hat, nimmt besser den Weg über Xcode weiter
+unten — dann entfällt das nachträgliche Signieren.
 
 ## Direkt aus Xcode
 

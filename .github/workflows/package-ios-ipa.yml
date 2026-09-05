@@ -1,0 +1,99 @@
+name: Package iOS IPA
+
+# Legt eine unsignierte Nori.ipa als Artefakt ab, damit man sie herunterladen
+# kann, ohne selbst einen Mac mit Xcode zu bemühen. Signiert wird danach auf
+# dem Gerät (Feather, ESign, SideStore …) oder mit einem eigenen Zertifikat.
+#
+# Dieselbe Bauform wie `native/Nori-iOS/IPA-bauen.command`, damit lokal und in
+# der CI dasselbe herauskommt. Ändert sich hier etwas, gehört es auch dorthin.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/Nori-iOS/**'
+      - '.github/workflows/package-ios-ipa.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    # macos-15 wegen Xcode 16 — dieselbe Begründung wie in build-ios.yml: die
+    # App verwendet hinter `#available` iOS-18-APIs, und `#available` prüft nur
+    # zur Laufzeit.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Version lesen
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -oE 'MARKETING_VERSION = [0-9.]+' \
+            native/Nori-iOS/Nori.xcodeproj/project.pbxproj | head -1 | awk '{print $3}')"
+          test -n "$VERSION"
+          echo "name=Nori-iOS-$VERSION-unsigned" >> "$GITHUB_OUTPUT"
+
+      - name: Swift-Pakete auflösen
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori
+
+      - name: Unsigniert für das Gerät bauen
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ipa" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM= \
+            ONLY_ACTIVE_ARCH=NO \
+            build | tee "$RUNNER_TEMP/nori-ipa.log"
+
+      - name: In eine IPA packen
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/ipa/Build/Products" -name 'Nori.app' -path '*iphoneos*' | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "Build lief durch, aber Nori.app fehlt." >&2
+            exit 1
+          fi
+
+          WORK="$RUNNER_TEMP/payload"
+          rm -rf "$WORK"
+          mkdir -p "$WORK/Payload"
+          cp -R "$APP" "$WORK/Payload/Nori.app"
+          # Ohne Signatur ist ein mitgeliefertes Provisioning-Profil sinnlos und
+          # verwirrt die Werkzeuge, die nachher signieren.
+          rm -f "$WORK/Payload/Nori.app/embedded.mobileprovision"
+          (cd "$WORK" && zip -qry "${{ steps.meta.outputs.name }}.ipa" Payload)
+
+          echo "path=$WORK/${{ steps.meta.outputs.name }}.ipa" >> "$GITHUB_OUTPUT"
+          ls -lh "$WORK/${{ steps.meta.outputs.name }}.ipa"
+
+      - name: IPA hochladen
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: ${{ steps.pack.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build-Log bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-ipa-log
+          path: ${{ runner.temp }}/nori-ipa.log
+          if-no-files-found: ignore
