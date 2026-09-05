@@ -85,6 +85,7 @@ Bereits eingetragen:
 | `missing argument label 'content:'` an `Section("Titel") { … } footer: { … }` | Diese Überladung gibt es nicht | `Section { … } header: { … } footer: { … }` |
 | `has no member 'matchedTransitionSource'` / `'navigationTransition'` im iOS-Build | `#available(iOS 18.0, *)` schützt nur zur Laufzeit; übersetzt wird gegen das SDK des Runners, und macos-14 bringt Xcode 15.4 mit iOS-SDK 17.5 | `runs-on: macos-15` in `build-ios.yml` (`check_ios_runner()` prüft das) |
 | `operator can throw but expression is not marked with 'try'` / `unable to type-check this expression in reasonable time` | Lange `??`-Kette, in der ein Glied `try` enthält | Kette in einzelne `let` mit eigenem `try` auflösen — so wie in `HTML.swift` bereits geschehen |
+| Inhalt eines Kopfbereichs oben und unten abgeschnitten, obwohl er hineinpasst | Ein `scaledToFill`-Bild meldet nach außen eine **größere** Größe als angeboten. Im `ZStack` wächst der Stapel mit, das folgende `.frame(height:)` zentriert den zu großen Stapel, `.clipped()` schneidet an beiden Rändern | Bild per `.background { … }` hinter den Inhalt legen (beeinflusst die Größe nicht) oder `.frame(maxHeight: .infinity)` davor (`check_fill_in_fixed_frame()` prüft das) |
 | `call to main actor-isolated instance method '…' in a synchronous nonisolated context` | `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine ausgelagerte `private var chrome: some View` aber nicht | `Task { @MainActor in methode() }` (`check_main_actor_calls()` prüft das) |
 | `The stickers icon set or app icon set named "AppIcon" did not have any applicable content` | Bild kleiner als in `Contents.json` eingetragen (iOS: 256×256 statt 1024×1024) — die Meldung nennt die Ursache nicht | Bild in der deklarierten Größe hinterlegen, iOS zusätzlich ohne Alphakanal (`check_app_icons()` prüft das) |
 
@@ -132,7 +133,7 @@ Bereits eingetragen:
 Die beiden Plattformen haben eigene Versionsstände und deshalb eigene Tags:
 
 ```bash
-git tag macos-v1.10.2 && git push origin macos-v1.10.2
+git tag macos-v1.10.3 && git push origin macos-v1.10.3
 git tag ios-v1.9.4    && git push origin ios-v1.9.4
 ```
 

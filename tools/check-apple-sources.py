@@ -201,6 +201,64 @@ NEEDS_XCODE_16 = {
 }
 
 
+def check_fill_in_fixed_frame(folder: Path, label: str) -> None:
+    """`scaledToFill()` in einem Stapel mit fester Höhe schneidet Inhalt weg.
+
+    Ein Bild mit `scaledToFill` meldet nach außen eine **größere** Größe, als
+    ihm angeboten wurde — das ist der Sinn von „fill". Steht es ohne Klammer in
+    einem `ZStack`, wächst der Stapel mit; ein anschließendes
+    `.frame(height: N)` zentriert den zu großen Stapel dann in seinem Kasten,
+    und `.clipped()` schneidet oben **und unten** ab. Auf der Detailseite war
+    dadurch der Abspielknopf zur Hälfte weg.
+
+    In Ordnung und deshalb ohne Meldung:
+
+    - `.frame(maxHeight: .infinity)` vor der festen Höhe — dann nimmt die
+      Ansicht das Angebot an und das Bild wird in ihr geschnitten.
+    - Das Bild in einer eigenen Ansicht, die per `.background { … }` oder
+      `.overlay { … }` dahinter gelegt wird: beide haben keinen Einfluss auf
+      die Größe der Hauptansicht, und die feste Höhe steht dann in einer
+      anderen Deklaration.
+
+    Geprüft wird je Deklaration, nicht je Datei — sonst schlägt die Regel schon
+    an, weil irgendwo in derselben Datei beides einmal vorkommt. Kommentare
+    werden vorher entfernt: die Erklärung dieses Fehlers steht im Quelltext und
+    nennt naturgemäß beide Bestandteile.
+    """
+    declaration = re.compile(r"^\s{4}(?:@\w+\s+)*(?:private\s+|static\s+)*(?:var|func)\s+(\w+)")
+    fixed_height = re.compile(r"\.frame\(height:\s*\d")
+
+    for path in swift_files(folder):
+        lines = strip_comments_and_strings(path.read_text()).splitlines()
+        blocks: list[tuple[str, list[str]]] = []
+        current: tuple[str, list[str]] | None = None
+        for line in lines:
+            match = declaration.match(line)
+            if match:
+                if current:
+                    blocks.append(current)
+                current = (match.group(1), [line])
+            elif current:
+                current[1].append(line)
+        if current:
+            blocks.append(current)
+
+        for name, body in blocks:
+            text = "\n".join(body)
+            if "scaledToFill" not in text or not fixed_height.search(text):
+                continue
+            if "maxHeight: .infinity" in text:
+                continue
+            add(
+                "ERROR",
+                f"{label}/{path.name}",
+                f"'{name}' setzt scaledToFill in einen Stapel mit fester Höhe. Der Stapel "
+                "wird dadurch größer als sein Rahmen, wird darin zentriert und verliert "
+                "Inhalt an beiden Rändern. Entweder .frame(maxHeight: .infinity) davor, "
+                "oder das Bild als .background { … } hinter den Inhalt legen.",
+            )
+
+
 def check_no_secrets() -> None:
     """Kein Schlüssel im Quelltext.
 
@@ -417,6 +475,8 @@ def main() -> int:
     check_main_actor_calls(IOS, "iOS")
     check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
+    check_fill_in_fixed_frame(IOS, "iOS")
+    check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()
     check_app_icons()
     check_deployment_targets()
