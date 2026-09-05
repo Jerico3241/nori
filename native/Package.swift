@@ -3,9 +3,9 @@ import PackageDescription
 
 // Testpaket für die plattformunabhängigen Kernregeln.
 //
-// Es bindet `Models.swift`, `HTML.swift`, `AniworldClient.swift` und
-// `HosterResolver.swift` aus dem macOS-Target direkt ein, statt sie zu
-// kopieren — alle vier sind zwischen iOS und macOS byte-gleich
+// Es bindet die fünf byte-gleichen Dateien aus dem macOS-Target direkt ein,
+// statt sie zu kopieren — `Models`, `HTML`, `AniworldClient`, `HosterResolver`
+// und `LibraryStore` sind zwischen iOS und macOS identisch
 // (siehe .claude/skills/apple-parity), also prüft der Test beide Targets
 // zugleich. Ein XCTest-Target in den handgeschriebenen Xcode-Projekten wäre
 // ohne Xcode nicht verlässlich zu pflegen; ein Paket lässt sich mit
@@ -16,7 +16,10 @@ import PackageDescription
 // anderes als die App.
 let package = Package(
     name: "NoriCore",
-    platforms: [.macOS(.v13)],
+    // macOS 14, nicht 13: `LibraryStore` ist `@Observable`, und das
+    // Observation-Framework gibt es erst ab macOS 14. Der Testlauf verwendet
+    // ohnehin macos-14.
+    platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
     ],
@@ -35,7 +38,6 @@ let package = Package(
                 "CatalogView.swift",
                 "CategoriesView.swift",
                 "HomeView.swift",
-                "LibraryStore.swift",
                 "NoriApp.swift",
                 "PlayerScreen.swift",
                 "SeriesView.swift",
@@ -43,7 +45,7 @@ let package = Package(
                 "Theme.swift",
                 "WatchlistView.swift",
             ],
-            sources: ["Models.swift", "HTML.swift", "AniworldClient.swift", "HosterResolver.swift"]
+            sources: ["Models.swift", "HTML.swift", "AniworldClient.swift", "HosterResolver.swift", "LibraryStore.swift"]
         ),
         .testTarget(
             name: "NoriCoreTests",
