@@ -15,7 +15,9 @@ Lessons-learned-Liste gedacht, nicht als vollständiger Linter.
 
 from __future__ import annotations
 
+import json
 import re
+import struct
 import sys
 from pathlib import Path
 
@@ -30,12 +32,15 @@ SHARED_IDENTICAL = [
     "LibraryStore.swift",
     "AniworldClient.swift",
     "HosterResolver.swift",
+    # Seit dem ersten iOS-Build byte-gleich: die iOS-Fassung hatte lange
+    # Optional-Ketten, an denen der Typechecker abbrach, und fehlende `try`.
+    # Die macOS-Fassung hatte dieselbe Logik bereits aufgelöst.
+    "HTML.swift",
 ]
 
-# Gleiche Aufgabe, aber unterschiedlich formuliert (die macOS-Fassung wurde
-# umgebaut, um Typechecker-Timeouts zu vermeiden). Byte-Gleichheit ist hier
-# nicht zu erwarten – wohl aber die gleiche Menge an Deklarationen.
-SHARED_STRUCTURE = ["HTML.swift"]
+# Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag
+# bleibt, weil diese Klasse jederzeit wieder entstehen kann.
+SHARED_STRUCTURE: list[str] = []
 
 # APIs, die es schlicht nicht gibt. Jede Zeile hier hat einmal einen Build
 # gekostet.
@@ -188,6 +193,164 @@ def check_section_initializers(folder: Path, label: str) -> None:
                 break
 
 
+# APIs, die erst das iOS-18-SDK kennt. `#available(iOS 18.0, *)` schützt nur
+# zur Laufzeit — übersetzt wird trotzdem gegen das SDK des Runners.
+NEEDS_XCODE_16 = {
+    r"\.matchedTransitionSource\s*\(": "matchedTransitionSource",
+    r"\.navigationTransition\s*\(\s*\.zoom": "navigationTransition(.zoom:)",
+}
+
+
+def check_ios_runner() -> None:
+    """Der iOS-Runner muss zum verwendeten SDK passen.
+
+    macos-14 liefert Xcode 15.4 mit iOS-SDK 17.5 und meldet iOS-18-APIs als
+    „has no member" — auch dann, wenn sie sauber hinter `#available` stehen.
+    """
+    workflow = ROOT / ".github/workflows/build-ios.yml"
+    if not workflow.exists():
+        return
+
+    used = set()
+    for path in swift_files(IOS):
+        src = strip_comments_and_strings(path.read_text())
+        for pattern, name in NEEDS_XCODE_16.items():
+            if re.search(pattern, src):
+                used.add(f"{name} ({path.name})")
+    if not used:
+        return
+
+    runner = re.search(r"^\s*runs-on:\s*(\S+)", workflow.read_text(), re.MULTILINE)
+    if not runner:
+        return
+    label = runner.group(1)
+    match = re.fullmatch(r"macos-(\d+)", label)
+    if match and int(match.group(1)) < 15:
+        add(
+            "ERROR",
+            "build-ios.yml",
+            f"runs-on: {label} bringt Xcode 15 mit iOS-SDK 17. Die App verwendet "
+            f"iOS-18-APIs: {', '.join(sorted(used))}. Mindestens macos-15 nötig.",
+        )
+
+
+def check_main_actor_calls(folder: Path, label: str) -> None:
+    """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
+
+    `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine
+    ausgelagerte `private var chrome: some View` aber nicht. Ein direkter
+    Aufruf dort meldet der Compiler als „call to main actor-isolated instance
+    method '…' in a synchronous nonisolated context" — im iOS-Build zweimal
+    passiert. Die im Projekt verwendete Bauform ist
+    `Task { @MainActor in methode() }`.
+
+    Erkannt wird bewusst grob: ein Aufruf einer bekannten `@MainActor`-Methode
+    in einer View-Hilfe, ohne `await` und ohne `Task {` auf derselben Zeile.
+    """
+    for path in swift_files(folder):
+        lines = path.read_text().splitlines()
+
+        isolated = set()
+        for index, line in enumerate(lines[:-1]):
+            if line.strip() == "@MainActor":
+                match = re.search(r"\bfunc\s+(\w+)", lines[index + 1])
+                if match:
+                    isolated.add(match.group(1))
+        if not isolated:
+            continue
+
+        # Grenzen der View-Hilfen: alles zwischen einer `some View`-Deklaration
+        # (außer `var body`) und der nächsten Deklaration auf gleicher Ebene.
+        declaration = re.compile(r"^\s{4}(?:@\w+\s+)*(?:private\s+)?(var|func)\s+(\w+)")
+        current: str | None = None
+        for index, line in enumerate(lines):
+            match = declaration.match(line)
+            if match:
+                is_view_helper = "some View" in line and match.group(2) != "body"
+                current = match.group(2) if is_view_helper else None
+                continue
+            if current is None or "await" in line or "Task {" in line or "Task{" in line:
+                continue
+            for name in isolated:
+                if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
+                    add(
+                        "ERROR",
+                        f"{label}/{path.name}:{index + 1}",
+                        f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
+                        f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
+                    )
+
+
+def png_info(path: Path) -> tuple[int, int, bool] | None:
+    """Breite, Höhe und ob ein Alphakanal vorhanden ist — ohne Fremdbibliothek.
+
+    Die Angaben stehen im IHDR direkt hinter der PNG-Signatur.
+    """
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 26:
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    color_type = data[25]
+    return width, height, color_type in (4, 6)
+
+
+def check_app_icons() -> None:
+    """Deklarierte und tatsächliche Icon-Größe müssen übereinstimmen.
+
+    Ein 256×256-Bild, das als 1024×1024 eingetragen war, hat den iOS-Build mit
+    „app icon set named 'AppIcon' did not have any applicable content" scheitern
+    lassen — eine Meldung, die die Ursache nicht nennt. iOS-Icons dürfen
+    außerdem keinen Alphakanal haben.
+    """
+    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+        iconset = folder / "Assets.xcassets/AppIcon.appiconset"
+        contents = iconset / "Contents.json"
+        if not contents.exists():
+            continue
+        try:
+            entries = json.loads(contents.read_text()).get("images", [])
+        except json.JSONDecodeError as error:
+            add("ERROR", f"{label}/AppIcon", f"Contents.json ist kein gültiges JSON: {error}")
+            continue
+
+        for entry in entries:
+            filename = entry.get("filename")
+            if not filename:
+                continue
+            image = iconset / filename
+            if not image.exists():
+                add("ERROR", f"{label}/AppIcon", f"{filename} ist eingetragen, fehlt aber.")
+                continue
+            info = png_info(image)
+            if info is None:
+                add("ERROR", f"{label}/AppIcon", f"{filename} ist keine lesbare PNG-Datei.")
+                continue
+            width, height, has_alpha = info
+
+            size = entry.get("size", "")
+            scale = int(str(entry.get("scale", "1x")).rstrip("x") or 1)
+            if "x" in size:
+                try:
+                    base = float(size.split("x")[0])
+                except ValueError:
+                    continue
+                expected = int(base * scale)
+                if (width, height) != (expected, expected):
+                    add(
+                        "ERROR",
+                        f"{label}/AppIcon",
+                        f"{filename} ist {width}×{height}, eingetragen als "
+                        f"{size} @{scale}x, also {expected}×{expected}.",
+                    )
+
+            if label == "iOS" and has_alpha:
+                add(
+                    "ERROR",
+                    f"{label}/AppIcon",
+                    f"{filename} hat einen Alphakanal. iOS-App-Icons müssen deckend sein.",
+                )
+
+
 def check_deployment_targets() -> None:
     """Die Regeln oben sind auf macOS 14 / iOS 17 geeicht."""
     expectations = [
@@ -217,6 +380,10 @@ def main() -> int:
     check_target(MAC, is_mac=True)
     check_section_initializers(IOS, "iOS")
     check_section_initializers(MAC, "macOS")
+    check_main_actor_calls(IOS, "iOS")
+    check_main_actor_calls(MAC, "macOS")
+    check_ios_runner()
+    check_app_icons()
     check_deployment_targets()
 
     errors = [p for p in problems if p[0] == "ERROR"]

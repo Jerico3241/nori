@@ -1,0 +1,60 @@
+name: Build iOS
+
+on:
+  push:
+    paths:
+      - 'native/Nori-iOS/**'
+      - '.github/workflows/build-ios.yml'
+  pull_request:
+    paths:
+      - 'native/Nori-iOS/**'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    # macos-15 wegen Xcode 16: die App nutzt hinter `#available(iOS 18.0, *)`
+    # die Zoom-Übergänge (matchedTransitionSource, navigationTransition(.zoom)).
+    # `#available` prüft nur zur Laufzeit — übersetzt werden muss trotzdem
+    # gegen ein SDK, das die Symbole kennt. macos-14 liefert Xcode 15.4 mit
+    # iOS-SDK 17.5 und scheitert daran mit „has no member".
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphonesimulator || true
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori
+
+      # Gegen den Simulator bauen: dafür wird keine Signatur gebraucht, und
+      # der Typechecker läuft trotzdem über den gesamten iOS-Code.
+      - name: Build Nori for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NoriIOSDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee "$RUNNER_TEMP/nori-ios-xcodebuild.log"
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-ios-xcodebuild-log
+          path: ${{ runner.temp }}/nori-ios-xcodebuild.log
+          if-no-files-found: ignore

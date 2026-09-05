@@ -4,8 +4,42 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.0**, iOS/iPadOS **1.9.1**,
+unterschiedlich schnell bewegen: macOS **1.10.0**, iOS/iPadOS **1.9.2**,
 Windows **1.8.0**.
+
+## [iOS 1.9.2] – 2026-09-05
+
+Der iOS-Code wurde bis dahin von keiner Prüfung übersetzt. Der erste
+CI-Build deckte auf, dass er sich gar nicht übersetzen ließ.
+
+### Behoben
+
+- **Die App ließ sich nicht bauen.** `HTML.swift` enthielt lange
+  `??`-Ketten mit `try` in einzelnen Gliedern; der Compiler brach dort mit
+  „operator can throw but expression is not marked with 'try'" und
+  „unable to type-check this expression in reasonable time" ab.
+  `nextElementSibling()` fehlte zweimal das `try`. Die macOS-Fassung
+  derselben Datei hatte diese Stellen bereits aufgelöst und ist jetzt in
+  beiden Targets identisch — damit kann die Parsing-Logik nicht mehr
+  zwischen den Plattformen auseinanderlaufen.
+- **Player: zwei Aktionen ohne Wirkung.** Wiedergabegeschwindigkeit und
+  „Abbrechen" beim Autoplay riefen `@MainActor`-Methoden synchron aus einer
+  View-Hilfe auf, was der Compiler ablehnt. Beide laufen jetzt über
+  `Task { @MainActor in … }`.
+- **App-Icon fehlte.** Hinterlegt war das 256×256-Icon der Windows-Hülle,
+  eingetragen als 1024×1024. Der Asset-Catalog verwarf es stillschweigend
+  und meldete nur ein leeres Icon-Set. Das Icon wird jetzt aus dem
+  macOS-Master erzeugt: 1024×1024, deckend, ohne Alphakanal.
+
+### Werkzeuge
+
+- `tools/make-app-icons.py` erzeugt beide Icon-Sätze reproduzierbar aus
+  einem Master und ersetzt den Workflow, der sich selbst committet hat.
+- `tools/check-apple-sources.py` prüft zusätzlich Icon-Größen und
+  Alphakanal, synchrone `@MainActor`-Aufrufe aus View-Hilfen und ob der
+  iOS-Runner zum verwendeten SDK passt.
+- Neue Workflows `Build iOS` (macos-15, Simulator, ohne Signatur) und
+  `Swift tests` (21 Tests für Fortschritts- und Pfadregeln).
 
 ## [macOS 1.10.0] – 2026-09-04
 

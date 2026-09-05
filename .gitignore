@@ -1,3 +1,7 @@
+# Python (Prüfskripte in tools/)
+__pycache__/
+*.pyc
+
 # OS / IDE
 .DS_Store
 *.swp
@@ -11,6 +15,11 @@ DerivedData/
 *.xcuserstate
 *.xccheckout
 *.xcscmblueprint
+
+# SwiftPM (Testpaket unter native/)
+.build/
+.swiftpm/
+Package.resolved
 
 # Node / build
 node_modules/

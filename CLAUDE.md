@@ -20,11 +20,10 @@ Build-Ausgabe, kein Quellcode — Änderungen daran sind immer falsch.
 ## Die wichtigste Regel
 
 Die beiden Apple-Targets haben teilweise **gleiche Dateinamen bei
-unterschiedlichem Inhalt**. Vier Dateien müssen byte-gleich bleiben
-(`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`), `HTML.swift`
-teilt die Logik in anderer Formulierung, und sämtliche Views sowie
-`NoriApp.swift` und `Theme.swift` laufen seit dem macOS-Umbau **bewusst**
-auseinander.
+unterschiedlichem Inhalt**. Fünf Dateien müssen byte-gleich bleiben
+(`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`, `HTML`),
+sämtliche Views sowie `NoriApp.swift` und `Theme.swift` laufen seit dem
+macOS-Umbau dagegen **bewusst** auseinander.
 
 Die macOS-App war ursprünglich eine fast wörtliche Kopie der iOS-App. Dadurch
 liefen mehrere iOS-Muster auf dem Mac ins Leere (`.refreshable` ohne Wirkung,
