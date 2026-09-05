@@ -26,6 +26,29 @@ python3 tools/check-apple-sources.py    # Sekunden, fängt die bekannten Fehlerk
 Das Skript ersetzt den Build nicht. Es prüft Target-Trennung, geteilte
 Dateien, die API-Decke und eine gepflegte Liste von APIs, die es nicht gibt.
 
+## Vier Workflows, was sie abdecken
+
+| Workflow | Runner | Prüft |
+| --- | --- | --- |
+| `build-macos.yml` | `macos-14` | macOS-Target, ~1 min |
+| `build-ios.yml` | `macos-15` | iOS-Target gegen den Simulator. **macos-15 wegen Xcode 16** — die App nutzt hinter `#available` iOS-18-APIs, `#available` prüft aber nur zur Laufzeit |
+| `swift-tests.yml` | `macos-14` | `swift test` in `native/` |
+| `check-sources.yml` | `ubuntu-latest` | `tools/check-apple-sources.py` |
+
+Das Testpaket `native/Package.swift` bindet `Models.swift` und `HTML.swift`
+aus dem **macOS**-Target direkt ein, statt sie zu kopieren — beide sind
+byte-gleich mit iOS, der Test deckt also beide Plattformen ab. SwiftSoup ist
+dort auf dieselbe Spanne gepinnt wie in beiden Xcode-Projekten; läuft das
+auseinander, parst der Test etwas anderes als die App.
+
+Kommt eine Datei nach `sources:`, muss sie aus `exclude:` verschwinden —
+sonst meldet SwiftPM sie als unbehandelte Ressource.
+
+Fixtures für die Parser-Tests stehen als Swift-Zeichenketten in
+`native/Tests/NoriCoreTests/Fixtures.swift`, nicht als heruntergeladene
+Seiten: echte Seiten wären hunderte Kilobyte groß und gehören nicht ins
+Repository. Ändert eine Quelle ihr Markup, ändert sich dort die Fixture.
+
 ## Build-Logs auswerten
 
 Das Job-Log ist eine einzige, ~100.000 Zeichen lange Zeile und sprengt jedes

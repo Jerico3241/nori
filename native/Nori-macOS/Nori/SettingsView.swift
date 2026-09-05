@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.10.1"
+    static let version = "1.10.2"
 
     static let highlights = [
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",

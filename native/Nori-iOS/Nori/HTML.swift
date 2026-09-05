@@ -253,7 +253,12 @@ enum HTML {
             )
             let languages = unique(
                 try tr.select("img.flag").array().compactMap { el -> String? in
-                    flagLabel((try? el.attr("title")) ?? (try? el.attr("alt")) ?? "")
+                    // `attr` liefert bei fehlendem Attribut "" statt zu werfen.
+                    // Ein `??` fällt darauf nicht durch, der alt-Rückfall lief
+                    // deshalb nie an — Fähnchen ohne title blieben ohne Sprache.
+                    let title = ((try? el.attr("title")) ?? "").nilIfEmpty
+                    let alt = ((try? el.attr("alt")) ?? "").nilIfEmpty
+                    return flagLabel(title ?? alt ?? "")
                 }
             )
             if href.isEmpty, germanTitle.isEmpty, englishTitle.isEmpty { continue }
@@ -546,8 +551,13 @@ enum HTML {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let hosters = unique(
                 try row.select("img.watch-link, img[alt]").array().compactMap { img -> String? in
-                    let t = ((try? img.attr("alt")) ?? (try? img.attr("title")) ?? "")
-                        .replacingOccurrences(of: #"^Hoster\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
+                    // Wie oben: "" ist kein nil, der title-Rückfall lief nie an.
+                    let raw = ((try? img.attr("alt")) ?? "").nilIfEmpty
+                        ?? ((try? img.attr("title")) ?? "")
+                    let t = raw
+                        .replacingOccurrences(
+                            of: #"^Hoster\s+"#, with: "", options: [.regularExpression, .caseInsensitive]
+                        )
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     return t.isEmpty ? nil : t
                 }

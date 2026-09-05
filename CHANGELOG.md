@@ -4,8 +4,31 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.1**, iOS/iPadOS **1.9.3**,
+unterschiedlich schnell bewegen: macOS **1.10.2**, iOS/iPadOS **1.9.4**,
 Windows **1.8.0**.
+
+## [macOS 1.10.2] · [iOS 1.9.4] – 2026-09-05
+
+### Behoben
+
+- **Sprachfähnchen ohne `title` blieben ohne Sprache** (AniWorld,
+  Folgenliste). Der vorgesehene Rückfall auf `alt` konnte nie greifen:
+  SwiftSoups `attr()` liefert bei fehlendem Attribut `""` statt zu werfen,
+  `try?` ergibt also `.some("")` und die `??`-Kette fällt nicht durch.
+- **Dieselbe Ursache bei den Hoster-Namen** (Serienstream, Folgenliste): der
+  Rückfall von `alt` auf `title` lief nie an.
+
+Beide Stellen sind beim Schreiben der Parser-Tests aufgefallen.
+
+### Neu
+
+- **Parser-Tests mit Fixtures.** `HTML.swift` lief bis hierher ohne jede
+  Prüfung — dabei ist es die Stelle, die als Erstes bricht, wenn AniWorld
+  oder Serienstream ihr Markup ändern. Neu sind 48 Tests über Katalog,
+  Serienseite, Folgenseite und Kalender beider Quellen, dazu die
+  Hilfsfunktionen für Pfade, Slugs und Sprachkürzel.
+- Das Testpaket bindet jetzt auch `HTML.swift` ein und löst SwiftSoup auf
+  derselben Spanne auf wie beide Xcode-Projekte (2.7.0, up to next major).
 
 ## [macOS 1.10.1] · [iOS 1.9.3] – 2026-09-05
 
