@@ -1,0 +1,106 @@
+name: Release
+
+# Ausgelöst durch einen Tag, nicht durch einen Push auf main: ein Release ist
+# eine bewusste Entscheidung, kein Nebenprodukt jedes Commits.
+#
+#   git tag macos-v1.10.2 && git push origin macos-v1.10.2
+#   git tag ios-v1.9.4    && git push origin ios-v1.9.4
+#
+# Die beiden Plattformen haben eigene Versionsstände und deshalb eigene Tags.
+on:
+  push:
+    tags:
+      - 'macos-v*'
+      - 'ios-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag, z. B. macos-v1.10.2'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Plattform und Version aus dem Tag lesen
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+
+          case "$TAG" in
+            macos-v*) PLATFORM="macOS"; DIR="native/Nori-macOS"; PROJECT="native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj" ;;
+            ios-v*)   PLATFORM="iOS";   DIR="native/Nori-iOS";   PROJECT="native/Nori-iOS/Nori.xcodeproj/project.pbxproj" ;;
+            *) echo "Tag muss mit macos-v oder ios-v beginnen: $TAG" >&2; exit 1 ;;
+          esac
+
+          VERSION="${TAG#*-v}"
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version im Tag sieht nicht nach x.y.z aus: $VERSION" >&2
+            exit 1
+          fi
+
+          # Gegenprobe: der Tag muss zu dem sagen, was im Projekt steht.
+          # Sonst entsteht ein Release, dessen Inhalt eine andere Version ist.
+          IN_PROJECT="$(grep -oE 'MARKETING_VERSION = [0-9.]+' "$PROJECT" | head -1 | awk '{print $3}')"
+          if [ "$IN_PROJECT" != "$VERSION" ]; then
+            echo "Tag sagt $VERSION, $PROJECT sagt $IN_PROJECT." >&2
+            echo "Erst die Version im Projekt anheben, dann taggen." >&2
+            exit 1
+          fi
+
+          {
+            echo "platform=$PLATFORM"
+            echo "version=$VERSION"
+            echo "dir=$DIR"
+            echo "asset=Nori-$PLATFORM-$VERSION-source.zip"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Release-Notiz aus dem Changelog holen
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/changelog-section.py \
+            "${{ steps.meta.outputs.platform }}" \
+            "${{ steps.meta.outputs.version }}" > notes.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "Quellpaket: \`${{ steps.meta.outputs.asset }}\`. In Xcode öffnen und mit einem"
+            echo "Personal Team signieren; ein fertiges Programm liegt hier nicht bei."
+          } >> notes.md
+
+      - name: Quellpaket schnüren
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -r -q "${{ steps.meta.outputs.asset }}" "${{ steps.meta.outputs.dir }}"
+          # Geteilte Kernregeln und ihre Tests gehören dazu, sonst lässt sich
+          # das Paket nicht prüfen.
+          zip -r -q "${{ steps.meta.outputs.asset }}" native/Package.swift native/Tests
+          zip -q "${{ steps.meta.outputs.asset }}" CHANGELOG.md README.md
+          unzip -l "${{ steps.meta.outputs.asset }}" | tail -1
+
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${{ inputs.tag || github.ref_name }}" \
+            "${{ steps.meta.outputs.asset }}" \
+            --title "Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}" \
+            --notes-file notes.md \
+            --verify-tag

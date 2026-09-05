@@ -127,6 +127,33 @@ Bereits eingetragen:
   `migrateProgress` und eine Erhöhung von `schemaVersion`; neue Felder immer
   optional, damit ältere `library.json` weiter dekodiert.
 
+## Release
+
+Die beiden Plattformen haben eigene Versionsstände und deshalb eigene Tags:
+
+```bash
+git tag macos-v1.10.2 && git push origin macos-v1.10.2
+git tag ios-v1.9.4    && git push origin ios-v1.9.4
+```
+
+Der Tag löst `.github/workflows/release.yml` aus. Der Workflow bricht ab, wenn
+
+- die Version im Tag nicht zur `MARKETING_VERSION` im pbxproj passt, oder
+- `CHANGELOG.md` keinen Abschnitt `[<Plattform> <Version>]` enthält.
+
+Beides ist Absicht: ein Release, dessen Inhalt eine andere Version ist oder das
+nicht sagt, was sich geändert hat, soll gar nicht erst entstehen. Also **erst**
+Version und Changelog per PR nach main, **dann** taggen.
+
+Das Anhängsel heißt `Nori-<Plattform>-<Version>-source.zip` — nie `final.zip`
+oder Ähnliches. Es enthält das Plattformverzeichnis, `native/Package.swift`,
+`native/Tests`, `CHANGELOG.md` und `README.md`; ein fertig gebautes Programm
+liegt nicht bei, dafür fehlt die Signatur.
+
+Zum Ausprobieren zwischendurch gibt es `package-macos-source.yml`: läuft bei
+jedem Push auf main, der macOS berührt, und legt dasselbe Paket als Artefakt ab
+— mit 30 Tagen Haltbarkeit.
+
 ## Wann ein PR fertig ist
 
 `build` grün auf dem aktuellen Head, kein Merge-Konflikt, offene
