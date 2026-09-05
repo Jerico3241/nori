@@ -7,6 +7,11 @@ name: Release
 #   git tag ios-v1.9.4    && git push origin ios-v1.9.4
 #
 # Die beiden Plattformen haben eigene Versionsstände und deshalb eigene Tags.
+#
+# Alternativ von Hand über „Run workflow" starten und den Tag angeben: dann
+# legt der Workflow ihn auf dem gewählten Stand selbst an — aber erst, nachdem
+# die beiden Prüfungen unten durchgelaufen sind. So entsteht kein Tag, den
+# hinterher niemand mehr loswird, weil die Version nicht passt.
 on:
   push:
     tags:
@@ -26,10 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # `github.ref` ist bei einem Tag-Push der Tag und bei „Run workflow" der
+      # Branch, auf dem gestartet wurde. Beides ist der richtige Stand; der Tag
+      # aus `inputs` existiert an dieser Stelle womöglich noch gar nicht.
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Plattform und Version aus dem Tag lesen
@@ -81,6 +88,23 @@ jobs:
             echo "Quellpaket: \`${{ steps.meta.outputs.asset }}\`. In Xcode öffnen und mit einem"
             echo "Personal Team signieren; ein fertiges Programm liegt hier nicht bei."
           } >> notes.md
+
+      # Beim Tag-Push gibt es den Tag schon. Beim Start von Hand entsteht er
+      # hier — nach den Prüfungen oben, nicht davor.
+      - name: Tag anlegen, falls er noch fehlt
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG existiert bereits, wird nicht verschoben."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}"
+          git push origin "$TAG"
 
       - name: Quellpaket schnüren
         shell: bash

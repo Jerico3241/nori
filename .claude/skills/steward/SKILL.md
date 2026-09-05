@@ -136,6 +136,12 @@ git tag macos-v1.10.2 && git push origin macos-v1.10.2
 git tag ios-v1.9.4    && git push origin ios-v1.9.4
 ```
 
+Aus einer Claude-Code-Sitzung heraus geht das **nicht**: Pushes nach
+`refs/tags/*` beantwortet GitHub mit HTTP 403, die Anmeldedaten der Sitzung
+reichen nur für Branches. Dort stattdessen den Workflow unter Actions →
+Release → „Run workflow" starten und den Tag angeben — er wird dann im Lauf
+angelegt, nachdem die Prüfungen durch sind.
+
 Der Tag löst `.github/workflows/release.yml` aus. Der Workflow bricht ab, wenn
 
 - die Version im Tag nicht zur `MARKETING_VERSION` im pbxproj passt, oder
