@@ -59,6 +59,8 @@ Bereits eingetragen:
 | Fehler | Ursache | Richtig |
 | --- | --- | --- |
 | `generic parameter 'T' could not be inferred` an `@Environment(\.openSettings)` | `EnvironmentValues.openSettings` existiert nicht | `SettingsLink { … }` (macOS 14+) |
+| `missing argument label 'content:'` an `Section("Titel") { … } footer: { … }` | Diese Überladung gibt es nicht | `Section { … } header: { … } footer: { … }` |
+| `The stickers icon set or app icon set named "AppIcon" did not have any applicable content` | Bild kleiner als in `Contents.json` eingetragen (iOS: 256×256 statt 1024×1024) — die Meldung nennt die Ursache nicht | Bild in der deklarierten Größe hinterlegen, iOS zusätzlich ohne Alphakanal (`check_app_icons()` prüft das) |
 
 ## Was nicht angefasst wird
 

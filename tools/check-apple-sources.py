@@ -15,7 +15,9 @@ Lessons-learned-Liste gedacht, nicht als vollständiger Linter.
 
 from __future__ import annotations
 
+import json
 import re
+import struct
 import sys
 from pathlib import Path
 
@@ -188,6 +190,76 @@ def check_section_initializers(folder: Path, label: str) -> None:
                 break
 
 
+def png_info(path: Path) -> tuple[int, int, bool] | None:
+    """Breite, Höhe und ob ein Alphakanal vorhanden ist — ohne Fremdbibliothek.
+
+    Die Angaben stehen im IHDR direkt hinter der PNG-Signatur.
+    """
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 26:
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    color_type = data[25]
+    return width, height, color_type in (4, 6)
+
+
+def check_app_icons() -> None:
+    """Deklarierte und tatsächliche Icon-Größe müssen übereinstimmen.
+
+    Ein 256×256-Bild, das als 1024×1024 eingetragen war, hat den iOS-Build mit
+    „app icon set named 'AppIcon' did not have any applicable content" scheitern
+    lassen — eine Meldung, die die Ursache nicht nennt. iOS-Icons dürfen
+    außerdem keinen Alphakanal haben.
+    """
+    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+        iconset = folder / "Assets.xcassets/AppIcon.appiconset"
+        contents = iconset / "Contents.json"
+        if not contents.exists():
+            continue
+        try:
+            entries = json.loads(contents.read_text()).get("images", [])
+        except json.JSONDecodeError as error:
+            add("ERROR", f"{label}/AppIcon", f"Contents.json ist kein gültiges JSON: {error}")
+            continue
+
+        for entry in entries:
+            filename = entry.get("filename")
+            if not filename:
+                continue
+            image = iconset / filename
+            if not image.exists():
+                add("ERROR", f"{label}/AppIcon", f"{filename} ist eingetragen, fehlt aber.")
+                continue
+            info = png_info(image)
+            if info is None:
+                add("ERROR", f"{label}/AppIcon", f"{filename} ist keine lesbare PNG-Datei.")
+                continue
+            width, height, has_alpha = info
+
+            size = entry.get("size", "")
+            scale = int(str(entry.get("scale", "1x")).rstrip("x") or 1)
+            if "x" in size:
+                try:
+                    base = float(size.split("x")[0])
+                except ValueError:
+                    continue
+                expected = int(base * scale)
+                if (width, height) != (expected, expected):
+                    add(
+                        "ERROR",
+                        f"{label}/AppIcon",
+                        f"{filename} ist {width}×{height}, eingetragen als "
+                        f"{size} @{scale}x, also {expected}×{expected}.",
+                    )
+
+            if label == "iOS" and has_alpha:
+                add(
+                    "ERROR",
+                    f"{label}/AppIcon",
+                    f"{filename} hat einen Alphakanal. iOS-App-Icons müssen deckend sein.",
+                )
+
+
 def check_deployment_targets() -> None:
     """Die Regeln oben sind auf macOS 14 / iOS 17 geeicht."""
     expectations = [
@@ -217,6 +289,7 @@ def main() -> int:
     check_target(MAC, is_mac=True)
     check_section_initializers(IOS, "iOS")
     check_section_initializers(MAC, "macOS")
+    check_app_icons()
     check_deployment_targets()
 
     errors = [p for p in problems if p[0] == "ERROR"]
