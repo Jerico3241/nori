@@ -57,7 +57,9 @@ private struct GeneralSettingsTab: View {
 private struct WhatsNewSettingsTab: View {
     var body: some View {
         Form {
-            Section("Neu in \(NoriRelease.version)") {
+            // Titel als Header-Closure: einen Initialisierer mit Titel *und*
+            // Footer gibt es nicht.
+            Section {
                 ForEach(NoriRelease.highlights, id: \.self) { line in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("•").foregroundStyle(NoriTheme.accent)
@@ -66,6 +68,8 @@ private struct WhatsNewSettingsTab: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            } header: {
+                Text("Neu in \(NoriRelease.version)")
             } footer: {
                 Text("Vollständige Liste aller Änderungen: CHANGELOG.md im Projektverzeichnis.")
                     .font(.footnote)

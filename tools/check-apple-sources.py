@@ -155,6 +155,39 @@ def check_target(folder: Path, *, is_mac: bool) -> None:
                 add("WARN", where, "TabView/.tabItem als Hauptnavigation ist iOS-Bauform; auf macOS NavigationSplitView mit Seitenleiste.")
 
 
+def check_section_initializers(folder: Path, label: str) -> None:
+    """`Section("Titel") { … } footer: { … }` gibt es in SwiftUI nicht.
+
+    Es gibt Titel-mit-Inhalt oder Header- und Footer-Closures, aber keine
+    Mischung. Der Compiler meldet dazu nur „missing argument label 'content:'",
+    woraus die eigentliche Ursache nicht hervorgeht — hat einmal eine
+    CI-Runde gekostet.
+
+    Bewusst keine Klammerzählung per Regex: gesucht wird ein `Section(` mit
+    Zeichenketten-Argument, dem vor dem nächsten `Section(` ein `} footer:`
+    folgt.
+    """
+    titled = re.compile(r"Section\s*\(\s*[\"']")
+    # Grenze ist jede folgende Section, auch eine titellose — sonst liest das
+    # Fenster über sie hinweg und meldet deren zulässiges footer: als Fehler.
+    any_section = re.compile(r"\bSection\s*[({]")
+    for path in swift_files(folder):
+        src = strip_comments_and_strings(path.read_text())
+        for match in titled.finditer(src):
+            rest = src[match.end():]
+            boundary = any_section.search(rest)
+            window = rest[: boundary.start()] if boundary else rest
+            if re.search(r"\}\s*footer\s*:", window):
+                add(
+                    "ERROR",
+                    f"{label}/{path.name}",
+                    "Section mit Titel und footer: gibt es nicht. Entweder "
+                    'Section("Titel") { … } oder '
+                    "Section { … } header: { … } footer: { … }.",
+                )
+                break
+
+
 def check_deployment_targets() -> None:
     """Die Regeln oben sind auf macOS 14 / iOS 17 geeicht."""
     expectations = [
@@ -182,6 +215,8 @@ def main() -> int:
     check_shared_files()
     check_target(IOS, is_mac=False)
     check_target(MAC, is_mac=True)
+    check_section_initializers(IOS, "iOS")
+    check_section_initializers(MAC, "macOS")
     check_deployment_targets()
 
     errors = [p for p in problems if p[0] == "ERROR"]
