@@ -351,6 +351,26 @@ actor CoverImageLoader {
         if failed.count >= failureCapacity { failed.removeAll(keepingCapacity: true) }
         failed.insert(url)
     }
+
+    /// Wie `load`, aber mit Befund statt nur Ergebnis — für die Cover-Diagnose
+    /// in den Einstellungen. Umgeht Zwischenspeicher und gemerkte Fehlschläge,
+    /// damit die Messung den aktuellen Zustand zeigt und nicht den von vorhin.
+    func probe(_ url: URL, referer: String) async -> String {
+        var request = URLRequest(url: url)
+        request.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")
+        request.setValue("image/avif,image/webp,image/jpeg,image/png,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("de-DE,de;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "—"
+            return "HTTP \(code), \(data.count) Byte, \(type)"
+        } catch {
+            return "Netzwerkfehler: \(error.localizedDescription)"
+        }
+    }
 }
 
 actor CoverIndex {

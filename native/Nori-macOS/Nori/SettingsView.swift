@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.11.2"
+    static let version = "1.11.3"
 
     static let highlights = [
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
@@ -175,6 +175,82 @@ private struct SyncSettingsTab: View {
     }
 }
 
+/// Misst den Weg, auf dem ein Cover entsteht, und schreibt jeden Schritt auf.
+///
+/// Entstanden, weil sich aus einer leeren Kachel nicht ablesen lässt, woran es
+/// liegt: die Detailseite kann blockiert sein, die Adresse darin fehlen, oder
+/// das Bild selbst abgelehnt werden. Drei sehr verschiedene Ursachen, ein
+/// identisches Bild auf dem Schirm.
+private struct CoverDiagnosticsRow: View {
+    @State private var lines: [String] = []
+    @State private var running = false
+
+    private let samples: [(CatalogProvider, String)] = [
+        (.serienstream, "black-mirror"),
+        (.aniworld, "black-clover"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(running ? "Prüfe…" : "Cover-Abruf prüfen") {
+                Task { await run() }
+            }
+            .disabled(running)
+
+            if !lines.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func run() async {
+        running = true
+        lines = []
+        defer { running = false }
+
+        // Zuerst der häufigste Grund für leere Kacheln: ohne Schlüssel fragt
+        // Nori TMDB gar nicht erst an, und dann bleibt nur das Cover der
+        // Quelle — das wiederum eine geladene Detailseite voraussetzt.
+        lines.append(
+            CoverIndex.shared.hasKey
+                ? "TMDB-Schlüssel: hinterlegt"
+                : "TMDB-Schlüssel: FEHLT — ohne ihn kommen Cover nur von der Quelle"
+        )
+
+        for (provider, slug) in samples {
+            lines.append("── \(provider.label) · \(slug)")
+
+            // 1. Detailseite
+            let detail: SeriesDetail
+            do {
+                detail = try await AniworldClient.shared.getSeries(provider: provider, slug: slug)
+            } catch {
+                lines.append("   Detailseite: \(error.localizedDescription)")
+                continue
+            }
+            lines.append("   Detailseite: gelesen, Titel „\(detail.title)\"")
+
+            // 2. Adresse darin
+            guard let path = detail.coverPath, let url = AniworldClient.coverURL(path, provider: provider) else {
+                lines.append("   Coveradresse: keine auf der Seite gefunden")
+                continue
+            }
+            lines.append("   Coveradresse: \(url.absoluteString)")
+
+            // 3. Bild
+            let verdict = await CoverImageLoader.shared.probe(url, referer: provider.origin + "/")
+            lines.append("   Bildabruf: \(verdict)")
+        }
+    }
+}
+
 private struct PrivacySettingsTab: View {
     @Environment(LibraryStore.self) private var library
     @State private var confirm: String?
@@ -230,6 +306,20 @@ private struct PrivacySettingsTab: View {
                      Ein eigener Schlüssel (kostenlos bei themoviedb.org) liefert zusätzlich \
                      Breitbilder, Kurzbeschreibungen und Bewertungen. Er liegt im \
                      Schlüsselbund, nicht im Programm.
+                     """)
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+
+            Section {
+                CoverDiagnosticsRow()
+            } header: {
+                Text("Cover-Diagnose")
+            } footer: {
+                Text("""
+                     Prüft den Weg, auf dem ein Cover entsteht: Detailseite laden, \
+                     Adresse darin finden, Bild abrufen. Bleiben Kacheln leer, zeigt \
+                     der Befund, an welchem der drei Schritte es scheitert.
                      """)
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
