@@ -165,7 +165,7 @@ struct PlayerScreen: View {
             Section("Geschwindigkeit") {
                 ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
                     Button {
-                        setPlaybackSpeed(speed)
+                        Task { @MainActor in setPlaybackSpeed(speed) }
                     } label: {
                         if abs(library.playbackSpeed - speed) < 0.01 {
                             Label(speedLabel(speed), systemImage: "checkmark")
@@ -202,7 +202,7 @@ struct PlayerScreen: View {
                         .foregroundStyle(.white)
                 }
                 Spacer()
-                Button("Abbrechen") { cancelAutoplay() }
+                Button("Abbrechen") { Task { @MainActor in cancelAutoplay() } }
                     .buttonStyle(.bordered)
                 Button("Jetzt abspielen") {
                     autoplayTask?.cancel()

@@ -1,3 +1,7 @@
+# Python (Prüfskripte in tools/)
+__pycache__/
+*.pyc
+
 # OS / IDE
 .DS_Store
 *.swp

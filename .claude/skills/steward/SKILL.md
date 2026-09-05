@@ -60,6 +60,7 @@ Bereits eingetragen:
 | --- | --- | --- |
 | `generic parameter 'T' could not be inferred` an `@Environment(\.openSettings)` | `EnvironmentValues.openSettings` existiert nicht | `SettingsLink { … }` (macOS 14+) |
 | `missing argument label 'content:'` an `Section("Titel") { … } footer: { … }` | Diese Überladung gibt es nicht | `Section { … } header: { … } footer: { … }` |
+| `call to main actor-isolated instance method '…' in a synchronous nonisolated context` | `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine ausgelagerte `private var chrome: some View` aber nicht | `Task { @MainActor in methode() }` (`check_main_actor_calls()` prüft das) |
 | `The stickers icon set or app icon set named "AppIcon" did not have any applicable content` | Bild kleiner als in `Contents.json` eingetragen (iOS: 256×256 statt 1024×1024) — die Meldung nennt die Ursache nicht | Bild in der deklarierten Größe hinterlegen, iOS zusätzlich ohne Alphakanal (`check_app_icons()` prüft das) |
 
 ## Was nicht angefasst wird
@@ -67,8 +68,18 @@ Bereits eingetragen:
 - **`server/`** — gebautes Nitro/Node-Bundle, kein Quellcode. Minifizierte
   `.mjs`-Dateien mit Hash-Namen. Änderungen gehören in das Projekt, das dieses
   Bundle erzeugt, nicht hierher.
-- **`native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon_*.png`** —
-  wird von `.github/workflows/fix-macos-appicon.yml` aus `icon.png` erzeugt.
+- **Abgeleitete App-Icons** — `native/Nori-macOS/…/icon_*.png` und
+  `native/Nori-iOS/…/icon.png` entstehen aus dem macOS-Master
+  `native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset/icon.png`.
+  Nicht von Hand bearbeiten, sondern neu erzeugen:
+
+  ```bash
+  python3 -m pip install pillow
+  python3 tools/make-app-icons.py --write
+  ```
+
+  Der Lauf ist deterministisch: unverändertes Master ⇒ unverändertes
+  `git status`. Nur der Master selbst wird per Hand ausgetauscht.
 - **Das jeweils andere Target** — einen macOS-Fehler nie dadurch beheben, dass
   die iOS-App angeglichen wird. Welche Dateien geteilt sind, steht in
   `.claude/skills/apple-parity/SKILL.md`.

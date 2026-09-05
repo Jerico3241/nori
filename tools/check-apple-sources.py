@@ -190,6 +190,53 @@ def check_section_initializers(folder: Path, label: str) -> None:
                 break
 
 
+def check_main_actor_calls(folder: Path, label: str) -> None:
+    """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
+
+    `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine
+    ausgelagerte `private var chrome: some View` aber nicht. Ein direkter
+    Aufruf dort meldet der Compiler als „call to main actor-isolated instance
+    method '…' in a synchronous nonisolated context" — im iOS-Build zweimal
+    passiert. Die im Projekt verwendete Bauform ist
+    `Task { @MainActor in methode() }`.
+
+    Erkannt wird bewusst grob: ein Aufruf einer bekannten `@MainActor`-Methode
+    in einer View-Hilfe, ohne `await` und ohne `Task {` auf derselben Zeile.
+    """
+    for path in swift_files(folder):
+        lines = path.read_text().splitlines()
+
+        isolated = set()
+        for index, line in enumerate(lines[:-1]):
+            if line.strip() == "@MainActor":
+                match = re.search(r"\bfunc\s+(\w+)", lines[index + 1])
+                if match:
+                    isolated.add(match.group(1))
+        if not isolated:
+            continue
+
+        # Grenzen der View-Hilfen: alles zwischen einer `some View`-Deklaration
+        # (außer `var body`) und der nächsten Deklaration auf gleicher Ebene.
+        declaration = re.compile(r"^\s{4}(?:@\w+\s+)*(?:private\s+)?(var|func)\s+(\w+)")
+        current: str | None = None
+        for index, line in enumerate(lines):
+            match = declaration.match(line)
+            if match:
+                is_view_helper = "some View" in line and match.group(2) != "body"
+                current = match.group(2) if is_view_helper else None
+                continue
+            if current is None or "await" in line or "Task {" in line or "Task{" in line:
+                continue
+            for name in isolated:
+                if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
+                    add(
+                        "ERROR",
+                        f"{label}/{path.name}:{index + 1}",
+                        f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
+                        f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
+                    )
+
+
 def png_info(path: Path) -> tuple[int, int, bool] | None:
     """Breite, Höhe und ob ein Alphakanal vorhanden ist — ohne Fremdbibliothek.
 
@@ -289,6 +336,8 @@ def main() -> int:
     check_target(MAC, is_mac=True)
     check_section_initializers(IOS, "iOS")
     check_section_initializers(MAC, "macOS")
+    check_main_actor_calls(IOS, "iOS")
+    check_main_actor_calls(MAC, "macOS")
     check_app_icons()
     check_deployment_targets()
 
