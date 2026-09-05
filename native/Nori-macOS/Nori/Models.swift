@@ -56,7 +56,20 @@ struct CatalogItem: Codable, Identifiable, Hashable {
     var title: String
     var alts: [String]
     var genres: [String]
-    var id: String { slug }
+    /// Woher der Eintrag stammt.
+    ///
+    /// Optional, damit ältere gespeicherte Kataloge weiter dekodieren, und
+    /// vom Parser bewusst nicht gesetzt: der sieht nur HTML und weiß nicht,
+    /// welche Seite er gerade liest. Gestempelt wird beim Laden in
+    /// `AniworldClient.getCatalog`.
+    ///
+    /// Ohne dieses Feld kann eine Liste nur Titel **einer** Quelle enthalten —
+    /// jede Kachel bräuchte sonst den globalen Umschalter, um zu wissen, wohin
+    /// sie führt. Es ist die Voraussetzung für eine gemeinsame Bibliothek.
+    var provider: CatalogProvider? = nil
+    /// Zwei Quellen können denselben Slug führen. Die Kennung trägt deshalb
+    /// beides, sonst fielen in einer gemeinsamen Liste Einträge weg.
+    var id: String { "\(provider?.rawValue ?? "?")|\(slug)" }
 }
 
 struct CatalogResult: Codable {
