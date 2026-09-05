@@ -12,6 +12,14 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- Verweist auf den Iconsatz im Assetkatalog. Zwingend, sobald die
+	     Info.plist von Hand gepflegt wird: Xcode trägt den Schlüssel nur bei
+	     GENERATE_INFOPLIST_FILE = YES selbst nach, und das steht hier auf NO.
+	     Ohne ihn findet iOS kein Icon — die installierte App bleibt als
+	     Platzhalterkachel auf dem Home-Bildschirm stehen und sieht aus, als
+	     lade sie endlos. -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleName</key>
 	<string>Nori</string>
 	<key>CFBundlePackageType</key>

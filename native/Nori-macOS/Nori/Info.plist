@@ -7,6 +7,10 @@
     <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <!-- Wie bei iOS: bei GENERATE_INFOPLIST_FILE = NO trägt Xcode den
+         Iconverweis nicht selbst nach. Ohne ihn zeigen Dock und Finder das
+         graue Standardsymbol statt des Nori-Icons. -->
+    <key>CFBundleIconName</key><string>AppIcon</string>
     <key>CFBundleName</key><string>Nori</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>

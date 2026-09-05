@@ -230,6 +230,26 @@ actor AniworldClient {
         return URL(string: raw)
     }
 
+    /// Alle Adressen, unter denen dasselbe Cover liegen kann — in der
+    /// Reihenfolge, in der sie probiert werden.
+    ///
+    /// Serienstream nennt seine Bilder auf den eigenen Seiten unter `s.to`
+    /// (so steht es im `og:image` der Detailseiten), erreichbar sind sie aber
+    /// auch über `serienstream.to`. Welche der beiden antwortet, entscheidet
+    /// die Quelle. Eine einzige geratene Adresse hieß: trifft sie nicht,
+    /// bleibt die Kachel leer.
+    static func coverCandidates(_ path: String?, provider: CatalogProvider) -> [URL] {
+        guard let first = coverURL(path, provider: provider) else { return [] }
+        var urls = [first]
+        if provider == .serienstream,
+           var parts = URLComponents(url: first, resolvingAgainstBaseURL: false),
+           parts.host == "serienstream.to" {
+            parts.host = "s.to"
+            if let alternative = parts.url { urls.append(alternative) }
+        }
+        return urls
+    }
+
     private func looksBlocked(_ html: String) -> Bool {
         let head = html.prefix(800).lowercased()
         return html.count < 800
@@ -251,6 +271,96 @@ enum NoriError: LocalizedError {
         case .network(let m), .parse(let m), .blocked(let m), .notFound(let m), .hoster(let m):
             return m
         }
+    }
+}
+
+/// Lädt Coverbilder mit denselben Kopfzeilen wie jeder andere Abruf.
+///
+/// `AsyncImage` schickt weder User-Agent noch Referer. Bei diesen beiden
+/// Quellen ist genau das der Unterschied zwischen einem Bild und einer leeren
+/// Kachel — derselbe Grund, aus dem der Player Referer und User-Agent
+/// mitschickt und `CoverToneSampler` seit jeher eine eigene `URLRequest`
+/// baut. Die Kacheln blieben als einzige bei `AsyncImage`.
+///
+/// Der Lader probiert mehrere Adressen durch (siehe `coverCandidates`), merkt
+/// sich Fehlschläge, damit eine Kachel beim Scrollen nicht immer wieder
+/// dieselbe 404 holt, und hält die zuletzt geladenen Bilder im Speicher.
+actor CoverImageLoader {
+    static let shared = CoverImageLoader()
+
+    /// Ein paar Bildschirme Katalog. Groß genug, dass Zurückscrollen nichts
+    /// nachlädt, klein genug, dass der Speicher nicht unbemerkt wächst.
+    private let capacity = 240
+    /// Fehlschläge sind billiger zu merken als Bilder, aber bei zehntausend
+    /// Titeln wächst auch diese Menge. Bei Überlauf wird sie geleert statt
+    /// gepflegt — im schlimmsten Fall wird ein Cover einmal zu viel probiert.
+    private let failureCapacity = 4000
+
+    private var cache: [URL: Data] = [:]
+    private var order: [URL] = []
+    private var failed: Set<URL> = []
+    private let session: URLSession
+
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        // Der Katalog fragt viele Kacheln auf einmal. Ohne Deckel schickt das
+        // eine Lawine an eine Quelle, die ohnehin empfindlich reagiert.
+        config.httpMaximumConnectionsPerHost = 4
+        session = URLSession(configuration: config)
+    }
+
+    /// Erste Adresse, die ein Bild liefert. `nil` heißt: keine hat geantwortet
+    /// — dann bleibt es beim Buchstaben.
+    func data(for candidates: [URL], referer: String) async -> Data? {
+        for url in candidates {
+            if let hit = cache[url] { return hit }
+        }
+        for url in candidates where !failed.contains(url) {
+            if let data = await load(url, referer: referer) { return data }
+        }
+        return nil
+    }
+
+    private func load(_ url: URL, referer: String) async -> Data? {
+        var request = URLRequest(url: url)
+        request.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")
+        request.setValue("image/avif,image/webp,image/jpeg,image/png,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        request.setValue("de-DE,de;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        // Hotlink-Schutz: ohne Referer beantworten beide Quellen Bildanfragen
+        // anders als im Browser.
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+
+        guard let result = try? await session.data(for: request) else {
+            remember(failure: url)
+            return nil
+        }
+        if let http = result.1 as? HTTPURLResponse, http.statusCode >= 400 {
+            remember(failure: url)
+            return nil
+        }
+        // Eine Fehlerseite ist kein Bild. Ohne diese Schranke landet HTML im
+        // Bilddecoder, und die Kachel bliebe ohne erkennbaren Grund leer.
+        guard result.0.count > 512 else {
+            remember(failure: url)
+            return nil
+        }
+        remember(url, result.0)
+        return result.0
+    }
+
+    private func remember(_ url: URL, _ data: Data) {
+        if cache[url] == nil { order.append(url) }
+        cache[url] = data
+        while order.count > capacity {
+            let oldest = order.removeFirst()
+            cache[oldest] = nil
+        }
+    }
+
+    private func remember(failure url: URL) {
+        if failed.count >= failureCapacity { failed.removeAll(keepingCapacity: true) }
+        failed.insert(url)
     }
 }
 
