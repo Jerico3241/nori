@@ -4,8 +4,19 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.2**, iOS/iPadOS **1.9.7**,
+unterschiedlich schnell bewegen: macOS **1.11.3**, iOS/iPadOS **1.9.7**,
 Windows **1.8.0**.
+
+## [macOS 1.11.3] – 2026-09-05
+
+### Neu
+
+- **Cover-Diagnose** unter Einstellungen › Daten. Sie geht den Weg ab, auf
+  dem ein Cover entsteht — Detailseite laden, Adresse darin finden, Bild
+  abrufen — und schreibt jeden Schritt mit Befund auf. Aus einer leeren
+  Kachel allein ließ sich nicht ablesen, an welchem der drei Schritte es
+  scheitert; das waren drei sehr verschiedene Ursachen mit identischem Bild
+  auf dem Schirm.
 
 ## [macOS 1.11.2] · [iOS 1.9.7] – 2026-09-05
 
