@@ -1,7 +1,11 @@
 import Foundation
 
 enum HosterResolver {
-    private static let voeTokens = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"]
+    // Die reinen Funktionen unten sind bewusst `internal` und nicht
+    // `private`: `@testable import` erreicht kein `private`, und gerade
+    // die Entschlüsselung und die Adressprüfungen gehören geprüft.
+    // Außerhalb des Moduls sind sie damit weiterhin unsichtbar.
+    static let voeTokens = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"]
 
     static func rank(_ name: String) -> Int {
         let n = name.lowercased().filter(\.isLetter)
@@ -167,12 +171,12 @@ enum HosterResolver {
     }
 
     /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?
-    private static func isExternalOrigin(_ url: URL) -> Bool {
+    static func isExternalOrigin(_ url: URL) -> Bool {
         guard let host = url.host, !host.isEmpty else { return false }
         return !url.hostContains("aniworld") && !url.hostContains("serienstream")
     }
 
-    private static func htmlRedirectTarget(_ html: String) -> URL? {
+    static func htmlRedirectTarget(_ html: String) -> URL? {
         let patterns = [
             #"<meta[^>]+http-equiv\s*=\s*["']refresh["'][^>]+content\s*=\s*["'][^"']*url\s*=\s*([^"'>\s]+)"#,
             #"window\.location\.(?:href|replace)\s*[=(]\s*["'](https?://[^"']+)["']"#,
@@ -219,14 +223,14 @@ enum HosterResolver {
         throw NoriError.hoster("\(hoster) liefert keinen Stream")
     }
 
-    private static func toEmbed(_ url: URL, hoster: String) -> URL {
+    static func toEmbed(_ url: URL, hoster: String) -> URL {
         let n = hoster.lowercased()
         guard n.contains("filemoon") || n.contains("vidmoly") || n.contains("dood") else { return url }
         let raw = url.absoluteString.replacingOccurrences(of: "/d/", with: "/e/").replacingOccurrences(of: "/v/", with: "/e/")
         return URL(string: raw) ?? url
     }
 
-    private static func extractBounce(_ html: String) -> URL? {
+    static func extractBounce(_ html: String) -> URL? {
         let patterns = [
             #"window\.location\.href\s*=\s*['"](https?://[^'"]+/e/[A-Za-z0-9]+)['"]"#,
             #"location\.href\s*=\s*['"](https?://[^'"]+/e/[A-Za-z0-9]+)['"]"#,
@@ -245,7 +249,7 @@ enum HosterResolver {
         return nil
     }
 
-    private static func extractVoe(_ html: String) -> (source: String?, direct: String?)? {
+    static func extractVoe(_ html: String) -> (source: String?, direct: String?)? {
         guard let regex = try? NSRegularExpression(
             pattern: #"<script[^>]*type=["']application/json["'][^>]*>([\s\S]*?)</script>"#,
             options: [.caseInsensitive]
@@ -272,7 +276,7 @@ enum HosterResolver {
         return nil
     }
 
-    private static func decodeVoe(_ encrypted: String) -> [String: Any]? {
+    static func decodeVoe(_ encrypted: String) -> [String: Any]? {
         var s = rot13(encrypted)
         for token in voeTokens { s = s.replacingOccurrences(of: token, with: "_") }
         s = s.replacingOccurrences(of: "_", with: "")
@@ -285,7 +289,7 @@ enum HosterResolver {
         return obj
     }
 
-    private static func rot13(_ input: String) -> String {
+    static func rot13(_ input: String) -> String {
         String(input.map { ch in
             guard let ascii = ch.asciiValue, let scalar = UnicodeScalar(Int(ascii)) else { return ch }
             if (65...90).contains(ascii) { return Character(UnicodeScalar((Int(ascii) - 65 + 13) % 26 + 65)!) }
@@ -294,12 +298,12 @@ enum HosterResolver {
         })
     }
 
-    private static func padBase64(_ s: String) -> String {
+    static func padBase64(_ s: String) -> String {
         let pad = (4 - (s.count % 4)) % 4
         return s + String(repeating: "=", count: pad)
     }
 
-    private static func firstMedia(_ html: String) -> (kind: PlayKind, url: String)? {
+    static func firstMedia(_ html: String) -> (kind: PlayKind, url: String)? {
         let hlsPatterns = [
             #"file\s*[:=]\s*["'](https:[^"']+\.m3u8[^"']*)["']"#,
             #"src\s*[:=]\s*["'](https:[^"']+\.m3u8[^"']*)["']"#,
@@ -320,7 +324,7 @@ enum HosterResolver {
         return nil
     }
 
-    private static func firstGroup(_ html: String, _ pattern: String) -> String? {
+    static func firstGroup(_ html: String, _ pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let ns = html as NSString
         guard let m = regex.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges > 1
@@ -328,14 +332,14 @@ enum HosterResolver {
         return ns.substring(with: m.range(at: 1))
     }
 
-    private static func isAllowed(_ raw: String) -> Bool {
+    static func isAllowed(_ raw: String) -> Bool {
         guard let url = URL(string: raw), isSafeRemoteURL(url) else { return false }
         let path = (url.path + (url.query.map { "?\($0)" } ?? "")).lowercased()
         return path.contains(".m3u8") || path.contains(".mp4") || path.contains(".m4s") || path.contains(".ts")
             || path.contains("urlset") || path.contains("/hls") || path.contains("playlist")
     }
 
-    private static func isSafeRemoteURL(_ url: URL) -> Bool {
+    static func isSafeRemoteURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
               url.user == nil, url.password == nil,
               let host = url.host?.lowercased(), !host.isEmpty
@@ -359,7 +363,7 @@ enum HosterResolver {
         return true
     }
 
-    private static func looksCaptcha(_ html: String) -> Bool {
+    static func looksCaptcha(_ html: String) -> Bool {
         let h = html.prefix(4000).lowercased()
         return h.contains("cf-turnstile") || h.contains("g-recaptcha") || h.contains("hcaptcha")
             || h.contains("just a moment") || h.contains("ddos-guard")

@@ -3,8 +3,9 @@ import PackageDescription
 
 // Testpaket für die plattformunabhängigen Kernregeln.
 //
-// Es bindet `Models.swift` und `HTML.swift` aus dem macOS-Target direkt ein,
-// statt sie zu kopieren — beide Dateien sind zwischen iOS und macOS byte-gleich
+// Es bindet `Models.swift`, `HTML.swift`, `AniworldClient.swift` und
+// `HosterResolver.swift` aus dem macOS-Target direkt ein, statt sie zu
+// kopieren — alle vier sind zwischen iOS und macOS byte-gleich
 // (siehe .claude/skills/apple-parity), also prüft der Test beide Targets
 // zugleich. Ein XCTest-Target in den handgeschriebenen Xcode-Projekten wäre
 // ohne Xcode nicht verlässlich zu pflegen; ein Paket lässt sich mit
@@ -30,12 +31,10 @@ let package = Package(
             exclude: [
                 "Assets.xcassets",
                 "Info.plist",
-                "AniworldClient.swift",
                 "CalendarView.swift",
                 "CatalogView.swift",
                 "CategoriesView.swift",
                 "HomeView.swift",
-                "HosterResolver.swift",
                 "LibraryStore.swift",
                 "NoriApp.swift",
                 "PlayerScreen.swift",
@@ -44,7 +43,7 @@ let package = Package(
                 "Theme.swift",
                 "WatchlistView.swift",
             ],
-            sources: ["Models.swift", "HTML.swift"]
+            sources: ["Models.swift", "HTML.swift", "AniworldClient.swift", "HosterResolver.swift"]
         ),
         .testTarget(
             name: "NoriCoreTests",
