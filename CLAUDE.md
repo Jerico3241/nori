@@ -35,8 +35,10 @@ Details: `.claude/skills/apple-parity/SKILL.md`.
 ## Bauen und Prüfen
 
 **Es gibt in dieser Umgebung keinen Swift-Compiler.** Der einzige Typechecker
-ist der GitHub-Actions-Lauf `Build macOS` (`macos-14`, ~1 Minute, ausgelöst
-durch Pushes auf `native/Nori-macOS/**`).
+ist der GitHub-Actions-Lauf `Build macOS` (~1 Minute, ausgelöst durch Pushes
+auf `native/Nori-macOS/**`). Er läuft wie alle Workflows auf einem
+self-hosted Mac — ist der aus, warten die Jobs in der Warteschlange, statt zu
+scheitern. Einrichtung: `docs/self-hosted-runner.md`.
 
 Vor jedem Push:
 

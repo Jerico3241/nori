@@ -12,9 +12,21 @@ on:
       - '.github/workflows/swift-tests.yml'
   workflow_dispatch:
 
+# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
+# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
+# zehnfach, und genau daran war das Kontingent aufgebraucht.
+#
+# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
+# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
+# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 15
     steps:
       - name: Checkout

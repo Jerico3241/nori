@@ -12,23 +12,50 @@ on:
       - '.github/workflows/build-ios.yml'
   workflow_dispatch:
 
+# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
+# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
+# zehnfach, und genau daran war das Kontingent aufgebraucht.
+#
+# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
+# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
+# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    # macos-15 wegen Xcode 16: die App nutzt hinter `#available(iOS 18.0, *)`
-    # die Zoom-Übergänge (matchedTransitionSource, navigationTransition(.zoom)).
-    # `#available` prüft nur zur Laufzeit — übersetzt werden muss trotzdem
-    # gegen ein SDK, das die Symbole kennt. macos-14 liefert Xcode 15.4 mit
-    # iOS-SDK 17.5 und scheitert daran mit „has no member".
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Show toolchain
+      # Der Runner braucht mindestens Xcode 16: die App nutzt hinter
+      # `#available(iOS 18.0, *)` die Zoom-Übergänge (matchedTransitionSource,
+      # navigationTransition(.zoom)). `#available` prüft nur zur Laufzeit —
+      # übersetzt werden muss trotzdem gegen ein SDK, das die Symbole kennt.
+      # Xcode 15.4 bringt iOS-SDK 17.5 und scheitert daran mit „has no member".
+      #
+      # Auf dem self-hosted Mac steht das nicht im Workflow, sondern hängt an
+      # der dort installierten Version. Deshalb hier prüfen und mit klarer
+      # Meldung abbrechen, statt den Build zwanzig Minuten später an einem
+      # unverständlichen Fehler scheitern zu lassen.
+      - name: Toolchain prüfen
+        shell: bash
         run: |
+          set -euo pipefail
           xcodebuild -version
           xcodebuild -showsdks | grep -i iphonesimulator || true
+
+          MAJOR="$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)"
+          if [ "${MAJOR:-0}" -lt 16 ]; then
+            echo "::error::Xcode $MAJOR auf diesem Runner, gebraucht wird 16 oder neuer." >&2
+            echo "Die App verwendet iOS-18-APIs hinter #available; das SDK muss sie kennen." >&2
+            echo "Abhilfe: neueres Xcode installieren und mit 'sudo xcode-select -s' auswählen." >&2
+            exit 1
+          fi
 
       - name: Resolve Swift packages
         run: |

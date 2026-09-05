@@ -26,9 +26,21 @@ on:
 permissions:
   contents: write
 
+# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
+# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
+# zehnfach, und genau daran war das Kontingent aufgebraucht.
+#
+# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
+# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
+# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 10
     steps:
       # `github.ref` ist bei einem Tag-Push der Tag und bei „Run workflow" der
@@ -117,14 +129,48 @@ jobs:
           zip -q "${{ steps.meta.outputs.asset }}" CHANGELOG.md README.md
           unzip -l "${{ steps.meta.outputs.asset }}" | tail -1
 
+      # Bewusst über die REST-API statt über die gh-CLI: die liegt auf einem
+      # frischen Mac nicht, und der Runner soll ohne Homebrew auskommen. curl
+      # und python3 sind da, sobald Xcode installiert ist.
       - name: Release anlegen
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          TITLE: Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}
+          ASSET: ${{ steps.meta.outputs.asset }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "${{ inputs.tag || github.ref_name }}" \
-            "${{ steps.meta.outputs.asset }}" \
-            --title "Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}" \
-            --notes-file notes.md \
-            --verify-tag
+          API="https://api.github.com/repos/${{ github.repository }}"
+
+          # Der Tag muss existieren — sonst würde die API ihn stillschweigend
+          # auf dem Standardzweig anlegen, und das Release zeigte auf den
+          # falschen Stand.
+          git fetch --tags --quiet origin
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
+            || { echo "Tag $TAG existiert nicht." >&2; exit 1; }
+
+          BODY="$(python3 -c '
+          import json, os, sys
+          print(json.dumps({
+              "tag_name": os.environ["TAG"],
+              "name": os.environ["TITLE"],
+              "body": open("notes.md").read(),
+              "draft": False,
+              "prerelease": False,
+          }))')"
+
+          ID="$(curl -sS -X POST "$API/releases" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d "$BODY" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or sys.exit("Release nicht angelegt: " + json.dumps(d)[:400]))')"
+
+          curl -sS -X POST \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$ASSET" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary "@$ASSET" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("Angehängt:", d.get("name") or sys.exit("Anhang fehlgeschlagen: " + json.dumps(d)[:400]))'
+
+          echo "Release: https://github.com/${{ github.repository }}/releases/tag/$TAG"

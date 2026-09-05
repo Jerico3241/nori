@@ -14,9 +14,21 @@ on:
 permissions:
   contents: read
 
+# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
+# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
+# zehnfach, und genau daran war das Kontingent aufgebraucht.
+#
+# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
+# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
+# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package:
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

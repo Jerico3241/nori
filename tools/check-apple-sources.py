@@ -294,15 +294,19 @@ def check_no_secrets() -> None:
 
 
 def check_ios_runner() -> None:
-    """Der iOS-Runner muss zum verwendeten SDK passen.
+    """Jeder iOS-Workflow muss zu dem SDK passen, das die App braucht.
 
-    macos-14 liefert Xcode 15.4 mit iOS-SDK 17.5 und meldet iOS-18-APIs als
-    „has no member" — auch dann, wenn sie sauber hinter `#available` stehen.
+    Xcode 15.4 liefert iOS-SDK 17.5 und meldet iOS-18-APIs als „has no member"
+    — auch dann, wenn sie sauber hinter `#available` stehen, denn `#available`
+    prüft nur zur Laufzeit.
+
+    Bei GitHub-Runnern steht die Xcode-Version über das Label fest, also lässt
+    sie sich hier prüfen: `macos-14` reicht nicht. Auf dem self-hosted Mac
+    hängt sie dagegen an dem, was dort installiert ist — das kann diese Datei
+    nicht wissen. Dafür muss der Workflow selbst einen Schritt haben, der die
+    Version liest und mit klarer Meldung abbricht, statt den Build zwanzig
+    Minuten später an „has no member" scheitern zu lassen.
     """
-    workflow = ROOT / ".github/workflows/build-ios.yml"
-    if not workflow.exists():
-        return
-
     used = set()
     for path in swift_files(IOS):
         src = strip_comments_and_strings(path.read_text())
@@ -312,18 +316,47 @@ def check_ios_runner() -> None:
     if not used:
         return
 
-    runner = re.search(r"^\s*runs-on:\s*(\S+)", workflow.read_text(), re.MULTILINE)
-    if not runner:
-        return
-    label = runner.group(1)
-    match = re.fullmatch(r"macos-(\d+)", label)
-    if match and int(match.group(1)) < 15:
-        add(
-            "ERROR",
-            "build-ios.yml",
-            f"runs-on: {label} bringt Xcode 15 mit iOS-SDK 17. Die App verwendet "
-            f"iOS-18-APIs: {', '.join(sorted(used))}. Mindestens macos-15 nötig.",
-        )
+    apis = ", ".join(sorted(used))
+    for name in ("build-ios.yml", "package-ios-ipa.yml"):
+        workflow = ROOT / ".github/workflows" / name
+        if not workflow.exists():
+            continue
+        text = workflow.read_text()
+
+        runner = re.search(r"^\s*runs-on:\s*(.+)$", text, re.MULTILINE)
+        if not runner:
+            continue
+        labels = {
+            label.strip().strip("'\"").lower()
+            for label in runner.group(1).strip().strip("[]").split(",")
+        }
+
+        if "self-hosted" in labels:
+            # Grob, aber ausreichend: irgendein Vergleich der Xcode-Hauptversion
+            # gegen 16 im Workflow. Fehlt er, fällt ein zu alter Mac erst im
+            # Compilerfehler auf.
+            if not re.search(r"xcodebuild -version", text) or not re.search(
+                r"-lt\s+16\b", text
+            ):
+                add(
+                    "ERROR",
+                    name,
+                    "Läuft auf einem self-hosted Runner, dessen Xcode-Version hier "
+                    f"nicht feststeht. Die App verwendet iOS-18-APIs: {apis}. Der "
+                    "Workflow braucht einen Schritt, der `xcodebuild -version` liest "
+                    "und bei kleiner 16 abbricht.",
+                )
+            continue
+
+        for label in labels:
+            match = re.fullmatch(r"macos-(\d+)", label)
+            if match and int(match.group(1)) < 15:
+                add(
+                    "ERROR",
+                    name,
+                    f"runs-on: {label} bringt Xcode 15 mit iOS-SDK 17. Die App "
+                    f"verwendet iOS-18-APIs: {apis}. Mindestens macos-15 nötig.",
+                )
 
 
 def check_main_actor_calls(folder: Path, label: str) -> None:
