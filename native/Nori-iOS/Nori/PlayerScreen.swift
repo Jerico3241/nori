@@ -7,6 +7,8 @@ struct PlayerScreen: View {
 
     let series: SeriesDetail
     let season: String
+    // Die Quelle gehört zur Wiedergabe, nicht zur Navigation im Hauptfenster.
+    let provider: CatalogProvider
 
     @State private var currentEpisode: Episode
     @State private var currentResumeAt: Double
@@ -21,11 +23,15 @@ struct PlayerScreen: View {
     @State private var watchInfo: WatchInfo?
     @State private var autoplaySeconds: Int?
     @State private var autoplayTask: Task<Void, Never>?
+    @State private var failureObserver: NSObjectProtocol?
+    @State private var statusTask: Task<Void, Never>?
+    @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
 
-    init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double) {
+    init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
         self.season = season
+        self.provider = provider
         _currentEpisode = State(initialValue: episode)
         _currentResumeAt = State(initialValue: resumeAt)
     }
@@ -225,6 +231,7 @@ struct PlayerScreen: View {
     ) async {
         cancelAutoplay()
         clearPlayer(saveCurrent: false)
+        let generation = playbackGeneration
         error = nil
         source = nil
         watchInfo = nil
@@ -234,19 +241,23 @@ struct PlayerScreen: View {
         do {
             status = "Folge wird gelesen…"
             let path = currentEpisode.path.isEmpty
-                ? guessEpisodePath(slug: series.slug, season: season, episode: currentEpisode.number, provider: library.provider)
+                ? guessEpisodePath(slug: series.slug, season: season, episode: currentEpisode.number, provider: provider)
                 : currentEpisode.path
             currentPath = normalizeEpisodePath(path)
 
-            let info = try await AniworldClient.shared.getWatch(provider: library.provider, path: path)
+            let info = try await AniworldClient.shared.getWatch(provider: provider, path: path)
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             watchInfo = info
             status = "Stream wird geholt…"
 
             let play = try await HosterResolver.resolveBest(
                 hosters: info.hosters,
                 preferredHoster: preferredHoster ?? library.hosterPref,
-                preferredLang: preferredLang ?? library.langPref
+                preferredLang: preferredLang ?? library.langPref,
+                episodePath: currentPath,
+                provider: provider
             )
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             source = play
             library.hosterPref = play.hoster
             library.langPref = play.lang
@@ -255,7 +266,18 @@ struct PlayerScreen: View {
                 throw NoriError.hoster("Ungültige Stream-URL")
             }
 
-            let item = AVPlayerItem(url: url)
+            // Hoster liefern das Video meist nur mit passendem Referer und
+            // User-Agent aus. AVPlayer schickt von sich aus keinen, weshalb der
+            // Player sonst mit leerem Bild und --:-- stehen bleibt.
+            var headers = ["User-Agent": NoriOrigin.ua]
+            if let referer = play.referer {
+                headers["Referer"] = referer
+                if let refererURL = URL(string: referer), let origin = originHeader(refererURL) {
+                    headers["Origin"] = origin
+                }
+            }
+            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+            let item = AVPlayerItem(asset: asset)
             let av = AVPlayer(playerItem: item)
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
@@ -266,12 +288,31 @@ struct PlayerScreen: View {
                 await av.seek(to: t)
             }
 
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
+
+            // Scheitert die Wiedergabe selbst, meldet AVKit das nicht sichtbar.
+            // Den Fehler in die eigene Fehleransicht holen, damit nicht nur ein
+            // graues Bild dasteht.
+            failureObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { note in
+                let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+                    .localizedDescription ?? "Unbekannter Fehler"
+                Task { @MainActor in
+                    guard generation == playbackGeneration else { return }
+                    reportPlaybackFailure(reason)
+                }
+            }
+
             av.playImmediately(atRate: library.playbackSpeed)
 
             observer = av.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 5, preferredTimescale: 1),
                 queue: .main
             ) { time in
+                guard generation == playbackGeneration else { return }
                 let pos = time.seconds
                 let dur = item.duration.seconds
                 if dur.isFinite { duration = dur }
@@ -284,6 +325,7 @@ struct PlayerScreen: View {
                 queue: .main
             ) { _ in
                 Task { @MainActor in
+                    guard generation == playbackGeneration else { return }
                     save(forceComplete: true)
                     handleEpisodeEnded()
                 }
@@ -291,10 +333,38 @@ struct PlayerScreen: View {
 
             player = av
             currentResumeAt = 0
+            statusTask = Task { @MainActor in
+                // AVPlayerItem meldet .failed asynchron, nachdem der erste
+                // Datenabruf fehlgeschlagen ist.
+                for _ in 0 ..< 40 {
+                    if Task.isCancelled || generation != playbackGeneration { return }
+                    if item.status == .failed {
+                        reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
+                        return
+                    }
+                    if item.status == .readyToPlay { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
         } catch {
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             self.error = error.localizedDescription
         }
         isSwitching = false
+    }
+
+    /// Nur „https://host" — manche Hoster prüfen Origin zusätzlich zum Referer.
+    private func originHeader(_ url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        return "\(scheme)://\(host)"
+    }
+
+    @MainActor
+    private func reportPlaybackFailure(_ reason: String) {
+        guard error == nil else { return }
+        let hoster = source?.hoster ?? "Hoster"
+        clearPlayer(saveCurrent: true)
+        error = "\(hoster) lieferte eine Adresse, die sich nicht abspielen lässt.\n\(reason)"
     }
 
     @MainActor
@@ -376,7 +446,7 @@ struct PlayerScreen: View {
         clearPlayer(saveCurrent: false)
         currentEpisode = next
         currentResumeAt = library.resumeEnabled
-            ? resumePosition(library.progress(slug: series.slug, season: season, episode: next.number, path: next.path, provider: library.provider))
+            ? resumePosition(library.progress(slug: series.slug, season: season, episode: next.number, path: next.path, provider: provider))
             : 0
         await startPlayback(resumeAt: currentResumeAt)
     }
@@ -405,7 +475,7 @@ struct PlayerScreen: View {
                 updatedAt: Date().timeIntervalSince1970 * 1000,
                 lang: source?.lang ?? library.langPref,
                 completed: dur >= 20 && pos >= dur * 0.9,
-                provider: library.provider
+                provider: provider
             )
         )
     }
@@ -430,7 +500,7 @@ struct PlayerScreen: View {
                 updatedAt: Date().timeIntervalSince1970 * 1000,
                 lang: source?.lang ?? library.langPref,
                 completed: forceComplete || (dur >= 20 && pos >= dur * 0.9),
-                provider: library.provider
+                provider: provider
             )
         )
     }
@@ -442,11 +512,16 @@ struct PlayerScreen: View {
 
     @MainActor
     func clearPlayer(saveCurrent: Bool) {
+        playbackGeneration = UUID()
         if saveCurrent { save(forceComplete: false) }
         if let observer, let player { player.removeTimeObserver(observer) }
         observer = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
+        failureObserver = nil
+        statusTask?.cancel()
+        statusTask = nil
         player?.pause()
         player = nil
     }
@@ -487,3 +562,4 @@ struct PlayerLayer: UIViewControllerRepresentable {
         if vc.player !== player { vc.player = player }
     }
 }
+

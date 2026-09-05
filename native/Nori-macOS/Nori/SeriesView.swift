@@ -372,7 +372,8 @@ struct SeriesView: View {
             series: series,
             episode: episode,
             season: season,
-            resumeAt: resumeAt
+            resumeAt: resumeAt,
+            provider: providerOverride ?? library.provider
         )
         openWindow(id: NoriWindow.player)
     }
@@ -655,3 +656,4 @@ struct EpisodeRow: View {
         }
     }
 }
+

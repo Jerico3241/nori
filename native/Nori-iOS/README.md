@@ -1,4 +1,4 @@
-# Nori für iPhone (SwiftUI) — 1.9.7
+# Nori für iPhone (SwiftUI) — 1.9.8
 
 Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeitet lokal; Merkliste und Fortschritt benötigen keinen Account.
 
@@ -56,3 +56,4 @@ Nori 1.9 liest bestehende `library.json`-Dateien aus 1.x weiter. Beim ersten Sta
 ## Noch nicht Bestandteil dieses Sourcepakets
 
 Account-/Cloud-Sync, serverseitiger gemeinsamer Resolver und serverseitige TMDB/AniList-Metadaten benötigen die ursprünglichen Backend-/Web-Quellen. Diese sind im bereitgestellten Workspace nicht enthalten; die Portable-Version liegt nur als gebautes Electron-Artefakt vor.
+

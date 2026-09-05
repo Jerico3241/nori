@@ -1,4 +1,4 @@
-# Nori macOS 1.11.3
+# Nori macOS 1.11.4
 
 Native macOS build of the Nori SwiftUI client. Changes per release: [../../CHANGELOG.md](../../CHANGELOG.md)
 
@@ -54,3 +54,4 @@ The macOS interface was rebuilt around desktop conventions (see above). The rewr
 
 ## Note
 The iCloud key-value sync implementation still requires the corresponding Xcode capability/entitlement before it can be considered production-ready.
+
