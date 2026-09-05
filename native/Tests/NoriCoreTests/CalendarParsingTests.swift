@@ -73,8 +73,13 @@ final class CalendarParsingTests: XCTestCase {
         XCTAssertEqual(dexter.title, "Dexter")
         XCTAssertEqual(dexter.season, "2")
         XCTAssertEqual(dexter.episode, 3)
-        // Die Abfrage wird abgeschnitten: `?format=avif` gehört nicht zum Pfad.
-        XCTAssertEqual(dexter.coverPath, "/media/images/channel/desktop/dexter-7sqv7dhs")
+        // Der Kalender reicht den Poster unverändert durch — samt Abfrage.
+        // Das ist in Ordnung: `AniworldClient.coverURL` schreibt `format`
+        // später auf jpg um, egal was hier steht (siehe
+        // ProviderPathTests.testCoverURLForcesJpegOnSerienstream).
+        // Die Detailseite schneidet die Abfrage dagegen ab; beide Wege enden
+        // deshalb bei derselben Adresse.
+        XCTAssertEqual(dexter.coverPath, "/media/images/channel/desktop/dexter-7sqv7dhs?format=avif")
         XCTAssertEqual(
             dexter.airingAt,
             berlinDate(year: 2026, month: 9, day: 14, hour: 20, minute: 15).timeIntervalSince1970 * 1000
