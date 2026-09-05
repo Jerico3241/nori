@@ -12,6 +12,11 @@ DerivedData/
 *.xccheckout
 *.xcscmblueprint
 
+# SwiftPM (Testpaket unter native/)
+.build/
+.swiftpm/
+Package.resolved
+
 # Node / build
 node_modules/
 .output/

@@ -16,14 +16,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Create macOS source package
         run: |
           ditto -c -k --sequesterRsrc --keepParent native/Nori-macOS Nori-macOS.zip
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Nori-macOS
           path: Nori-macOS.zip
