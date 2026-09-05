@@ -42,10 +42,21 @@ final class LibraryStore {
     private var isLoading = false
     private var modifiedAt: Double = 0
 
-    init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
+    /// `directory` nur für Tests.
+    ///
+    /// Ohne das müsste ein Test entweder in die echte Bibliothek des Benutzers
+    /// schreiben oder die Persistenz ungeprüft lassen — und genau dort liegen
+    /// Merkliste, Verlauf und Fortschritt. Die App ruft weiterhin
+    /// `LibraryStore()` und landet im Anwendungsunterstützungsordner.
+    init(directory: URL? = nil) {
+        let folder: URL
+        if let directory {
+            folder = directory
+        } else {
+            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            folder = dir.appendingPathComponent("Nori", isDirectory: true)
+        }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         url = folder.appendingPathComponent("library.json")
         load()
