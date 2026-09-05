@@ -332,19 +332,18 @@ def check_ios_runner() -> None:
         }
 
         if "self-hosted" in labels:
-            # Grob, aber ausreichend: irgendein Vergleich der Xcode-Hauptversion
-            # gegen 16 im Workflow. Fehlt er, fällt ein zu alter Mac erst im
-            # Compilerfehler auf.
-            if not re.search(r"xcodebuild -version", text) or not re.search(
-                r"-lt\s+16\b", text
-            ):
+            # Der Workflow muss `tools/require-xcode.sh` mit mindestens 16
+            # aufrufen. Fehlt das, fällt ein zu alter Mac erst im
+            # Compilerfehler auf — zwanzig Minuten später und ohne Hinweis
+            # darauf, dass es an der Xcode-Version liegt.
+            required = re.search(r"tools/require-xcode\.sh\s+(\d+)", text)
+            if not required or int(required.group(1)) < 16:
                 add(
                     "ERROR",
                     name,
                     "Läuft auf einem self-hosted Runner, dessen Xcode-Version hier "
                     f"nicht feststeht. Die App verwendet iOS-18-APIs: {apis}. Der "
-                    "Workflow braucht einen Schritt, der `xcodebuild -version` liest "
-                    "und bei kleiner 16 abbricht.",
+                    "Workflow braucht einen Schritt `tools/require-xcode.sh 16`.",
                 )
             continue
 

@@ -20,6 +20,18 @@ einen Runner, die Jobs laufen also nacheinander.
 **Xcode 16 oder neuer** aus dem App Store. Nicht nur die Command Line Tools —
 `xcodebuild` braucht das vollständige Xcode.
 
+> Das war beim ersten Lauf am 5.9.2026 auch prompt die Ursache: der Runner
+> meldete sich sauber an und nahm die Jobs an, aber beide Builds brachen im
+> ersten Schritt ab mit
+>
+> ```
+> xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer
+> directory '/Library/Developer/CommandLineTools' is a command line tools instance
+> ```
+>
+> Seitdem prüft `tools/require-xcode.sh` das vorweg und sagt statt dessen, was
+> zu tun ist.
+
 Warum 16: die iOS-App nutzt hinter `#available(iOS 18.0, *)` die
 Zoom-Übergänge. `#available` prüft nur zur Laufzeit, übersetzt wird trotzdem
 gegen das SDK des Runners. Xcode 15.4 bringt iOS-SDK 17.5 und scheitert mit
@@ -34,6 +46,23 @@ sudo xcodebuild -license accept
 xcodebuild -version          # muss 16.x oder höher zeigen
 xcodebuild -runFirstLaunch   # Zusatzkomponenten nachinstallieren
 ```
+
+**Bei einer Beta heißt der Pfad anders.** Ein Xcode aus dem Developer-Programm
+liegt als `Xcode-beta.app`, und `xcode-select` zeigt nach einer Neuinstallation
+trotzdem auf die Command Line Tools — der Befehl aus jeder Anleitung geht dann
+ins Leere:
+
+```bash
+ls -d /Applications/Xcode*.app          # zeigt, wie es hier heißt
+sudo xcode-select -s /Applications/Xcode-beta.app
+xcode-select -p                         # Gegenprobe
+```
+
+Eine Beta ist unproblematisch: sie ist neuer als die geforderte 16, und die
+Apps bauen weiter gegen ihre Deployment-Targets (iOS 17, macOS 14). Das SDK
+darf neuer sein als das Ziel — umgekehrt nicht.
+`tools/require-xcode.sh` nennt den gefundenen Pfad in seiner Fehlermeldung,
+auch den der Beta.
 
 Alles Weitere ist schon da: `git`, `curl`, `zip`, `unzip` und `python3` kommen
 mit den Command Line Tools, die Xcode mitbringt. Homebrew wird nicht gebraucht
@@ -147,9 +176,13 @@ stehen. Wenn ja, den ersten Lauf auslösen:
 **Actions → Build macOS → Run workflow**
 
 Der Lauf sollte innerhalb weniger Sekunden von „Queued" auf „In progress"
-springen und nach rund einer Minute grün sein. Bleibt er in „Queued" hängen,
-passen die Bezeichnungen nicht — auf der Runner-Seite nachsehen, ob dort
-tatsächlich `self-hosted` und `macOS` stehen.
+springen und nach rund einer Minute grün sein.
+
+| Symptom | Ursache |
+| --- | --- |
+| Bleibt in „Queued" | Bezeichnungen passen nicht (auf der Runner-Seite nachsehen, ob dort `self-hosted` und `macOS` stehen), Mac schläft, oder ein anderer Job läuft noch — es gibt nur einen Runner |
+| Bricht in „Toolchain prüfen" ab | Xcode fehlt, ist zu alt oder nicht ausgewählt. Die Meldung nennt den passenden Befehl; Schritt 1 dieser Anleitung |
+| Bricht in „Set up job" ab | Der Runner-Dienst läuft nicht mehr — `./svc.sh status` |
 
 ## 8. Betrieb
 
