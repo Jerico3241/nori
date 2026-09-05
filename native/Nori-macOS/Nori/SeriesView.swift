@@ -111,10 +111,12 @@ struct SeriesView: View {
         }
     }
 
-    /// Kopfbereich über die volle Breite: Breitbild im Hintergrund, davor
-    /// Poster, Titel, Metazeile, Bewertung und der Abspielknopf.
-    private func header(_ detail: SeriesDetail) -> some View {
-        ZStack(alignment: .bottomLeading) {
+    /// Hintergrund des Kopfbereichs: Breitbild oder, wenn keines da ist, ein
+    /// Verlauf aus der Coverfarbe. Darüber zwei Abdunklungen, damit die Schrift
+    /// auf jedem Bild lesbar bleibt.
+    @ViewBuilder
+    private var headerBackground: some View {
+        ZStack {
             if let wide = details.backdrop {
                 AsyncImage(url: wide) { phase in
                     switch phase {
@@ -143,88 +145,117 @@ struct SeriesView: View {
                 startPoint: .center,
                 endPoint: .bottom
             )
-
-            HStack(alignment: .bottom, spacing: 22) {
-                PosterTile(
-                    title: detail.title,
-                    slug: detail.slug,
-                    coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
-                )
-                .frame(width: 168)
-                .contextMenu {
-                    Button("Cover wählen…") { pickingCover = true }
-                }
-                .help("Rechtsklick, um das Cover manuell zu wählen")
-
-                VStack(alignment: .leading, spacing: 11) {
-                    Text(detail.title)
-                        .font(.system(size: 38, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                        .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
-
-                    HStack(spacing: 8) {
-                        ForEach(metaChips(detail), id: \.self) { chip in
-                            Text(chip)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.white.opacity(0.16), in: Capsule())
-                                .foregroundStyle(.white.opacity(0.92))
-                        }
-                    }
-
-                    MetaLine(kind: library.provider, genres: detail.genres, stars: details.stars)
-
-                    let stats = library.seasonStats(slug: slug, season: season, episodes: detail.episodes)
-                    if stats.total > 0 {
-                        HStack(spacing: 10) {
-                            ProgressView(value: Double(stats.watched), total: Double(stats.total))
-                                .frame(width: 170)
-                                .tint(NoriTheme.accent)
-                            Text("\(stats.pct) % · \(stats.watched)/\(stats.total) Folgen")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.75))
-                        }
-                    }
-
-                    HStack(spacing: 10) {
-                        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
-                        Button {
-                            guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
-                            open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
-                        } label: {
-                            Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
-                                .font(.headline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 11)
-                                .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .foregroundStyle(NoriTheme.onAccent)
-                        }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut(.defaultAction)
-
-                        BookmarkButton(slug: slug, title: detail.title, large: true)
-
-                        if detail.seasons.count > 1 {
-                            Picker("Staffel", selection: seasonBinding) {
-                                ForEach(detail.seasons) { item in
-                                    Text(item.label).tag(item.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 170)
-                        }
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, NoriLayout.gutter)
-            .padding(.bottom, 26)
         }
-        .frame(height: 430)
-        .frame(maxWidth: .infinity)
+    }
+
+    /// Der Kopfbereich wächst mit seinem Inhalt und hat nur eine **Mindest**höhe.
+    ///
+    /// Vorher stand hier `.frame(height: 430)` mit `.clipped()`. Ist der Inhalt
+    /// höher als 430 pt — langer Titel, viele Chips, Staffelauswahl — zentriert
+    /// SwiftUI ihn in diesem Rahmen, und `.clipped()` schneidet oben und unten
+    /// ab: der Abspielen-Knopf war zur Hälfte weg. Jetzt bestimmt der Inhalt die
+    /// Höhe, der Hintergrund liegt dahinter, und geschnitten wird nur noch das,
+    /// was das Breitbild über den Rand hinaus malt.
+    private func header(_ detail: SeriesDetail) -> some View {
+        HStack(alignment: .bottom, spacing: 22) {
+            PosterTile(
+                title: detail.title,
+                slug: detail.slug,
+                coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
+            )
+            .frame(width: 168)
+            .contextMenu {
+                Button("Cover wählen…") { pickingCover = true }
+            }
+            .help("Rechtsklick, um das Cover manuell zu wählen")
+
+            VStack(alignment: .leading, spacing: 11) {
+                Text(detail.title)
+                    .font(.system(size: 38, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                    .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+
+                HStack(spacing: 8) {
+                    ForEach(metaChips(detail), id: \.self) { chip in
+                        Text(chip)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.white.opacity(0.16), in: Capsule())
+                            .foregroundStyle(.white.opacity(0.92))
+                    }
+                }
+
+                // Nur die Bewertung. Quelle und Genres standen hier vorher
+                // ein zweites Mal — sie stehen in der Faktenspalte unter
+                // der Beschreibung, und die Quelle zusätzlich in der
+                // Seitenleiste.
+                if let stars = details.stars {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 2) {
+                            ForEach(0 ..< 5, id: \.self) { i in
+                                Image(systemName: Double(i) + 0.5 < stars ? "star.fill" : "star")
+                                    .font(.caption2)
+                            }
+                        }
+                        .foregroundStyle(NoriTheme.accent)
+                        Text(String(format: "%.1f", stars))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+
+                let stats = library.seasonStats(slug: slug, season: season, episodes: detail.episodes)
+                if stats.total > 0 {
+                    HStack(spacing: 10) {
+                        ProgressView(value: Double(stats.watched), total: Double(stats.total))
+                            .frame(width: 170)
+                            .tint(NoriTheme.accent)
+                        Text("\(stats.pct) % · \(stats.watched)/\(stats.total) Folgen")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
+                    Button {
+                        guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
+                        open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
+                    } label: {
+                        Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 11)
+                            .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .foregroundStyle(NoriTheme.onAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.defaultAction)
+
+                    BookmarkButton(slug: slug, title: detail.title, large: true)
+
+                    if detail.seasons.count > 1 {
+                        Picker("Staffel", selection: seasonBinding) {
+                            ForEach(detail.seasons) { item in
+                                Text(item.label).tag(item.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 170)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, NoriLayout.gutter)
+        .padding(.top, 34)
+        .padding(.bottom, 26)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 430, alignment: .bottomLeading)
+        .background { headerBackground }
         .clipped()
     }
 
@@ -244,9 +275,6 @@ struct SeriesView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if !detail.genres.isEmpty {
                         factRow("Genres", detail.genres.joined(separator: ", "))
-                    }
-                    if let fsk = detail.fsk, !fsk.isEmpty {
-                        factRow("Altersfreigabe", "FSK \(fsk)")
                     }
                     let langs = uniqueLanguages(detail)
                     if !langs.isEmpty {
@@ -302,7 +330,8 @@ struct SeriesView: View {
                 chips.append(start)
             }
         }
-        chips.append(contentsOf: detail.genres.prefix(3))
+        // Genres stehen bewusst nicht hier: die Faktenspalte unter der
+        // Beschreibung zeigt sie vollständig, statt hier die ersten drei.
         return chips
     }
 
