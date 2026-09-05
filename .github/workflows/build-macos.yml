@@ -27,8 +27,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      # Xcode 15 bringt das macOS-14-SDK mit, das dieses Target braucht. Die
+      # Prüfung sagt bei einem frisch aufgesetzten Runner, was fehlt — sonst
+      # bricht der erste xcodebuild-Aufruf nur mit „requires Xcode, but active
+      # developer directory … is a command line tools instance" ab.
+      - name: Toolchain prüfen
+        run: tools/require-xcode.sh 15
 
       - name: Resolve Swift packages
         run: |

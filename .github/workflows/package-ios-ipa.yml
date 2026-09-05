@@ -36,20 +36,9 @@ jobs:
 
       # Mindestens Xcode 16 — dieselbe Begründung wie in build-ios.yml: die App
       # verwendet hinter `#available` iOS-18-APIs, und `#available` prüft nur
-      # zur Laufzeit. Auf dem self-hosted Mac hängt das an der installierten
-      # Version, also hier prüfen statt später am Fehler raten.
+      # zur Laufzeit.
       - name: Toolchain prüfen
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild -version
-
-          MAJOR="$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)"
-          if [ "${MAJOR:-0}" -lt 16 ]; then
-            echo "::error::Xcode $MAJOR auf diesem Runner, gebraucht wird 16 oder neuer." >&2
-            echo "Abhilfe: neueres Xcode installieren und mit 'sudo xcode-select -s' auswählen." >&2
-            exit 1
-          fi
+        run: tools/require-xcode.sh 16
 
       - name: Version lesen
         id: meta
