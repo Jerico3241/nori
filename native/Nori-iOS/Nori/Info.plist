@@ -20,6 +20,11 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Wird aus der Build-Einstellung TMDB_API_KEY gefüllt. Ist sie nicht
+	     gesetzt, bleibt der Wert leer und die App nutzt die Cover der
+	     Quellen; ein Schlüssel lässt sich in den Einstellungen eintragen. -->
+	<key>TMDBAPIKey</key>
+	<string>$(TMDB_API_KEY)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIBackgroundModes</key>

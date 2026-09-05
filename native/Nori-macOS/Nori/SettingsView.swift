@@ -18,7 +18,7 @@ struct SettingsView: View {
         }
         // Höhe am längsten Bereich ausgerichtet. Mit 340 pt wurde der
         // Allgemein-Bereich beschnitten, sobald die Neuerungen dazukamen.
-        .frame(width: 540, height: 430)
+        .frame(width: 540, height: 500)
     }
 }
 
@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.10.0"
+    static let version = "1.10.1"
 
     static let highlights = [
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
@@ -94,6 +94,7 @@ enum NoriRelease {
         "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter“ und Genre-Zeilen.",
         "Neuer Bereich „Kategorien“ und „Ähnliche Titel“ auf der Detailseite.",
         "Wiedergabe läuft in einem eigenen Fenster mit Vollbild und ⌘W.",
+        "TMDB-Schlüssel liegt jetzt im Schlüsselbund statt im Programm — einzutragen unter Einstellungen › Daten.",
     ]
 }
 
@@ -172,9 +173,63 @@ private struct SyncSettingsTab: View {
 private struct PrivacySettingsTab: View {
     @Environment(LibraryStore.self) private var library
     @State private var confirm: String?
+    @State private var keyDraft = ""
+    @State private var keyStored = TMDBKeyStore.isUserProvided
+    @State private var keyNote: String?
 
     var body: some View {
         Form {
+            Section {
+                if keyStored {
+                    LabeledContent("TMDB-Schlüssel") {
+                        HStack(spacing: 10) {
+                            Text("hinterlegt")
+                                .foregroundStyle(NoriTheme.muted)
+                            Button("Entfernen", role: .destructive) {
+                                TMDBKeyStore.clear()
+                                keyStored = false
+                                keyDraft = ""
+                                keyNote = "Entfernt. Nori zeigt jetzt die Cover der Quellen."
+                            }
+                        }
+                    }
+                } else {
+                    LabeledContent("TMDB-Schlüssel") {
+                        HStack(spacing: 10) {
+                            SecureField("noch keiner", text: $keyDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 240)
+                            Button("Sichern") {
+                                if TMDBKeyStore.save(keyDraft) {
+                                    keyStored = TMDBKeyStore.isUserProvided
+                                    keyDraft = ""
+                                    keyNote = "Gesichert. Neue Cover werden ab sofort bei TMDB gesucht."
+                                } else {
+                                    keyNote = "Der Schlüsselbund hat die Ablage abgelehnt."
+                                }
+                            }
+                            .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+                if let keyNote {
+                    Text(keyNote)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                }
+            } header: {
+                Text("Cover von TMDB")
+            } footer: {
+                Text("""
+                     Ohne Schlüssel nutzt Nori die Cover von AniWorld und Serienstream. \
+                     Ein eigener Schlüssel (kostenlos bei themoviedb.org) liefert zusätzlich \
+                     Breitbilder, Kurzbeschreibungen und Bewertungen. Er liegt im \
+                     Schlüsselbund, nicht im Programm.
+                     """)
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+
             Section {
                 LabeledContent("Verlauf") {
                     HStack(spacing: 10) {

@@ -1,4 +1,103 @@
 import Foundation
+import Security
+
+/// Zugang zum TMDB-Schlüssel.
+///
+/// Der Schlüssel stand früher als Zeichenkette in dieser Datei. Ein Schlüssel
+/// im Quelltext liegt in jedem Klon, in jedem Build und in der Git-Historie;
+/// wer ihn sperrt, sperrt ihn für alle Installationen zugleich. Er kommt jetzt
+/// aus zwei Quellen, in dieser Reihenfolge:
+///
+/// 1. **Schlüsselbund** — was in den Einstellungen eingetragen wurde.
+/// 2. **`TMDBAPIKey` aus der Info.plist** — für Builds, die den Schlüssel über
+///    die Build-Einstellung `TMDB_API_KEY` mitbekommen (etwa aus einem
+///    GitHub-Secret). Fehlt die Einstellung, bleibt der Eintrag leer.
+///
+/// Ohne Schlüssel fragt die App TMDB gar nicht erst — sie zeigt dann die Cover
+/// von AniWorld und Serienstream, die sie ohnehin schon einliest.
+enum TMDBKeyStore {
+    private static let service = "de.nori.tmdb"
+    private static let account = "api_key"
+
+    /// Gepuffert, weil `current` aus View-Bodies gelesen wird: ohne Puffer
+    /// ginge bei jedem Neuzeichnen eine Schlüsselbund-Abfrage raus.
+    /// `nil` heißt „noch nicht gelesen", `.some(nil)` heißt „kein Schlüssel".
+    private static var cached: String??
+
+    /// Der zu verwendende Schlüssel oder `nil`, wenn keiner hinterlegt ist.
+    static var current: String? {
+        if let cached { return cached }
+        let resolved = resolve()
+        cached = .some(resolved)
+        return resolved
+    }
+
+    private static func resolve() -> String? {
+        if let stored = readKeychain(), !stored.isEmpty { return stored }
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "TMDBAPIKey") as? String
+        // Bei fehlender Build-Einstellung bleibt in der Info.plist der
+        // unaufgelöste Platzhalter stehen — der ist kein Schlüssel.
+        guard let bundled, !bundled.isEmpty, !bundled.hasPrefix("$(") else { return nil }
+        return bundled
+    }
+
+    /// Wurde der Schlüssel von Hand eingetragen (und lässt sich damit löschen)?
+    /// Nicht gepuffert: wird nur beim Aufbau der Einstellungen gelesen.
+    static var isUserProvided: Bool {
+        (readKeychain()?.isEmpty == false)
+    }
+
+    @discardableResult
+    static func save(_ key: String) -> Bool {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return clear() }
+        guard let data = trimmed.data(using: .utf8) else { return false }
+        defer { cached = nil }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+
+        let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updated == errSecSuccess { return true }
+        guard updated == errSecItemNotFound else { return false }
+
+        var insert = query
+        insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    static func clear() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        defer { cached = nil }
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private static func readKeychain() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
 
 actor AniworldClient {
     static let shared = AniworldClient()
@@ -162,7 +261,14 @@ actor CoverIndex {
     /// Detailseite jeder Serie geladen werden müsste.
     private var overviews: [String: String] = [:]
     private var ratings: [String: Double] = [:]
-    private let key = "8265bd1679663a7ea12ac168da84d2e8"
+    /// Bei jedem Zugriff frisch aus dem Schlüsselbund gelesen, damit ein in
+    /// den Einstellungen eingetragener Schlüssel sofort greift und die App
+    /// dafür nicht neu gestartet werden muss.
+    private var key: String? { TMDBKeyStore.current }
+
+    /// Für die Oberfläche: ohne Schlüssel gibt es keine TMDB-Cover, und die
+    /// manuelle Auswahl hat nichts anzubieten.
+    nonisolated var hasKey: Bool { TMDBKeyStore.current != nil }
 
     // Der Cover-Index lag bisher nur im Arbeitsspeicher: nach jedem Start
     // musste jede Kachel erneut bei TMDB nachfragen, weshalb Listen lange
@@ -361,6 +467,9 @@ actor CoverIndex {
     }
 
     private func search(slug: String, title: String, kind: CatalogProvider) async -> URL? {
+        // Ohne Schlüssel gar nicht erst anfragen: TMDB antwortet sonst mit 401,
+        // und das Quellcover ist die richtige Antwort.
+        guard let key = key else { return sourceCovers[slug] }
         await acquireSlot()
         defer { releaseSlot() }
         let cleaned = title
@@ -442,6 +551,7 @@ actor CoverIndex {
     /// TMDB in Rangfolge. Ohne Cache und ohne `missed`-Sperre, weil hier
     /// bewusst nach einer Alternative gesucht wird.
     func candidates(title: String, kind: CatalogProvider, limit: Int = 12) async -> [CoverCandidate] {
+        guard let key = key else { return [] }
         let cleaned = title
             .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
