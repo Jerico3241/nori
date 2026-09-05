@@ -170,7 +170,7 @@ actor AniworldClient {
 
     func getCalendar(provider: CatalogProvider, force: Bool = false) async throws -> CalendarPayload {
         if !force, let hit = calendars[provider], hit.1 > Date() { return hit.0 }
-        let payload: CalendarPayload
+        var payload: CalendarPayload
         if provider == .serienstream {
             let data = try await fetchData(provider.calendarPath, provider: provider, accept: "application/json")
             payload = try HTML.parseSerienstreamCalendar(data)
@@ -178,6 +178,9 @@ actor AniworldClient {
             let html = try await fetchPage(provider.calendarPath, provider: provider)
             payload = try HTML.parseAniworldCalendar(html)
         }
+        // Wie beim Katalog: der Parser weiß nicht, welche Seite er liest.
+        for index in payload.upcoming.indices { payload.upcoming[index].provider = provider }
+        for index in payload.recent.indices { payload.recent[index].provider = provider }
         if payload.upcoming.count + payload.recent.count < 3 {
             throw NoriError.parse("Kalender unvollständig")
         }

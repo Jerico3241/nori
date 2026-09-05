@@ -66,15 +66,27 @@ final class PlayerHost {
 /// darauf zugreifen können — die Detailseite baut daraus ihre Empfehlungen.
 @Observable
 final class CatalogStore {
+    /// Beide Kataloge, zusammengeführt und alphabetisch.
     var items: [CatalogItem] = []
+    /// Die zuletzt gewählte Quelle. Entscheidet, welche Seite ein Titel ohne
+    /// eigene Quellangabe öffnet — nicht mehr, was in den Listen steht.
     var provider: CatalogProvider = .aniworld
 
+    /// Der Ausschnitt für einen Bereich.
+    func items(for scope: LibraryScope) -> [CatalogItem] {
+        guard scope.provider != nil else { return items }
+        return items.filter { scope.includes($0.provider) }
+    }
+
     /// Titel mit den meisten gemeinsamen Genres, ohne den Titel selbst.
-    func similar(to slug: String, genres: [String], limit: Int = 18) -> [CatalogItem] {
+    func similar(to slug: String, genres: [String], provider: CatalogProvider? = nil, limit: Int = 18) -> [CatalogItem] {
         guard !genres.isEmpty else { return [] }
         let wanted = Set(genres)
+        // Innerhalb derselben Quelle bleiben: ein Vorschlag, der auf die
+        // andere Seite führt, ist zwar abspielbar, wirkt an einer Anime-Seite
+        // aber wie ein Fehler.
         return items
-            .filter { $0.slug != slug }
+            .filter { $0.slug != slug && (provider == nil || $0.provider == nil || $0.provider == provider) }
             .map { (item: $0, shared: wanted.intersection($0.genres).count) }
             .filter { $0.shared > 0 }
             .sorted { $0.shared > $1.shared }
@@ -191,7 +203,7 @@ struct RootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 720, minHeight: 460)
-        .task(id: library.provider) { await load() }
+        .task(id: library.scope) { await load() }
         .focusedSceneValue(\.noriSection, $section)
         .focusedSceneValue(\.noriReload, NoriReloadAction {
             Task { await load(force: true) }
@@ -216,10 +228,10 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 8) {
                 Divider()
-                ProviderPicker()
+                ScopePicker()
                     .padding(.horizontal, 10)
                 HStack(spacing: 6) {
-                    Text(library.provider.label)
+                    Text(library.scope.label)
                         .font(.caption2)
                         .foregroundStyle(NoriTheme.muted)
                     Spacer()
@@ -251,18 +263,57 @@ struct RootView: View {
         }
     }
 
+    /// Beide Kataloge, nebenläufig.
+    ///
+    /// Scheitert eine Quelle, bleibt die andere stehen: eine gemeinsame
+    /// Bibliothek, die bei einem Ausfall komplett leer ist, wäre ein
+    /// Rückschritt gegenüber dem alten Umschalter. Gemeldet wird nur, wenn
+    /// **beide** ausfallen — oder wenn die eine ausfällt, die gerade gefragt
+    /// ist.
     func load(force: Bool = false) async {
         loading = catalog.isEmpty
         error = nil
-        do {
-            let result = try await AniworldClient.shared.getCatalog(provider: library.provider, force: force)
-            catalog = result.items
-            catalogStore.items = result.items
-            catalogStore.provider = library.provider
-        } catch {
-            self.error = error.localizedDescription
+
+        async let anime = Self.fetch(.aniworld, force: force)
+        async let serien = Self.fetch(.serienstream, force: force)
+        let results = await [anime, serien]
+
+        var merged: [CatalogItem] = []
+        var failures: [CatalogProvider: String] = [:]
+        for (provider, outcome) in zip([CatalogProvider.aniworld, .serienstream], results) {
+            switch outcome {
+            case .success(let items): merged.append(contentsOf: items)
+            case .failure(let message): failures[provider] = message
+            }
+        }
+
+        if !merged.isEmpty {
+            catalogStore.items = merged.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+        catalogStore.provider = library.provider
+        catalog = catalogStore.items(for: library.scope)
+
+        if let named = library.scope.provider {
+            error = failures[named]
+        } else {
+            error = failures.count == 2
+                ? failures.values.sorted().joined(separator: " · ")
+                : nil
         }
         loading = false
+    }
+
+    private enum Outcome {
+        case success([CatalogItem])
+        case failure(String)
+    }
+
+    private static func fetch(_ provider: CatalogProvider, force: Bool) async -> Outcome {
+        do {
+            return .success(try await AniworldClient.shared.getCatalog(provider: provider, force: force).items)
+        } catch {
+            return .failure(error.localizedDescription)
+        }
     }
 }
 

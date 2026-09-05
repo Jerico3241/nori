@@ -39,7 +39,7 @@ struct CategoriesView: View {
                 ContentUnavailableView(
                     "Keine Kategorien",
                     systemImage: "square.grid.2x2",
-                    description: Text("\(library.provider.label) liefert für diesen Katalog keine Genres mit.")
+                    description: Text("Für diesen Katalog kommen keine Genres mit.")
                 )
             } else if let selected {
                 genreDetail(selected)

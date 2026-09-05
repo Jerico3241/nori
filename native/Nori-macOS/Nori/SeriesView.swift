@@ -54,7 +54,7 @@ struct SeriesView: View {
         }
         .task { await load(season: nil) }
         .task(id: detail?.coverPath) {
-            guard let url = AniworldClient.coverURL(detail?.coverPath, provider: library.provider) else { return }
+            guard let url = AniworldClient.coverURL(detail?.coverPath, provider: providerOverride ?? library.provider) else { return }
             // Das Cover der Quelle festhalten, damit es überall als
             // Rückfallebene bereitsteht, wenn TMDB nichts findet.
             await CoverIndex.shared.rememberSource(slug: slug, url: url)
@@ -161,7 +161,7 @@ struct SeriesView: View {
             PosterTile(
                 title: detail.title,
                 slug: detail.slug,
-                coverURL: AniworldClient.coverURL(detail.coverPath, provider: library.provider)
+                coverURL: AniworldClient.coverURL(detail.coverPath, provider: providerOverride ?? library.provider)
             )
             .frame(width: 168)
             .contextMenu {
@@ -280,7 +280,7 @@ struct SeriesView: View {
                     if !langs.isEmpty {
                         factRow("Sprachen", langs.joined(separator: ", "))
                     }
-                    factRow("Quelle", library.provider.label)
+                    factRow("Quelle", (providerOverride ?? library.provider).label)
                 }
                 Spacer(minLength: 0)
             }
@@ -314,7 +314,7 @@ struct SeriesView: View {
     /// wirklich hat.
     @ViewBuilder
     private func similar(_ detail: SeriesDetail) -> some View {
-        let items = catalogStore.similar(to: slug, genres: detail.genres)
+        let items = catalogStore.similar(to: slug, genres: detail.genres, provider: providerOverride ?? library.provider)
         if !items.isEmpty {
             PosterRow(title: "Ähnliche Titel", items: items)
         }

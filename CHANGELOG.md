@@ -4,8 +4,31 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.10.4**, iOS/iPadOS **1.9.5**,
+unterschiedlich schnell bewegen: macOS **1.11.0**, iOS/iPadOS **1.9.5**,
 Windows **1.8.0**.
+
+## [macOS 1.11.0] – 2026-09-05
+
+### Neu
+
+- **Eine gemeinsame Bibliothek.** Anime und Serien stehen zusammen in
+  Startseite, Katalog, Kategorien, Merkliste und Kalender. Der Umschalter
+  unten links ist kein Moduswechsel mehr, sondern ein Filter: **Alle ·
+  Anime · Serien**. Vorgabe ist „Alle"; die Wahl wird gespeichert
+  (Bibliotheksschema v4).
+- Jeder Titel und jeder Kalendereintrag weiß, von welcher Seite er stammt,
+  und öffnet sie auch dann richtig, wenn die Liste beide Quellen enthält.
+- Beide Kataloge werden nebenläufig geladen. Fällt eine Quelle aus, bleibt
+  die andere stehen — gemeldet wird nur, wenn beide ausfallen oder wenn
+  gerade nach genau der ausgefallenen gefiltert ist.
+
+### Geändert
+
+- „Ähnliche Titel" bleiben innerhalb derselben Quelle. Ein Vorschlag, der
+  von einer Anime-Seite auf Serienstream führt, wäre zwar abspielbar, wirkt
+  dort aber wie ein Fehler.
+- Auf der Detailseite zeigen Cover, Quelle und Empfehlungen jetzt die
+  Quelle **dieses Titels** statt der zuletzt global gewählten.
 
 ## [macOS 1.10.4] · [iOS 1.9.5] – 2026-09-05
 
