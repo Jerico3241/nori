@@ -68,16 +68,26 @@ case "$DEV_DIR" in
         ;;
 esac
 
-if ! VERSION_LINE="$(xcodebuild -version 2>&1 | head -1)"; then
+# Ohne Pipe. `xcodebuild -version | head -1` sieht harmloser aus, ist es unter
+# `set -o pipefail` aber nicht: head schließt die Pipe nach der ersten Zeile,
+# xcodebuild bekommt SIGPIPE, und die Pipeline meldet 141 — ein Fehlschlag,
+# obwohl die Version einwandfrei dastand. Genau daran scheiterte der erste
+# Lauf mit korrekt ausgewähltem Xcode 27.
+if ! VERSION_OUT="$(xcodebuild -version 2>&1)"; then
     fail "xcodebuild lässt sich nicht ausführen." \
-        "Meldung: $VERSION_LINE" \
+        "Meldung: ${VERSION_OUT%%$'\n'*}" \
         "Ausführlich: docs/self-hosted-runner.md"
 fi
 
+VERSION_LINE="${VERSION_OUT%%$'\n'*}"
 echo "$VERSION_LINE"
 echo "Entwicklerverzeichnis: $DEV_DIR"
 
-MAJOR="$(printf '%s' "$VERSION_LINE" | awk '{print $2}' | cut -d. -f1)"
+# „Xcode 27.0" → 27, ebenfalls ohne Pipe.
+# shellcheck disable=SC2086
+set -- $VERSION_LINE
+VERSION="${2:-}"
+MAJOR="${VERSION%%.*}"
 case "$MAJOR" in
     ''|*[!0-9]*)
         fail "Xcode-Version nicht lesbar aus: $VERSION_LINE"
