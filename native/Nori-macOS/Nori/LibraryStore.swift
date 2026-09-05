@@ -20,6 +20,11 @@ final class LibraryStore {
     var provider: CatalogProvider = .aniworld { didSet { persist() } }
     var cloudSyncEnabled: Bool = false {
         didSet {
+            // Beim Einlesen nichts auslösen: `apply` setzt dieses Feld mit,
+            // wodurch mitten im Laden ein Abgleich startete, der über
+            // mergeCloudIfNewer erneut in `apply` lief. Nach dem Laden richtet
+            // `init` die Synchronisation ohnehin selbst ein.
+            guard !isLoading else { return }
             persist()
             configureCloudSync()
             if cloudSyncEnabled { syncNow() }

@@ -37,7 +37,8 @@ enum HosterResolver {
         hosters: [HosterOption],
         preferredHoster: String,
         preferredLang: String,
-        episodePath: String = ""
+        episodePath: String = "",
+        provider: CatalogProvider = .aniworld
     ) async throws -> PlaySource {
         let langMatched = pickLang(hosters, pref: preferredLang)
         let ranked = ordered(langMatched, preferred: preferredHoster)
@@ -50,7 +51,7 @@ enum HosterResolver {
         var failures: [String] = []
         for opt in ranked {
             do {
-                return try await resolve(opt, episodePath: episodePath)
+                return try await resolve(opt, episodePath: episodePath, provider: provider)
             } catch {
                 var reason = error.localizedDescription
                 let prefix = "\(opt.name): "
@@ -63,28 +64,36 @@ enum HosterResolver {
         )
     }
 
-    static func resolve(_ opt: HosterOption, episodePath: String = "") async throws -> PlaySource {
-        let embed = try await followRedirect(opt.redirectPath, episodePath: episodePath)
+    static func resolve(
+        _ opt: HosterOption,
+        episodePath: String = "",
+        provider: CatalogProvider = .aniworld
+    ) async throws -> PlaySource {
+        let embed = try await followRedirect(opt.redirectPath, episodePath: episodePath, provider: provider)
         return try await extract(embed: embed, hoster: opt.name, lang: opt.lang)
     }
 
-    private static func followRedirect(_ redirectPath: String, episodePath: String = "") async throws -> URL {
-        let path = HTML.toAniworldPath(redirectPath)
+    private static func followRedirect(
+        _ redirectPath: String,
+        episodePath: String = "",
+        provider: CatalogProvider = .aniworld
+    ) async throws -> URL {
+        // Die Quelle wird durchgereicht statt aus der Pfadform geraten. Beide
+        // Seiten benutzen ähnliche Pfade — „/redirect/…" beginnt ebenfalls mit
+        // „/r" —, weshalb jede Heuristik hier die jeweils andere Quelle bricht.
         let origin: String
         let fullPath: String
-        // AniWorld zuerst prüfen: dessen Pfade beginnen mit „/redirect/", was
-        // ebenfalls mit „/r" anfängt. Die alte Reihenfolge schickte deshalb
-        // jede AniWorld-Weiterleitung an serienstream.to, wo sie mit 404
-        // endete — AniWorld war dadurch durchgehend nicht abspielbar.
-        // Serienstream verwendet „/r?…", entsprechend genau darauf prüfen.
-        if path.hasPrefix("/redirect/") {
-            origin = NoriOrigin.aniworld
-            fullPath = path
-        } else if isSerienstreamRedirect(redirectPath) || isSerienstreamRedirect(path) {
-            origin = NoriOrigin.serienstream
-            fullPath = isSerienstreamRedirect(redirectPath) ? redirectPath : path
+        if redirectPath.hasPrefix("http") {
+            guard let absolute = URL(string: redirectPath) else {
+                throw NoriError.hoster("Ungültige URL")
+            }
+            origin = ""
+            fullPath = absolute.absoluteString
         } else {
-            throw NoriError.hoster("Ungültiger Hoster")
+            let path = redirectPath.hasPrefix("/") ? redirectPath : HTML.toAniworldPath(redirectPath)
+            guard path.hasPrefix("/") else { throw NoriError.hoster("Ungültiger Hoster") }
+            origin = provider.origin
+            fullPath = path
         }
         guard let url = URL(string: origin + fullPath) else { throw NoriError.hoster("Ungültige URL") }
 
@@ -101,7 +110,8 @@ enum HosterResolver {
         // Die Weiterleitung wird aus der Episodenseite heraus aufgerufen. Mit
         // dem blanken Origin als Referer weist sich der Aufruf als nicht von
         // dort kommend aus, was manche Quellen abweisen.
-        let referer = episodePath.isEmpty ? origin + "/" : origin + normalizeEpisodePath(episodePath)
+        let refererBase = provider.origin
+        let referer = episodePath.isEmpty ? refererBase + "/" : refererBase + normalizeEpisodePath(episodePath)
         req.setValue(referer, forHTTPHeaderField: "Referer")
         defer { session.finishTasksAndInvalidate() }
         let payload = try? await session.data(for: req)
@@ -154,12 +164,6 @@ enum HosterResolver {
             parts.append("\(payload.0.count) Bytes, kein Text")
         }
         return "\(base) (\(parts.joined(separator: ", ")))"
-    }
-
-    /// Serienstream-Weiterleitungen sind „/r?…" oder „/r/…" — nicht jeder Pfad,
-    /// der mit „/r" beginnt. „/redirect/…" gehört zu AniWorld.
-    private static func isSerienstreamRedirect(_ path: String) -> Bool {
-        path.hasPrefix("/r?") || path.hasPrefix("/r/") || path == "/r"
     }
 
     /// Zielt die Adresse auf einen Hoster und nicht zurück auf die Quelle?

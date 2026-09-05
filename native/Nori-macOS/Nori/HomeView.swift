@@ -12,7 +12,6 @@ struct HeroItem: Identifiable, Hashable {
     let title: String
     let kind: CatalogProvider
     let genres: [String]
-    let progress: WatchProgress?
     var id: String { "\(kind.rawValue)|\(slug)" }
 }
 
@@ -24,6 +23,7 @@ struct HomeView: View {
     let reload: () async -> Void
 
     @State private var genreRows: [GenreRow] = []
+    @State private var heroItems: [HeroItem] = []
 
     private let grid = [GridItem(.adaptive(minimum: 158, maximum: 200), spacing: 18)]
 
@@ -96,17 +96,27 @@ struct HomeView: View {
         }
         .task(id: rowsKey) {
             genreRows = Self.buildRows(from: catalog)
+            heroItems = buildHero()
         }
     }
 
     /// Angefangene Titel zuerst, danach mit Katalogtiteln auf sechs auffüllen.
-    private var heroItems: [HeroItem] {
+    /// Läuft in einer Aufgabe statt bei jedem Rendern: die Suche nach den
+    /// Genres eines angefangenen Titels geht durch den gesamten Katalog.
+    private func buildHero() -> [HeroItem] {
         var out: [HeroItem] = []
         var used: Set<String> = []
+        var genresBySlug: [String: [String]] = [:]
+        for item in catalog { genresBySlug[item.slug] = item.genres }
+
         for item in library.continueWatching().prefix(3) {
             let kind = item.provider ?? providerFromPath(item.episodePath)
-            let genres = catalog.first(where: { $0.slug == item.slug })?.genres ?? []
-            out.append(HeroItem(slug: item.slug, title: item.title, kind: kind, genres: genres, progress: item))
+            out.append(HeroItem(
+                slug: item.slug,
+                title: item.title,
+                kind: kind,
+                genres: genresBySlug[item.slug] ?? []
+            ))
             used.insert(item.slug)
         }
         for item in catalog where !used.contains(item.slug) {
@@ -114,8 +124,7 @@ struct HomeView: View {
                 slug: item.slug,
                 title: item.title,
                 kind: library.provider,
-                genres: item.genres,
-                progress: nil
+                genres: item.genres
             ))
             used.insert(item.slug)
             if out.count >= 6 { break }
@@ -127,7 +136,7 @@ struct HomeView: View {
     /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
     /// Einträge vergleichen.
     private var rowsKey: String {
-        "\(library.provider.rawValue)|\(catalog.count)"
+        "\(library.provider.rawValue)|\(catalog.count)|\(library.progress.count)"
     }
 
     static func buildRows(from catalog: [CatalogItem]) -> [GenreRow] {
@@ -170,24 +179,39 @@ struct HeroCarousel: View {
     let items: [HeroItem]
 
     @State private var index = 0
+    @State private var tick = 0
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Die Liste wechselt beim Quellenwechsel die Länge. Ohne Begrenzung
+    /// zeigte das Karussell dann eine leere Fläche.
+    private var safeIndex: Int { items.isEmpty ? 0 : min(index, items.count - 1) }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             ForEach(Array(items.enumerated()), id: \.element.id) { position, item in
-                if position == index {
+                if position == safeIndex {
                     HeroSlide(item: item)
                         .transition(.opacity)
                 }
             }
 
+            // Als Knöpfe statt als Tap-Geste: nur so sind sie per Tastatur und
+            // VoiceOver erreichbar und zeigen den richtigen Mauszeiger.
             HStack(spacing: 6) {
                 ForEach(items.indices, id: \.self) { position in
-                    Capsule()
-                        .fill(position == index ? NoriTheme.accent : Color.white.opacity(0.35))
-                        .frame(width: position == index ? 26 : 12, height: 4)
-                        .onTapGesture { select(position) }
+                    Button {
+                        select(position)
+                    } label: {
+                        Capsule()
+                            .fill(position == safeIndex ? NoriTheme.accent : Color.white.opacity(0.35))
+                            .frame(width: position == safeIndex ? 26 : 12, height: 4)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Titel \(position + 1) von \(items.count)")
+                    .help(items[position].title)
                 }
             }
             .padding(.leading, NoriLayout.gutter)
@@ -198,14 +222,18 @@ struct HeroCarousel: View {
         .clipped()
         .overlay(alignment: .leading) { arrow(-1, symbol: "chevron.left") }
         .overlay(alignment: .trailing) { arrow(1, symbol: "chevron.right") }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: index)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: safeIndex)
         .onHover { hovering = $0 }
-        .task(id: index) {
-            // Selbsttätig weiterblättern, solange der Zeiger nicht darauf liegt.
+        // `tick` wird bei jedem Durchlauf erhöht, damit die Aufgabe auch dann
+        // neu startet, wenn nicht weitergeblättert wurde. Vorher hing sie an
+        // `index` allein und blieb für immer stehen, sobald der Zeiger beim
+        // Ablauf der Wartezeit über dem Bereich lag.
+        .task(id: "\(safeIndex)-\(tick)") {
             guard items.count > 1, !reduceMotion else { return }
             try? await Task.sleep(for: .seconds(9))
-            guard !Task.isCancelled, !hovering else { return }
-            index = (index + 1) % items.count
+            guard !Task.isCancelled else { return }
+            if !hovering { index = (safeIndex + 1) % items.count }
+            tick &+= 1
         }
     }
 
@@ -213,7 +241,7 @@ struct HeroCarousel: View {
     private func arrow(_ direction: Int, symbol: String) -> some View {
         if items.count > 1, hovering {
             Button {
-                select((index + direction + items.count) % items.count)
+                select((safeIndex + direction + items.count) % items.count)
             } label: {
                 Image(systemName: symbol)
                     .font(.title2.weight(.semibold))
@@ -240,26 +268,32 @@ struct HeroSlide: View {
 
     @State private var details = CoverDetails()
 
+    /// Live aus der Bibliothek statt eingefroren im HeroItem — sonst stünde
+    /// nach der Rückkehr aus dem Player noch der alte Fortschritt da.
+    private var progress: WatchProgress? {
+        library.continueWatching().first { $0.slug == item.slug }
+    }
+
     var body: some View {
-        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
-            ZStack(alignment: .bottomLeading) {
-                background
-                LinearGradient(
-                    colors: [.black.opacity(0.92), .black.opacity(0.55), .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.75)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-                text
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
+        // Hintergrund und Text sind bewusst nicht anklickbar: Knopf und
+        // Merken-Symbol liegen darin und dürfen nicht in einem umschließenden
+        // NavigationLink stecken, sonst schluckt der äußere Link die Klicks.
+        ZStack(alignment: .bottomLeading) {
+            background
+            LinearGradient(
+                colors: [.black.opacity(0.92), .black.opacity(0.55), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.75)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            text
         }
-        .help(item.title)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .task(id: item.id) {
             details = await CoverIndex.shared.detailsLoading(
                 slug: item.slug,
@@ -291,11 +325,15 @@ struct HeroSlide: View {
 
     private var text: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(item.title)
-                .font(.system(size: 44, weight: .heavy))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .shadow(color: .black.opacity(0.6), radius: 10, y: 3)
+            NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
+                Text(item.title)
+                    .font(.system(size: 44, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .shadow(color: .black.opacity(0.6), radius: 10, y: 3)
+            }
+            .help(item.title)
 
             MetaLine(kind: item.kind, genres: item.genres, stars: details.stars)
 
@@ -307,7 +345,7 @@ struct HeroSlide: View {
                     .frame(maxWidth: 620, alignment: .leading)
             }
 
-            if let progress = item.progress {
+            if let progress {
                 HStack(spacing: 12) {
                     ProgressView(value: watchRatio(progress))
                         .frame(width: 200)
@@ -319,15 +357,17 @@ struct HeroSlide: View {
             }
 
             HStack(spacing: 10) {
-                Label(
-                    item.progress == nil ? "Jetzt ansehen" : "Folge \(item.progress!.episode) fortsetzen",
-                    systemImage: "play.fill"
-                )
-                .font(.headline)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
-                .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .foregroundStyle(NoriTheme.onAccent)
+                NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
+                    Label(
+                        progress.map { "Folge \($0.episode) fortsetzen" } ?? "Jetzt ansehen",
+                        systemImage: "play.fill"
+                    )
+                    .font(.headline)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 12)
+                    .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .foregroundStyle(NoriTheme.onAccent)
+                }
 
                 BookmarkButton(slug: item.slug, title: item.title, large: true)
             }

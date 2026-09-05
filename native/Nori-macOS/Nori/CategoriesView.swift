@@ -100,9 +100,16 @@ struct GenreTile: View {
 
     /// Aus dem Namen abgeleitet, damit jede Kategorie wiedererkennbar bleibt,
     /// ohne dass dafür Bilder hinterlegt werden müssen.
+    ///
+    /// Bewusst nicht `hashValue`: Swift verwendet je Programmstart einen
+    /// anderen Startwert, wodurch jede Kategorie bei jedem Öffnen der App eine
+    /// andere Farbe bekommen hätte.
     private var tint: Color {
-        let hue = Double(abs(name.hashValue) % 360) / 360
-        return Color(hue: hue, saturation: 0.55, brightness: 0.55)
+        var sum = 0
+        for scalar in name.unicodeScalars {
+            sum = (sum &* 31 &+ Int(scalar.value)) % 360_000
+        }
+        return Color(hue: Double(sum % 360) / 360, saturation: 0.52, brightness: 0.5)
     }
 
     var body: some View {
