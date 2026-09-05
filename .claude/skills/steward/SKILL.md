@@ -34,6 +34,20 @@ Dateien, die API-Decke und eine gepflegte Liste von APIs, die es nicht gibt.
 | `build-ios.yml` | `macos-15` | iOS-Target gegen den Simulator. **macos-15 wegen Xcode 16** — die App nutzt hinter `#available` iOS-18-APIs, `#available` prüft aber nur zur Laufzeit |
 | `swift-tests.yml` | `macos-14` | `swift test` in `native/` |
 | `check-sources.yml` | `ubuntu-latest` | `tools/check-apple-sources.py` |
+| `package-ios-ipa.yml` | `macos-15` | unsignierte `Nori.ipa` als Artefakt, bei Pushes auf main |
+| `package-macos-source.yml` | `macos-latest` | Quellpaket als Artefakt, bei Pushes auf main |
+| `release.yml` | `ubuntu-latest` | Release aus einem Tag |
+
+Alle Workflows laufen auf **`push`**, nicht auf `pull_request`. Für Branches in
+diesem Repository prüfte beides denselben Baum — der Zweig sitzt auf main auf,
+der Merge-Commit ist der Branch-Kopf. GitHub ordnet die push-Läufe dem Pull
+Request ohnehin zu, sie erscheinen dort weiterhin als Prüfungen.
+
+Am 5.9.2026 fielen zusätzlich alle `pull_request`-Läufe ohne Runner aus
+(`runner_id: 0`, Logs mit HTTP 404, `ubuntu` wie `macos` gleichermaßen),
+während dieselben Commits über `push` grün waren. Sollte so etwas wieder
+auftreten: den `push`-Lauf zum selben SHA heranziehen, das ist dieselbe
+Prüfung.
 
 Das Testpaket `native/Package.swift` bindet `Models.swift` und `HTML.swift`
 aus dem **macOS**-Target direkt ein, statt sie zu kopieren — beide sind
