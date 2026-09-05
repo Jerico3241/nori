@@ -51,6 +51,55 @@ enum CatalogProvider: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Was die Bibliothek zeigt.
+///
+/// Getrennt von `CatalogProvider`: der entscheidet weiter, wohin ein einzelner
+/// Titel führt. Der Bereich entscheidet nur, was in den Listen steht. Vorher
+/// war beides dasselbe — der Umschalter war ein Moduswechsel, und eine Liste
+/// konnte nur Titel einer Quelle enthalten.
+enum LibraryScope: String, Codable, CaseIterable, Identifiable {
+    case all
+    case aniworld
+    case serienstream
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "Alle"
+        case .aniworld: return "Anime"
+        case .serienstream: return "Serien"
+        }
+    }
+
+    /// Überschrift der großen Liste auf der Startseite.
+    var headline: String {
+        switch self {
+        case .all: return "Alle Titel"
+        case .aniworld: return "Alle Anime"
+        case .serienstream: return "Alle Serien"
+        }
+    }
+
+    /// Die zugehörige Quelle, oder `nil` für „beide".
+    var provider: CatalogProvider? {
+        switch self {
+        case .all: return nil
+        case .aniworld: return .aniworld
+        case .serienstream: return .serienstream
+        }
+    }
+
+    /// Gehört ein Eintrag dieser Quelle in den Bereich?
+    func includes(_ other: CatalogProvider?) -> Bool {
+        guard let provider else { return true }
+        // Einträge ohne Quelle stammen aus einem älteren gespeicherten Stand
+        // und werden nicht ausgefiltert — sonst verschwänden sie ganz.
+        guard let other else { return true }
+        return provider == other
+    }
+}
+
 struct CatalogItem: Codable, Identifiable, Hashable {
     var slug: String
     var title: String
@@ -179,7 +228,11 @@ struct AiringEntry: Codable, Identifiable, Hashable {
     /// Kalendereinträge ein richtiges Bild, ohne dass die Serie erst geöffnet
     /// werden muss.
     var coverPath: String?
-    var id: String { "\(slug)|\(season)|\(episode)|\(dayKey)" }
+    /// Woher der Eintrag stammt. Wie bei `CatalogItem` beim Laden gestempelt,
+    /// nicht im Parser. Ohne das könnte ein gemeinsamer Kalender nicht sagen,
+    /// welche Seite ein Eintrag öffnet.
+    var provider: CatalogProvider? = nil
+    var id: String { "\(provider?.rawValue ?? "?")|\(slug)|\(season)|\(episode)|\(dayKey)" }
 }
 
 struct CalendarPayload: Codable {

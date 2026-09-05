@@ -95,19 +95,24 @@ struct NoriSectionHeader: View {
 
 /// Quellenumschalter. Auf dem Mac ein normaler segmentierter Picker statt der
 /// per Drag bedienten Kapsel aus der iOS-App – die Geste gibt es hier nicht.
-struct ProviderPicker: View {
+/// Filter für die Bibliothek — kein Moduswechsel mehr.
+///
+/// Vorher schaltete dieser Regler die ganze App zwischen zwei getrennten
+/// Welten um. Jetzt stehen beide Quellen in einer Bibliothek, und der Regler
+/// blendet nur aus. „Alle" ist die Vorgabe.
+struct ScopePicker: View {
     @Environment(LibraryStore.self) private var library
 
     var body: some View {
         @Bindable var library = library
-        Picker("Quelle", selection: $library.provider) {
-            ForEach(CatalogProvider.allCases) { provider in
-                Text(provider.kind).tag(provider)
+        Picker("Bibliothek", selection: $library.scope) {
+            ForEach(LibraryScope.allCases) { scope in
+                Text(scope.label).tag(scope)
             }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .help("Zwischen Anime (AniWorld) und Serien (Serienstream) wechseln")
+        .help("Alles anzeigen oder auf Anime (AniWorld) bzw. Serien (Serienstream) einschränken")
     }
 }
 

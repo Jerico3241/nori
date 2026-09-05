@@ -140,4 +140,50 @@ final class ProviderPathTests: XCTestCase {
         XCTAssertNil(item.provider)
         XCTAssertEqual(item.slug, "one-piece")
     }
+
+    // MARK: - Bereich der Bibliothek
+
+    func testScopeAllIncludesEverything() {
+        XCTAssertTrue(LibraryScope.all.includes(.aniworld))
+        XCTAssertTrue(LibraryScope.all.includes(.serienstream))
+        XCTAssertTrue(LibraryScope.all.includes(nil))
+        XCTAssertNil(LibraryScope.all.provider)
+    }
+
+    func testNamedScopeFiltersByProvider() {
+        XCTAssertTrue(LibraryScope.aniworld.includes(.aniworld))
+        XCTAssertFalse(LibraryScope.aniworld.includes(.serienstream))
+        XCTAssertEqual(LibraryScope.aniworld.provider, .aniworld)
+        XCTAssertEqual(LibraryScope.serienstream.provider, .serienstream)
+    }
+
+    /// Einträge aus einem älteren gespeicherten Stand tragen keine Quelle.
+    /// Sie auszufiltern hieße, sie ganz verschwinden zu lassen.
+    func testEntriesWithoutProviderSurviveEveryScope() {
+        for scope in LibraryScope.allCases {
+            XCTAssertTrue(scope.includes(nil), "\(scope.rawValue) hat einen Eintrag ohne Quelle verworfen")
+        }
+    }
+
+    func testScopeLabelsAndHeadlines() {
+        XCTAssertEqual(LibraryScope.all.label, "Alle")
+        XCTAssertEqual(LibraryScope.aniworld.label, "Anime")
+        XCTAssertEqual(LibraryScope.serienstream.label, "Serien")
+        XCTAssertEqual(LibraryScope.all.headline, "Alle Titel")
+        XCTAssertEqual(LibraryScope.serienstream.headline, "Alle Serien")
+    }
+
+    /// Der Kalender führt beide Quellen zusammen und entdoppelt über die
+    /// Kennung — dieselbe Folge kann bei beiden Seiten am selben Tag laufen.
+    func testAiringEntryIdSeparatesProviders() {
+        func entry(_ provider: CatalogProvider?) -> AiringEntry {
+            AiringEntry(
+                airingAt: 0, episode: 3, season: "2", title: "Gantz", english: nil,
+                slug: "gantz", languages: [], dayKey: "2026-09-14",
+                dayLabel: "Montag, 14. September", coverPath: nil, provider: provider
+            )
+        }
+        XCTAssertNotEqual(entry(.aniworld).id, entry(.serienstream).id)
+        XCTAssertEqual(Set([entry(.aniworld), entry(.serienstream)]).count, 2)
+    }
 }

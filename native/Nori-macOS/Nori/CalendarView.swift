@@ -22,8 +22,8 @@ struct CalendarView: View {
                     ForEach(grouped(payload.upcoming), id: \.label) { group in
                         Section(group.label) {
                             ForEach(group.rows) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
-                                    CalendarRow(entry: row, provider: library.provider)
+                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
+                                    CalendarRow(entry: row, provider: row.provider ?? library.provider)
                                 }
                                 .help(row.title)
                             }
@@ -32,8 +32,8 @@ struct CalendarView: View {
                     if !payload.recent.isEmpty {
                         Section("Zuletzt") {
                             ForEach(payload.recent) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: library.provider) {
-                                    CalendarRow(entry: row, provider: library.provider)
+                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
+                                    CalendarRow(entry: row, provider: row.provider ?? library.provider)
                                 }
                                 .help(row.title)
                             }
@@ -44,7 +44,7 @@ struct CalendarView: View {
             }
         }
         .navigationTitle("Kalender")
-        .navigationSubtitle(library.provider.label)
+        .navigationSubtitle(library.scope.label)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -56,7 +56,7 @@ struct CalendarView: View {
                 .disabled(loading)
             }
         }
-        .task(id: library.provider) { await load() }
+        .task(id: library.scope) { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .noriRefreshRequested)) { _ in
             Task { await load(force: true) }
         }
@@ -76,11 +76,41 @@ struct CalendarView: View {
         loading = payload == nil
         error = nil
         do {
-            payload = try await AniworldClient.shared.getCalendar(provider: library.provider, force: force)
+            payload = try await Self.merged(scope: library.scope, force: force)
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    /// Bei „Alle" beide Kalender, sonst nur den gewählten.
+    ///
+    /// Zusammengeführt wird über `HTML.packCalendar`, damit die Aufteilung in
+    /// „kommend" und „kürzlich" dieselbe Regel benutzt wie bei einer einzelnen
+    /// Quelle. Über die Kennung entdoppeln: dieselbe Folge kann bei beiden
+    /// Seiten am selben Tag laufen.
+    static func merged(scope: LibraryScope, force: Bool) async throws -> CalendarPayload {
+        let sources = scope.provider.map { [$0] } ?? CatalogProvider.allCases
+        var all: [AiringEntry] = []
+        var seen: Set<String> = []
+        var failures: [Error] = []
+
+        for source in sources {
+            do {
+                let payload = try await AniworldClient.shared.getCalendar(provider: source, force: force)
+                for entry in payload.upcoming + payload.recent where !seen.contains(entry.id) {
+                    seen.insert(entry.id)
+                    all.append(entry)
+                }
+            } catch {
+                failures.append(error)
+            }
+        }
+
+        // Nur melden, wenn nichts durchkam — eine leere Ansicht wäre bei einem
+        // einseitigen Ausfall ein Rückschritt.
+        if all.isEmpty, let first = failures.first { throw first }
+        return HTML.packCalendar(all, now: Date())
     }
 }
 

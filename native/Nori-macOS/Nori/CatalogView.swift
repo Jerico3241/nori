@@ -79,7 +79,7 @@ struct CatalogView: View {
 
     private var subtitle: String {
         let count = filtered.count
-        if q.isEmpty { return "\(library.provider.label) · \(count) Titel" }
+        if q.isEmpty { return "\(library.scope.label) · \(count) Titel" }
         return "\(count) Treffer für „\(q)“"
     }
 

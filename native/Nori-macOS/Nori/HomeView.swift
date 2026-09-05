@@ -57,7 +57,7 @@ struct HomeView: View {
                         if !catalog.isEmpty {
                             VStack(alignment: .leading, spacing: 16) {
                                 NoriSectionHeader(
-                                    "Alle \(library.provider.kind)",
+                                    library.scope.headline,
                                     trailing: "\(catalog.count) Titel"
                                 )
                                 LazyVGrid(columns: grid, alignment: .leading, spacing: 24) {
@@ -71,7 +71,9 @@ struct HomeView: View {
                             ContentUnavailableView(
                                 "Nichts geladen",
                                 systemImage: "tray",
-                                description: Text("Der Katalog von \(library.provider.label) ist gerade leer.")
+                                description: Text(library.scope == .all
+                                    ? "Beide Kataloge sind gerade leer."
+                                    : "Der Katalog von \(library.scope.label) ist gerade leer.")
                             )
                             .frame(maxWidth: .infinity, minHeight: 220)
                         }
@@ -82,7 +84,7 @@ struct HomeView: View {
             }
         }
         .navigationTitle("Entdecken")
-        .navigationSubtitle(library.provider.label)
+        .navigationSubtitle(library.scope.label)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -146,7 +148,7 @@ struct HomeView: View {
     /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
     /// Einträge vergleichen.
     private var rowsKey: String {
-        "\(library.provider.rawValue)|\(catalog.count)"
+        "\(library.scope.rawValue)|\(catalog.count)"
     }
 
     static func buildRows(from catalog: [CatalogItem]) -> [GenreRow] {

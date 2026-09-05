@@ -3,7 +3,7 @@ import Observation
 
 @Observable
 final class LibraryStore {
-    static let schemaVersion = 3
+    static let schemaVersion = 4
     private static let cloudDataKey = "nori.library.v3"
     private static let cloudUpdatedKey = "nori.library.v3.updatedAt"
 
@@ -18,6 +18,10 @@ final class LibraryStore {
     var autoplayNext: Bool = true { didSet { persist() } }
     var playbackSpeed: Float = 1.0 { didSet { persist() } }
     var provider: CatalogProvider = .aniworld { didSet { persist() } }
+    /// Was die Bibliothek zeigt. Vorgabe „Alle": beide Quellen in einer
+    /// Liste. `provider` bleibt daneben bestehen und entscheidet, welche
+    /// Seite ein Titel ohne eigene Quellangabe öffnet.
+    var scope: LibraryScope = .all { didSet { persist() } }
     var cloudSyncEnabled: Bool = false {
         didSet {
             // Beim Einlesen nichts auslösen: `apply` setzt dieses Feld mit,
@@ -212,6 +216,9 @@ final class LibraryStore {
         cloudSyncEnabled = bag.cloudSyncEnabled ?? false
         cloudLastSync = bag.cloudLastSync
         if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) { provider = next }
+        // Ältere Stände kennen den Bereich nicht. Sie bekommen „Alle" — das
+        // ist der Sinn der gemeinsamen Bibliothek, nicht ein Verlust.
+        scope = bag.scope.flatMap(LibraryScope.init(rawValue:)) ?? .all
         favoriteSource = bag.favoriteSource?.compactMapValues { CatalogProvider(rawValue: $0) } ?? [:]
         progress = migrateProgress(bag.progress)
         isLoading = false
@@ -262,7 +269,7 @@ final class LibraryStore {
     }
 
     private func makeBag(modifiedAt: Double) -> Bag {
-        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), cloudSyncEnabled: cloudSyncEnabled, cloudLastSync: cloudLastSync)
+        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), cloudSyncEnabled: cloudSyncEnabled, cloudLastSync: cloudLastSync)
     }
 
     private struct Bag: Codable {
@@ -278,6 +285,7 @@ final class LibraryStore {
         var autoplayNext: Bool?
         var playbackSpeed: Float?
         var provider: String?
+        var scope: String?
         var favoriteSource: [String: String]?
         var cloudSyncEnabled: Bool?
         var cloudLastSync: Double?
