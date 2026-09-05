@@ -1,0 +1,196 @@
+# Den eigenen Mac als GitHub-Runner einrichten
+
+Alle sieben Workflows laufen auf `runs-on: [self-hosted, macOS]`. Solange kein
+Runner mit diesen beiden Bezeichnungen angemeldet ist, bleiben die Jobs in der
+Warteschlange stehen (Actions zeigt sie als „Queued"), ohne Fehlermeldung und
+ohne Zeitlimit.
+
+Grund für den Umbau: bei einem **privaten** Repository zählt GitHub jede
+macOS-Minute **zehnfach** gegen das Monatskontingent (GitHub Free: 2.000
+Minuten). Ist es aufgebraucht und das Ausgabenlimit steht auf 0 $, stoppen
+*alle* Workflows — auch die auf Linux. Ein eigener Mac verbraucht davon nichts.
+
+Was das dafür kostet: der Mac muss an, wach und online sein. Und es gibt nur
+einen Runner, die Jobs laufen also nacheinander.
+
+---
+
+## 1. Voraussetzungen auf dem Mac
+
+**Xcode 16 oder neuer** aus dem App Store. Nicht nur die Command Line Tools —
+`xcodebuild` braucht das vollständige Xcode.
+
+Warum 16: die iOS-App nutzt hinter `#available(iOS 18.0, *)` die
+Zoom-Übergänge. `#available` prüft nur zur Laufzeit, übersetzt wird trotzdem
+gegen das SDK des Runners. Xcode 15.4 bringt iOS-SDK 17.5 und scheitert mit
+„has no member". Die beiden iOS-Workflows prüfen das inzwischen im ersten
+Schritt und brechen mit einer klaren Meldung ab.
+
+Nach der Installation einmal:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app
+sudo xcodebuild -license accept
+xcodebuild -version          # muss 16.x oder höher zeigen
+xcodebuild -runFirstLaunch   # Zusatzkomponenten nachinstallieren
+```
+
+Alles Weitere ist schon da: `git`, `curl`, `zip`, `unzip` und `python3` kommen
+mit den Command Line Tools, die Xcode mitbringt. Homebrew wird nicht gebraucht
+— die Workflows kommen bewusst ohne aus, deshalb legt `release.yml` das
+GitHub-Release über die REST-API an und nicht über die `gh`-CLI.
+
+Gegenprobe:
+
+```bash
+git --version && python3 --version && swift --version
+```
+
+## 2. Registrierungstoken holen
+
+Im Browser:
+
+**github.com/jerico3241/nori → Settings → Actions → Runners → New self-hosted
+runner**, dort **macOS** und die passende Architektur wählen (**arm64** bei
+Apple Silicon, **x64** bei Intel).
+
+Die Seite zeigt danach fertige Befehle mit der aktuellen Runner-Version und
+einem Token. **Das Token ist rund eine Stunde gültig** — läuft es ab, einfach
+dieselbe Seite neu laden, es steht dann ein neues da.
+
+Diese Seite ist der einzige Schritt, den ich nicht übernehmen kann: das Token
+erscheint nur dort, in deinem angemeldeten Browser.
+
+## 3. Herunterladen und auspacken
+
+Die Befehle von der GitHub-Seite kopieren — sie sehen so aus, `<VERSION>` steht
+dort als echte Nummer:
+
+```bash
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -o actions-runner-osx-arm64-<VERSION>.tar.gz -L \
+  https://github.com/actions/runner/releases/download/v<VERSION>/actions-runner-osx-arm64-<VERSION>.tar.gz
+tar xzf ./actions-runner-osx-arm64-<VERSION>.tar.gz
+```
+
+Bei einem Intel-Mac heißt das Paket `osx-x64` statt `osx-arm64`.
+
+## 4. Anmelden
+
+```bash
+cd ~/actions-runner
+./config.sh --url https://github.com/jerico3241/nori --token <TOKEN>
+```
+
+Vier Rückfragen, alle mit Enter zu bestätigen:
+
+| Frage | Antwort |
+| --- | --- |
+| `Enter the name of the runner group` | Enter (Default) |
+| `Enter the name of this runner` | Enter (Rechnername) |
+| `Enter any additional labels` | Enter — **nichts eintragen** |
+| `Enter name of work folder` | Enter (`_work`) |
+
+Bei den Bezeichnungen wirklich nichts eintippen: `self-hosted`, `macOS` und
+`ARM64` vergibt der Runner von selbst, und `self-hosted` + `macOS` sind genau
+die beiden, auf die die Workflows warten. Eigene Bezeichnungen schaden nicht,
+ersetzen diese aber nicht.
+
+Zum Ausprobieren reicht jetzt:
+
+```bash
+./run.sh
+```
+
+Das läuft im Vordergrund, bis man Strg-C drückt — gut für den ersten Test,
+nichts für den Dauerbetrieb.
+
+## 5. Als Dienst einrichten
+
+Damit der Runner nach einem Neustart von selbst wiederkommt:
+
+```bash
+cd ~/actions-runner
+./svc.sh install
+./svc.sh start
+./svc.sh status
+```
+
+`svc.sh install` legt einen LaunchAgent an. Das heißt: **der Runner läuft nur,
+solange dein Benutzer angemeldet ist.** Nach einem Neustart also einmal
+einloggen; ein gesperrter Bildschirm ist in Ordnung, ein Abmelden nicht.
+
+Ohne `sudo` ausführen — `svc.sh` ruft `sudo` selbst auf, wo es nötig ist.
+
+## 6. Schlafen verhindern
+
+Ein schlafender Mac nimmt keine Jobs an; sie warten dann still bis zum
+Aufwachen. Systemeinstellungen → Batterie bzw. Energie sparen:
+
+- **„Automatischen Ruhezustand … deaktivieren"** einschalten (Netzbetrieb)
+- am Laptop hilft nur der geöffnete Deckel oder ein externer Bildschirm
+
+Auf der Kommandozeile, dauerhaft für den Netzbetrieb:
+
+```bash
+sudo pmset -c sleep 0 disablesleep 1
+pmset -g                     # Gegenprobe
+```
+
+Nur für eine einzelne Sitzung genügt `caffeinate -dimsu`.
+
+## 7. Prüfen, dass es läuft
+
+Auf **Settings → Actions → Runners** muss der Eintrag jetzt grün als **Idle**
+stehen. Wenn ja, den ersten Lauf auslösen:
+
+**Actions → Build macOS → Run workflow**
+
+Der Lauf sollte innerhalb weniger Sekunden von „Queued" auf „In progress"
+springen und nach rund einer Minute grün sein. Bleibt er in „Queued" hängen,
+passen die Bezeichnungen nicht — auf der Runner-Seite nachsehen, ob dort
+tatsächlich `self-hosted` und `macOS` stehen.
+
+## 8. Betrieb
+
+```bash
+cd ~/actions-runner
+./svc.sh status     # läuft er?
+./svc.sh stop       # anhalten
+./svc.sh start      # weiter
+tail -f _diag/Runner_*.log
+```
+
+Der Arbeitsordner `~/actions-runner/_work` wächst mit der Zeit. Der Runner
+räumt ihn nicht selbst auf; er lässt sich bei angehaltenem Dienst gefahrlos
+löschen, der nächste Job checkt neu aus.
+
+Läuft ein Job schief, laden die Workflows ihr Build-Log als Artefakt hoch —
+das ist derselbe Weg wie bei den GitHub-Runnern, daran ändert sich nichts.
+
+## 9. Wieder abmelden
+
+```bash
+cd ~/actions-runner
+./svc.sh stop
+./svc.sh uninstall
+./config.sh remove --token <NEUES TOKEN VON DER RUNNER-SEITE>
+```
+
+Danach die Workflows wieder auf `runs-on: macos-14` (macOS/Tests/Release) bzw.
+`macos-15` (iOS) umstellen, sonst warten sie auf einen Runner, den es nicht
+mehr gibt.
+
+---
+
+## Sicherheitshinweis
+
+Ein self-hosted Runner führt aus, was in den Workflows dieses Repositories
+steht — auf deinem Mac, mit deinen Benutzerrechten. Bei einem privaten
+Repository mit bekannten Mitwirkenden ist das der übliche Fall. Sollte das
+Repository je öffentlich werden, **vorher** den Runner abmelden: dann könnte
+jeder über einen Pull Request Code darauf ausführen. GitHub rät aus genau
+diesem Grund von self-hosted Runnern an öffentlichen Repositories ab.
+
+Eingehende Ports sind nicht nötig; der Runner baut die Verbindung selbst über
+HTTPS nach außen auf.

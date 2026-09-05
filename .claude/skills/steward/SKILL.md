@@ -11,7 +11,7 @@ In Claude-Code-Sitzungen (Linux-Container) ist **kein** `swift`, `swiftc` oder
 `xcodebuild` verfügbar. Der einzige echte Typechecker ist der
 GitHub-Actions-Workflow `.github/workflows/build-macos.yml`:
 
-- läuft auf `macos-14`, dauert rund **eine Minute**
+- läuft auf dem **self-hosted Mac**, dauert rund **eine Minute**
 - wird durch jeden Push ausgelöst, der `native/Nori-macOS/**` berührt
 - Check heißt `build`
 
@@ -26,17 +26,48 @@ python3 tools/check-apple-sources.py    # Sekunden, fängt die bekannten Fehlerk
 Das Skript ersetzt den Build nicht. Es prüft Target-Trennung, geteilte
 Dateien, die API-Decke und eine gepflegte Liste von APIs, die es nicht gibt.
 
-## Vier Workflows, was sie abdecken
+## Sieben Workflows, was sie abdecken
 
-| Workflow | Runner | Prüft |
-| --- | --- | --- |
-| `build-macos.yml` | `macos-14` | macOS-Target, ~1 min |
-| `build-ios.yml` | `macos-15` | iOS-Target gegen den Simulator. **macos-15 wegen Xcode 16** — die App nutzt hinter `#available` iOS-18-APIs, `#available` prüft aber nur zur Laufzeit |
-| `swift-tests.yml` | `macos-14` | `swift test` in `native/` |
-| `check-sources.yml` | `ubuntu-latest` | `tools/check-apple-sources.py` |
-| `package-ios-ipa.yml` | `macos-15` | unsignierte `Nori.ipa` als Artefakt, bei Pushes auf main |
-| `package-macos-source.yml` | `macos-latest` | Quellpaket als Artefakt, bei Pushes auf main |
-| `release.yml` | `ubuntu-latest` | Release aus einem Tag |
+Alle laufen auf `runs-on: [self-hosted, macOS]` — siehe unten.
+
+| Workflow | Prüft |
+| --- | --- |
+| `build-macos.yml` | macOS-Target, ~1 min |
+| `build-ios.yml` | iOS-Target gegen den Simulator |
+| `swift-tests.yml` | `swift test` in `native/` |
+| `check-sources.yml` | `tools/check-apple-sources.py` |
+| `package-ios-ipa.yml` | unsignierte `Nori.ipa` als Artefakt, bei Pushes auf main |
+| `package-macos-source.yml` | Quellpaket als Artefakt, bei Pushes auf main |
+| `release.yml` | Release aus einem Tag |
+
+## Der Runner ist ein eigener Mac
+
+Seit dem 5.9.2026 laufen alle Workflows auf einem self-hosted Runner. Bei einem
+**privaten** Repository zählt GitHub jede macOS-Minute **zehnfach** gegen das
+Monatskontingent; war es aufgebraucht, standen sämtliche Läufe still — Linux
+eingeschlossen. Der eigene Mac verbraucht davon nichts.
+
+Was daraus folgt:
+
+- **Der Mac muss an, wach und angemeldet sein.** Ist er es nicht, bleiben Jobs
+  ohne Fehlermeldung und ohne Zeitlimit in „Queued" hängen. Steht ein Lauf
+  auffällig lange in der Warteschlange, ist das die erste Vermutung — kein
+  Grund, am Workflow zu drehen.
+- **Es gibt nur einen Runner**, die Jobs laufen nacheinander. Deshalb hat jeder
+  Workflow eine `concurrency`-Gruppe, die überholte Läufe abbricht
+  (`release.yml` ausgenommen: dort `cancel-in-progress: false`, damit kein
+  Release mitten im Hochladen abgeschnitten wird).
+- **Kein Homebrew, keine `gh`-CLI.** Auf einem frischen Mac liegt beides nicht.
+  `release.yml` legt das Release deshalb per `curl` über die REST-API an.
+  Vorhanden sind `git`, `curl`, `zip`, `python3` und `xcodebuild` — alles aus
+  Xcode und seinen Command Line Tools.
+- **Die Xcode-Version steht nicht mehr im Workflow.** Bei GitHub-Runnern hing
+  sie am Label (`macos-15` ⇒ Xcode 16), auf dem eigenen Mac hängt sie an dem,
+  was dort installiert ist. Die beiden iOS-Workflows prüfen sie deshalb im
+  ersten Schritt selbst und brechen unter Xcode 16 mit klarer Meldung ab;
+  `check_ios_runner()` besteht darauf, dass dieser Schritt vorhanden ist.
+
+Einrichtung, Betrieb und Abmeldung: `docs/self-hosted-runner.md`.
 
 Alle Workflows laufen auf **`push`**, nicht auf `pull_request`. Für Branches in
 diesem Repository prüfte beides denselben Baum — der Zweig sitzt auf main auf,
@@ -45,9 +76,11 @@ Request ohnehin zu, sie erscheinen dort weiterhin als Prüfungen.
 
 Am 5.9.2026 fielen zusätzlich alle `pull_request`-Läufe ohne Runner aus
 (`runner_id: 0`, Logs mit HTTP 404, `ubuntu` wie `macos` gleichermaßen),
-während dieselben Commits über `push` grün waren. Sollte so etwas wieder
-auftreten: den `push`-Lauf zum selben SHA heranziehen, das ist dieselbe
-Prüfung.
+während dieselben Commits über `push` grün waren. Die wahrscheinliche Ursache
+kam später heraus: das GitHub-Actions-Kontingent des privaten Repositories war
+aufgebraucht — bei ausgeschöpftem Kontingent und einem Ausgabenlimit von 0 $
+stehen *alle* Läufe still, auch die auf Linux. Genau deswegen der self-hosted
+Runner.
 
 Das Testpaket `native/Package.swift` bindet `Models.swift` und `HTML.swift`
 aus dem **macOS**-Target direkt ein, statt sie zu kopieren — beide sind
@@ -97,7 +130,7 @@ Bereits eingetragen:
 | --- | --- | --- |
 | `generic parameter 'T' could not be inferred` an `@Environment(\.openSettings)` | `EnvironmentValues.openSettings` existiert nicht | `SettingsLink { … }` (macOS 14+) |
 | `missing argument label 'content:'` an `Section("Titel") { … } footer: { … }` | Diese Überladung gibt es nicht | `Section { … } header: { … } footer: { … }` |
-| `has no member 'matchedTransitionSource'` / `'navigationTransition'` im iOS-Build | `#available(iOS 18.0, *)` schützt nur zur Laufzeit; übersetzt wird gegen das SDK des Runners, und macos-14 bringt Xcode 15.4 mit iOS-SDK 17.5 | `runs-on: macos-15` in `build-ios.yml` (`check_ios_runner()` prüft das) |
+| `has no member 'matchedTransitionSource'` / `'navigationTransition'` im iOS-Build | `#available(iOS 18.0, *)` schützt nur zur Laufzeit; übersetzt wird gegen das SDK des Runners, und Xcode 15.4 bringt iOS-SDK 17.5 | Xcode 16 auf dem Runner; die iOS-Workflows prüfen das im Schritt „Toolchain prüfen" (`check_ios_runner()` besteht darauf, dass es ihn gibt) |
 | `operator can throw but expression is not marked with 'try'` / `unable to type-check this expression in reasonable time` | Lange `??`-Kette, in der ein Glied `try` enthält | Kette in einzelne `let` mit eigenem `try` auflösen — so wie in `HTML.swift` bereits geschehen |
 | Inhalt eines Kopfbereichs oben und unten abgeschnitten, obwohl er hineinpasst | Ein `scaledToFill`-Bild meldet nach außen eine **größere** Größe als angeboten. Im `ZStack` wächst der Stapel mit, das folgende `.frame(height:)` zentriert den zu großen Stapel, `.clipped()` schneidet an beiden Rändern | Bild per `.background { … }` hinter den Inhalt legen (beeinflusst die Größe nicht) oder `.frame(maxHeight: .infinity)` davor (`check_fill_in_fixed_frame()` prüft das) |
 | `call to main actor-isolated instance method '…' in a synchronous nonisolated context` | `var body` ist über die View-Konformanz an den Main-Actor gebunden, eine ausgelagerte `private var chrome: some View` aber nicht | `Task { @MainActor in methode() }` (`check_main_actor_calls()` prüft das) |
@@ -157,7 +190,9 @@ reichen nur für Branches. Dort stattdessen den Workflow unter Actions →
 Release → „Run workflow" starten und den Tag angeben — er wird dann im Lauf
 angelegt, nachdem die Prüfungen durch sind.
 
-Der Tag löst `.github/workflows/release.yml` aus. Der Workflow bricht ab, wenn
+Der Tag löst `.github/workflows/release.yml` aus. Er läuft auf dem self-hosted
+Mac und legt das Release über die REST-API an (`curl`), nicht über die
+`gh`-CLI — die liegt auf einem frischen Mac nicht. Der Workflow bricht ab, wenn
 
 - die Version im Tag nicht zur `MARKETING_VERSION` im pbxproj passt, oder
 - `CHANGELOG.md` keinen Abschnitt `[<Plattform> <Version>]` enthält.
