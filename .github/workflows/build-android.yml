@@ -1,0 +1,73 @@
+name: Build Android core
+
+# Bewusst **nur** von Hand auslösbar, nicht bei `push`.
+#
+# Der Lauf braucht ein Swift-SDK für Android auf dem Runner (siehe
+# docs/android.md). Solange das nicht eingerichtet ist, würde ein
+# push-Auslöser jeden Pull Request rot färben, obwohl am Quelltext nichts
+# falsch ist. Sobald das SDK steht, kann der Auslöser hier auf
+# `native/Nori-macOS/Nori/**` erweitert werden — dann prüft er bei jeder
+# Änderung am geteilten Kern mit.
+on:
+  workflow_dispatch:
+    inputs:
+      sdk:
+        description: 'Bezeichner des Swift-SDK (leer = automatisch suchen)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Erst die Werkzeuge, dann bauen — dieselbe Lehre wie bei den
+      # Apple-Läufen: ein fehlendes SDK sieht sonst aus wie ein Fehler im
+      # Quelltext.
+      - name: Toolchain prüfen
+        run: tools/require-swift-android.sh
+
+      - name: SDK-Bezeichner bestimmen
+        id: sdk
+        run: |
+          set -euo pipefail
+          CHOSEN="${{ inputs.sdk }}"
+          if [ -z "$CHOSEN" ]; then
+              CHOSEN="$(swift sdk list | grep -i android | head -1 | tr -d '[:space:]')"
+          fi
+          if [ -z "$CHOSEN" ]; then
+              echo "::error::Kein Android-SDK-Bezeichner ermittelbar."
+              exit 1
+          fi
+          echo "Verwende: $CHOSEN"
+          echo "id=$CHOSEN" >> "$GITHUB_OUTPUT"
+
+      # Gebaut wird ausschließlich `NoriCore` — die fünf byte-gleichen
+      # Dateien. Views, Player und App-Einstiegspunkt sind SwiftUI und haben
+      # auf Android nichts zu suchen; die Oberfläche wird Compose.
+      #
+      # Das ist der eigentliche Beweis: übersetzen SwiftSoup, Observation und
+      # Foundation für Android durch, ist der geteilte Kern tragfähig.
+      - name: NoriCore für Android bauen
+        working-directory: native
+        run: |
+          set -o pipefail
+          swift build \
+            --target NoriCore \
+            --swift-sdk "${{ steps.sdk.outputs.id }}" \
+            2>&1 | tee "$RUNNER_TEMP/nori-android-build.log"
+
+      - name: Build-Log bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-android-build-log
+          path: ${{ runner.temp }}/nori-android-build.log
+          if-no-files-found: ignore

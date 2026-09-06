@@ -4,8 +4,36 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.3**, iOS/iPadOS **1.14.1**,
+unterschiedlich schnell bewegen: macOS **1.12.4**, iOS/iPadOS **1.14.2**,
 Windows **1.8.0**.
+
+## [iOS 1.14.2] · [macOS 1.12.4] – 2026-09-06
+
+### Geändert
+
+- **Der geteilte Kern ist jetzt Android-tauglich.** Die beiden einzigen
+  Darwin-Bindungen in `AniworldClient.swift` liegen hinter
+  `#if canImport(…)`: der Schlüsselbund in `TMDBKeyStore` (`Security`) und
+  die Prüfung, ob heruntergeladene Bytes ein Bild sind (`ImageIO`). Auf
+  Apple ändert sich nichts — dieselben Aufrufe, dasselbe Verhalten.
+- Ohne ImageIO wird die Bildprüfung über die Signatur am Dateianfang
+  gemacht (JPEG, PNG, GIF, WebP, ISO-BMFF für AVIF und HEIC). Sie erkennt
+  eine als Bild ausgelieferte HTML-Fehlerseite genauso zuverlässig, nur ein
+  abgeschnittenes Bild nicht.
+
+### Hinzugefügt
+
+- `tools/require-swift-android.sh` prüft vor dem Bauen, ob ein Swift-SDK
+  für Android eingerichtet ist — dieselbe Lehre wie bei
+  `require-xcode.sh`: ein fehlendes SDK sieht sonst aus wie ein Fehler im
+  Quelltext.
+- `.github/workflows/build-android.yml` baut das Target `NoriCore` quer für
+  Android. **Nur von Hand auslösbar**, solange das SDK auf dem Runner nicht
+  steht — ein push-Auslöser würde sonst jeden Pull Request rot färben,
+  obwohl am Quelltext nichts falsch ist.
+- `docs/android.md`: warum der Kern Swift bleibt und die Oberfläche Compose
+  wird, warum die Web-App sich nicht verpacken lässt, und was auf dem
+  Runner zu installieren ist.
 
 ## [iOS 1.14.1] · [macOS 1.12.3] – 2026-09-06
 
