@@ -1,7 +1,7 @@
 {
   "name": "nori",
   "contractVersion": 2,
-  "appVersion": "1.11.3",
+  "appVersion": "1.11.6",
   "note": "Nori 1.9 native contract. Library schema v2 migrates 1.x progress automatically.",
   "providers": {
     "aniworld": {
@@ -61,3 +61,4 @@
     "provider": "CatalogProvider aniworld|serienstream is persisted explicitly on new WatchProgress records."
   }
 }
+

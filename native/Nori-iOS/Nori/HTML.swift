@@ -2,6 +2,19 @@ import Foundation
 import SwiftSoup
 
 enum HTML {
+    /// Lazy-Load-Adressen vor Platzhaltern lesen; absolute URLs und Queries erhalten.
+    private static func sourcePoster(_ doc: Document, pathMarker: String, selector: String) throws -> String? {
+        for img in try doc.select(selector).array() {
+            for attribute in ["data-src", "data-original", "src"] {
+                let value = try img.attr(attribute).trimmingCharacters(in: .whitespacesAndNewlines)
+                if value.contains(pathMarker), !value.hasPrefix("data:") { return value }
+            }
+        }
+        let og = try doc.select("meta[property=og:image]").attr("content")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return og.contains(pathMarker) ? og : nil
+    }
+
     static func toAniworldPath(_ href: String) -> String {
         let cleaned = href.replacingOccurrences(of: "&", with: "&").trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = cleaned.range(of: #"/anime/stream/[^?\s#]+"#, options: .regularExpression) {
@@ -124,14 +137,7 @@ enum HTML {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let description = fullDescription.nilIfEmpty ?? shortDescription
 
-        let img = try doc.select(".seriesCoverBox img").first()
-        let coverSrc = (try? img?.attr("data-src")).flatMap { $0.isEmpty ? nil : $0 } ?? (try? img?.attr("src"))
-        var coverPath: String?
-        if let coverSrc, coverSrc.hasPrefix("/public/"), !coverSrc.hasPrefix("data:") {
-            coverPath = coverSrc
-        } else if let coverSrc, coverSrc.contains("/public/img/cover/") {
-            coverPath = coverSrc.replacingOccurrences(of: #"^https?://[^/]+"#, with: "", options: .regularExpression)
-        }
+        let coverPath = try sourcePoster(doc, pathMarker: "/public/img/cover/", selector: ".seriesCoverBox img")
 
         let yearStart = try doc.select("span[itemprop=startDate]").text().nilIfEmpty
         let yearEnd = try doc.select("span[itemprop=endDate]").text().nilIfEmpty
@@ -478,16 +484,7 @@ enum HTML {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let description = visibleDescription.nilIfEmpty ?? metaDescription
 
-        var coverPath: String?
-        let poster = try doc.select("img[src*=/media/images/channel/desktop/]").first()?.attr("src") ?? ""
-        if poster.hasPrefix("/media/") {
-            coverPath = poster.split(separator: "?").first.map(String.init)
-        } else {
-            let og = try doc.select("meta[property=og:image]").attr("content")
-            if og.contains("/media/images/"), let url = URL(string: og) {
-                coverPath = url.path
-            }
-        }
+        let coverPath = try sourcePoster(doc, pathMarker: "/media/images/channel/", selector: "img")
 
         var seasons: [SeasonRef] = []
         var seen = Set<String>()
@@ -792,3 +789,4 @@ private extension String {
         return t.isEmpty ? nil : t
     }
 }
+

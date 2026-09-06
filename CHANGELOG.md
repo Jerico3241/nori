@@ -4,23 +4,72 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.3**, iOS/iPadOS **1.10.0**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.10.0**,
 Windows **1.8.0**.
 
-## [iOS 1.10.0] – 2026-09-05
+## [iOS 1.10.0] – 2026-09-06
 
 ### Geändert
 
-- **Neue Startseite.** Statt Überschrift und Raster steht oben jetzt ein
-  vollflächiger Kopfbereich: Bild bis unter die Statusleiste, darüber Titel,
-  Quelle und Genres, Kurzbeschreibung und ein breiter Abspielknopf neben dem
-  Merken-Knopf. Fünf Titel zum Durchwischen, mit Seitenpunkten; die Auswahl
-  wechselt täglich.
+- **Neue Startseite**, nach dem Vorbild von Crunchyroll. Statt Überschrift
+  und Raster steht oben ein vollflächiger Kopfbereich: Bild bis unter die
+  Statusleiste, darüber Titel, Quelle und Genres, Kurzbeschreibung und ein
+  breiter Abspielknopf neben dem Merken-Knopf. Fünf Titel zum Durchwischen,
+  mit Seitenpunkten; die Auswahl wechselt täglich.
 - Darunter waagerechte Zeilen statt eines Rasters — „Weiterschauen",
   „Beliebte …" und bis zu sechs Genre-Zeilen, wie sie der Mac schon hat. Die
   Karten tragen Titel und Genre unter dem Bild.
-- Der Kopfbereich zeigt den Abspielknopf beschriftet nach Stand: „Jetzt
-  ansehen" oder „F12 weiterschauen", wenn die Serie angefangen ist.
+- Der Abspielknopf ist nach Stand beschriftet: „Jetzt ansehen" oder
+  „F12 weiterschauen", wenn die Serie angefangen ist.
+- Die Farben bleiben Noris eigene. Übernommen ist der Aufbau, nicht das
+  Aussehen einer fremden App.
+
+## [iOS 1.9.11] – 2026-09-06
+
+- Separate Playerleiste durch einen kleinen Liquid-Glass-Menüknopf im Video ersetzt (ab iOS 26, Material-Fallback auf älteren Systemen). Hoster/Quellsprache als UIKit-Menüs; nach vier Sekunden ausgeblendet, per Videotipp wieder sichtbar. Eigenständige Sichtbarkeitssteuerung; bei VoiceOver bleibt der Knopf erreichbar.
+- Titel/Folge als Player-Metadaten übergeben; Schließen als Menüaktion sowie weiterhin im Lade-/Fehlerzustand erreichbar.
+
+## [iOS 1.9.10] – 2026-09-06
+
+- Nori-Leiste mit Schließen, Titel und Hoster/Sprachwahl außerhalb der nativen Playerfläche angeordnet. Keine Überlagerung mit AVKit-Lautstärke und Schließen.
+- Doppelte Geschwindigkeitsauswahl aus dem Nori-Menü entfernt; native Playerbedienung bleibt verfügbar.
+- Nutzer bestätigt Installation über KravaSign „semi-lokal“ und Videowiedergabe. Die zuvor beobachtete Kennungsabweichung ist keine bestätigte Ursache für „Bereit“.
+
+## [macOS 1.11.6] – 2026-09-06
+
+- Startseitenbanner: Bildgröße vom Vordergrund entkoppelt und auf die Bannerfläche begrenzt, damit Titel, Metadaten und Schaltflächen beim Laden nicht herausgeschoben werden.
+- Banner und Weiterschauen verwenden den Cover-Lader mit Request-Headern; fehlende Quellposter werden aus der Detailseite nachgeladen.
+- Weiterschauen-Karten bleiben 284×160 Punkte groß; Hochkantposter werden vollständig vor einem unscharfen Hintergrund angezeigt.
+- iOS-Installation über KravaSign weiterhin nicht diagnostiziert; keine unbelegte Signaturkorrektur vorgenommen.
+
+## [macOS 1.11.5] · [iOS 1.9.9] – 2026-09-05
+
+- Cover: Originaladressen einschließlich Host, PNG-Endung und AVIF-Query erhalten; keine pauschale JPG-Umschreibung.
+- Parser: Lazy-Load-Bilder und Open-Graph-Fallback für beide Quellen auswerten.
+- Bilddaten vor dem Cachen mit ImageIO decodieren; HTML-Fehlerseiten nicht als Bilder speichern.
+- Vorübergehende Bild-/Detailseitenfehler nach 30 Sekunden erneut zulassen; abgebrochene Bildanfragen nicht als Fehler merken.
+- Alte, umgeschriebene Coveradressen einmalig verwerfen; manuelle Auswahl erhalten. Coveraufgaben bei Quellenwechsel neu starten und verspätete Bilder verwerfen.
+- Regressionstests mit den gemeldeten PNG-/AVIF-Adressen ergänzt. Xcode-/Swift-Tests und Live-Bildabrufe noch ausstehend; keine Workflows gestartet.
+
+## [macOS 1.11.4] · [iOS 1.9.8] – 2026-09-05
+
+### Behoben
+
+- Beide Player halten die Quelle des Wiedergabeauftrags fest. Navigation zu
+  einem Titel der anderen Quelle ändert weder den gespeicherten Fortschritt
+  noch Hoster-Auflösung, Resume oder den automatischen Folgenwechsel.
+- iOS übergibt Quelle und Episodenpfad auch an den Hoster-Resolver. Zuvor
+  griff dort die AniWorld-Vorgabe auch bei Serienstream-Wiedergaben.
+- iOS übergibt wie macOS User-Agent und den vom Resolver gelieferten Referer
+  samt Origin an das Video-Asset und zeigt asynchrone Wiedergabefehler an.
+- Abgeschlossene Ladeversuche und Player-Rückmeldungen werden verworfen,
+  wenn inzwischen eine andere Wiedergabe gestartet oder der Player geschlossen
+  wurde. Fehlerbeobachter werden erst nach dem Resume-Suchlauf eingerichtet.
+
+### Prüfstand
+
+- Quellcodeprüfung lokal; Xcode-Builds, Swift-Tests und Geräteprüfungen für
+  diesen Stand stehen aus. Auf Wunsch wurden keine Workflows gestartet.
 
 ## [macOS 1.11.3] – 2026-09-05
 
@@ -330,3 +379,4 @@ Dateien.
 
 Kein gepflegtes Changelog. Der Stand ist über die Git-Historie und die
 GitHub-Releases nachvollziehbar.
+

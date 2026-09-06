@@ -100,26 +100,26 @@ final class ProviderPathTests: XCTestCase {
     }
 
     /// Serienstream liefert nach `format` aus und nennt in den eigenen Seiten
-    /// `format=avif`. Nori schreibt jpg fest — das decodiert überall.
-    func testCoverURLForcesJpegOnSerienstream() {
+    /// `format=avif`. Nori erhält die tatsächlich gelieferte Adresse.
+    func testCoverURLPreservesSerienstreamFormat() {
         let url = AniworldClient.coverURL(
             "/media/images/channel/desktop/black-mirror-7sqv7dhs?format=avif",
             provider: .serienstream
         )
         XCTAssertEqual(
             url?.absoluteString,
-            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs?format=jpg"
+            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs?format=avif"
         )
     }
 
-    func testCoverURLAddsFormatWhenMissing() {
+    func testCoverURLDoesNotInventFormat() {
         let url = AniworldClient.coverURL(
             "/media/images/channel/desktop/black-mirror-7sqv7dhs",
             provider: .serienstream
         )
         XCTAssertEqual(
             url?.absoluteString,
-            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs?format=jpg"
+            "https://serienstream.to/media/images/channel/desktop/black-mirror-7sqv7dhs"
         )
     }
 
@@ -210,3 +210,4 @@ final class ProviderPathTests: XCTestCase {
         XCTAssertEqual(Set([entry(.aniworld), entry(.serienstream)]).count, 2)
     }
 }
+

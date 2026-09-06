@@ -7,6 +7,8 @@ struct PlayerScreen: View {
 
     let series: SeriesDetail
     let season: String
+    // Die Quelle gehört zur Wiedergabe, nicht zur Navigation im Hauptfenster.
+    let provider: CatalogProvider
 
     @State private var currentEpisode: Episode
     @State private var currentResumeAt: Double
@@ -21,11 +23,19 @@ struct PlayerScreen: View {
     @State private var watchInfo: WatchInfo?
     @State private var autoplaySeconds: Int?
     @State private var autoplayTask: Task<Void, Never>?
+    @State private var failureObserver: NSObjectProtocol?
+    @State private var statusTask: Task<Void, Never>?
+    @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
+    @State private var optionsVisible = true
+    @State private var optionsTick = 0
+    @State private var menuOpen = false
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
-    init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double) {
+    init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
         self.season = season
+        self.provider = provider
         _currentEpisode = State(initialValue: episode)
         _currentResumeAt = State(initialValue: resumeAt)
     }
@@ -33,21 +43,44 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
             if let player {
                 PlayerLayer(player: player)
                     .ignoresSafeArea()
-            } else if let error {
-                errorView(error)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        menuOpen = false
+                        optionsVisible = true
+                        optionsTick &+= 1
+                    })
+                    .overlay(alignment: .topLeading) {
+                        if optionsVisible || voiceOverEnabled {
+                            glassOptions
+                                .padding(.leading, 16)
+                                .padding(.top, 64)
+                        }
+                    }
+                    .task(id: optionsTick) {
+                        try? await Task.sleep(for: .seconds(4))
+                        guard !Task.isCancelled, !menuOpen, !voiceOverEnabled else { return }
+                        optionsVisible = false
+                    }
             } else {
-                loadingView
+                if let error {
+                    errorView(error)
+                } else {
+                    loadingView
+                }
+                VStack {
+                    HStack {
+                        Button("Schließen", systemImage: "xmark") { dismiss() }
+                            .buttonStyle(.bordered)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding()
             }
-
-            playerChrome
-
             if let seconds = autoplaySeconds,
-               let next = library.nextEpisode(after: currentEpisode, in: series.episodes)
-            {
+               let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
                 autoplayCard(seconds: seconds, next: next)
             }
         }
@@ -92,101 +125,64 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    private var playerChrome: some View {
-        VStack {
-            HStack(spacing: 12) {
-                Button {
-                    save(forceComplete: false)
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .padding(12)
-                        .background(.black.opacity(0.45), in: Circle())
-                }
-
-                Spacer()
-
-                VStack(spacing: 2) {
-                    Text(series.title)
-                        .font(.caption.weight(.semibold))
-                    Text("Folge \(currentEpisode.number)")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.65))
-                }
-                .foregroundStyle(.white.opacity(0.9))
-
-                Spacer()
-
-                playbackMenu
+    /// Native UIKit-Menüs hinter einem kleinen Glas-Knopf. Die tvOS-
+    /// Transportleisten-Erweiterung ist unter iOS nicht verfügbar.
+    @MainActor
+    private var nativePlaybackMenus: [UIMenuElement] {
+        var menus: [UIMenuElement] = []
+        if let info = watchInfo {
+            let hosters = Array(Set(info.hosters.map(\.name))).sorted {
+                HosterResolver.rank($0) < HosterResolver.rank($1)
             }
-            .padding()
-            Spacer()
+            let hosterActions = hosters.map { hoster in
+                UIAction(title: hoster,
+                         state: source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchHoster(to: hoster)
+                    }
+                }
+            }
+            if !hosterActions.isEmpty {
+                menus.append(UIMenu(title: "Hoster", image: UIImage(systemName: "server.rack"), children: hosterActions))
+            }
+            let languages = Array(Set(info.hosters.map(\.lang))).sorted()
+            let languageActions = languages.map { lang in
+                UIAction(title: languageLabel(lang),
+                         state: source?.lang.caseInsensitiveCompare(lang) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchLanguage(to: lang)
+                    }
+                }
+            }
+            if !languageActions.isEmpty {
+                menus.append(UIMenu(title: "Quellsprache", image: UIImage(systemName: "globe"), children: languageActions))
+            }
+        }
+        menus.append(UIAction(title: "Wiedergabe schließen", image: UIImage(systemName: "xmark")) { _ in
+            Task { @MainActor in
+                save(forceComplete: false)
+                dismiss()
+            }
+        })
+        return menus
+    }
+
+    @ViewBuilder
+    private var glassOptions: some View {
+        if #available(iOS 26.0, *) {
+            optionsButton.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            optionsButton.background(.ultraThinMaterial, in: Circle())
         }
     }
 
-    private var playbackMenu: some View {
-        Menu {
-            if let info = watchInfo {
-                let hosters = Array(Set(info.hosters.map(\.name))).sorted { HosterResolver.rank($0) < HosterResolver.rank($1) }
-                if !hosters.isEmpty {
-                    Section("Hoster") {
-                        ForEach(hosters, id: \.self) { hoster in
-                            Button {
-                                Task { await switchHoster(to: hoster) }
-                            } label: {
-                                if source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame {
-                                    Label(hoster, systemImage: "checkmark")
-                                } else {
-                                    Text(hoster)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let languages = Array(Set(info.hosters.map(\.lang))).sorted()
-                if !languages.isEmpty {
-                    Section("Sprache") {
-                        ForEach(languages, id: \.self) { lang in
-                            Button {
-                                Task { await switchLanguage(to: lang) }
-                            } label: {
-                                if source?.lang.caseInsensitiveCompare(lang) == .orderedSame {
-                                    Label(languageLabel(lang), systemImage: "checkmark")
-                                } else {
-                                    Text(languageLabel(lang))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Section("Geschwindigkeit") {
-                ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
-                    Button {
-                        Task { @MainActor in setPlaybackSpeed(speed) }
-                    } label: {
-                        if abs(library.playbackSpeed - speed) < 0.01 {
-                            Label(speedLabel(speed), systemImage: "checkmark")
-                        } else {
-                            Text(speedLabel(speed))
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                if isSwitching { ProgressView().controlSize(.small) }
-                Text(source?.hoster ?? "Optionen")
-                    .font(.caption2)
-                Image(systemName: "ellipsis.circle")
-            }
-            .foregroundStyle(.white.opacity(0.8))
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(.black.opacity(0.4), in: Capsule())
-        }
+    private var optionsButton: some View {
+        PlayerOptionsButton(menuItems: nativePlaybackMenus) { menuOpen = true }
+            .frame(width: 44, height: 44)
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
@@ -225,6 +221,7 @@ struct PlayerScreen: View {
     ) async {
         cancelAutoplay()
         clearPlayer(saveCurrent: false)
+        let generation = playbackGeneration
         error = nil
         source = nil
         watchInfo = nil
@@ -234,19 +231,23 @@ struct PlayerScreen: View {
         do {
             status = "Folge wird gelesen…"
             let path = currentEpisode.path.isEmpty
-                ? guessEpisodePath(slug: series.slug, season: season, episode: currentEpisode.number, provider: library.provider)
+                ? guessEpisodePath(slug: series.slug, season: season, episode: currentEpisode.number, provider: provider)
                 : currentEpisode.path
             currentPath = normalizeEpisodePath(path)
 
-            let info = try await AniworldClient.shared.getWatch(provider: library.provider, path: path)
+            let info = try await AniworldClient.shared.getWatch(provider: provider, path: path)
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             watchInfo = info
             status = "Stream wird geholt…"
 
             let play = try await HosterResolver.resolveBest(
                 hosters: info.hosters,
                 preferredHoster: preferredHoster ?? library.hosterPref,
-                preferredLang: preferredLang ?? library.langPref
+                preferredLang: preferredLang ?? library.langPref,
+                episodePath: currentPath,
+                provider: provider
             )
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             source = play
             library.hosterPref = play.hoster
             library.langPref = play.lang
@@ -255,7 +256,23 @@ struct PlayerScreen: View {
                 throw NoriError.hoster("Ungültige Stream-URL")
             }
 
-            let item = AVPlayerItem(url: url)
+            // Hoster liefern das Video meist nur mit passendem Referer und
+            // User-Agent aus. AVPlayer schickt von sich aus keinen, weshalb der
+            // Player sonst mit leerem Bild und --:-- stehen bleibt.
+            var headers = ["User-Agent": NoriOrigin.ua]
+            if let referer = play.referer {
+                headers["Referer"] = referer
+                if let refererURL = URL(string: referer), let origin = originHeader(refererURL) {
+                    headers["Origin"] = origin
+                }
+            }
+            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+            let item = AVPlayerItem(asset: asset)
+            let titleMetadata = AVMutableMetadataItem()
+            titleMetadata.identifier = .commonIdentifierTitle
+            titleMetadata.value = (series.title + " – Folge " + String(currentEpisode.number)) as NSString
+            titleMetadata.extendedLanguageTag = "und"
+            item.externalMetadata = [titleMetadata]
             let av = AVPlayer(playerItem: item)
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
@@ -266,12 +283,31 @@ struct PlayerScreen: View {
                 await av.seek(to: t)
             }
 
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
+
+            // Scheitert die Wiedergabe selbst, meldet AVKit das nicht sichtbar.
+            // Den Fehler in die eigene Fehleransicht holen, damit nicht nur ein
+            // graues Bild dasteht.
+            failureObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { note in
+                let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+                    .localizedDescription ?? "Unbekannter Fehler"
+                Task { @MainActor in
+                    guard generation == playbackGeneration else { return }
+                    reportPlaybackFailure(reason)
+                }
+            }
+
             av.playImmediately(atRate: library.playbackSpeed)
 
             observer = av.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 5, preferredTimescale: 1),
                 queue: .main
             ) { time in
+                guard generation == playbackGeneration else { return }
                 let pos = time.seconds
                 let dur = item.duration.seconds
                 if dur.isFinite { duration = dur }
@@ -284,6 +320,7 @@ struct PlayerScreen: View {
                 queue: .main
             ) { _ in
                 Task { @MainActor in
+                    guard generation == playbackGeneration else { return }
                     save(forceComplete: true)
                     handleEpisodeEnded()
                 }
@@ -291,10 +328,38 @@ struct PlayerScreen: View {
 
             player = av
             currentResumeAt = 0
+            statusTask = Task { @MainActor in
+                // AVPlayerItem meldet .failed asynchron, nachdem der erste
+                // Datenabruf fehlgeschlagen ist.
+                for _ in 0 ..< 40 {
+                    if Task.isCancelled || generation != playbackGeneration { return }
+                    if item.status == .failed {
+                        reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
+                        return
+                    }
+                    if item.status == .readyToPlay { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
         } catch {
+            guard generation == playbackGeneration, !Task.isCancelled else { return }
             self.error = error.localizedDescription
         }
         isSwitching = false
+    }
+
+    /// Nur „https://host" — manche Hoster prüfen Origin zusätzlich zum Referer.
+    private func originHeader(_ url: URL) -> String? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        return "\(scheme)://\(host)"
+    }
+
+    @MainActor
+    private func reportPlaybackFailure(_ reason: String) {
+        guard error == nil else { return }
+        let hoster = source?.hoster ?? "Hoster"
+        clearPlayer(saveCurrent: true)
+        error = "\(hoster) lieferte eine Adresse, die sich nicht abspielen lässt.\n\(reason)"
     }
 
     @MainActor
@@ -376,7 +441,7 @@ struct PlayerScreen: View {
         clearPlayer(saveCurrent: false)
         currentEpisode = next
         currentResumeAt = library.resumeEnabled
-            ? resumePosition(library.progress(slug: series.slug, season: season, episode: next.number, path: next.path, provider: library.provider))
+            ? resumePosition(library.progress(slug: series.slug, season: season, episode: next.number, path: next.path, provider: provider))
             : 0
         await startPlayback(resumeAt: currentResumeAt)
     }
@@ -405,7 +470,7 @@ struct PlayerScreen: View {
                 updatedAt: Date().timeIntervalSince1970 * 1000,
                 lang: source?.lang ?? library.langPref,
                 completed: dur >= 20 && pos >= dur * 0.9,
-                provider: library.provider
+                provider: provider
             )
         )
     }
@@ -430,7 +495,7 @@ struct PlayerScreen: View {
                 updatedAt: Date().timeIntervalSince1970 * 1000,
                 lang: source?.lang ?? library.langPref,
                 completed: forceComplete || (dur >= 20 && pos >= dur * 0.9),
-                provider: library.provider
+                provider: provider
             )
         )
     }
@@ -442,11 +507,16 @@ struct PlayerScreen: View {
 
     @MainActor
     func clearPlayer(saveCurrent: Bool) {
+        playbackGeneration = UUID()
         if saveCurrent { save(forceComplete: false) }
         if let observer, let player { player.removeTimeObserver(observer) }
         observer = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
+        failureObserver = nil
+        statusTask?.cancel()
+        statusTask = nil
         player?.pause()
         player = nil
     }
@@ -485,5 +555,27 @@ struct PlayerLayer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
         if vc.player !== player { vc.player = player }
+    }
+}
+
+
+/// UIKit übernimmt Menüpräsentation und Auswahlzustände; kein Eingriff in AVKit-Unteransichten.
+struct PlayerOptionsButton: UIViewRepresentable {
+    let menuItems: [UIMenuElement]
+    let onOpen: () -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        button.tintColor = .white
+        button.accessibilityLabel = "Hoster und Quellsprache"
+        button.showsMenuAsPrimaryAction = true
+        button.addAction(UIAction { _ in onOpen() }, for: .menuActionTriggered)
+        button.menu = UIMenu(children: menuItems)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.menu = UIMenu(children: menuItems)
     }
 }

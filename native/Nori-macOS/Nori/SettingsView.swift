@@ -84,9 +84,10 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.11.3"
+    static let version = "1.11.6"
 
     static let highlights = [
+        "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
         "Streams starten zuverlässiger: Der Player schickt jetzt Referer und User-Agent mit.",
         "Cover werden richtig zugeordnet und dauerhaft gespeichert; fehlt ein TMDB-Treffer, greift das Cover der Quelle.",
@@ -363,3 +364,4 @@ private struct PrivacySettingsTab: View {
         }
     }
 }
+

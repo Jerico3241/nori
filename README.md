@@ -18,7 +18,7 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 | Plattform | Version | Status |
 | --- | --- | --- |
 | iOS / iPadOS | **1.10.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.11.3** | Native SwiftUI-App mit eigener Mac-Oberfläche, aktuell der weiteste Stand |
+| macOS | **1.11.6** | Native SwiftUI-App mit eigener Mac-Oberfläche, aktuell der weiteste Stand |
 | Windows | **1.8.0** | Electron / Node Portable Build |
 
 Die nativen Apple-Versionen liegen unter `native/`.
@@ -57,7 +57,7 @@ Die nativen Apple-Versionen liegen unter `native/`.
 - Fortschritt wird nach Quelle und Episode getrennt gespeichert
 - Migration älterer lokaler Bibliotheksdaten auf das aktuelle Datenmodell
 
-Aktuelles Library-Schema: **v3**.
+Aktuelles Library-Schema: **v4**.
 
 ### Kalender
 
@@ -192,3 +192,4 @@ Für einen vollständig verifizierten Release-Stand stehen insbesondere noch an:
 - iOS- und macOS-Builds in Xcode vollständig verifizieren
 - Hoster unter realen Bedingungen testen
 - anschließend einen sauber versionierten nächsten Release vorbereiten
+

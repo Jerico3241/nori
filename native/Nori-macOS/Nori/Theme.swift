@@ -178,6 +178,7 @@ struct NoriPressStyle: ButtonStyle {
 struct NoriCoverImage<Fallback: View>: View {
     let url: URL
     let referer: String
+    var contentMode: ContentMode = .fill
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: NSImage?
@@ -185,7 +186,7 @@ struct NoriCoverImage<Fallback: View>: View {
     var body: some View {
         Group {
             if let image {
-                Image(nsImage: image).resizable().scaledToFill()
+                Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
             } else {
                 fallback()
             }
@@ -195,6 +196,7 @@ struct NoriCoverImage<Fallback: View>: View {
         .task(id: url) {
             image = nil
             guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
+            guard !Task.isCancelled else { return }
             image = NSImage(data: data)
         }
     }
@@ -250,7 +252,8 @@ struct PosterTile: View {
             .accessibilityAddTraits(.isImage)
             .animation(.easeOut(duration: 0.16), value: hovering)
             .onHover { hovering = $0 }
-            .task(id: slug) {
+            .task(id: source.rawValue + "|" + slug + "|" + (coverURL?.absoluteString ?? "")) {
+                remote = nil
                 // Eine manuelle Auswahl schlägt alles andere.
                 if let chosen = await CoverIndex.shared.override(for: slug) {
                     remote = chosen
@@ -356,3 +359,4 @@ enum CoverToneSampler {
         return Color(red: bestR, green: bestG, blue: bestB)
     }
 }
+
