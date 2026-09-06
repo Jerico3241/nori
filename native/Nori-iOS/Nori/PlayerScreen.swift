@@ -29,7 +29,20 @@ struct PlayerScreen: View {
     @State private var isSwitching = false
     @State private var optionsVisible = true
     @State private var optionsTick = 0
-    @State private var menuOpen = false
+    /// Für die eigene Bedienung: Stand, Position und Puffer kamen vorher von
+    /// AVKit und wurden nirgends gebraucht.
+    @State private var isPlaying = false
+    @State private var position: Double = 0
+    @State private var buffered: Double = 0
+    @State private var lastSaved: Double = 0
+    @State private var subtitleGroup: AVMediaSelectionGroup?
+    @State private var subtitleChoices: [PlayerChoice] = []
+    @State private var activeSubtitle: String = PlayerScreen.subtitleOff
+    @State private var pip = PictureInPicture()
+
+    /// Kennung für „keine Untertitel". Ein leerer Text wäre als Auswahl nicht
+    /// von „noch nichts gewählt" zu unterscheiden.
+    static let subtitleOff = "__aus__" 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
@@ -44,24 +57,24 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let player {
-                PlayerLayer(player: player)
+                VideoSurface(player: player) { layer in pip.attach(to: layer) }
                     .ignoresSafeArea()
-                    .simultaneousGesture(TapGesture().onEnded {
-                        menuOpen = false
-                        optionsVisible = true
-                        optionsTick &+= 1
-                    })
-                    .overlay(alignment: .topLeading) {
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.18)) { optionsVisible.toggle() }
+                        if optionsVisible { optionsTick &+= 1 }
+                    }
+                    .overlay {
                         if optionsVisible || voiceOverEnabled {
-                            glassOptions
-                                .padding(.leading, 16)
-                                .padding(.top, 64)
+                            controls.transition(.opacity)
                         }
                     }
+                    // Nur ausblenden, während etwas läuft. Im Stehen die
+                    // Bedienung wegzunehmen wäre die Zeit, in der man sie
+                    // am ehesten braucht.
                     .task(id: optionsTick) {
                         try? await Task.sleep(for: .seconds(4))
-                        guard !Task.isCancelled, !menuOpen, !voiceOverEnabled else { return }
-                        optionsVisible = false
+                        guard !Task.isCancelled, !voiceOverEnabled, isPlaying else { return }
+                        withAnimation(.easeOut(duration: 0.25)) { optionsVisible = false }
                     }
             } else {
                 if let error {
@@ -125,64 +138,133 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    /// Native UIKit-Menüs hinter einem kleinen Glas-Knopf. Die tvOS-
-    /// Transportleisten-Erweiterung ist unter iOS nicht verfügbar.
+    /// Die eigene Bedienleiste. Alle Auswahlmöglichkeiten liegen darin —
+    /// Hoster, Sprache, Untertitel und Geschwindigkeit —, statt dass eine
+    /// davon als eigener Knopf über dem Bild schwebt.
+    private var controls: some View {
+        PlayerControls(
+            title: series.title,
+            subtitle: "Staffel \(season) · Folge \(currentEpisode.number)",
+            isPlaying: isPlaying,
+            position: position,
+            duration: duration,
+            buffered: buffered,
+            speed: library.playbackSpeed,
+            hosters: hosterChoices,
+            activeHoster: source?.hoster,
+            languages: languageChoices,
+            activeLanguage: source?.lang,
+            subtitles: subtitleChoices,
+            activeSubtitle: activeSubtitle,
+            pip: pip,
+            // Jeder Rückruf über `Task { @MainActor in … }`: `controls` ist
+            // eine ausgelagerte View-Hilfe und damit **nicht** an den
+            // Main-Actor gebunden, `var body` dagegen schon. Ein direkter
+            // Aufruf einer @MainActor-Methode von hier aus ist ein
+            // Übersetzungsfehler — im iOS-Build schon zweimal passiert.
+            onClose: {
+                Task { @MainActor in
+                    save(forceComplete: false)
+                    dismiss()
+                }
+            },
+            onPlayPause: { Task { @MainActor in togglePlayback() } },
+            onSkip: { seconds in Task { @MainActor in seek(to: position + seconds) } },
+            onSeek: { target in Task { @MainActor in seek(to: target) } },
+            onScrubbing: { active in
+                // Während gezogen wird nicht wegblenden.
+                Task { @MainActor in
+                    if active { optionsVisible = true } else { optionsTick &+= 1 }
+                }
+            },
+            onSpeed: { value in
+                Task { @MainActor in
+                    library.playbackSpeed = value
+                    player?.defaultRate = value
+                    if isPlaying { player?.rate = value }
+                    optionsTick &+= 1
+                }
+            },
+            onHoster: { hoster in
+                Task { @MainActor in
+                    optionsTick &+= 1
+                    await switchHoster(to: hoster)
+                }
+            },
+            onLanguage: { lang in
+                Task { @MainActor in
+                    optionsTick &+= 1
+                    await switchLanguage(to: lang)
+                }
+            },
+            onSubtitle: { id in Task { @MainActor in selectSubtitle(id) } }
+        )
+    }
+
+    private var hosterChoices: [PlayerChoice] {
+        guard let info = watchInfo else { return [] }
+        return Array(Set(info.hosters.map(\.name)))
+            .sorted { HosterResolver.rank($0) < HosterResolver.rank($1) }
+            .map { PlayerChoice(id: $0, label: $0) }
+    }
+
+    private var languageChoices: [PlayerChoice] {
+        guard let info = watchInfo else { return [] }
+        return Array(Set(info.hosters.map(\.lang)))
+            .sorted()
+            .map { PlayerChoice(id: $0, label: languageLabel($0)) }
+    }
+
     @MainActor
-    private var nativePlaybackMenus: [UIMenuElement] {
-        var menus: [UIMenuElement] = []
-        if let info = watchInfo {
-            let hosters = Array(Set(info.hosters.map(\.name))).sorted {
-                HosterResolver.rank($0) < HosterResolver.rank($1)
-            }
-            let hosterActions = hosters.map { hoster in
-                UIAction(title: hoster,
-                         state: source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame ? .on : .off) { _ in
-                    Task { @MainActor in
-                        menuOpen = false
-                        optionsTick &+= 1
-                        await switchHoster(to: hoster)
-                    }
-                }
-            }
-            if !hosterActions.isEmpty {
-                menus.append(UIMenu(title: "Hoster", image: UIImage(systemName: "server.rack"), children: hosterActions))
-            }
-            let languages = Array(Set(info.hosters.map(\.lang))).sorted()
-            let languageActions = languages.map { lang in
-                UIAction(title: languageLabel(lang),
-                         state: source?.lang.caseInsensitiveCompare(lang) == .orderedSame ? .on : .off) { _ in
-                    Task { @MainActor in
-                        menuOpen = false
-                        optionsTick &+= 1
-                        await switchLanguage(to: lang)
-                    }
-                }
-            }
-            if !languageActions.isEmpty {
-                menus.append(UIMenu(title: "Quellsprache", image: UIImage(systemName: "globe"), children: languageActions))
-            }
-        }
-        menus.append(UIAction(title: "Wiedergabe schließen", image: UIImage(systemName: "xmark")) { _ in
-            Task { @MainActor in
-                save(forceComplete: false)
-                dismiss()
-            }
-        })
-        return menus
-    }
-
-    @ViewBuilder
-    private var glassOptions: some View {
-        if #available(iOS 26.0, *) {
-            optionsButton.glassEffect(.regular.interactive(), in: Circle())
+    private func togglePlayback() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+            // Beim Anhalten sichtbar bleiben, sonst verschwindet die
+            // Bedienung genau dann, wenn man sie sucht.
+            optionsVisible = true
         } else {
-            optionsButton.background(.ultraThinMaterial, in: Circle())
+            player.playImmediately(atRate: library.playbackSpeed)
+            isPlaying = true
+            optionsTick &+= 1
         }
     }
 
-    private var optionsButton: some View {
-        PlayerOptionsButton(menuItems: nativePlaybackMenus) { menuOpen = true }
-            .frame(width: 44, height: 44)
+    @MainActor
+    private func seek(to seconds: Double) {
+        guard let player, duration > 0 else { return }
+        let target = min(max(seconds, 0), duration)
+        position = target
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        savePosition(target, duration: duration)
+    }
+
+    /// Untertitelspuren des Streams. Viele Hoster liefern gar keine — dann
+    /// bleibt die Liste leer und das Menü erscheint nicht.
+    @MainActor
+    private func loadSubtitles(for item: AVPlayerItem) async {
+        subtitleGroup = nil
+        subtitleChoices = []
+        activeSubtitle = Self.subtitleOff
+        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible),
+              !group.options.isEmpty
+        else { return }
+        subtitleGroup = group
+        subtitleChoices = [PlayerChoice(id: Self.subtitleOff, label: "Aus")]
+            + group.options.map { PlayerChoice(id: $0.displayName, label: $0.displayName) }
+    }
+
+    @MainActor
+    private func selectSubtitle(_ id: String) {
+        guard let group = subtitleGroup, let item = player?.currentItem else { return }
+        if id == Self.subtitleOff {
+            item.select(nil, in: group)
+        } else if let option = group.options.first(where: { $0.displayName == id }) {
+            item.select(option, in: group)
+        }
+        activeSubtitle = id
+        optionsTick &+= 1
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
@@ -303,15 +385,28 @@ struct PlayerScreen: View {
 
             av.playImmediately(atRate: library.playbackSpeed)
 
+            // Vierteltakt statt alle fünf Sekunden: der Regler soll mitlaufen.
+            // Gespeichert wird trotzdem nur alle fünf Sekunden — der Stand
+            // gehört auf die Platte, nicht viermal pro Sekunde.
             observer = av.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 5, preferredTimescale: 1),
+                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
                 queue: .main
             ) { time in
                 guard generation == playbackGeneration else { return }
                 let pos = time.seconds
+                guard pos.isFinite else { return }
+                position = pos
                 let dur = item.duration.seconds
                 if dur.isFinite { duration = dur }
-                if pos.isFinite { savePosition(pos, duration: duration) }
+                isPlaying = av.timeControlStatus == .playing
+                if let range = item.loadedTimeRanges.last?.timeRangeValue {
+                    let end = (range.start + range.duration).seconds
+                    if end.isFinite { buffered = end }
+                }
+                if pos - lastSaved >= 5 || lastSaved == 0 {
+                    lastSaved = pos
+                    savePosition(pos, duration: duration)
+                }
             }
 
             endObserver = NotificationCenter.default.addObserver(
@@ -327,6 +422,11 @@ struct PlayerScreen: View {
             }
 
             player = av
+            isPlaying = true
+            position = targetResume >= 8 ? targetResume : 0
+            lastSaved = 0
+            buffered = 0
+            await loadSubtitles(for: item)
             currentResumeAt = 0
             statusTask = Task { @MainActor in
                 // AVPlayerItem meldet .failed asynchron, nachdem der erste
@@ -539,43 +639,5 @@ struct PlayerScreen: View {
     func speedLabel(_ speed: Float) -> String {
         if abs(speed - 1) < 0.01 { return "1×" }
         return String(format: "%g×", speed)
-    }
-}
-
-struct PlayerLayer: UIViewControllerRepresentable {
-    let player: AVPlayer
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.allowsPictureInPicturePlayback = true
-        controller.updatesNowPlayingInfoCenter = true
-        return controller
-    }
-
-    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
-        if vc.player !== player { vc.player = player }
-    }
-}
-
-
-/// UIKit übernimmt Menüpräsentation und Auswahlzustände; kein Eingriff in AVKit-Unteransichten.
-struct PlayerOptionsButton: UIViewRepresentable {
-    let menuItems: [UIMenuElement]
-    let onOpen: () -> Void
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        button.tintColor = .white
-        button.accessibilityLabel = "Hoster und Quellsprache"
-        button.showsMenuAsPrimaryAction = true
-        button.addAction(UIAction { _ in onOpen() }, for: .menuActionTriggered)
-        button.menu = UIMenu(children: menuItems)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        button.menu = UIMenu(children: menuItems)
     }
 }

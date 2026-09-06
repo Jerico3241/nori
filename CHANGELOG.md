@@ -4,8 +4,28 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.0**, iOS/iPadOS **1.11.0**,
+unterschiedlich schnell bewegen: macOS **1.12.0**, iOS/iPadOS **1.12.0**,
 Windows **1.8.0**.
+
+## [iOS 1.12.0] – 2026-09-06
+
+### Geändert
+
+- **Eigene Bedienoberfläche im Player.** Apples fertige Bedienung ließ sich
+  nicht erweitern — `transportBarCustomMenuItems` gibt es nur auf tvOS —,
+  weshalb die Hosterwahl als eigener Knopf über dem Bild schwebte. Jetzt
+  trägt Nori die Bedienung selbst: Hoster, Quellsprache, Untertitel und
+  Geschwindigkeit liegen als Menüs in **einer** Leiste, im selben Stil,
+  gemeinsam ein- und ausgeblendet.
+- Dazu Abspielen/Pause, ±10 Sekunden, ein Regler mit Pufferanzeige und
+  Restzeit, AirPlay und Bild-in-Bild. Die beiden letzten kamen mit Apples
+  Bedienung geschenkt und sind jetzt ausdrücklich eingebaut
+  (`AVRoutePickerView`, `AVPictureInPictureController`).
+- Die Bedienung blendet nach vier Sekunden aus, aber nur während etwas
+  läuft. Im Stehen wäre das die Zeit, in der man sie am ehesten braucht.
+- Der Wiedergabestand wird weiterhin alle fünf Sekunden gesichert, obwohl
+  die Position jetzt viermal pro Sekunde abgefragt wird — der Regler soll
+  mitlaufen, die Platte nicht.
 
 ## [macOS 1.12.0] · [iOS 1.11.0] – 2026-09-06
 
