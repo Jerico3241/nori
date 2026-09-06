@@ -4,8 +4,44 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.1**, iOS/iPadOS **1.14.4**,
+unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
 Windows **1.8.0**.
+
+## [iOS 1.14.5] · [macOS 1.14.2] – 2026-09-06
+
+**Für iPhone und Mac ändert sich nichts Sichtbares.** Der geteilte Kern baut
+jetzt auch für Android durch; auf Apple ist die Änderung wirkungslos.
+
+### Geändert
+
+- **`FoundationNetworking` wird bedingt importiert.** Außerhalb von Apple
+  liegen `URLSession`, `URLRequest`, `HTTPURLResponse` und `HTTPCookieStorage`
+  in einem eigenen Modul. `AniworldClient.swift` und `HosterResolver.swift`
+  holen es über `#if canImport(FoundationNetworking)` — dieselbe Kapselung,
+  die dort schon für `Security` und `ImageIO` steht. Auf Apple gibt es das
+  Modul nicht, der Import ist damit ein Nichts; für Android war er der
+  Unterschied zwischen 50 Fehlern und einem grünen Build.
+
+### Behoben
+
+- **`tools/require-swift-android.sh` meldete grün, wo nichts ging.** Es prüfte
+  nur, ob `swift sdk list` einen Android-Eintrag zeigt. Zwei Einrichtungs-
+  fehler kamen dadurch erst im Build heraus, und dort sahen beide nach
+  kaputtem Quelltext aus: eine Toolchain in der falschen Version (die aus
+  Xcode taugt für Cross-Compilation nicht) und ein SDK, das nie gegen ein NDK
+  eingerichtet wurde (`'semaphore.h' file not found`, mitten in SwiftSoup).
+  Beides wird jetzt vorher geprüft und mit dem nötigen Befehl gemeldet.
+- **`build-android.yml` baute mit der Toolchain aus Xcode.** Der Lauf wählt
+  jetzt die zum SDK passende Open-Source-Toolchain über `TOOLCHAINS` aus.
+  Dazu musste die Schrittfolge umgedreht werden: erst SDK, dann Toolchain,
+  dann prüfen.
+
+### Sonstiges
+
+- `docs/android.md`: Die Einrichtungsanleitung nennt jetzt alle vier Schritte
+  statt zwei — die beiden fehlenden waren genau die, die stillschweigend
+  schiefgingen. Punkt 1 des Fahrplans („Übersetzt der Kern für Android?") ist
+  beantwortet: **ja.** Die Kotlin-Rückfallebene entfällt.
 
 ## [iOS 1.14.4] · [macOS 1.14.1] – 2026-09-06
 
