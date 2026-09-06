@@ -178,6 +178,7 @@ struct NoriPressStyle: ButtonStyle {
 struct NoriCoverImage<Fallback: View>: View {
     let url: URL
     let referer: String
+    var contentMode: ContentMode = .fill
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: NSImage?
@@ -185,7 +186,7 @@ struct NoriCoverImage<Fallback: View>: View {
     var body: some View {
         Group {
             if let image {
-                Image(nsImage: image).resizable().scaledToFill()
+                Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
             } else {
                 fallback()
             }
