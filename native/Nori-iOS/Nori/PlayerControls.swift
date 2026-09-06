@@ -268,44 +268,55 @@ struct PlayerControls: View {
         }
     }
 
+    /// Eigener Regler statt `Slider`.
+    ///
+    /// Der Systemregler bringt eine eigene Spur und einen großen Griff mit.
+    /// Hinter ihm lag zusätzlich die Pufferanzeige — sichtbar waren dadurch
+    /// zwei Spuren übereinander und ein Griff, der über den linken Rand
+    /// hinausstand. Ein Regler, der aus drei Kapseln und einem Punkt besteht,
+    /// ist hier weniger Aufwand als der Versuch, den Systemregler passend zu
+    /// bekommen.
     private var scrubber: some View {
-        VStack(spacing: 2) {
-            ZStack(alignment: .leading) {
-                // Der Puffer liegt hinter dem Regler und zeigt, wie weit
-                // vorgeladen ist — sonst sieht ein Sprung nach vorn aus wie
-                // ein Hänger.
-                GeometryReader { geo in
-                    Capsule()
-                        .fill(.white.opacity(0.18))
-                        .frame(height: 3)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(.white.opacity(0.3))
-                                .frame(width: total > 0 ? geo.size.width * min(buffered / total, 1) : 0, height: 3)
-                        }
-                        .frame(maxHeight: .infinity, alignment: .center)
-                }
-                .frame(height: 20)
-                .allowsHitTesting(false)
+        VStack(spacing: 6) {
+            GeometryReader { geo in
+                let width = geo.size.width
+                let played = total > 0 ? min(max(shown / total, 0), 1) : 0
+                let loaded = total > 0 ? min(max(buffered / total, 0), 1) : 0
+                let knob: CGFloat = scrubbing ? 15 : 10
 
-                Slider(
-                    value: Binding(
-                        get: { shown },
-                        set: { scrubValue = $0 }
-                    ),
-                    in: 0 ... max(total, 1)
-                ) { editing in
-                    scrubbing = editing
-                    onScrubbing(editing)
-                    if editing {
-                        scrubValue = position
-                    } else {
-                        onSeek(scrubValue)
-                    }
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.22)).frame(height: 4)
+                    Capsule().fill(.white.opacity(0.36)).frame(width: width * loaded, height: 4)
+                    Capsule().fill(NoriTheme.accent).frame(width: width * played, height: 4)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: knob, height: knob)
+                        .offset(x: width * played - knob / 2)
+                        .animation(.easeOut(duration: 0.12), value: scrubbing)
                 }
-                .tint(NoriTheme.accent)
-                .disabled(total <= 0)
+                .frame(maxHeight: .infinity, alignment: .center)
+                // Die Trefferfläche ist die ganze Höhe, nicht die vier Punkte
+                // der Spur.
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard total > 0, width > 0 else { return }
+                            if !scrubbing {
+                                scrubbing = true
+                                onScrubbing(true)
+                            }
+                            scrubValue = min(max(Double(value.location.x / width), 0), 1) * total
+                        }
+                        .onEnded { _ in
+                            guard total > 0 else { return }
+                            onSeek(scrubValue)
+                            scrubbing = false
+                            onScrubbing(false)
+                        }
+                )
             }
+            .frame(height: 24)
 
             HStack {
                 Text(formatClock(shown))

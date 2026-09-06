@@ -272,6 +272,13 @@ def check_no_secrets() -> None:
     Zuweisungen an offensichtlich benannte Variablen. Kommentare zählen nicht.
     """
     long_hex = re.compile(r'"[0-9a-f]{32,}"')
+    # Eine einzige bewusste Ausnahme: der mitgelieferte TMDB-Schlüssel in
+    # `TMDBKeyStore.builtIn`. Der Betreiber hat das für seine private App so
+    # entschieden — nachzulesen im Kommentar an der Deklaration. Die Ausnahme
+    # ist absichtlich eng an genau diese Zeile geknüpft: jeder andere
+    # einkompilierte Schlüssel fällt weiterhin auf, auch ein zweiter in
+    # derselben Datei.
+    allowed = re.compile(r'private static let builtIn = "[0-9a-f]{32}"')
     named = re.compile(
         r'\b(?:apiKey|api_key|apiSecret|clientSecret|accessToken|refreshToken|password)\b'
         r'\s*(?:=|:)\s*"[^"\n]{8,}"',
@@ -282,6 +289,7 @@ def check_no_secrets() -> None:
             raw = path.read_text()
             # Zeichenketten hier absichtlich stehen lassen — sie sind der Fund.
             without_comments = re.sub(r"//[^\n]*", " ", re.sub(r"/\*.*?\*/", " ", raw, flags=re.S))
+            without_comments = allowed.sub(" ", without_comments)
             for pattern, what in ((long_hex, "lange Hex-Zeichenkette"), (named, "Zuweisung an einen Schlüsselnamen")):
                 if pattern.search(without_comments):
                     add(

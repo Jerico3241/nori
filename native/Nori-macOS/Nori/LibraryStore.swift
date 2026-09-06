@@ -165,6 +165,21 @@ final class LibraryStore {
         return (watched, total, total == 0 ? 0 : Int(round(Double(watched) / Double(total) * 100)))
     }
 
+    /// Wurde in dieser Staffel überhaupt schon etwas angeschaut?
+    ///
+    /// Die Unterscheidung fehlte: eine nie geöffnete Serie landete in der
+    /// Schleife unten und bekam damit die Beschriftung „Weiter" — obwohl es
+    /// nichts fortzusetzen gab. Auch die Fortschrittsangabe hing daran und
+    /// stand mit „0 % gesehen" auf jeder Detailseite.
+    func hasProgress(slug: String, season: String) -> Bool {
+        progress.values.contains {
+            $0.slug == slug
+                && $0.season == season
+                && ($0.provider ?? providerFromPath($0.episodePath)) == provider
+                && ($0.positionSec > 0 || $0.completed == true)
+        }
+    }
+
     func nextPlay(slug: String, season: String, episodes: [Episode]) -> (episode: Int, resumeAt: Double, kind: String) {
         guard !episodes.isEmpty else { return (1, 0, "play") }
         let relevant = progress.values.filter { $0.slug == slug && ($0.provider ?? providerFromPath($0.episodePath)) == provider }
@@ -172,11 +187,14 @@ final class LibraryStore {
             let at = resumeEnabled ? resumePosition(latest) : 0
             return (latest.episode, at, at >= 8 ? "resume" : "play")
         }
+        // „next" nur, wenn es tatsächlich etwas gab, das weitergeht.
+        let started = hasProgress(slug: slug, season: season)
         for ep in episodes.sorted(by: { $0.number < $1.number }) {
             let item = progress(slug: slug, season: season, episode: ep.number, path: ep.path, provider: provider)
             if !isEpisodeComplete(item) {
                 let at = resumeEnabled ? resumePosition(item) : 0
-                return (ep.number, at, at >= 8 ? "resume" : "next")
+                if at >= 8 { return (ep.number, at, "resume") }
+                return (ep.number, at, started ? "next" : "play")
             }
         }
         return (episodes.sorted(by: { $0.number < $1.number })[0].number, 0, "play")
