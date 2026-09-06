@@ -27,6 +27,10 @@ struct PlayerScreen: View {
     @State private var statusTask: Task<Void, Never>?
     @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
+    @State private var optionsVisible = true
+    @State private var optionsTick = 0
+    @State private var menuOpen = false
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
@@ -37,26 +41,49 @@ struct PlayerScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            playerChrome
-                .background(Color.black)
-            ZStack {
-                Color.black
-                if let player {
-                    PlayerLayer(player: player)
-                } else if let error {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let player {
+                PlayerLayer(player: player)
+                    .ignoresSafeArea()
+                    .simultaneousGesture(TapGesture().onEnded {
+                        menuOpen = false
+                        optionsVisible = true
+                        optionsTick &+= 1
+                    })
+                    .overlay(alignment: .topLeading) {
+                        if optionsVisible || voiceOverEnabled {
+                            glassOptions
+                                .padding(.leading, 16)
+                                .padding(.top, 64)
+                        }
+                    }
+                    .task(id: optionsTick) {
+                        try? await Task.sleep(for: .seconds(4))
+                        guard !Task.isCancelled, !menuOpen, !voiceOverEnabled else { return }
+                        optionsVisible = false
+                    }
+            } else {
+                if let error {
                     errorView(error)
                 } else {
                     loadingView
                 }
-                if let seconds = autoplaySeconds,
-                   let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
-                    autoplayCard(seconds: seconds, next: next)
+                VStack {
+                    HStack {
+                        Button("Schließen", systemImage: "xmark") { dismiss() }
+                            .buttonStyle(.bordered)
+                        Spacer()
+                    }
+                    Spacer()
                 }
+                .padding()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let seconds = autoplaySeconds,
+               let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
+                autoplayCard(seconds: seconds, next: next)
+            }
         }
-        .background(Color.black.ignoresSafeArea())
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .task { await startPlayback(resumeAt: currentResumeAt) }
@@ -98,89 +125,64 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    private var playerChrome: some View {
-        VStack {
-            HStack(spacing: 12) {
-                Button {
-                    save(forceComplete: false)
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .padding(12)
-                        .background(.black.opacity(0.45), in: Circle())
-                }
-
-                Spacer()
-
-                VStack(spacing: 2) {
-                    Text(series.title)
-                        .font(.caption.weight(.semibold))
-                    Text("Folge \(currentEpisode.number)")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.65))
-                }
-                .foregroundStyle(.white.opacity(0.9))
-
-                Spacer()
-
-                playbackMenu
+    /// Native UIKit-Menüs hinter einem kleinen Glas-Knopf. Die tvOS-
+    /// Transportleisten-Erweiterung ist unter iOS nicht verfügbar.
+    @MainActor
+    private var nativePlaybackMenus: [UIMenuElement] {
+        var menus: [UIMenuElement] = []
+        if let info = watchInfo {
+            let hosters = Array(Set(info.hosters.map(\.name))).sorted {
+                HosterResolver.rank($0) < HosterResolver.rank($1)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            let hosterActions = hosters.map { hoster in
+                UIAction(title: hoster,
+                         state: source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchHoster(to: hoster)
+                    }
+                }
+            }
+            if !hosterActions.isEmpty {
+                menus.append(UIMenu(title: "Hoster", image: UIImage(systemName: "server.rack"), children: hosterActions))
+            }
+            let languages = Array(Set(info.hosters.map(\.lang))).sorted()
+            let languageActions = languages.map { lang in
+                UIAction(title: languageLabel(lang),
+                         state: source?.lang.caseInsensitiveCompare(lang) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchLanguage(to: lang)
+                    }
+                }
+            }
+            if !languageActions.isEmpty {
+                menus.append(UIMenu(title: "Quellsprache", image: UIImage(systemName: "globe"), children: languageActions))
+            }
         }
-        .fixedSize(horizontal: false, vertical: true)
+        menus.append(UIAction(title: "Wiedergabe schließen", image: UIImage(systemName: "xmark")) { _ in
+            Task { @MainActor in
+                save(forceComplete: false)
+                dismiss()
+            }
+        })
+        return menus
     }
 
-    private var playbackMenu: some View {
-        Menu {
-            if let info = watchInfo {
-                let hosters = Array(Set(info.hosters.map(\.name))).sorted { HosterResolver.rank($0) < HosterResolver.rank($1) }
-                if !hosters.isEmpty {
-                    Section("Hoster") {
-                        ForEach(hosters, id: \.self) { hoster in
-                            Button {
-                                Task { await switchHoster(to: hoster) }
-                            } label: {
-                                if source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame {
-                                    Label(hoster, systemImage: "checkmark")
-                                } else {
-                                    Text(hoster)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let languages = Array(Set(info.hosters.map(\.lang))).sorted()
-                if !languages.isEmpty {
-                    Section("Sprache") {
-                        ForEach(languages, id: \.self) { lang in
-                            Button {
-                                Task { await switchLanguage(to: lang) }
-                            } label: {
-                                if source?.lang.caseInsensitiveCompare(lang) == .orderedSame {
-                                    Label(languageLabel(lang), systemImage: "checkmark")
-                                } else {
-                                    Text(languageLabel(lang))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-        } label: {
-            HStack(spacing: 5) {
-                if isSwitching { ProgressView().controlSize(.small) }
-                Text(source.map { "Hoster: " + $0.hoster } ?? "Hoster & Sprache")
-                    .font(.caption2)
-                Image(systemName: "ellipsis.circle")
-            }
-            .foregroundStyle(.white.opacity(0.8))
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(.black.opacity(0.4), in: Capsule())
+    @ViewBuilder
+    private var glassOptions: some View {
+        if #available(iOS 26.0, *) {
+            optionsButton.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            optionsButton.background(.ultraThinMaterial, in: Circle())
         }
+    }
+
+    private var optionsButton: some View {
+        PlayerOptionsButton(menuItems: nativePlaybackMenus) { menuOpen = true }
+            .frame(width: 44, height: 44)
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
@@ -266,6 +268,11 @@ struct PlayerScreen: View {
             }
             let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
             let item = AVPlayerItem(asset: asset)
+            let titleMetadata = AVMutableMetadataItem()
+            titleMetadata.identifier = .commonIdentifierTitle
+            titleMetadata.value = (series.title + " – Folge " + String(currentEpisode.number)) as NSString
+            titleMetadata.extendedLanguageTag = "und"
+            item.externalMetadata = [titleMetadata]
             let av = AVPlayer(playerItem: item)
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
@@ -551,3 +558,24 @@ struct PlayerLayer: UIViewControllerRepresentable {
     }
 }
 
+
+/// UIKit übernimmt Menüpräsentation und Auswahlzustände; kein Eingriff in AVKit-Unteransichten.
+struct PlayerOptionsButton: UIViewRepresentable {
+    let menuItems: [UIMenuElement]
+    let onOpen: () -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        button.tintColor = .white
+        button.accessibilityLabel = "Hoster und Quellsprache"
+        button.showsMenuAsPrimaryAction = true
+        button.addAction(UIAction { _ in onOpen() }, for: .menuActionTriggered)
+        button.menu = UIMenu(children: menuItems)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.menu = UIMenu(children: menuItems)
+    }
+}

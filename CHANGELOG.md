@@ -4,8 +4,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.10**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.11**,
 Windows **1.8.0**.
+
+## [iOS 1.9.11] – 2026-09-06
+
+- Separate Playerleiste durch einen kleinen Liquid-Glass-Menüknopf im Video ersetzt (ab iOS 26, Material-Fallback auf älteren Systemen). Hoster/Quellsprache als UIKit-Menüs; nach vier Sekunden ausgeblendet, per Videotipp wieder sichtbar. Eigenständige Sichtbarkeitssteuerung; bei VoiceOver bleibt der Knopf erreichbar.
+- Titel/Folge als Player-Metadaten übergeben; Schließen als Menüaktion sowie weiterhin im Lade-/Fehlerzustand erreichbar.
 
 ## [iOS 1.9.10] – 2026-09-06
 
