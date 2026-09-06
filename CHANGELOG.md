@@ -33,7 +33,9 @@ Windows **1.8.0**.
   obwohl am Quelltext nichts falsch ist.
 - `docs/android.md`: warum der Kern Swift bleibt und die Oberfläche Compose
   wird, warum die Web-App sich nicht verpacken lässt, und was auf dem
-  Runner zu installieren ist.
+  Runner zu installieren ist. Dazu die Festlegung auf **Material 3 mit
+  dynamischen Farben** — immer das dunkle Schema, die Töne aber vom
+  Hintergrundbild, abschaltbar, und im Player bewusst nicht.
 
 ## [iOS 1.14.1] · [macOS 1.12.3] – 2026-09-06
 

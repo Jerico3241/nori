@@ -107,13 +107,64 @@ falsch ist. Sobald der Lauf einmal grün war, kann er auf
 `native/Nori-macOS/Nori/**` erweitert werden und prüft dann bei jeder
 Änderung am Kern mit.
 
+## Material You
+
+Die Compose-Oberfläche nutzt **Material 3 mit dynamischen Farben**. Auf
+Compose ist das kein Zusatzaufwand, sondern eine Zeile — `material3` bringt
+`dynamicDarkColorScheme(context)` mit, das die Palette aus dem
+Hintergrundbild des Nutzers ableitet.
+
+Drei Entscheidungen dazu, damit sie nicht später jemanden überraschen.
+
+### Immer dunkel, aber die Töne vom System
+
+Material You richtet sich normalerweise auch nach der Hell/Dunkel-Einstellung
+des Systems. Nori tut das **nicht**: der Inhalt sind Cover, und ein heller
+Grund kämpft dagegen an. Genommen wird deshalb immer das dunkle Schema — die
+Farbtöne darin kommen aber vom Hintergrundbild.
+
+```kotlin
+val scheme = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && useSystemColors ->
+        dynamicDarkColorScheme(LocalContext.current)
+    else -> noriDarkScheme   // aus NoriTheme abgeleitet
+}
+MaterialTheme(colorScheme = scheme, content = content)
+```
+
+Dynamische Farben gibt es erst ab **Android 12 (API 31)**. Darunter trägt
+`noriDarkScheme` — von Hand aus den Werten in `Theme.swift` abgeleitet, damit
+die App auf älteren Geräten aussieht wie ihre Geschwister und nicht wie eine
+Vorlage.
+
+### Abschaltbar
+
+`useSystemColors` gehört in die Einstellungen. Wer Noris eigene Farben will,
+bekommt sie — die feste Palette ist die Identität der App auf iOS und macOS,
+und es wäre seltsam, sie auf Android gar nicht erst anzubieten.
+
+### Nicht im Player
+
+Dort bleiben die Bedienelemente weiß auf Verlauf, so wie auf iOS. Aus dem
+Hintergrundbild abgeleitete Farben über bewegtem Bild sind schlecht lesbar,
+und der Verlauf trägt die Schrift ohnehin schon.
+
+### Das gekachelte App-Symbol
+
+Der Teil von Material You, den Nutzer tatsächlich bemerken, ist das
+eingefärbte Symbol im Launcher (Android 13+). Dafür braucht das adaptive
+Symbol eine `<monochrome>`-Ebene in
+`res/mipmap-anydpi-v26/ic_launcher.xml`. `tools/make-app-icons.py` erzeugt
+die Apple-Symbole schon; die einfarbige Ebene kommt dort dazu.
+
 ## Wie es weitergeht
 
 1. **Durchbau** — dieser Schritt. Übersetzt der Kern für Android?
 2. **Brücke** — Swift-Kern als `.so`, angebunden über JNI beziehungsweise
    `swift-java`. Erst hier zeigt sich der wirkliche Aufwand.
-3. **Oberfläche** — Compose: Startseite, Katalog, Kalender, Merkliste,
-   Detailseite. Media3 für den Player.
+3. **Oberfläche** — Compose mit Material 3 und dynamischen Farben (siehe
+   oben): Startseite, Katalog, Kalender, Merkliste, Detailseite. Media3 für
+   den Player.
 
 Punkt 1 ist billig und entscheidet alles Weitere. Scheitert er — etwa weil
 SwiftSoup oder Observation für Android nicht durchbauen —, ist eine
