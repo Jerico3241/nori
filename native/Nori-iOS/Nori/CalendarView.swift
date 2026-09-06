@@ -18,7 +18,7 @@ struct CalendarView: View {
                         ForEach(grouped(payload.upcoming), id: \.label) { group in
                             Section(group.label) {
                                 ForEach(group.rows) { row in
-                                    NoriSeriesLink(slug: row.slug, titleHint: row.title) {
+                                    NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider) {
                                         CalendarRow(entry: row)
                                     }
                                     .listRowBackground(NoriTheme.surface)
@@ -28,7 +28,7 @@ struct CalendarView: View {
                         if !payload.recent.isEmpty {
                             Section("Zuletzt") {
                                 ForEach(payload.recent) { row in
-                                    NoriSeriesLink(slug: row.slug, titleHint: row.title) {
+                                    NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider) {
                                         CalendarRow(entry: row)
                                     }
                                     .listRowBackground(NoriTheme.surface)
@@ -74,20 +74,37 @@ struct CalendarView: View {
 }
 
 struct CalendarRow: View {
+    @Environment(LibraryStore.self) private var library
     let entry: AiringEntry
+
+    private var source: CatalogProvider { entry.provider ?? library.provider }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.title).font(.body.weight(.medium)).lineLimit(2)
-            HStack(spacing: 8) {
-                if !entry.season.isEmpty {
-                    Text("S\(entry.season) · F\(entry.episode)")
+        HStack(spacing: 12) {
+            // Der Kalender liefert bei manchen Einträgen einen Coverpfad mit;
+            // wo nicht, holt die Kachel ihn selbst nach.
+            PosterTile(
+                title: entry.title,
+                slug: entry.slug,
+                compact: true,
+                coverURL: AniworldClient.coverURL(entry.coverPath, provider: source),
+                kind: source
+            )
+            .frame(width: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.title).font(.body.weight(.medium)).lineLimit(2)
+                HStack(spacing: 8) {
+                    if !entry.season.isEmpty {
+                        Text("S\(entry.season) · F\(entry.episode)")
+                    }
+                    if !entry.languages.isEmpty {
+                        Text(entry.languages.joined(separator: " · "))
+                    }
                 }
-                if !entry.languages.isEmpty {
-                    Text(entry.languages.joined(separator: " · "))
-                }
+                .font(.caption)
+                .foregroundStyle(NoriTheme.muted)
             }
-            .font(.caption)
-            .foregroundStyle(NoriTheme.muted)
         }
         .padding(.vertical, 4)
     }

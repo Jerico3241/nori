@@ -1,73 +1,26 @@
 import SwiftUI
 
+/// Umschalter zwischen Anime und Serien.
+///
+/// War ein handgebauter Schieber: ein Stapel aus Kapsel, Daumen und zwei
+/// Textfeldern, deren Breiten von Hand aufeinander abgestimmt waren. Auf der
+/// Startseite stand der Daumen dann nicht mehr unter seiner Beschriftung.
+/// Solche Geometrie zahlt sich nicht aus — das Systembauteil kann dasselbe,
+/// bringt Dynamic Type, VoiceOver und die richtige Darstellung in jeder
+/// Navigationsleiste von sich aus mit.
 struct KindSwitch: View {
     @Binding var provider: CatalogProvider
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private let width: CGFloat = 132
-    private let height: CGFloat = 30
-    private let pad: CGFloat = 3
-    private var thumb: CGFloat { (width / 2) - pad }
-    private var travelMax: CGFloat { width - thumb - pad * 2 }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(NoriTheme.elevated)
-            Capsule()
-                .fill(NoriTheme.fg.opacity(0.14))
-                .frame(width: thumb, height: height - pad * 2)
-                .offset(x: pad + travel)
-            HStack(spacing: 0) {
-                ForEach(CatalogProvider.allCases) { item in
-                    Text(item.kind)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(provider == item ? NoriTheme.fg : NoriTheme.muted)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard provider != item else { return }
-                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
-                                provider = item
-                            }
-                        }
-                }
+        Picker("Quelle", selection: $provider) {
+            ForEach(CatalogProvider.allCases) { item in
+                Text(item.kind).tag(item)
             }
-            .padding(.horizontal, pad)
         }
-        .frame(width: width, height: height)
-        .overlay {
-            Capsule().strokeBorder(NoriTheme.border)
-        }
-        // Ziehen fühlt sich auf dem Schalter natürlich an, ist aber nur eine
-        // Zugabe: getippt wird häufiger, und das läuft über die Textfelder.
-        .gesture(
-            DragGesture(minimumDistance: 8)
-                .onEnded { value in
-                    let toRight = value.translation.width > 0
-                    let target: CatalogProvider = toRight ? .serienstream : .aniworld
-                    guard provider != target else { return }
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) {
-                        provider = target
-                    }
-                }
-        )
-        .accessibilityElement(children: .ignore)
+        .pickerStyle(.segmented)
+        .frame(width: 148)
         .accessibilityLabel("Quelle")
-        .accessibilityValue(provider.kind)
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: provider = .serienstream
-            case .decrement: provider = .aniworld
-            default: break
-            }
-        }
     }
-
-    private var travelBase: CGFloat {
-        provider == .aniworld ? 0 : travelMax
-    }
-
-    private var travel: CGFloat { travelBase }
 }
 
 struct GenreRow: Identifiable, Hashable {
@@ -376,6 +329,15 @@ struct HeroSlide: View {
                 slug: item.slug,
                 title: item.title,
                 kind: item.kind
+            )
+            // Ohne TMDB-Treffer hat `details` weder Breitbild noch Poster, und
+            // der Kopfbereich bliebe schwarz — genau das war zu sehen. Das
+            // Cover der Quelle steht nur auf der Detailseite; die Kacheln
+            // holen es sich längst so, der Kopfbereich tat es nicht.
+            guard details.backdrop == nil, details.poster == nil else { return }
+            details.poster = await CoverIndex.shared.fetchSourceCover(
+                slug: item.slug,
+                provider: item.kind
             )
         }
     }
