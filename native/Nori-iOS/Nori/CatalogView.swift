@@ -21,13 +21,16 @@ struct CatalogView: View {
 
     var body: some View {
         NoriScreen {
-            Group {
+            VStack(spacing: 0) {
                 if loading && catalog.isEmpty {
                     ProgressView("Katalog wird geladen").frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if layout == .grid {
-                    grid
                 } else {
-                    list
+                    LayoutBar(layout: $layout)
+                    if layout == .grid {
+                        grid
+                    } else {
+                        list
+                    }
                 }
             }
         }
@@ -37,9 +40,6 @@ struct CatalogView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 KindSwitch(provider: Bindable(library).provider)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                LayoutSwitch(layout: $layout)
             }
         }
     }

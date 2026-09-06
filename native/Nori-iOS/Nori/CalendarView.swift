@@ -17,10 +17,13 @@ struct CalendarView: View {
                 } else if let error, payload == nil {
                     ContentUnavailableView("Kalender nicht geladen", systemImage: "calendar.badge.exclamationmark", description: Text(error))
                 } else if let payload {
-                    if layout == .grid {
-                        grid(payload)
-                    } else {
-                        list(payload)
+                    VStack(spacing: 0) {
+                        LayoutBar(layout: $layout)
+                        if layout == .grid {
+                            grid(payload)
+                        } else {
+                            list(payload)
+                        }
                     }
                 }
             }
@@ -29,9 +32,6 @@ struct CalendarView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 KindSwitch(provider: Bindable(library).provider)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                LayoutSwitch(layout: $layout)
             }
         }
         .task(id: library.provider) { await load() }

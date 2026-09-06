@@ -4,8 +4,44 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.2**, iOS/iPadOS **1.14.0**,
+unterschiedlich schnell bewegen: macOS **1.12.3**, iOS/iPadOS **1.14.1**,
 Windows **1.8.0**.
+
+## [iOS 1.14.1] · [macOS 1.12.3] – 2026-09-06
+
+### Behoben
+
+- **Folgen blieben ohne Bild und Beschreibung.** Die Kennungssuche hing an
+  zwei Sperren: am Cover-Treffer und am `missed`-Satz der Cover-Suche. In
+  diesem Satz landet aber gerade, was TMDB **unter dem Titel der Quelle**
+  nicht kennt — der Fall, in dem ein Alternativtitel hilft. Die Kennung
+  wird jetzt auch über die Alternativtitel der Detailseite und über den
+  Teil vor einem Doppelpunkt gesucht; Fehlschläge merkt ein eigener Satz,
+  und der nur bis zum nächsten Start.
+- **Überlappung beim Wischen durch den Kopfbereich.** `scaledToFill` meldet
+  eine größere Größe, als ihm angeboten wurde; der Stapel wuchs über die
+  Seitenbreite hinaus, und der Zuschnitt griff auf diese größere Fläche.
+  Das Bild lief damit seitlich in die Nachbarseite. Jetzt bestimmt eine
+  durchsichtige Fläche die Größe, und das Bild wird darauf beschnitten.
+- **Der Schatten im Player reichte nicht bis zum unteren Rand.** Der
+  Verlauf endete an der sicheren Fläche und ließ unter der Bedienleiste
+  einen hellen Streifen stehen, genau dort, wo der Home-Indikator liegt.
+- **„Episode 7" stand doppelt untereinander.** Beide Quellen setzen das
+  ein, wo sie keinen echten Titel haben. Solche Platzhalter werden erkannt:
+  dann trägt der TMDB-Titel die Zeile, und die zweite Zeile entfällt.
+
+### Geändert
+
+- **Der Kopfbereich zeigt das Poster statt des Breitbilds.** Ein
+  16:9-Backdrop in einer hochkant stehenden Fläche zeigt einen schmalen
+  Streifen aus der Bildmitte — meist Hintergrund, oft unkenntlich. Das
+  Poster hat mit 2:3 fast genau das Seitenverhältnis dieser Fläche. Sie ist
+  dafür von 520 auf 560 Punkte gewachsen, und das Bild ist oben
+  ausgerichtet: beschnitten wird unten, wo ohnehin Verlauf und Schrift
+  liegen.
+- **Der Umschalter für die Kachelansicht sitzt eine Zeile tiefer**, über
+  dem Inhalt statt in der Navigationsleiste. Dort drängte er sich mit dem
+  Anime/Serien-Schalter auf einer Höhe.
 
 ## [iOS 1.14.0] · [macOS 1.12.2] – 2026-09-06
 

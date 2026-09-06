@@ -168,13 +168,24 @@ struct PlayerControls: View {
         .background {
             // Zwei Verläufe statt einer Fläche: das Bild bleibt in der Mitte
             // frei, die Schrift steht oben und unten trotzdem auf Grund.
+            //
+            // `ignoresSafeArea` ist hier kein Schönheitsfehler, sondern der
+            // Punkt: ohne das endete der untere Verlauf an der sicheren
+            // Fläche und ließ unter der Leiste einen hellen Streifen stehen —
+            // genau dort, wo der Home-Indikator liegt. Der Verlauf gehört bis
+            // an die Gerätekante, die Bedienung selbst nicht.
             VStack(spacing: 0) {
-                LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 140)
+                LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
                 Spacer(minLength: 0)
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 190)
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.55), .black.opacity(0.85)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 210)
             }
+            .ignoresSafeArea()
             .allowsHitTesting(false)
         }
     }

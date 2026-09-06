@@ -395,6 +395,9 @@ actor CoverIndex {
     /// und ist der Einstieg zu allem, was unterhalb der Serie liegt — die
     /// Folgenbilder und -beschreibungen holt `EpisodeIndex` darüber.
     private var tvIDs: [String: Int] = [:]
+    /// Slugs, zu denen auch die Alternativtitel keine Kennung ergaben. Nur im
+    /// Arbeitsspeicher — TMDB wächst, ein Neustart darf es erneut versuchen.
+    private var tvIDMissed: Set<String> = []
     /// Bei jedem Zugriff frisch aus dem Schlüsselbund gelesen, damit ein in
     /// den Einstellungen eingetragener Schlüssel sofort greift und die App
     /// dafür nicht neu gestartet werden muss.
@@ -565,15 +568,41 @@ actor CoverIndex {
 
     /// Die TMDB-Kennung zu einem Slug, notfalls nachgeschlagen.
     ///
-    /// Die Abfrage darf sich nicht am Cover orientieren: ein Titel aus einem
-    /// älteren Stand hat längst ein Cover, aber noch keine Kennung — sie kam
-    /// erst später dazu. Ein Treffer im `missed`-Satz heißt dagegen, dass TMDB
-    /// diese Serie nicht kennt; dann gibt es auch keine Folgendaten.
-    func tvIDLoading(slug: String, title: String, kind: CatalogProvider) async -> Int? {
+    /// Die Abfrage darf sich weder am Cover noch am `missed`-Satz orientieren.
+    /// Am Cover nicht, weil ein Titel aus einem älteren Stand längst eines hat,
+    /// aber noch keine Kennung — die kam später dazu. Am `missed`-Satz nicht,
+    /// weil dort landet, was die Cover-Suche **unter dem Titel der Quelle**
+    /// nicht gefunden hat: genau der Fall, in dem ein Alternativtitel hilft.
+    /// Beides zusammen war der Grund, warum Folgen ohne Bild und Text blieben.
+    ///
+    /// Fehlschläge merkt deshalb ein eigener Satz, und der nur im Arbeits-
+    /// speicher: TMDB wächst, ein Neustart darf es erneut versuchen.
+    func tvIDLoading(
+        slug: String,
+        title: String,
+        alternates: [String] = [],
+        kind: CatalogProvider
+    ) async -> Int? {
         if let known = tvIDs[slug] { return known }
-        if missed.contains(slug) { return nil }
-        _ = await deduplicatedSearch(slug: slug, title: title, kind: kind)
-        return tvIDs[slug]
+        if tvIDMissed.contains(slug) { return nil }
+
+        // Erst der reguläre Weg: er füllt nebenbei Cover, Beschreibung und
+        // Bewertung. Nur wenn der nichts hergibt, die Alternativtitel.
+        if !missed.contains(slug) {
+            _ = await deduplicatedSearch(slug: slug, title: title, kind: kind)
+            if let found = tvIDs[slug] { return found }
+        }
+
+        for query in Self.queries(for: title, alternates: alternates).dropFirst() {
+            if let found = await searchID(query: query, kind: kind) {
+                tvIDs[slug] = found
+                scheduleSave()
+                return found
+            }
+        }
+
+        tvIDMissed.insert(slug)
+        return nil
     }
 
     private struct Bag: Codable {
@@ -675,6 +704,116 @@ actor CoverIndex {
         }
     }
 
+    /// Den passendsten Treffer aus einer TMDB-Antwort wählen.
+    ///
+    /// Lag bisher mitten in `search` und war damit nur für die Cover-Suche zu
+    /// haben. Die Kennungssuche braucht dieselbe Bewertung, darf aber kein
+    /// Poster verlangen: eine Serie ohne Poster hat trotzdem Folgen mit Bild
+    /// und Text.
+    ///
+    /// Gibt `nil` zurück, wenn kein Treffer wirklich am Titel hängt — lieber
+    /// nichts als das Falsche.
+    private static func bestRow(
+        in results: [[String: Any]],
+        query: String,
+        kind: CatalogProvider,
+        requirePoster: Bool
+    ) -> [String: Any]? {
+        var best: (score: Double, bonus: Double, row: [String: Any])?
+        let nq = query.lowercased()
+        for row in results {
+            if requirePoster {
+                guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
+            }
+            let name = (row["name"] as? String ?? "").lowercased()
+            let orig = (row["original_name"] as? String ?? "").lowercased()
+            // Beliebtheit ist nur Stichentscheid, kein Treffer. Vorher ging
+            // sie voll in die Wertung ein, weshalb eine bekannte, völlig
+            // andere Serie die Schwelle allein durch Popularität riss —
+            // genau so entstanden die falschen Cover.
+            var bonus: Double = 0
+            if name == nq || orig == nq { bonus = 400 }
+            else if name.hasPrefix(nq) || orig.hasPrefix(nq) { bonus = 180 }
+            else if name.contains(nq) || orig.contains(nq) { bonus = 80 }
+            else if nq.contains(name) && name.count >= 4 { bonus = 60 }
+            var score = bonus + min(row["popularity"] as? Double ?? 0, 40)
+            let genres = row["genre_ids"] as? [Int] ?? []
+            let countries = row["origin_country"] as? [String] ?? []
+            if kind == .aniworld {
+                if genres.contains(16) { score += 120 }
+                if countries.contains("JP") { score += 60 }
+            } else {
+                if genres.contains(16) && countries.contains("JP") { score -= 90 }
+                else if countries.contains("JP") { score -= 20 }
+                if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
+            }
+            if best == nil || score > best!.score {
+                best = (score, bonus, row)
+            }
+        }
+        guard let best, best.bonus >= 80 else { return nil }
+        return best.row
+    }
+
+    /// Suchbegriffe zu einem Titel, in absteigender Güte.
+    ///
+    /// AniWorld und Serienstream führen Serien häufig unter einem eingedeutschten
+    /// oder verkürzten Namen, den TMDB nicht kennt. Die Seite nennt daneben aber
+    /// Alternativtitel — original, englisch, japanisch —, und einer davon trifft
+    /// meist. Dazu kommt der Teil vor einem Doppelpunkt: „Titel: Untertitel"
+    /// steht bei TMDB oft nur als „Titel".
+    private static func queries(for title: String, alternates: [String]) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+
+        func add(_ raw: String) {
+            let cleaned = raw
+                .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard cleaned.count >= 2 else { return }
+            let key = cleaned.lowercased()
+            guard !seen.contains(key) else { return }
+            seen.insert(key)
+            out.append(cleaned)
+        }
+
+        add(title)
+        for alt in alternates { add(alt) }
+        for candidate in [title] + alternates {
+            if let colon = candidate.firstIndex(of: ":") {
+                add(String(candidate[candidate.startIndex ..< colon]))
+            }
+        }
+        return out
+    }
+
+    /// Eine einzelne TMDB-Suche, die nur die Kennung zurückgibt.
+    private func searchID(query: String, kind: CatalogProvider) async -> Int? {
+        guard let key = key else { return nil }
+        await acquireSlot()
+        defer { releaseSlot() }
+        guard var comps = URLComponents(string: "https://api.themoviedb.org/3/search/tv") else { return nil }
+        comps.queryItems = [
+            URLQueryItem(name: "api_key", value: key),
+            URLQueryItem(name: "language", value: "de-DE"),
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "include_adult", value: "false"),
+        ]
+        guard let url = comps.url else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let results = json["results"] as? [[String: Any]]
+            else { return nil }
+            // Ohne Posterzwang: für die Folgendaten zählt die Serie, nicht ihr
+            // Titelbild.
+            return Self.bestRow(in: results, query: query, kind: kind, requirePoster: false)?["id"] as? Int
+        } catch {
+            return nil
+        }
+    }
+
     private func search(slug: String, title: String, kind: CatalogProvider) async -> URL? {
         // Ohne Schlüssel gar nicht erst anfragen: TMDB antwortet sonst mit 401,
         // und das Quellcover ist die richtige Antwort.
@@ -699,53 +838,24 @@ actor CoverIndex {
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let results = json["results"] as? [[String: Any]]
             else { return nil }
-            var best: (score: Double, path: String, titleBonus: Double, row: [String: Any])?
-            let nq = q.lowercased()
-            for row in results {
-                guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
-                let name = (row["name"] as? String ?? "").lowercased()
-                let orig = (row["original_name"] as? String ?? "").lowercased()
-                // Beliebtheit ist nur Stichentscheid, kein Treffer. Vorher ging
-                // sie voll in die Wertung ein, weshalb eine bekannte, völlig
-                // andere Serie die 45-Punkte-Schwelle allein durch Popularität
-                // riss — genau so entstanden die falschen Cover.
-                var titleBonus: Double = 0
-                if name == nq || orig == nq { titleBonus = 400 }
-                else if name.hasPrefix(nq) || orig.hasPrefix(nq) { titleBonus = 180 }
-                else if name.contains(nq) || orig.contains(nq) { titleBonus = 80 }
-                else if nq.contains(name) && name.count >= 4 { titleBonus = 60 }
-                var score = titleBonus + min(row["popularity"] as? Double ?? 0, 40)
-                let genres = row["genre_ids"] as? [Int] ?? []
-                let countries = row["origin_country"] as? [String] ?? []
-                if kind == .aniworld {
-                    if genres.contains(16) { score += 120 }
-                    if countries.contains("JP") { score += 60 }
-                } else {
-                    if genres.contains(16) && countries.contains("JP") { score -= 90 }
-                    else if countries.contains("JP") { score -= 20 }
-                    if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
-                }
-                if best == nil || score > best!.score {
-                    best = (score, path, titleBonus, row)
-                }
-            }
             // Ohne echte Titelübereinstimmung lieber kein Cover als ein
             // falsches — dann greift das Cover der Quelle.
-            if let best, best.titleBonus >= 80,
-               let poster = URL(string: "https://image.tmdb.org/t/p/w780\(best.path)") {
+            if let best = Self.bestRow(in: results, query: q, kind: kind, requirePoster: true),
+               let path = best["poster_path"] as? String,
+               let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)") {
                 cache[slug] = poster
-                if let backdropPath = best.row["backdrop_path"] as? String, !backdropPath.isEmpty,
+                if let backdropPath = best["backdrop_path"] as? String, !backdropPath.isEmpty,
                    let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
                     backdrops[slug] = wide
                 }
                 // Auch ohne Text eintragen: der leere Eintrag merkt sich, dass
                 // nachgeschlagen wurde, und verhindert dieselbe Suche bei jedem
                 // Aufbau der Ansicht.
-                overviews[slug] = (best.row["overview"] as? String) ?? ""
-                if let vote = best.row["vote_average"] as? Double, vote > 0 {
+                overviews[slug] = (best["overview"] as? String) ?? ""
+                if let vote = best["vote_average"] as? Double, vote > 0 {
                     ratings[slug] = vote
                 }
-                if let id = best.row["id"] as? Int {
+                if let id = best["id"] as? Int {
                     tvIDs[slug] = id
                 }
                 scheduleSave()
@@ -885,14 +995,20 @@ actor EpisodeIndex {
     /// Gibt bei jedem Fehlschlag ein leeres Ergebnis zurück — ohne Schlüssel,
     /// ohne TMDB-Treffer, bei einer Staffel ohne Nummer („Filme") oder bei
     /// einem Netzfehler. Die Folgenliste steht dann so da wie bisher.
-    func load(slug: String, title: String, season: String, kind: CatalogProvider) async -> [Int: EpisodeInfo] {
+    func load(
+        slug: String,
+        title: String,
+        alternates: [String] = [],
+        season: String,
+        kind: CatalogProvider
+    ) async -> [Int: EpisodeInfo] {
         let key = Self.key(slug, season)
         if let known = seasons[key] { return unpack(known) }
         if missed.contains(key) { return [:] }
         if let running = inFlight[key] { return await running.value }
 
         let task = Task<[Int: EpisodeInfo], Never> {
-            await self.fetch(slug: slug, title: title, season: season, kind: kind)
+            await self.fetch(slug: slug, title: title, alternates: alternates, season: season, kind: kind)
         }
         inFlight[key] = task
         let result = await task.value
@@ -910,7 +1026,13 @@ actor EpisodeIndex {
         return out
     }
 
-    private func fetch(slug: String, title: String, season: String, kind: CatalogProvider) async -> [Int: EpisodeInfo] {
+    private func fetch(
+        slug: String,
+        title: String,
+        alternates: [String],
+        season: String,
+        kind: CatalogProvider
+    ) async -> [Int: EpisodeInfo] {
         let key = Self.key(slug, season)
         // „Filme" und andere Sonderabschnitte tragen keine Staffelnummer.
         // TMDB kennt zwar Staffel 0 für Specials, aber die Zuordnung wäre
@@ -920,11 +1042,16 @@ actor EpisodeIndex {
             return [:]
         }
         guard let apiKey = TMDBKeyStore.current else { return [:] }
-        guard let id = await CoverIndex.shared.tvIDLoading(slug: slug, title: title, kind: kind) else {
-            missed.insert(key)
-            scheduleSave()
-            return [:]
-        }
+        // Ohne Kennung **nicht** dauerhaft merken: der `missed`-Satz wandert
+        // auf die Platte, und ein Titel, den TMDB heute nicht führt, wäre
+        // damit für immer abgeschrieben. Die Sperre gegen wiederholte
+        // Anfragen hält im Cover-Index, nur für diese Sitzung.
+        guard let id = await CoverIndex.shared.tvIDLoading(
+            slug: slug,
+            title: title,
+            alternates: alternates,
+            kind: kind
+        ) else { return [:] }
 
         var found = await request(id: id, season: number, apiKey: apiKey, language: "de-DE")
         // TMDB pflegt die deutschen Texte lückenhaft, bei Anime fast gar

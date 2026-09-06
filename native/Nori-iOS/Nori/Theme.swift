@@ -54,11 +54,11 @@ enum NoriLayout: String, CaseIterable, Identifiable {
     static let columns = [GridItem(.adaptive(minimum: 104, maximum: 168), spacing: 14, alignment: .top)]
 }
 
-/// Der Umschalter dazu, für die Navigationsleiste.
+/// Der Umschalter dazu.
 ///
-/// Ein Menü statt eines zweiten Segmentschalters: neben dem Anime/Serien-
-/// Schalter ist in der Leiste kein Platz für weitere 148 Punkte, und das Menü
-/// benennt die beiden Ansichten, statt sie nur zu bebildern.
+/// Ein Menü statt eines zweiten Segmentschalters: für weitere 148 Punkte ist
+/// kein Platz, und das Menü benennt die beiden Ansichten, statt sie nur zu
+/// bebildern.
 struct LayoutSwitch: View {
     @Binding var layout: NoriLayout
 
@@ -71,9 +71,38 @@ struct LayoutSwitch: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Image(systemName: layout.symbol)
+            HStack(spacing: 5) {
+                Image(systemName: layout.symbol)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(NoriTheme.fg)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(NoriTheme.elevated, in: Capsule())
+            .overlay { Capsule().strokeBorder(NoriTheme.border) }
         }
         .accessibilityLabel("Ansicht")
+    }
+}
+
+/// Der Umschalter, rechtsbündig über dem Inhalt.
+///
+/// Er saß in der Navigationsleiste unmittelbar neben dem Anime/Serien-Schalter
+/// und drängte sich mit ihm auf einer Höhe. Eine Zeile tiefer, über dem Inhalt,
+/// hat er Platz und steht dort, wo er wirkt.
+struct LayoutBar: View {
+    @Binding var layout: NoriLayout
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+            LayoutSwitch(layout: $layout)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
     }
 }
 

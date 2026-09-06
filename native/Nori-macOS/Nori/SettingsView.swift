@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.12.2"
+    static let version = "1.12.3"
 
     static let highlights = [
         "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
