@@ -391,6 +391,10 @@ actor CoverIndex {
     /// Detailseite jeder Serie geladen werden müsste.
     private var overviews: [String: String] = [:]
     private var ratings: [String: Double] = [:]
+    /// Die TMDB-Kennung des Treffers. Sie fällt bei der Cover-Suche ohnehin an
+    /// und ist der Einstieg zu allem, was unterhalb der Serie liegt — die
+    /// Folgenbilder und -beschreibungen holt `EpisodeIndex` darüber.
+    private var tvIDs: [String: Int] = [:]
     /// Bei jedem Zugriff frisch aus dem Schlüsselbund gelesen, damit ein in
     /// den Einstellungen eingetragener Schlüssel sofort greift und die App
     /// dafür nicht neu gestartet werden muss.
@@ -449,6 +453,11 @@ actor CoverIndex {
                 overviews = bag.overviews ?? [:]
                 ratings = bag.ratings ?? [:]
             }
+            // Ohne Versionsprüfung: die Kennungen sind neu, ältere Dateien
+            // haben sie schlicht nicht. Eine Erhöhung von `storeVersion` würde
+            // dafür sämtliche Cover verwerfen — ein hoher Preis für ein Feld,
+            // das sich beim nächsten Öffnen einer Detailseite von selbst füllt.
+            tvIDs = bag.tvIDs ?? [:]
         }
     }
 
@@ -554,6 +563,19 @@ actor CoverIndex {
         return details(for: slug)
     }
 
+    /// Die TMDB-Kennung zu einem Slug, notfalls nachgeschlagen.
+    ///
+    /// Die Abfrage darf sich nicht am Cover orientieren: ein Titel aus einem
+    /// älteren Stand hat längst ein Cover, aber noch keine Kennung — sie kam
+    /// erst später dazu. Ein Treffer im `missed`-Satz heißt dagegen, dass TMDB
+    /// diese Serie nicht kennt; dann gibt es auch keine Folgendaten.
+    func tvIDLoading(slug: String, title: String, kind: CatalogProvider) async -> Int? {
+        if let known = tvIDs[slug] { return known }
+        if missed.contains(slug) { return nil }
+        _ = await deduplicatedSearch(slug: slug, title: title, kind: kind)
+        return tvIDs[slug]
+    }
+
     private struct Bag: Codable {
         var covers: [String: String]
         var missed: [String]
@@ -563,6 +585,7 @@ actor CoverIndex {
         var backdrops: [String: String]?
         var overviews: [String: String]?
         var ratings: [String: Double]?
+        var tvIDs: [String: Int]?
         var version: Int?
     }
 
@@ -595,6 +618,7 @@ actor CoverIndex {
             backdrops: backdrops.mapValues(\.absoluteString),
             overviews: overviews,
             ratings: ratings,
+            tvIDs: tvIDs,
             version: Self.storeVersion
         )
         guard let data = try? JSONEncoder().encode(bag) else { return }
@@ -721,6 +745,9 @@ actor CoverIndex {
                 if let vote = best.row["vote_average"] as? Double, vote > 0 {
                     ratings[slug] = vote
                 }
+                if let id = best.row["id"] as? Int {
+                    tvIDs[slug] = id
+                }
                 scheduleSave()
                 return poster
             }
@@ -790,4 +817,207 @@ struct CoverCandidate: Identifiable, Hashable {
     let label: String
     let source: String
     var id: URL { url }
+}
+
+/// Was TMDB zu einer einzelnen Folge weiß.
+///
+/// AniWorld und Serienstream liefern zu einer Folge nur zwei Titel und einen
+/// Pfad — kein Bild, keine Beschreibung. Beides steht bei TMDB, hinter der
+/// Kennung, die die Cover-Suche ohnehin schon ermittelt hat.
+struct EpisodeInfo: Codable, Hashable {
+    var title: String?
+    var overview: String?
+    var still: String?
+    var airDate: String?
+
+    var stillURL: URL? { still.flatMap(URL.init(string:)) }
+}
+
+/// Folgenbilder und -beschreibungen, eine Staffel auf einmal.
+///
+/// Staffelweise, weil TMDB genau das anbietet: ein Aufruf liefert alle Folgen
+/// mit Bild, Titel, Text und Erstausstrahlung. Eine Anfrage je Folge wären bei
+/// einer 24er-Staffel 24 Anfragen für dieselbe Antwort.
+///
+/// Der Aufbau entspricht `CoverIndex`: Cache auf der Platte, ein `missed`-Satz
+/// gegen wiederholte Fehlschläge, Bündelung gleichzeitiger Anfragen. Getrennt
+/// gehalten, weil `covers.json` bei jedem Scrollen durch den Katalog
+/// geschrieben wird und die Folgendaten dort nur mitwachsen würden.
+actor EpisodeIndex {
+    static let shared = EpisodeIndex()
+
+    /// Geschlüsselt nach `slug|staffel`, darin die Folgennummer als Text —
+    /// JSON kennt keine Zahlen als Schlüssel.
+    private var seasons: [String: [String: EpisodeInfo]] = [:]
+    private var missed: Set<String> = []
+    private var inFlight: [String: Task<[Int: EpisodeInfo], Never>] = [:]
+
+    private let storeURL: URL
+    private var saveTask: Task<Void, Never>?
+    private static let maxSeasons = 600
+    private static let storeVersion = 1
+
+    init() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        storeURL = folder.appendingPathComponent("episodes.json")
+
+        if let data = try? Data(contentsOf: storeURL),
+           let bag = try? JSONDecoder().decode(Bag.self, from: data),
+           (bag.version ?? 1) >= Self.storeVersion {
+            seasons = bag.seasons
+            missed = Set(bag.missed)
+        }
+    }
+
+    private static func key(_ slug: String, _ season: String) -> String { "\(slug)|\(season)" }
+
+    /// Was schon dasteht, ohne Netz. Für den ersten Aufbau der Ansicht: die
+    /// Folgenliste erscheint sofort, die Bilder tragen sich nach.
+    func cached(slug: String, season: String) -> [Int: EpisodeInfo] {
+        unpack(seasons[Self.key(slug, season)])
+    }
+
+    /// Staffel holen, notfalls über TMDB.
+    ///
+    /// Gibt bei jedem Fehlschlag ein leeres Ergebnis zurück — ohne Schlüssel,
+    /// ohne TMDB-Treffer, bei einer Staffel ohne Nummer („Filme") oder bei
+    /// einem Netzfehler. Die Folgenliste steht dann so da wie bisher.
+    func load(slug: String, title: String, season: String, kind: CatalogProvider) async -> [Int: EpisodeInfo] {
+        let key = Self.key(slug, season)
+        if let known = seasons[key] { return unpack(known) }
+        if missed.contains(key) { return [:] }
+        if let running = inFlight[key] { return await running.value }
+
+        let task = Task<[Int: EpisodeInfo], Never> {
+            await self.fetch(slug: slug, title: title, season: season, kind: kind)
+        }
+        inFlight[key] = task
+        let result = await task.value
+        inFlight.removeValue(forKey: key)
+        return result
+    }
+
+    private func unpack(_ raw: [String: EpisodeInfo]?) -> [Int: EpisodeInfo] {
+        guard let raw else { return [:] }
+        var out: [Int: EpisodeInfo] = [:]
+        for (number, info) in raw {
+            guard let n = Int(number) else { continue }
+            out[n] = info
+        }
+        return out
+    }
+
+    private func fetch(slug: String, title: String, season: String, kind: CatalogProvider) async -> [Int: EpisodeInfo] {
+        let key = Self.key(slug, season)
+        // „Filme" und andere Sonderabschnitte tragen keine Staffelnummer.
+        // TMDB kennt zwar Staffel 0 für Specials, aber die Zuordnung wäre
+        // geraten — dann lieber nichts anzeigen als das Falsche.
+        guard let number = Int(season), number > 0 else {
+            missed.insert(key)
+            return [:]
+        }
+        guard let apiKey = TMDBKeyStore.current else { return [:] }
+        guard let id = await CoverIndex.shared.tvIDLoading(slug: slug, title: title, kind: kind) else {
+            missed.insert(key)
+            scheduleSave()
+            return [:]
+        }
+
+        var found = await request(id: id, season: number, apiKey: apiKey, language: "de-DE")
+        // TMDB pflegt die deutschen Texte lückenhaft, bei Anime fast gar
+        // nicht. Fehlt mehr als die Hälfte, wird die englische Fassung
+        // nachgeholt und füllt nur die Lücken — deutsche Texte bleiben stehen.
+        if found.isEmpty || found.values.filter({ !($0.overview ?? "").isEmpty }).count * 2 < found.count {
+            let english = await request(id: id, season: number, apiKey: apiKey, language: "en-US")
+            for (n, info) in english {
+                if var mine = found[n] {
+                    if (mine.title ?? "").isEmpty { mine.title = info.title }
+                    if (mine.overview ?? "").isEmpty { mine.overview = info.overview }
+                    if (mine.still ?? "").isEmpty { mine.still = info.still }
+                    found[n] = mine
+                } else {
+                    found[n] = info
+                }
+            }
+        }
+
+        guard !found.isEmpty else {
+            missed.insert(key)
+            scheduleSave()
+            return [:]
+        }
+        seasons[key] = Dictionary(uniqueKeysWithValues: found.map { (String($0.key), $0.value) })
+        scheduleSave()
+        return found
+    }
+
+    private func request(id: Int, season: Int, apiKey: String, language: String) async -> [Int: EpisodeInfo] {
+        guard var comps = URLComponents(string: "https://api.themoviedb.org/3/tv/\(id)/season/\(season)") else { return [:] }
+        comps.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "language", value: language),
+        ]
+        guard let url = comps.url else { return [:] }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            // 404 heißt: die Serie stimmt, diese Staffel gibt es dort nicht.
+            // Das ist kein Fehler, nur ein leeres Ergebnis.
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 { return [:] }
+            guard
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let rows = json["episodes"] as? [[String: Any]]
+            else { return [:] }
+            var out: [Int: EpisodeInfo] = [:]
+            for row in rows {
+                guard let n = row["episode_number"] as? Int else { continue }
+                var still: String?
+                if let path = row["still_path"] as? String, !path.isEmpty {
+                    // Das Zuschnittsformat von TMDB selbst: 454×254, also
+                    // 16:9 — genau die Form, in der die Folgenliste es zeigt.
+                    still = "https://image.tmdb.org/t/p/w454_and_h254_bestv2\(path)"
+                }
+                out[n] = EpisodeInfo(
+                    title: row["name"] as? String,
+                    overview: row["overview"] as? String,
+                    still: still,
+                    airDate: row["air_date"] as? String
+                )
+            }
+            return out
+        } catch {
+            return [:]
+        }
+    }
+
+    private struct Bag: Codable {
+        var seasons: [String: [String: EpisodeInfo]]
+        var missed: [String]
+        var version: Int?
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.persist()
+        }
+    }
+
+    private func persist() {
+        var kept = seasons
+        if kept.count > Self.maxSeasons {
+            kept = Dictionary(uniqueKeysWithValues: kept.prefix(Self.maxSeasons).map { ($0.key, $0.value) })
+        }
+        var misses = missed
+        if misses.count > Self.maxSeasons {
+            misses = Set(misses.prefix(Self.maxSeasons))
+        }
+        let bag = Bag(seasons: kept, missed: Array(misses), version: Self.storeVersion)
+        guard let data = try? JSONEncoder().encode(bag) else { return }
+        try? data.write(to: storeURL, options: .atomic)
+    }
 }

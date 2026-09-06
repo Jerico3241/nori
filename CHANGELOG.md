@@ -4,8 +4,36 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.1**, iOS/iPadOS **1.13.0**,
+unterschiedlich schnell bewegen: macOS **1.12.2**, iOS/iPadOS **1.14.0**,
 Windows **1.8.0**.
+
+## [iOS 1.14.0] · [macOS 1.12.2] – 2026-09-06
+
+### Hinzugefügt
+
+- **Folgenbilder und -beschreibungen aus TMDB** (iOS). Die Folgenliste einer
+  Serie zeigt jetzt zu jeder Folge das Standbild im 16:9-Format und bis zu
+  drei Zeilen Beschreibung. AniWorld und Serienstream liefern zu einer Folge
+  nur zwei Titel und einen Pfad — beides kommt von TMDB, hinter der Kennung,
+  die die Cover-Suche ohnehin schon ermittelt.
+- Fehlt der deutsche Text bei TMDB — bei Anime die Regel, nicht die
+  Ausnahme —, wird die englische Fassung nachgeholt und füllt nur die
+  Lücken. Deutsche Texte bleiben stehen.
+- Der Fortschritt einer angefangenen Folge liegt als schmaler Streifen am
+  unteren Rand des Standbilds statt als Balken zwischen Titel und
+  Beschreibung.
+
+### Geändert
+
+- **Der Cover-Index merkt sich die TMDB-Kennung** (beide Plattformen). Sie
+  fällt bei der Cover-Suche ohnehin an und ist der Einstieg zu allem, was
+  unterhalb der Serie liegt. Bewusst ohne Erhöhung der Speicherversion:
+  ältere `covers.json` haben das Feld nicht, füllen es aber beim nächsten
+  Öffnen einer Detailseite nach — eine Versionserhöhung hätte dafür
+  sämtliche Cover verworfen.
+- Folgendaten liegen in einer eigenen Datei `episodes.json`, getrennt von
+  `covers.json`, die beim Scrollen durch den Katalog ohnehin ständig
+  geschrieben wird.
 
 ## [iOS 1.13.0] – 2026-09-06
 
