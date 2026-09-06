@@ -5,6 +5,12 @@ struct CalendarView: View {
     @State private var payload: CalendarPayload?
     @State private var error: String?
     @State private var loading = true
+    // Der Kalender steht auf Liste: hier zählt, wann etwas kommt, und das
+    // steht in der Zeile. Katalog und Merkliste starten dagegen auf Raster.
+    @AppStorage("nori.calendar.layout") private var layoutRaw = NoriViewMode.list.rawValue
+
+    private var layout: NoriViewMode { NoriViewMode(rawValue: layoutRaw) ?? .list }
+    private let grid = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 18)]
 
     var body: some View {
         Group {
@@ -18,34 +24,19 @@ struct CalendarView: View {
                     description: Text(error)
                 )
             } else if let payload {
-                List {
-                    ForEach(grouped(payload.upcoming), id: \.label) { group in
-                        Section(group.label) {
-                            ForEach(group.rows) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
-                                    CalendarRow(entry: row, provider: row.provider ?? library.provider)
-                                }
-                                .help(row.title)
-                            }
-                        }
-                    }
-                    if !payload.recent.isEmpty {
-                        Section("Zuletzt") {
-                            ForEach(payload.recent) { row in
-                                NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
-                                    CalendarRow(entry: row, provider: row.provider ?? library.provider)
-                                }
-                                .help(row.title)
-                            }
-                        }
-                    }
+                if layout == .grid {
+                    gridBody(payload)
+                } else {
+                    listBody(payload)
                 }
-                .listStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
         .navigationTitle("Kalender")
         .navigationSubtitle(library.scope.label)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                NoriViewModePicker(raw: $layoutRaw)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await load(force: true) }
@@ -59,6 +50,67 @@ struct CalendarView: View {
         .task(id: library.scope) { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .noriRefreshRequested)) { _ in
             Task { await load(force: true) }
+        }
+    }
+
+    private func listBody(_ payload: CalendarPayload) -> some View {
+        List {
+            ForEach(grouped(payload.upcoming), id: \.label) { group in
+                Section(group.label) {
+                    ForEach(group.rows) { row in
+                        NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
+                            CalendarRow(entry: row, provider: row.provider ?? library.provider)
+                        }
+                        .help(row.title)
+                    }
+                }
+            }
+            if !payload.recent.isEmpty {
+                Section("Zuletzt") {
+                    ForEach(payload.recent) { row in
+                        NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider ?? library.provider) {
+                            CalendarRow(entry: row, provider: row.provider ?? library.provider)
+                        }
+                        .help(row.title)
+                    }
+                }
+            }
+        }
+        .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    private func gridBody(_ payload: CalendarPayload) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ForEach(grouped(payload.upcoming), id: \.label) { group in
+                    section(group.label, rows: group.rows)
+                }
+                if !payload.recent.isEmpty {
+                    section("Zuletzt", rows: payload.recent)
+                }
+            }
+            .padding(20)
+        }
+        .background(NoriTheme.bg)
+    }
+
+    private func section(_ label: String, rows: [AiringEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NoriSectionHeader(label, trailing: "\(rows.count)")
+            LazyVGrid(columns: grid, alignment: .leading, spacing: 20) {
+                ForEach(rows) { row in
+                    let source = row.provider ?? library.provider
+                    NoriPosterCell(
+                        title: row.title,
+                        slug: row.slug,
+                        // Ohne Staffelangabe steht dort nur die Folgennummer —
+                        // im Kalender ist gerade das die Auskunft.
+                        subtitle: row.season.isEmpty ? "F\(row.episode)" : "S\(row.season) · F\(row.episode)",
+                        coverURL: AniworldClient.coverURL(row.coverPath, provider: source),
+                        kind: source
+                    )
+                }
+            }
         }
     }
 

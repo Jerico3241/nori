@@ -1,14 +1,5 @@
 import SwiftUI
 
-enum CatalogLayout: String, CaseIterable, Identifiable {
-    case list
-    case grid
-
-    var id: String { rawValue }
-    var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
-    var label: String { self == .list ? "Liste" : "Raster" }
-}
-
 struct CatalogView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
@@ -17,9 +8,9 @@ struct CatalogView: View {
     let reload: () async -> Void
 
     @State private var q = ""
-    @AppStorage("nori.catalog.layout") private var layoutRaw = CatalogLayout.grid.rawValue
+    @AppStorage("nori.catalog.layout") private var layoutRaw = NoriViewMode.grid.rawValue
 
-    private var layout: CatalogLayout { CatalogLayout(rawValue: layoutRaw) ?? .grid }
+    private var layout: NoriViewMode { NoriViewMode(rawValue: layoutRaw) ?? .grid }
     private let grid = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 18)]
 
     var filtered: [CatalogItem] {
@@ -56,14 +47,7 @@ struct CatalogView: View {
         .searchable(text: $q, placement: .toolbar, prompt: "Titel suchen")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Darstellung", selection: $layoutRaw) {
-                    ForEach(CatalogLayout.allCases) { option in
-                        Label(option.label, systemImage: option.symbol).tag(option.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.iconOnly)
-                .help("Zwischen Liste und Raster wechseln")
+                NoriViewModePicker(raw: $layoutRaw)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
