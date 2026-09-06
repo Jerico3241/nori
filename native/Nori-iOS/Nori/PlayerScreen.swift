@@ -37,26 +37,26 @@ struct PlayerScreen: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            if let player {
-                PlayerLayer(player: player)
-                    .ignoresSafeArea()
-            } else if let error {
-                errorView(error)
-            } else {
-                loadingView
-            }
-
+        VStack(spacing: 0) {
             playerChrome
-
-            if let seconds = autoplaySeconds,
-               let next = library.nextEpisode(after: currentEpisode, in: series.episodes)
-            {
-                autoplayCard(seconds: seconds, next: next)
+                .background(Color.black)
+            ZStack {
+                Color.black
+                if let player {
+                    PlayerLayer(player: player)
+                } else if let error {
+                    errorView(error)
+                } else {
+                    loadingView
+                }
+                if let seconds = autoplaySeconds,
+                   let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
+                    autoplayCard(seconds: seconds, next: next)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(Color.black.ignoresSafeArea())
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .task { await startPlayback(resumeAt: currentResumeAt) }
@@ -125,9 +125,10 @@ struct PlayerScreen: View {
 
                 playbackMenu
             }
-            .padding()
-            Spacer()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var playbackMenu: some View {
@@ -168,23 +169,10 @@ struct PlayerScreen: View {
                 }
             }
 
-            Section("Geschwindigkeit") {
-                ForEach([Float(0.75), 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
-                    Button {
-                        Task { @MainActor in setPlaybackSpeed(speed) }
-                    } label: {
-                        if abs(library.playbackSpeed - speed) < 0.01 {
-                            Label(speedLabel(speed), systemImage: "checkmark")
-                        } else {
-                            Text(speedLabel(speed))
-                        }
-                    }
-                }
-            }
         } label: {
             HStack(spacing: 5) {
                 if isSwitching { ProgressView().controlSize(.small) }
-                Text(source?.hoster ?? "Optionen")
+                Text(source.map { "Hoster: " + $0.hoster } ?? "Hoster & Sprache")
                     .font(.caption2)
                 Image(systemName: "ellipsis.circle")
             }

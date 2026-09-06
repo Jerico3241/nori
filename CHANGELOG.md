@@ -4,8 +4,14 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.9**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.10**,
 Windows **1.8.0**.
+
+## [iOS 1.9.10] – 2026-09-06
+
+- Nori-Leiste mit Schließen, Titel und Hoster/Sprachwahl außerhalb der nativen Playerfläche angeordnet. Keine Überlagerung mit AVKit-Lautstärke und Schließen.
+- Doppelte Geschwindigkeitsauswahl aus dem Nori-Menü entfernt; native Playerbedienung bleibt verfügbar.
+- Nutzer bestätigt Installation über KravaSign „semi-lokal“ und Videowiedergabe. Die zuvor beobachtete Kennungsabweichung ist keine bestätigte Ursache für „Bereit“.
 
 ## [macOS 1.11.6] – 2026-09-06
 
