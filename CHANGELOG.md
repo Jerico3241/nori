@@ -4,8 +4,26 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.4**, iOS/iPadOS **1.14.2**,
+unterschiedlich schnell bewegen: macOS **1.12.5**, iOS/iPadOS **1.14.3**,
 Windows **1.8.0**.
+
+## [iOS 1.14.3] · [macOS 1.12.5] – 2026-09-06
+
+### Geändert
+
+- **`CatalogProvider` entscheidet über `switch` statt über Ternäre.** Für
+  zwei Quellen war `self == .aniworld ? … : …` gleichwertig; für eine dritte
+  wäre es still gefährlich gewesen. Jeder Sonst-Zweig hätte sie
+  aufgesammelt, und die App hätte fehlerfrei übersetzt und dabei die
+  falschen Seiten abgerufen. Ohne `default` zwingt der Compiler jetzt dazu,
+  jede Stelle einzeln zu benennen.
+- **`providerFromPath` leitet die Quelle über `streamPrefix` ab** statt über
+  eine fest verdrahtete Abfrage auf „/serie/" mit AniWorld als Sonst-Zweig.
+  Das ist kein Etikett: Der Fortschritt ist nach `provider|episodePath`
+  geschlüsselt, eine falsch geratene Quelle hätte also den Stand vertauscht.
+  Für die beiden bestehenden Quellen ist das Ergebnis unverändert —
+  festgehalten in drei Tests, darunter einer, der über `allCases` läuft und
+  eine dritte Quelle von selbst mitprüft.
 
 ## [iOS 1.14.2] · [macOS 1.12.4] – 2026-09-06
 

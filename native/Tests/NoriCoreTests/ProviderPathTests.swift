@@ -52,6 +52,24 @@ final class ProviderPathTests: XCTestCase {
         XCTAssertEqual(providerFromPath("/anime/stream/demo/staffel-1/episode-1"), .aniworld)
     }
 
+    /// Der Rückfall ist AniWorld — festgehalten, weil der Fortschritt nach
+    /// `provider|episodePath` geschlüsselt ist: ändert sich diese Antwort,
+    /// verlieren bestehende Einträge ihren Stand, statt bloß ein Etikett zu
+    /// wechseln.
+    func testProviderFromPathFallsBackToAniworld() {
+        XCTAssertEqual(providerFromPath(""), .aniworld)
+        XCTAssertEqual(providerFromPath("/etwas/ganz/anderes"), .aniworld)
+    }
+
+    /// Die Zuordnung hängt an `streamPrefix`, nicht an einer fest verdrahteten
+    /// Zeichenkette. Damit trägt sie eine dritte Quelle von selbst mit.
+    func testProviderFromPathUsesEveryStreamPrefix() {
+        for provider in CatalogProvider.allCases {
+            let path = provider.episodePath(slug: "demo", season: "1", episode: 1)
+            XCTAssertEqual(providerFromPath(path), provider, "Pfad \(path)")
+        }
+    }
+
     func testNormalizeEpisodePath() {
         XCTAssertEqual(
             normalizeEpisodePath("https://aniworld.to/anime/stream/demo/staffel-1/episode-2/"),
