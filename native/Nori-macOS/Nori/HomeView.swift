@@ -286,20 +286,30 @@ struct HeroSlide: View {
         // Hintergrund und Text sind bewusst nicht anklickbar: Knopf und
         // Merken-Symbol liegen darin und dürfen nicht in einem umschließenden
         // NavigationLink stecken, sonst schluckt der äußere Link die Klicks.
-        ZStack(alignment: .bottomLeading) {
-            background
+        Color.clear
+            .overlay {
+                GeometryReader { geometry in
+                    background
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                }
+                .allowsHitTesting(false)
+            }
+            .overlay {
             LinearGradient(
                 colors: [.black.opacity(0.92), .black.opacity(0.55), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
+            }
+            .overlay {
             LinearGradient(
                 colors: [.clear, .black.opacity(0.75)],
                 startPoint: .center,
                 endPoint: .bottom
             )
-            text
-        }
+            }
+            .overlay(alignment: .bottomLeading) { text }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: item.id) {
@@ -308,6 +318,11 @@ struct HeroSlide: View {
                 title: item.title,
                 kind: item.kind
             )
+            if details.poster == nil {
+                let poster = await CoverIndex.shared.fetchSourceCover(slug: item.slug, provider: item.kind)
+                guard !Task.isCancelled else { return }
+                details.poster = poster
+            }
         }
     }
 
@@ -322,26 +337,11 @@ struct HeroSlide: View {
     @ViewBuilder
     private var background: some View {
         if let wide = details.backdrop {
-            AsyncImage(url: wide) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().scaledToFill()
-                default:
-                    fallback
-                }
-            }
+            NoriCoverImage(url: wide, referer: item.kind.origin + "/") { fallback }
         } else if let poster = details.poster {
-            AsyncImage(url: poster) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable()
-                        .scaledToFill()
-                        .blur(radius: 44)
-                        .overlay(NoriTheme.bg.opacity(0.45))
-                default:
-                    fallback
-                }
-            }
+            NoriCoverImage(url: poster, referer: item.kind.origin + "/") { fallback }
+                .blur(radius: 44)
+                .overlay(NoriTheme.bg.opacity(0.45))
         } else {
             fallback
         }
@@ -638,8 +638,12 @@ struct ContinueCard: View {
     var body: some View {
         NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: kind) {
             VStack(alignment: .leading, spacing: 8) {
-                ZStack {
-                    still
+                NoriTheme.elevated
+                    .frame(width: 284, height: 160)
+                    .overlay {
+                        still.frame(width: 284, height: 160).clipped()
+                    }
+                    .overlay {
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 40))
                         .foregroundStyle(.white.opacity(hovering ? 1 : 0.85))
@@ -693,6 +697,11 @@ struct ContinueCard: View {
                 title: item.title,
                 kind: kind
             )
+            if details.poster == nil {
+                let poster = await CoverIndex.shared.fetchSourceCover(slug: item.slug, provider: kind)
+                guard !Task.isCancelled else { return }
+                details.poster = poster
+            }
         }
     }
 
@@ -704,29 +713,19 @@ struct ContinueCard: View {
     @ViewBuilder
     private var still: some View {
         if let wide = details.backdrop {
-            AsyncImage(url: wide) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().scaledToFill()
-                default:
-                    NoriTheme.elevated
-                }
-            }
+            NoriCoverImage(url: wide, referer: kind.origin + "/") { NoriTheme.elevated }
         } else if let poster = details.poster {
-            AsyncImage(url: poster) { phase in
-                switch phase {
-                case .success(let img):
-                    ZStack {
-                        img.resizable()
-                            .scaledToFill()
-                            .blur(radius: 28)
-                            .overlay(NoriTheme.bg.opacity(0.35))
-                        img.resizable().scaledToFit()
-                    }
-                default:
-                    NoriTheme.elevated
+            NoriTheme.elevated
+                .overlay {
+                    NoriCoverImage(url: poster, referer: kind.origin + "/") { NoriTheme.elevated }
+                        .blur(radius: 28)
+                        .overlay(NoriTheme.bg.opacity(0.35))
                 }
-            }
+                .overlay {
+                    NoriCoverImage(url: poster, referer: kind.origin + "/", contentMode: .fit) {
+                        Color.clear
+                    }
+                }
         } else {
             NoriTheme.elevated
         }
@@ -755,3 +754,4 @@ struct ErrorBanner: View {
         }
     }
 }
+

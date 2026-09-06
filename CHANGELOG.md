@@ -4,8 +4,15 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.5**, iOS/iPadOS **1.9.9**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.9**,
 Windows **1.8.0**.
+
+## [macOS 1.11.6] – 2026-09-06
+
+- Startseitenbanner: Bildgröße vom Vordergrund entkoppelt und auf die Bannerfläche begrenzt, damit Titel, Metadaten und Schaltflächen beim Laden nicht herausgeschoben werden.
+- Banner und Weiterschauen verwenden den Cover-Lader mit Request-Headern; fehlende Quellposter werden aus der Detailseite nachgeladen.
+- Weiterschauen-Karten bleiben 284×160 Punkte groß; Hochkantposter werden vollständig vor einem unscharfen Hintergrund angezeigt.
+- iOS-Installation über KravaSign weiterhin nicht diagnostiziert; keine unbelegte Signaturkorrektur vorgenommen.
 
 ## [macOS 1.11.5] · [iOS 1.9.9] – 2026-09-05
 
