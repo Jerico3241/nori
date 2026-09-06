@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.12.5"
+    static let version = "1.13.0"
 
     static let highlights = [
         "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
@@ -101,6 +101,7 @@ enum NoriRelease {
         "Kacheln ohne TMDB-Treffer zeigen jetzt das Cover der Quelle statt eines Buchstabens.",
         "Anime und Serien stehen in einer gemeinsamen Bibliothek; der Umschalter unten links ist jetzt ein Filter.",
         "Leere Kacheln: Die Adresse eines Covers trägt einen Zufallsanteil und ließ sich nicht erraten. Nori liest sie jetzt bei Bedarf aus der Detailseite und merkt sie sich dauerhaft.",
+        "Die Folgenliste zeigt Standbild und Beschreibung aus TMDB. Fehlt der deutsche Text, wird die englische Fassung nachgeholt; der Tooltip trägt die vollständige Beschreibung.",
     ]
 }
 

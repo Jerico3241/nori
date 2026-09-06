@@ -18,6 +18,13 @@ struct SeriesView: View {
     @State private var coverColor = NoriTheme.accent
     @State private var pickingCover = false
     @State private var details = CoverDetails()
+    /// Standbilder und Beschreibungen der Folgen, nach Nummer.
+    @State private var episodeInfo: [Int: EpisodeInfo] = [:]
+
+    /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
+    /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
+    /// nicht — ein Schlüssel nur aus der Staffel würde das verpassen.
+    private var episodeTaskID: String { "\(slug)|\(season)|\(detail == nil ? 0 : 1)" }
 
     var body: some View {
         // Der Kopfbereich bringt sein eigenes Bild mit und läuft über die volle
@@ -67,6 +74,24 @@ struct SeriesView: View {
                 title: loaded.title,
                 kind: providerOverride ?? library.provider
             )
+        }
+        .task(id: episodeTaskID) {
+            guard let loaded = detail else { return }
+            // Erst das, was schon dasteht: die Liste erscheint mit Bildern,
+            // ohne auf TMDB zu warten. Der Aufruf trägt danach nach.
+            episodeInfo = await EpisodeIndex.shared.cached(slug: slug, season: season)
+            let fetched = await EpisodeIndex.shared.load(
+                slug: slug,
+                title: loaded.title,
+                // Die Quelle führt Serien oft unter einem eingedeutschten oder
+                // verkürzten Namen, den TMDB nicht kennt. Die Alternativtitel
+                // von der Detailseite treffen dann meist.
+                alternates: loaded.alts,
+                season: season,
+                kind: providerOverride ?? library.provider
+            )
+            guard !Task.isCancelled, !fetched.isEmpty else { return }
+            episodeInfo = fetched
         }
         .sheet(isPresented: $pickingCover) {
             CoverPicker(
@@ -351,8 +376,15 @@ struct SeriesView: View {
             NoriSectionHeader("Folgen", trailing: "\(detail.episodes.count)")
             VStack(spacing: 0) {
                 ForEach(Array(detail.episodes.enumerated()), id: \.element.id) { index, ep in
-                    if index > 0 { Divider().padding(.leading, 62) }
-                    EpisodeRow(series: detail, episode: ep, season: season) { resumeAt in
+                    // Die Trennlinie beginnt hinter der Kachel, nicht hinter
+                    // dem alten 38er-Quadrat.
+                    if index > 0 { Divider().padding(.leading, 154) }
+                    EpisodeRow(
+                        series: detail,
+                        episode: ep,
+                        season: season,
+                        info: episodeInfo[ep.number]
+                    ) { resumeAt in
                         open(series: detail, episode: ep, resumeAt: resumeAt)
                     }
                 }
@@ -579,9 +611,54 @@ struct EpisodeRow: View {
     let series: SeriesDetail
     let episode: Episode
     let season: String
+    /// Bild und Beschreibung aus TMDB. `nil`, solange nichts geladen ist oder
+    /// TMDB die Serie nicht kennt — dann sieht die Zeile aus wie zuvor, nur
+    /// mit einer Kachel im 16:9-Format statt eines Quadrats.
+    var info: EpisodeInfo? = nil
     let play: (Double) -> Void
 
     @State private var hovering = false
+
+    /// „Episode 7" ist kein Titel, sondern die Nummer in Worten. Beide Quellen
+    /// setzen das ein, wo sie keinen echten Titel haben — und daneben steht
+    /// dann noch einmal dasselbe als englischer Titel.
+    private static func isPlaceholder(_ text: String) -> Bool {
+        text.range(
+            of: #"^\s*(episode|folge|ep\.?)\s*\d+\s*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    /// Der Titel der Quelle, sofern es einer ist; sonst der von TMDB, sonst
+    /// die Nummer.
+    private var shownTitle: String {
+        let own = episode.germanTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !own.isEmpty, !Self.isPlaceholder(own) { return own }
+        if let other = info?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !other.isEmpty, !Self.isPlaceholder(other) {
+            return other
+        }
+        if !own.isEmpty { return own }
+        return "Folge \(episode.number)"
+    }
+
+    /// Der englische Titel, aber nur wenn er etwas hinzufügt: dieselbe
+    /// Zeichenkette zweimal untereinander ist keine Auskunft.
+    private var shownSubtitle: String? {
+        let other = episode.englishTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !other.isEmpty, !Self.isPlaceholder(other) else { return nil }
+        guard other.caseInsensitiveCompare(shownTitle) != .orderedSame else { return nil }
+        return other
+    }
+
+    /// Der Tooltip trägt auf dem Mac, was in der Zeile nicht hinpasst. Die
+    /// Beschreibung wird in der Liste auf zwei Zeilen gekürzt — hier steht
+    /// sie vollständig, ohne dass dafür Platz nötig wäre.
+    private var tooltip: String {
+        var parts = [shownTitle]
+        if let text = info?.overview, !text.isEmpty { parts.append(text) }
+        return parts.joined(separator: "\n\n")
+    }
 
     var body: some View {
         let item = library.progress(slug: series.slug, season: season, episode: episode.number, path: episode.path, provider: library.provider)
@@ -592,38 +669,26 @@ struct EpisodeRow: View {
         Button {
             play(resumeAt)
         } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(NoriTheme.elevated)
-                        .frame(width: 38, height: 38)
-                    if hovering {
-                        Image(systemName: "play.fill")
-                            .foregroundStyle(NoriTheme.accent)
-                    } else if complete {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(NoriTheme.muted)
-                    } else {
-                        Text("\(episode.number)")
-                            .font(.callout.weight(.medium).monospacedDigit())
-                    }
-                }
+            HStack(alignment: .top, spacing: 14) {
+                thumb(complete: complete, ratio: ratio)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(episode.germanTitle.isEmpty ? "Folge \(episode.number)" : episode.germanTitle)
+                    Text(shownTitle)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
-                    if !episode.englishTitle.isEmpty {
-                        Text(episode.englishTitle)
+                    if let shownSubtitle {
+                        Text(shownSubtitle)
                             .font(.caption)
                             .foregroundStyle(NoriTheme.muted)
                             .lineLimit(1)
                     }
-                    if ratio > 0, !complete {
-                        ProgressView(value: ratio)
-                            .progressViewStyle(.linear)
-                            .controlSize(.small)
-                            .frame(maxWidth: 220)
+                    if let text = info?.overview, !text.isEmpty {
+                        Text(text)
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -647,12 +712,73 @@ struct EpisodeRow: View {
         }
         .buttonStyle(NoriPressStyle(enabled: !reduceMotion))
         .onHover { hovering = $0 }
-        .help(episode.germanTitle.isEmpty ? "Folge \(episode.number)" : episode.germanTitle)
+        .help(tooltip)
         .contextMenu {
             Button("Abspielen") { play(resumeAt) }
             if resumeAt >= 8 {
                 Button("Von vorne abspielen") { play(0) }
             }
+        }
+    }
+
+    /// Die Folgenkachel: das Standbild aus TMDB, sonst die Nummer wie bisher.
+    ///
+    /// Breiter als auf dem iPhone (128 statt 112 Punkte) — die Fensterbreite
+    /// gibt es her, und eine briefmarkengroße Kachel wäre auf dem Mac keine
+    /// Auskunft. Der Fortschritt liegt als schmaler Streifen am unteren
+    /// Bildrand statt als Balken unter dem Titel, wo er der Beschreibung im
+    /// Weg stünde.
+    private func thumb(complete: Bool, ratio: Double) -> some View {
+        ZStack {
+            NoriTheme.elevated
+            if let url = info?.stillURL {
+                // image.tmdb.org braucht keine Kopfzeilen; `NoriCoverImage`
+                // bringt aber den Zwischenspeicher mit, den `AsyncImage` nicht
+                // hat — dieselbe Folge wird beim Blättern nicht neu geladen.
+                NoriCoverImage(url: url, referer: "https://www.themoviedb.org/") {
+                    Color.clear
+                }
+            }
+            if hovering {
+                Color.black.opacity(info?.stillURL == nil ? 0 : 0.45)
+                Image(systemName: "play.fill")
+                    .font(.title3)
+                    .foregroundStyle(NoriTheme.accent)
+            } else if complete {
+                Color.black.opacity(info?.stillURL == nil ? 0 : 0.45)
+                Image(systemName: "checkmark")
+                    .foregroundStyle(NoriTheme.muted)
+            } else if info?.stillURL == nil {
+                Text("\(episode.number)")
+                    .font(.callout.weight(.medium).monospacedDigit())
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if info?.stillURL != nil, !complete, !hovering {
+                Text("\(episode.number)")
+                    .font(.caption2.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.6), in: Capsule())
+                    .padding(5)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if ratio > 0, !complete {
+                GeometryReader { geo in
+                    Rectangle()
+                        .fill(NoriTheme.accent)
+                        .frame(width: geo.size.width * min(max(ratio, 0), 1), height: 3)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                }
+                .frame(height: 3)
+            }
+        }
+        .frame(width: 128, height: 72)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(NoriTheme.border)
         }
     }
 }

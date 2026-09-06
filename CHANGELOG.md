@@ -4,8 +4,33 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.5**, iOS/iPadOS **1.14.3**,
+unterschiedlich schnell bewegen: macOS **1.13.0**, iOS/iPadOS **1.14.3**,
 Windows **1.8.0**.
+
+## [macOS 1.13.0] – 2026-09-06
+
+### Hinzugefügt
+
+- **Folgenbilder und -beschreibungen aus TMDB**, jetzt auch auf dem Mac. Der
+  Unterbau lag seit iOS 1.14.0 in der geteilten `AniworldClient.swift` bereit
+  und wurde dort nur nicht genutzt.
+- Die Kachel ist **128 × 72 Punkte** statt des früheren 38er-Quadrats —
+  breiter als auf dem iPhone, weil die Fensterbreite es hergibt und eine
+  briefmarkengroße Kachel auf dem Mac keine Auskunft wäre.
+- **Der Tooltip trägt die vollständige Beschreibung.** In der Liste steht sie
+  auf zwei Zeilen gekürzt; unter dem Mauszeiger ganz. Das gibt es so nur auf
+  dem Mac, und es kostet keinen Platz.
+- Platzhalter wie „Episode 7" werden erkannt: dann trägt der TMDB-Titel die
+  Zeile, und die zweite Zeile entfällt.
+
+### Geändert
+
+- Der Fortschritt einer angefangenen Folge liegt als schmaler Streifen am
+  unteren Bildrand statt als Balken unter dem Titel, wo er der Beschreibung
+  im Weg stünde.
+- `README.md`: Der macOS-Stand wurde als „der weiteste" geführt. Das stimmt
+  seit dem iOS-Player-Umbau nicht mehr — Player und Startseite liegen dort
+  zurück.
 
 ## [iOS 1.14.3] · [macOS 1.12.5] – 2026-09-06
 
