@@ -74,9 +74,25 @@ final class CatalogStore {
     var provider: CatalogProvider = .aniworld
 
     /// Der Ausschnitt für einen Bereich.
+    ///
+    /// Die Abkürzung prüft `provider` **und** `genre`: seit es `.kdrama` gibt,
+    /// ist ein Bereich nicht mehr dasselbe wie eine Quelle. Fragte hier nur
+    /// `provider != nil`, käme `.kdrama` zwar durch — der Ausschnitt wäre aber
+    /// der ungefilterte Serienstream-Katalog gewesen.
     func items(for scope: LibraryScope) -> [CatalogItem] {
-        guard scope.provider != nil else { return items }
-        return items.filter { scope.includes($0.provider) }
+        guard scope.provider != nil || scope.genre != nil else { return items }
+        return items.filter { scope.includes(item: $0) }
+    }
+
+    /// Die Slugs, die in einem Bereich stehen — oder `nil`, wenn der Bereich
+    /// gar nicht nach Genre einschränkt.
+    ///
+    /// Für Listen, deren Einträge kein Genre mitbringen: der Kalender kennt zu
+    /// einer Folge nur Slug und Quelle. Ohne diesen Umweg zeigte der Kalender
+    /// unter „K-Drama" den vollständigen Serienstream-Kalender.
+    func slugs(for scope: LibraryScope) -> Set<String>? {
+        guard scope.genre != nil else { return nil }
+        return Set(items(for: scope).map(\.slug))
     }
 
     /// Titel mit den meisten gemeinsamen Genres, ohne den Titel selbst.

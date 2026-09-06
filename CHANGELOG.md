@@ -4,8 +4,35 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.0**, iOS/iPadOS **1.14.3**,
+unterschiedlich schnell bewegen: macOS **1.14.1**, iOS/iPadOS **1.14.4**,
 Windows **1.8.0**.
+
+## [iOS 1.14.4] · [macOS 1.14.1] – 2026-09-06
+
+### Hinzugefügt
+
+- **Bereich „K-Drama“ (macOS).** Der Umschalter in der Seitenleiste hat ein
+  viertes Segment: Anime, Serien, K-Drama, Alle. Es zeigt die koreanischen
+  Serien, die Serienstream unter dem Genre „K-Drama“ auf
+  `/serien?by=genre` selbst führt — rund hundert Titel, die bisher nur über
+  den Umweg „Kategorien“ zu finden waren. Katalog, Startseite und Kalender
+  folgen dem Bereich.
+
+### Geändert
+
+- **Ein Bereich ist nicht mehr gleichbedeutend mit einer Quelle.**
+  `LibraryScope` war bisher eine Umbenennung von `CatalogProvider`: jeder
+  Bereich hatte genau eine Seite, und `provider` allein reichte zum Filtern.
+  K-Drama ist keine dritte Seite, sondern ein Ausschnitt aus einer
+  bestehenden. Der Bereich trägt deshalb jetzt ein Paar aus Quelle und
+  `genre`, und Katalogeinträge laufen über `includes(item:)`, das beides
+  prüft. Für „Alle“, „Anime“ und „Serien“ ändert sich dadurch nichts —
+  festgehalten in `LibraryScopeTests`.
+- **Der Kalender filtert im Genre-Bereich mit.** Ein Kalendereintrag trägt
+  Slug und Quelle, aber keine Genres; ohne den Umweg über den Katalog hätte
+  „K-Drama“ den vollständigen Serienstream-Kalender gezeigt. Steht der
+  Katalog noch nicht, wird bewusst nicht eingeschränkt: ein vollständiger
+  Kalender ist die bessere Antwort als ein leerer.
 
 ## [macOS 1.14.0] – 2026-09-06
 
