@@ -5,12 +5,58 @@ enum CatalogProvider: String, Codable, CaseIterable, Identifiable {
     case serienstream
 
     var id: String { rawValue }
-    var label: String { self == .aniworld ? "AniWorld" : "Serienstream" }
-    var kind: String { self == .aniworld ? "Anime" : "Serien" }
-    var origin: String { self == .aniworld ? "https://aniworld.to" : "https://serienstream.to" }
-    var catalogPath: String { self == .aniworld ? "/animes" : "/serien?by=genre" }
-    var calendarPath: String { self == .aniworld ? "/animekalender" : "/api/calendar" }
-    var streamPrefix: String { self == .aniworld ? "/anime/stream" : "/serie" }
+
+    // Bewusst `switch` statt `self == .aniworld ? … : …`.
+    //
+    // Mit einem Ternär hat der Enum genau zwei Fälle — und eine dritte Quelle
+    // würde fehlerfrei übersetzen und sich überall wie Serienstream verhalten,
+    // weil jeder Sonst-Zweig sie stillschweigend aufsammelt. Ein `switch` ohne
+    // `default` zwingt den Compiler dagegen, jede dieser Stellen einzeln
+    // aufzuzählen. Das ist keine Kosmetik: es ist der Unterschied zwischen
+    // einer Liste von Übersetzungsfehlern und einer App, die falsche Seiten
+    // abruft.
+
+    var label: String {
+        switch self {
+        case .aniworld: return "AniWorld"
+        case .serienstream: return "Serienstream"
+        }
+    }
+
+    var kind: String {
+        switch self {
+        case .aniworld: return "Anime"
+        case .serienstream: return "Serien"
+        }
+    }
+
+    var origin: String {
+        switch self {
+        case .aniworld: return "https://aniworld.to"
+        case .serienstream: return "https://serienstream.to"
+        }
+    }
+
+    var catalogPath: String {
+        switch self {
+        case .aniworld: return "/animes"
+        case .serienstream: return "/serien?by=genre"
+        }
+    }
+
+    var calendarPath: String {
+        switch self {
+        case .aniworld: return "/animekalender"
+        case .serienstream: return "/api/calendar"
+        }
+    }
+
+    var streamPrefix: String {
+        switch self {
+        case .aniworld: return "/anime/stream"
+        case .serienstream: return "/serie"
+        }
+    }
 
     func seriesPath(slug: String, season: String? = nil) -> String {
         let base = "\(streamPrefix)/\(slug)"
@@ -239,8 +285,22 @@ func guessEpisodePath(slug: String, season: String, episode: Int, provider: Cata
     provider.episodePath(slug: slug, season: season, episode: episode)
 }
 
+/// Aus dem Pfad einer Folge ableiten, zu welcher Quelle sie gehört.
+///
+/// Wird für den Fortschritt gebraucht: der ist nach `provider|episodePath`
+/// geschlüsselt, und ältere Einträge tragen die Quelle noch nicht als eigenes
+/// Feld.
+///
+/// Die Zuordnung lief früher über eine einzelne Abfrage auf „/serie/", mit
+/// AniWorld als Sonst-Zweig. Eine dritte Quelle wäre damit stillschweigend als
+/// Anime verbucht worden — und weil der Fortschritt danach geschlüsselt ist,
+/// hätte das den Stand vertauscht, nicht bloß ein Etikett. Jetzt entscheidet
+/// `streamPrefix`, den jede Quelle selbst mitbringt.
 func providerFromPath(_ path: String) -> CatalogProvider {
-    path.contains("/serie/") ? .serienstream : .aniworld
+    for provider in CatalogProvider.allCases where path.contains(provider.streamPrefix + "/") {
+        return provider
+    }
+    return .aniworld
 }
 
 func normalizeEpisodePath(_ raw: String) -> String {
