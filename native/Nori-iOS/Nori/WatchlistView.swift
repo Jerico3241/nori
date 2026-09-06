@@ -59,7 +59,13 @@ struct WatchlistView: View {
 
     private func row(_ item: (slug: String, title: String), _ src: CatalogProvider) -> some View {
         NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: src, onOpen: { library.provider = src }) {
-            Text(item.title)
+            HStack(spacing: 12) {
+                PosterTile(title: item.title, slug: item.slug, compact: true, kind: src)
+                    .frame(width: 44)
+                Text(item.title)
+                    .lineLimit(2)
+            }
+            .padding(.vertical, 4)
         }
         .listRowBackground(NoriTheme.surface)
     }

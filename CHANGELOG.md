@@ -4,8 +4,30 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.10.0**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.10.1**,
 Windows **1.8.0**.
+
+## [iOS 1.10.1] – 2026-09-06
+
+### Behoben
+
+- **Der Kopfbereich der Startseite blieb schwarz.** Ohne TMDB-Treffer hat er
+  weder Breitbild noch Poster, und das Cover der Quelle steht nur auf der
+  Detailseite. Die Kacheln holen es sich längst von dort — der Kopfbereich
+  tat es nicht. Jetzt schon.
+- **Der Umschalter Anime/Serien stand verrutscht.** Er war ein handgebauter
+  Schieber aus Kapsel, Daumen und zwei Textfeldern mit von Hand
+  abgestimmten Breiten. Ersetzt durch das Systembauteil, das dasselbe kann
+  und Dynamic Type, VoiceOver und jede Navigationsleiste von sich aus
+  richtig behandelt.
+
+### Neu
+
+- **Cover in Katalog, Kalender und Merkliste.** Die Listen zeigten nur Text;
+  jede Zeile trägt jetzt dieselbe Kachel wie das Raster, klein. Der Kalender
+  nutzt den Coverpfad, den die Quelle mitliefert, wo vorhanden.
+- Kalendereinträge öffnen die Serie mit ihrer eigenen Quelle statt mit der
+  gerade eingestellten.
 
 ## [iOS 1.10.0] – 2026-09-06
 

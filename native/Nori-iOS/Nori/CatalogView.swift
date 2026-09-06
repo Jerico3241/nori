@@ -29,15 +29,28 @@ struct CatalogView: View {
                             Text(error).foregroundStyle(.red)
                         }
                         ForEach(filtered) { item in
-                            NoriSeriesLink(slug: item.slug, titleHint: item.title) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title)
-                                    if !item.genres.isEmpty {
-                                        Text(item.genres.prefix(3).joined(separator: " · "))
-                                            .font(.caption)
-                                            .foregroundStyle(NoriTheme.muted)
+                            NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.provider) {
+                                HStack(spacing: 12) {
+                                    // Dieselbe Kachel wie im Raster, nur klein:
+                                    // sie bringt Cover-Nachladen und
+                                    // Buchstaben-Rückfall schon mit.
+                                    PosterTile(
+                                        title: item.title,
+                                        slug: item.slug,
+                                        compact: true,
+                                        kind: item.provider
+                                    )
+                                    .frame(width: 44)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title)
+                                        if !item.genres.isEmpty {
+                                            Text(item.genres.prefix(3).joined(separator: " · "))
+                                                .font(.caption)
+                                                .foregroundStyle(NoriTheme.muted)
+                                        }
                                     }
                                 }
+                                .padding(.vertical, 4)
                             }
                             .listRowBackground(NoriTheme.surface)
                         }
