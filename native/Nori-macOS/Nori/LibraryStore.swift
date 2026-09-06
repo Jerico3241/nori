@@ -1,11 +1,28 @@
 import Foundation
 import Observation
 
+/// Wohin die Bibliothek gespiegelt werden kann.
+///
+/// Bewusst schmal: die Bibliothek ist eine einzige JSON-Datei mit einem
+/// Zeitstempel, und mehr braucht ein Abgleich nicht. Wer eine Ablage anbindet
+/// — Google Drive, Dropbox, WebDAV — beantwortet genau zwei Fragen: was liegt
+/// dort, und nimm das hier.
+///
+/// Zuvor war iCloud direkt im Store verdrahtet. Das ließ sich weder ersetzen
+/// noch abschalten, und es funktionierte nicht: ohne die
+/// Ubiquity-Berechtigung tut `NSUbiquitousKeyValueStore` nichts, ohne dass
+/// irgendwo ein Fehler entsteht.
+protocol LibrarySyncProvider: AnyObject, Sendable {
+    /// Für die Oberfläche, etwa „Google Drive".
+    var name: String { get }
+    /// Der abgelegte Stand, oder `nil`, wenn dort noch nichts liegt.
+    func load() async throws -> Data?
+    func save(_ data: Data, modifiedAt: Double) async throws
+}
+
 @Observable
 final class LibraryStore {
     static let schemaVersion = 4
-    private static let cloudDataKey = "nori.library.v3"
-    private static let cloudUpdatedKey = "nori.library.v3.updatedAt"
 
     var favorites: [String] = []
     var recents: [RecentItem] = []
@@ -22,23 +39,25 @@ final class LibraryStore {
     /// Liste. `provider` bleibt daneben bestehen und entscheidet, welche
     /// Seite ein Titel ohne eigene Quellangabe öffnet.
     var scope: LibraryScope = .all { didSet { persist() } }
-    var cloudSyncEnabled: Bool = false {
-        didSet {
-            // Beim Einlesen nichts auslösen: `apply` setzt dieses Feld mit,
-            // wodurch mitten im Laden ein Abgleich startete, der über
-            // mergeCloudIfNewer erneut in `apply` lief. Nach dem Laden richtet
-            // `init` die Synchronisation ohnehin selbst ein.
-            guard !isLoading else { return }
-            persist()
-            configureCloudSync()
-            if cloudSyncEnabled { syncNow() }
-        }
-    }
-    var cloudLastSync: Double?
+    /// Wann zuletzt mit einem Fremdstand abgeglichen wurde. Ohne eingerichteten
+    /// Anbieter bleibt der Wert leer.
+    var syncLastRun: Double?
+
+    /// Wohin die Bibliothek gespiegelt wird — oder `nil`, solange nichts
+    /// eingerichtet ist.
+    ///
+    /// Hier stand iCloud, fest verdrahtet. Es hat nie funktioniert:
+    /// `NSUbiquitousKeyValueStore` braucht die Berechtigung
+    /// `com.apple.developer.ubiquity-kvstore-identifier`, und die gibt es nur
+    /// im kostenpflichtigen Apple-Developer-Programm. Ohne sie tun die Aufrufe
+    /// schlicht nichts — kein Fehler, keine Meldung. Der Schalter in den
+    /// Einstellungen versprach also eine Synchronisation, die nie stattfand.
+    ///
+    /// Statt das zu kaschieren ist der Weg jetzt offen: ein Anbieter wird von
+    /// außen gesetzt. Solange keiner da ist, sagt die Oberfläche das auch.
+    var syncProvider: LibrarySyncProvider?
 
     private let url: URL
-    private let cloud = NSUbiquitousKeyValueStore.default
-    private var cloudObserver: NSObjectProtocol?
     private var isLoading = false
     private var modifiedAt: Double = 0
 
@@ -60,12 +79,6 @@ final class LibraryStore {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         url = folder.appendingPathComponent("library.json")
         load()
-        configureCloudSync()
-        if cloudSyncEnabled { syncNow() }
-    }
-
-    deinit {
-        if let cloudObserver { NotificationCenter.default.removeObserver(cloudObserver) }
     }
 
     func isFavorite(_ slug: String) -> Bool { favorites.contains(slug) }
@@ -179,32 +192,27 @@ final class LibraryStore {
     func clearHistory() { recents = []; persist() }
     func clearProgress() { progress = [:]; persist() }
 
+    /// Von Hand angestoßener Abgleich. Ohne eingerichteten Anbieter passiert
+    /// nichts — und die Oberfläche bietet den Knopf dann auch nicht an.
     func syncNow() {
-        guard cloudSyncEnabled else { return }
-        _ = cloud.synchronize()
-        mergeCloudIfNewer()
-        pushCloud()
+        guard let syncProvider else { return }
+        Task { await runSync(with: syncProvider) }
     }
 
-    private func configureCloudSync() {
-        if let cloudObserver { NotificationCenter.default.removeObserver(cloudObserver); self.cloudObserver = nil }
-        guard cloudSyncEnabled else { return }
-        cloudObserver = NotificationCenter.default.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification, object: cloud, queue: .main) { [weak self] _ in
-            self?.mergeCloudIfNewer()
+    private func runSync(with provider: LibrarySyncProvider) async {
+        // Erst holen: ein neuerer Fremdstand gewinnt, danach wird der
+        // zusammengeführte Stand zurückgeschrieben.
+        if let data = try? await provider.load(),
+           let bag = try? JSONDecoder().decode(Bag.self, from: data),
+           let remote = bag.modifiedAt, remote > modifiedAt {
+            apply(bag)
+            modifiedAt = remote
+            writeLocal(makeBag(modifiedAt: remote))
         }
-    }
-
-    private func mergeCloudIfNewer() {
-        guard cloudSyncEnabled,
-              let data = cloud.data(forKey: Self.cloudDataKey),
-              let bag = try? JSONDecoder().decode(Bag.self, from: data)
-        else { return }
-        let remoteModified = bag.modifiedAt ?? cloud.double(forKey: Self.cloudUpdatedKey)
-        guard remoteModified > modifiedAt else { return }
-        apply(bag)
-        modifiedAt = remoteModified
-        cloudLastSync = remoteModified
-        writeLocal(makeBag(modifiedAt: remoteModified))
+        let bag = makeBag(modifiedAt: modifiedAt)
+        guard let data = try? JSONEncoder().encode(bag) else { return }
+        try? await provider.save(data, modifiedAt: modifiedAt)
+        syncLastRun = Date().timeIntervalSince1970 * 1000
     }
 
     private func load() {
@@ -224,8 +232,6 @@ final class LibraryStore {
         resumeEnabled = bag.resumeEnabled ?? true
         autoplayNext = bag.autoplayNext ?? true
         playbackSpeed = bag.playbackSpeed ?? 1.0
-        cloudSyncEnabled = bag.cloudSyncEnabled ?? false
-        cloudLastSync = bag.cloudLastSync
         if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) { provider = next }
         // Ältere Stände kennen den Bereich nicht. Sie bekommen „Alle" — das
         // ist der Sinn der gemeinsamen Bibliothek, nicht ein Verlust.
@@ -262,17 +268,9 @@ final class LibraryStore {
         modifiedAt = Date().timeIntervalSince1970 * 1000
         let bag = makeBag(modifiedAt: modifiedAt)
         writeLocal(bag)
-        if cloudSyncEnabled { pushCloud(bag) }
-    }
-
-    private func pushCloud(_ bag: Bag? = nil) {
-        guard cloudSyncEnabled else { return }
-        let next = bag ?? makeBag(modifiedAt: modifiedAt)
-        guard let data = try? JSONEncoder().encode(next) else { return }
-        cloud.set(data, forKey: Self.cloudDataKey)
-        cloud.set(modifiedAt, forKey: Self.cloudUpdatedKey)
-        _ = cloud.synchronize()
-        cloudLastSync = modifiedAt
+        // Kein automatisches Hochladen: das lief früher bei jeder Änderung.
+        // Ein Anbieter, der über das Netz geht, gehört nicht in jeden
+        // Tastendruck — angestoßen wird über `syncNow`.
     }
 
     private func writeLocal(_ bag: Bag) {
@@ -280,7 +278,7 @@ final class LibraryStore {
     }
 
     private func makeBag(modifiedAt: Double) -> Bag {
-        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), cloudSyncEnabled: cloudSyncEnabled, cloudLastSync: cloudLastSync)
+        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue))
     }
 
     private struct Bag: Codable {
@@ -298,7 +296,8 @@ final class LibraryStore {
         var provider: String?
         var scope: String?
         var favoriteSource: [String: String]?
-        var cloudSyncEnabled: Bool?
-        var cloudLastSync: Double?
+        // `cloudSyncEnabled` und `cloudLastSync` standen hier, solange iCloud
+        // eingebaut war. Ältere library.json tragen die Schlüssel weiter;
+        // JSONDecoder überliest, was der Typ nicht kennt.
     }
 }

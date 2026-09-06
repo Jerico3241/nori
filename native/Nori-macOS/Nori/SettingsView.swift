@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.11.6"
+    static let version = "1.12.0"
 
     static let highlights = [
         "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
@@ -151,23 +151,31 @@ private struct SyncSettingsTab: View {
     @Environment(LibraryStore.self) private var library
 
     var body: some View {
-        @Bindable var library = library
         Form {
             Section {
-                Toggle("Mit iCloud synchronisieren", isOn: $library.cloudSyncEnabled)
-                if library.cloudSyncEnabled {
+                if let provider = library.syncProvider {
                     HStack {
-                        Button("Jetzt synchronisieren") { library.syncNow() }
+                        Button("Jetzt mit \(provider.name) abgleichen") { library.syncNow() }
                         Spacer()
-                        if let stamp = library.cloudLastSync {
+                        if let stamp = library.syncLastRun {
                             Text(Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
                                 .font(.footnote)
                                 .foregroundStyle(NoriTheme.muted)
                         }
                     }
+                } else {
+                    LabeledContent("Zustand", value: "nicht eingerichtet")
                 }
+            } header: {
+                Text("Synchronisation")
             } footer: {
-                Text("Synchronisiert Merkliste, Verlauf, Wiedergabefortschritt und Einstellungen zwischen Apple-Geräten mit derselben Apple-ID. Ohne aktivierte Synchronisation bleiben alle Daten auf diesem Mac.")
+                Text("""
+                     Hier stand ein iCloud-Schalter. Er hat nie etwas getan: iCloud \
+                     verlangt eine Berechtigung aus dem kostenpflichtigen \
+                     Apple-Developer-Programm, und ohne sie bleibt der Aufruf \
+                     wirkungslos — ohne Fehlermeldung. Merkliste, Verlauf und \
+                     Fortschritt liegen ausschließlich auf diesem Mac.
+                     """)
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
             }
@@ -176,12 +184,6 @@ private struct SyncSettingsTab: View {
     }
 }
 
-/// Misst den Weg, auf dem ein Cover entsteht, und schreibt jeden Schritt auf.
-///
-/// Entstanden, weil sich aus einer leeren Kachel nicht ablesen lässt, woran es
-/// liegt: die Detailseite kann blockiert sein, die Adresse darin fehlen, oder
-/// das Bild selbst abgelehnt werden. Drei sehr verschiedene Ursachen, ein
-/// identisches Bild auf dem Schirm.
 private struct CoverDiagnosticsRow: View {
     @State private var lines: [String] = []
     @State private var running = false
@@ -342,9 +344,7 @@ private struct PrivacySettingsTab: View {
                     }
                 }
             } footer: {
-                Text(library.cloudSyncEnabled
-                     ? "Bei aktivierter Synchronisation wird der gelöschte Stand auch mit iCloud abgeglichen."
-                     : "Die Daten werden nur auf diesem Mac gelöscht.")
+                Text("Die Daten werden nur auf diesem Mac gelöscht.")
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
             }
