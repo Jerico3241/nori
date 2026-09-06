@@ -1,6 +1,14 @@
 import Foundation
+// Die beiden einzigen Darwin-Bindungen im geteilten Kern. Alles andere in
+// dieser Datei ist Foundation und SwiftSoup und baut damit auch für Android
+// durch — siehe docs/android.md. Ohne die Kapselung wäre schon der Import
+// ein Übersetzungsfehler.
+#if canImport(Security)
 import Security
+#endif
+#if canImport(ImageIO)
 import ImageIO
+#endif
 
 /// Zugang zum TMDB-Schlüssel.
 ///
@@ -66,9 +74,10 @@ enum TMDBKeyStore {
     static func save(_ key: String) -> Bool {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return clear() }
-        guard let data = trimmed.data(using: .utf8) else { return false }
         defer { cached = nil }
 
+        #if canImport(Security)
+        guard let data = trimmed.data(using: .utf8) else { return false }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -84,21 +93,32 @@ enum TMDBKeyStore {
         insert[kSecValueData as String] = data
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        #else
+        // Android hat keinen Schlüsselbund dieser Art. Ein eigener Ablageort
+        // gehört in die Android-App, nicht in den geteilten Kern — dort wäre
+        // er auf Apple toter Code. Bis dahin trägt der eingebaute Schlüssel.
+        return false
+        #endif
     }
 
     @discardableResult
     static func clear() -> Bool {
+        defer { cached = nil }
+        #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        defer { cached = nil }
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
+        #else
+        return false
+        #endif
     }
 
     private static func readKeychain() -> String? {
+        #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -111,6 +131,9 @@ enum TMDBKeyStore {
               let data = item as? Data
         else { return nil }
         return String(data: data, encoding: .utf8)
+        #else
+        return nil
+        #endif
     }
 }
 
@@ -333,13 +356,45 @@ actor CoverImageLoader {
         }
         // Auch HTTP 200 kann HTML enthalten. Nur decodierbare Bilder cachen;
         // eine willkürliche Mindestgröße erkennt keine Fehlerseite.
-        guard let imageSource = CGImageSourceCreateWithData(result.0 as CFData, nil),
-              CGImageSourceCreateImageAtIndex(imageSource, 0, nil) != nil else {
+        guard Self.isImage(result.0) else {
             remember(failure: url)
             return nil
         }
         remember(url, result.0)
         return result.0
+    }
+
+    /// Sind das die Bytes eines Bildes?
+    ///
+    /// Auf Apple entscheidet das ImageIO, indem es das Bild tatsächlich
+    /// aufmacht — die genaueste Auskunft, die zu haben ist. Android hat kein
+    /// ImageIO; dort wird die Signatur am Dateianfang gelesen. Das erkennt
+    /// eine als Bild ausgelieferte Fehlerseite genauso zuverlässig, nur ein
+    /// abgeschnittenes Bild nicht. Für den Zweck — HTML aus dem Zwischen-
+    /// speicher heraushalten — reicht das.
+    private static func isImage(_ data: Data) -> Bool {
+        #if canImport(ImageIO)
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
+        else { return false }
+        return true
+        #else
+        let head = [UInt8](data.prefix(12))
+        guard head.count >= 12 else { return false }
+        // JPEG
+        if head[0] == 0xFF, head[1] == 0xD8 { return true }
+        // PNG
+        if head[0] == 0x89, head[1] == 0x50, head[2] == 0x4E, head[3] == 0x47 { return true }
+        // GIF
+        if head[0] == 0x47, head[1] == 0x49, head[2] == 0x46 { return true }
+        // RIFF-Container mit WEBP an Stelle 8
+        if head[0] == 0x52, head[1] == 0x49, head[2] == 0x46, head[3] == 0x46,
+           head[8] == 0x57, head[9] == 0x45, head[10] == 0x42, head[11] == 0x50 { return true }
+        // ISO-BMFF: „ftyp" an Stelle 4 — deckt AVIF und HEIC ab, die
+        // Serienstream ausliefert.
+        if head[4] == 0x66, head[5] == 0x74, head[6] == 0x79, head[7] == 0x70 { return true }
+        return false
+        #endif
     }
 
     private func remember(_ url: URL, _ data: Data) {
