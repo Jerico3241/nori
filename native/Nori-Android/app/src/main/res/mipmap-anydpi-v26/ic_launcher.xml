@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptives Symbol (Android 8+). Die <monochrome>-Ebene ist der Teil von
+     Material You, den Nutzer tatsächlich bemerken: ab Android 13 färbt der
+     Launcher das Symbol passend zum Hintergrundbild ein. Fehlt sie, bleibt
+     Nori dort das einzige bunte Symbol zwischen lauter getönten. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

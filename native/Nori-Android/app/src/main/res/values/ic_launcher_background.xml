@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Derselbe dunkle Grund wie im Start-Theme, damit das Symbol nicht
+         heller ist als die App, die es öffnet. -->
+    <color name="ic_launcher_background">#0E0F12</color>
+</resources>

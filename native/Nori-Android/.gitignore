@@ -1,0 +1,10 @@
+# Gradle- und Build-Ausgaben
+build/
+.gradle/
+local.properties
+.cxx/
+
+# Von tools/build-android-core.sh erzeugt: der Swift-Kern und die
+# Swift-Laufzeit, rund 110 MB. Gebaute Artefakte gehören nicht ins
+# Repository — erzeugen mit `tools/build-android-core.sh`.
+app/src/main/jniLibs/

@@ -5,7 +5,48 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
-Windows **1.8.0**.
+Windows **1.8.0**, Android **0.1.0**.
+
+## [Android 0.1.0] – 2026-09-06
+
+Erste lauffähige Android-App. **Für iPhone, Mac und Windows ändert sich
+nichts** — der geteilte Kern ist unverändert, hinzugekommen sind nur eine
+Brücke daneben und ein eigenes Projekt.
+
+### Hinzugefügt
+
+- **Die App startet, lädt und zeigt an.** Im Emulator (Android 14, arm64)
+  geprüft: 2463 Titel, live von AniWorld geholt, von SwiftSoup **im
+  Swift-Kern auf Android** geparst und in Compose gerendert. Damit trägt die
+  ganze Kette — Compose → JNI → C-ABI-Brücke → Swift-`actor` →
+  `FoundationNetworking` → SwiftSoup.
+- **`native/NoriBridge/`** — die C-ABI-Brücke. Bewusst ohne JNI-Typen: der
+  eigentliche Shim liegt als C-Datei im Android-Projekt, wo `jni.h` zu Hause
+  ist. Ein C-Target mit diesem Include im Swift-Paket hätte `swift test` auf
+  dem Mac zerlegt.
+- **`native/Nori-Android/`** — Gradle-Projekt, Compose mit Material 3 und
+  dynamischen Farben, immer dunkles Schema (wie in `docs/android.md`
+  entschieden). Launcher-Symbol samt `<monochrome>`-Ebene aus dem
+  vorhandenen Master abgeleitet.
+- **`tools/build-android-core.sh`** — baut den Kern für Android und sammelt
+  die Swift-Laufzeit ein. Drei Dinge stecken darin, die alle drei je einen
+  Fehlversuch gekostet haben und die man nicht raten kann:
+  - Das Tripel muss **als** SDK-Bezeichner übergeben werden. Über `--triple`
+    zieht SwiftPM die Ressourcen weiter aus dem armv7-Verzeichnis; ohne jede
+    Angabe wählt es wechselnd armv7 oder x86_64.
+  - `libNoriAndroid.so` braucht ein **SONAME**. Ohne trägt jede Bibliothek,
+    die dagegen linkt, den absoluten Baupfad des Macs als Abhängigkeit — auf
+    dem Gerät stirbt die App dann mit „dlopen failed: library /Users/…".
+  - Eingesammelt wird aus **zwei** Fundorten: die Swift-Laufzeit aus dem
+    SDK-Bundle, `libc++_shared.so` aus dem NDK.
+
+### Bekannte Grenzen
+
+- Nur **arm64-v8a**, und nur der Katalog. Detailseite, Player, Merkliste und
+  Kalender fehlen; die Oberfläche ist eine Liste, kein Ersatz für die
+  Apple-Apps.
+- Das Debug-APK ist rund 100 MB, weil die unstrippte Swift-Laufzeit
+  mitfährt.
 
 ## [iOS 1.14.5] · [macOS 1.14.2] – 2026-09-06
 

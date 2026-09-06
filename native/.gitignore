@@ -1,0 +1,4 @@
+
+# Baut man das Paket als dynamische Bibliothek (NoriCore/NoriAndroid), legt
+# SwiftPM die .so hier ab. Build-Ausgabe, kein Quelltext.
+*.so
