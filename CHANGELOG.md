@@ -4,8 +4,18 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.1**, iOS/iPadOS **1.12.1**,
+unterschiedlich schnell bewegen: macOS **1.12.1**, iOS/iPadOS **1.13.0**,
 Windows **1.8.0**.
+
+## [iOS 1.13.0] – 2026-09-06
+
+### Hinzugefügt
+
+- **Kachelansicht in Katalog, Kalender und Merkliste.** Neben der Liste
+  steht jetzt dasselbe Raster wie auf der Startseite; umgeschaltet wird über
+  ein Menü in der Navigationsleiste. Die Wahl bleibt je Bildschirm erhalten —
+  Katalog und Merkliste starten auf Kacheln, der Kalender auf Liste, weil
+  dort die Angabe zählt und nicht das Bild.
 
 ## [macOS 1.12.1] · [iOS 1.12.1] – 2026-09-06
 

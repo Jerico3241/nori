@@ -63,6 +63,20 @@ SwiftSoup wird als Swift-Package aufgelöst. Zum reinen Starten reicht ein
 Personal Team unter Signing & Capabilities; iCloud-Sync braucht zusätzlich die
 Key-Value-Store-Capability, die noch nicht eingerichtet ist.
 
+## Arbeitsweise
+
+Durcharbeiten, nicht nachfragen. Eine Aufgabe wird bis zum Ende gebracht —
+Änderung, `tools/check-apple-sources.py`, Commit, Push, PR, CI-Lauf auswerten,
+rote Läufe reparieren — ohne zwischendurch auf eine Bestätigung zu warten.
+Enthält eine Anfrage mehrere Punkte, folgt der nächste Punkt direkt auf den
+vorigen; größere Punkte werden zu eigenen PRs, aber nacheinander und
+selbstständig.
+
+Nachgefragt wird nur, wenn eine Angabe fehlt, die niemand außer dem Betreiber
+liefern kann (etwa eine OAuth-Client-ID) oder wenn zwei Auslegungen zu
+grundverschiedener Arbeit führen würden. Fragen der Form „soll ich bauen /
+testen / committen?" gehören nicht dazu.
+
 ## Konventionen
 
 - Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
