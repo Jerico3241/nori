@@ -4,8 +4,31 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.10.1**,
+unterschiedlich schnell bewegen: macOS **1.12.0**, iOS/iPadOS **1.11.0**,
 Windows **1.8.0**.
+
+## [macOS 1.12.0] · [iOS 1.11.0] – 2026-09-06
+
+### Entfernt
+
+- **Die iCloud-Synchronisation.** Sie hat nie funktioniert:
+  `NSUbiquitousKeyValueStore` verlangt die Berechtigung
+  `com.apple.developer.ubiquity-kvstore-identifier`, die es nur im
+  kostenpflichtigen Apple-Developer-Programm gibt. Ohne sie bleiben die
+  Aufrufe wirkungslos — ohne Fehler, ohne Meldung. Der Schalter in den
+  Einstellungen versprach einen Abgleich, der nie stattfand; jetzt steht
+  dort, was Sache ist.
+- Mit ihr das automatische Hochladen bei jeder Änderung. Ein Anbieter, der
+  über das Netz geht, gehört nicht in jeden Tastendruck.
+
+### Neu
+
+- `LibrarySyncProvider`: die Naht, an der ein Abgleich andockt. Zwei
+  Fragen — was liegt dort, nimm das hier —, der neuere Zeitstempel gewinnt.
+  Solange kein Anbieter eingerichtet ist, sagt die Oberfläche das auch.
+- `docs/synchronisation.md` vergleicht die kostenlosen Wege (Google Drive,
+  Dropbox, WebDAV, Git) und nennt, was jeder davon einmalig an Einrichtung
+  braucht.
 
 ## [iOS 1.10.1] – 2026-09-06
 

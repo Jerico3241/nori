@@ -26,26 +26,33 @@ struct SettingsView: View {
                     .listRowBackground(NoriTheme.surface)
                 }
                 Section("Synchronisation") {
-                    Toggle("Mit iCloud synchronisieren", isOn: $library.cloudSyncEnabled)
-                        .listRowBackground(NoriTheme.surface)
-                    if library.cloudSyncEnabled {
-                        Button("Jetzt synchronisieren") { library.syncNow() }
+                    if let provider = library.syncProvider {
+                        Button("Jetzt mit \(provider.name) abgleichen") { library.syncNow() }
                             .listRowBackground(NoriTheme.surface)
-                        if let stamp = library.cloudLastSync {
-                            LabeledContent("Letzter Stand", value: Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
+                        if let stamp = library.syncLastRun {
+                            LabeledContent("Letzter Abgleich", value: Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
                                 .font(.footnote)
                                 .listRowBackground(NoriTheme.surface)
                         }
+                    } else {
+                        LabeledContent("Zustand", value: "nicht eingerichtet")
+                            .listRowBackground(NoriTheme.surface)
+                        Text("""
+                             Hier stand ein iCloud-Schalter. Er hat nie etwas getan: \
+                             iCloud verlangt eine Berechtigung aus dem kostenpflichtigen \
+                             Apple-Developer-Programm, und ohne sie bleibt der Aufruf \
+                             wirkungslos — ohne Fehlermeldung. Merkliste, Verlauf und \
+                             Fortschritt liegen ausschließlich auf diesem Gerät.
+                             """)
+                            .font(.footnote)
+                            .foregroundStyle(NoriTheme.muted)
+                            .listRowBackground(NoriTheme.surface)
                     }
-                    Text("Synchronisiert Merkliste, Verlauf, Wiedergabefortschritt und Einstellungen zwischen deinen Apple-Geräten mit derselben Apple-ID.")
-                        .font(.footnote)
-                        .foregroundStyle(NoriTheme.muted)
-                        .listRowBackground(NoriTheme.surface)
                 }
                 Section("Dieses Gerät") {
                     LabeledContent("Version", value: appVersion)
                         .listRowBackground(NoriTheme.surface)
-                    Text("Nori läuft nativ. Ohne aktivierte iCloud-Synchronisation bleiben Merkliste und Fortschritt ausschließlich auf diesem Gerät.")
+                    Text("Nori läuft nativ und vollständig lokal.")
                         .font(.footnote)
                         .foregroundStyle(NoriTheme.muted)
                         .listRowBackground(NoriTheme.surface)
@@ -181,7 +188,7 @@ struct PrivacySettingsView: View {
                     Button("Verlauf löschen", role: .destructive) { confirm = "history" }
                     Button("Fortschritt löschen", role: .destructive) { confirm = "progress" }
                 } footer: {
-                    Text(library.cloudSyncEnabled ? "Bei aktivierter Synchronisation wird der gelöschte Stand auch mit iCloud abgeglichen." : "Die Daten werden nur auf diesem Gerät gelöscht.")
+                    Text("Die Daten werden nur auf diesem Gerät gelöscht.")
                 }
             }
             .scrollContentBackground(.hidden)
