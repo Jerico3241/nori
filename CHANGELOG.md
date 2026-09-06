@@ -4,8 +4,25 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.11**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.10.0**,
 Windows **1.8.0**.
+
+## [iOS 1.10.0] – 2026-09-06
+
+### Geändert
+
+- **Neue Startseite**, nach dem Vorbild von Crunchyroll. Statt Überschrift
+  und Raster steht oben ein vollflächiger Kopfbereich: Bild bis unter die
+  Statusleiste, darüber Titel, Quelle und Genres, Kurzbeschreibung und ein
+  breiter Abspielknopf neben dem Merken-Knopf. Fünf Titel zum Durchwischen,
+  mit Seitenpunkten; die Auswahl wechselt täglich.
+- Darunter waagerechte Zeilen statt eines Rasters — „Weiterschauen",
+  „Beliebte …" und bis zu sechs Genre-Zeilen, wie sie der Mac schon hat. Die
+  Karten tragen Titel und Genre unter dem Bild.
+- Der Abspielknopf ist nach Stand beschriftet: „Jetzt ansehen" oder
+  „F12 weiterschauen", wenn die Serie angefangen ist.
+- Die Farben bleiben Noris eigene. Übernommen ist der Aufbau, nicht das
+  Aussehen einer fremden App.
 
 ## [iOS 1.9.11] – 2026-09-06
 
