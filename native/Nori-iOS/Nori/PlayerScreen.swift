@@ -37,26 +37,32 @@ struct PlayerScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            playerChrome
-                .background(Color.black)
-            ZStack {
-                Color.black
-                if let player {
-                    PlayerLayer(player: player)
-                } else if let error {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let player {
+                PlayerLayer(player: player, menuItems: nativePlaybackMenus)
+                    .ignoresSafeArea()
+            } else {
+                if let error {
                     errorView(error)
                 } else {
                     loadingView
                 }
-                if let seconds = autoplaySeconds,
-                   let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
-                    autoplayCard(seconds: seconds, next: next)
+                VStack {
+                    HStack {
+                        Button("Schließen", systemImage: "xmark") { dismiss() }
+                            .buttonStyle(.bordered)
+                        Spacer()
+                    }
+                    Spacer()
                 }
+                .padding()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let seconds = autoplaySeconds,
+               let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
+                autoplayCard(seconds: seconds, next: next)
+            }
         }
-        .background(Color.black.ignoresSafeArea())
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .task { await startPlayback(resumeAt: currentResumeAt) }
@@ -98,89 +104,42 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    private var playerChrome: some View {
-        VStack {
-            HStack(spacing: 12) {
-                Button {
-                    save(forceComplete: false)
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .padding(12)
-                        .background(.black.opacity(0.45), in: Circle())
-                }
-
-                Spacer()
-
-                VStack(spacing: 2) {
-                    Text(series.title)
-                        .font(.caption.weight(.semibold))
-                    Text("Folge \(currentEpisode.number)")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.65))
-                }
-                .foregroundStyle(.white.opacity(0.9))
-
-                Spacer()
-
-                playbackMenu
+    /// AVKit ordnet diese Menüs neben seinen eigenen Bedienelementen an und
+    /// blendet sie gemeinsam mit ihnen aus. Keine zweite SwiftUI-Leiste.
+    @MainActor
+    private var nativePlaybackMenus: [UIMenuElement] {
+        var menus: [UIMenuElement] = []
+        if let info = watchInfo {
+            let hosters = Array(Set(info.hosters.map(\.name))).sorted {
+                HosterResolver.rank($0) < HosterResolver.rank($1)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            let hosterActions = hosters.map { hoster in
+                UIAction(title: hoster,
+                         state: source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in await switchHoster(to: hoster) }
+                }
+            }
+            if !hosterActions.isEmpty {
+                menus.append(UIMenu(title: "Hoster", image: UIImage(systemName: "server.rack"), children: hosterActions))
+            }
+            let languages = Array(Set(info.hosters.map(\.lang))).sorted()
+            let languageActions = languages.map { lang in
+                UIAction(title: languageLabel(lang),
+                         state: source?.lang.caseInsensitiveCompare(lang) == .orderedSame ? .on : .off) { _ in
+                    Task { @MainActor in await switchLanguage(to: lang) }
+                }
+            }
+            if !languageActions.isEmpty {
+                menus.append(UIMenu(title: "Quellsprache", image: UIImage(systemName: "globe"), children: languageActions))
+            }
         }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var playbackMenu: some View {
-        Menu {
-            if let info = watchInfo {
-                let hosters = Array(Set(info.hosters.map(\.name))).sorted { HosterResolver.rank($0) < HosterResolver.rank($1) }
-                if !hosters.isEmpty {
-                    Section("Hoster") {
-                        ForEach(hosters, id: \.self) { hoster in
-                            Button {
-                                Task { await switchHoster(to: hoster) }
-                            } label: {
-                                if source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame {
-                                    Label(hoster, systemImage: "checkmark")
-                                } else {
-                                    Text(hoster)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let languages = Array(Set(info.hosters.map(\.lang))).sorted()
-                if !languages.isEmpty {
-                    Section("Sprache") {
-                        ForEach(languages, id: \.self) { lang in
-                            Button {
-                                Task { await switchLanguage(to: lang) }
-                            } label: {
-                                if source?.lang.caseInsensitiveCompare(lang) == .orderedSame {
-                                    Label(languageLabel(lang), systemImage: "checkmark")
-                                } else {
-                                    Text(languageLabel(lang))
-                                }
-                            }
-                        }
-                    }
-                }
+        menus.append(UIAction(title: "Wiedergabe schließen", image: UIImage(systemName: "xmark")) { _ in
+            Task { @MainActor in
+                save(forceComplete: false)
+                dismiss()
             }
-
-        } label: {
-            HStack(spacing: 5) {
-                if isSwitching { ProgressView().controlSize(.small) }
-                Text(source.map { "Hoster: " + $0.hoster } ?? "Hoster & Sprache")
-                    .font(.caption2)
-                Image(systemName: "ellipsis.circle")
-            }
-            .foregroundStyle(.white.opacity(0.8))
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .background(.black.opacity(0.4), in: Capsule())
-        }
+        })
+        return menus
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
@@ -266,6 +225,11 @@ struct PlayerScreen: View {
             }
             let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
             let item = AVPlayerItem(asset: asset)
+            let titleMetadata = AVMutableMetadataItem()
+            titleMetadata.identifier = .commonIdentifierTitle
+            titleMetadata.value = (series.title + " – Folge " + String(currentEpisode.number)) as NSString
+            titleMetadata.extendedLanguageTag = "und"
+            item.externalMetadata = [titleMetadata]
             let av = AVPlayer(playerItem: item)
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
@@ -537,10 +501,12 @@ struct PlayerScreen: View {
 
 struct PlayerLayer: UIViewControllerRepresentable {
     let player: AVPlayer
+    let menuItems: [UIMenuElement]
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
+        controller.transportBarCustomMenuItems = menuItems
         controller.allowsPictureInPicturePlayback = true
         controller.updatesNowPlayingInfoCenter = true
         return controller
@@ -548,6 +514,7 @@ struct PlayerLayer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
         if vc.player !== player { vc.player = player }
+        vc.transportBarCustomMenuItems = menuItems
     }
 }
 

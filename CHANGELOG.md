@@ -4,8 +4,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.10**,
+unterschiedlich schnell bewegen: macOS **1.11.6**, iOS/iPadOS **1.9.11**,
 Windows **1.8.0**.
+
+## [iOS 1.9.11] – 2026-09-06
+
+- Hoster und Quellsprache als native AVKit-Menüs (transportBarCustomMenuItems) integriert. Die separate Playerleiste entfällt während der Wiedergabe; AVKit steuert Darstellung und Ausblenden zusammen mit den Systembedienelementen.
+- Titel/Folge als Player-Metadaten übergeben; Schließen als native Menüaktion sowie weiterhin im Lade-/Fehlerzustand erreichbar.
 
 ## [iOS 1.9.10] – 2026-09-06
 
