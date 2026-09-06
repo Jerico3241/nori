@@ -84,7 +84,7 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.13.1"
+    static let version = "1.14.1"
 
     static let highlights = [
         "Neuer Bereich „K-Drama“: die koreanischen Serien aus dem Serienstream-Katalog, in Seitenleiste, Katalog und Kalender.",
@@ -103,6 +103,7 @@ enum NoriRelease {
         "Anime und Serien stehen in einer gemeinsamen Bibliothek; der Umschalter unten links ist jetzt ein Filter.",
         "Leere Kacheln: Die Adresse eines Covers trägt einen Zufallsanteil und ließ sich nicht erraten. Nori liest sie jetzt bei Bedarf aus der Detailseite und merkt sie sich dauerhaft.",
         "Die Folgenliste zeigt Standbild und Beschreibung aus TMDB. Fehlt der deutsche Text, wird die englische Fassung nachgeholt; der Tooltip trägt die vollständige Beschreibung.",
+        "Kalender und Merkliste lassen sich als Raster anzeigen, nicht nur als Liste — umgeschaltet wird in der Fensterleiste, wie im Katalog schon länger.",
     ]
 }
 

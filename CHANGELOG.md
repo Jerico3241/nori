@@ -4,10 +4,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.13.1**, iOS/iPadOS **1.14.4**,
+unterschiedlich schnell bewegen: macOS **1.14.1**, iOS/iPadOS **1.14.4**,
 Windows **1.8.0**.
 
-## [iOS 1.14.4] · [macOS 1.13.1] – 2026-09-06
+## [iOS 1.14.4] · [macOS 1.14.1] – 2026-09-06
 
 ### Hinzugefügt
 
@@ -33,6 +33,29 @@ Windows **1.8.0**.
   „K-Drama“ den vollständigen Serienstream-Kalender gezeigt. Steht der
   Katalog noch nicht, wird bewusst nicht eingeschränkt: ein vollständiger
   Kalender ist die bessere Antwort als ein leerer.
+
+## [macOS 1.14.0] – 2026-09-06
+
+### Hinzugefügt
+
+- **Rasteransicht in Kalender und Merkliste.** Der Katalog konnte das schon
+  länger; die beiden anderen Ansichten waren auf Liste festgelegt.
+  Umgeschaltet wird über die Fensterleiste — auf dem Mac der erwartete Ort
+  für einen Darstellungsschalter, anders als auf dem iPhone, wo er über dem
+  Inhalt sitzt.
+- Die Wahl bleibt je Ansicht erhalten. Der Kalender startet auf **Liste**,
+  weil dort zählt, wann etwas kommt; Katalog und Merkliste auf **Raster**.
+- In der Merkliste entfernt ein Kontextmenü auf der Kachel den Eintrag — in
+  der Liste tut das weiterhin der Knopf am Zeilenende.
+
+### Geändert
+
+- `CatalogLayout` heißt jetzt `NoriViewMode` und liegt in `Theme.swift`. Drei
+  Ansichten teilen sich den Typ; ein Name, der nur eine davon nennt, führte in
+  die Irre. `NoriLayout` war nicht zu haben — so heißt auf dem Mac schon das
+  Maß-Enum in `HomeView`.
+- Der Umschalter selbst ist als `NoriViewModePicker` einmal vorhanden statt
+  dreimal abgeschrieben.
 
 ## [macOS 1.13.0] – 2026-09-06
 

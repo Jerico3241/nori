@@ -202,6 +202,75 @@ struct NoriCoverImage<Fallback: View>: View {
     }
 }
 
+/// Liste oder Raster — die Wahl in Katalog, Kalender und Merkliste.
+///
+/// Hieß `CatalogLayout` und lag im Katalog, weil es dort zuerst gebraucht
+/// wurde. Jetzt teilen sich drei Ansichten den Typ, und ein Name, der nur eine
+/// davon nennt, führt in die Irre. `NoriLayout` war nicht zu haben — so heißt
+/// auf dem Mac schon das Maß-Enum in `HomeView`.
+enum NoriViewMode: String, CaseIterable, Identifiable {
+    case list
+    case grid
+
+    var id: String { rawValue }
+    var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+    var label: String { self == .list ? "Liste" : "Raster" }
+}
+
+/// Der Umschalter dafür, für die Fensterleiste.
+///
+/// Auf dem iPhone sitzt er über dem Inhalt, weil die Navigationsleiste dort
+/// schon den Anime/Serien-Schalter trägt. Auf dem Mac ist die Leiste der
+/// richtige Ort: dort erwartet man Darstellungsschalter, und der Platz ist da.
+struct NoriViewModePicker: View {
+    @Binding var raw: String
+
+    var body: some View {
+        Picker("Darstellung", selection: $raw) {
+            ForEach(NoriViewMode.allCases) { option in
+                Label(option.label, systemImage: option.symbol).tag(option.rawValue)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.iconOnly)
+        .help("Zwischen Liste und Raster wechseln")
+    }
+}
+
+/// Eine Rasterkachel aus den nackten Angaben — Titel, Slug, Quelle.
+///
+/// `PosterCell` gibt es schon, die hängt aber an `CatalogItem` und bringt das
+/// Hover-Infofeld mit. Kalender und Merkliste haben keinen `CatalogItem` und
+/// brauchen das Infofeld auch nicht; sie tragen dafür eine eigene Zeile unter
+/// dem Titel (Staffel und Folge beziehungsweise nichts).
+struct NoriPosterCell: View {
+    let title: String
+    let slug: String
+    var subtitle: String? = nil
+    var coverURL: URL? = nil
+    var kind: CatalogProvider? = nil
+    var onOpen: (() -> Void)? = nil
+
+    var body: some View {
+        NoriSeriesLink(slug: slug, titleHint: title, provider: kind, onOpen: onOpen) {
+            VStack(alignment: .leading, spacing: 8) {
+                PosterTile(title: title, slug: slug, coverURL: coverURL, kind: kind)
+                Text(title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(NoriTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .help(title)
+    }
+}
+
 struct PosterTile: View {
     let title: String
     let slug: String

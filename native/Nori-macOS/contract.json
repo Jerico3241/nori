@@ -1,7 +1,7 @@
 {
   "name": "nori",
   "contractVersion": 2,
-  "appVersion": "1.13.1",
+  "appVersion": "1.14.1",
   "note": "Nori 1.9 native contract. Library schema v2 migrates 1.x progress automatically.",
   "providers": {
     "aniworld": {
