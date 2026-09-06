@@ -22,6 +22,107 @@ struct NoriScreen<Content: View>: View {
     }
 }
 
+/// Liste oder Kacheln — die Wahl in Katalog, Kalender und Merkliste.
+///
+/// Der Wert steht in `@AppStorage`, je Bildschirm unter einem eigenen
+/// Schlüssel: im Katalog scrollt man durch Hunderte Titel und will Kacheln,
+/// im Kalender zählt die Uhrzeit und damit die Zeile. Ein gemeinsamer Wert
+/// würde diese Entscheidung erzwingen.
+enum NoriLayout: String, CaseIterable, Identifiable {
+    case list
+    case grid
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .list: return "Liste"
+        case .grid: return "Kacheln"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .grid: return "square.grid.2x2"
+        }
+    }
+
+    /// Rasterspalten der Kachelansicht. `adaptive` statt fester Spaltenzahl:
+    /// auf dem iPhone stehen drei Kacheln, auf dem iPad je nach Breite fünf
+    /// bis sieben, und beim Drehen ordnet sich das von selbst.
+    static let columns = [GridItem(.adaptive(minimum: 104, maximum: 168), spacing: 14, alignment: .top)]
+}
+
+/// Der Umschalter dazu, für die Navigationsleiste.
+///
+/// Ein Menü statt eines zweiten Segmentschalters: neben dem Anime/Serien-
+/// Schalter ist in der Leiste kein Platz für weitere 148 Punkte, und das Menü
+/// benennt die beiden Ansichten, statt sie nur zu bebildern.
+struct LayoutSwitch: View {
+    @Binding var layout: NoriLayout
+
+    var body: some View {
+        Menu {
+            Picker("Ansicht", selection: $layout) {
+                ForEach(NoriLayout.allCases) { mode in
+                    Label(mode.label, systemImage: mode.symbol).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: layout.symbol)
+        }
+        .accessibilityLabel("Ansicht")
+    }
+}
+
+/// Eine Kachel mit Titel und einer Zeile darunter — die Grundform der
+/// Kachelansicht in Katalog, Kalender und Merkliste.
+///
+/// Anders als `CatalogCard` auf der Startseite hat sie keine feste Breite:
+/// im Raster bestimmt die Spalte, wie breit sie wird.
+struct NoriGridCard: View {
+    let title: String
+    let slug: String
+    var subtitle: String? = nil
+    var coverURL: URL? = nil
+    var kind: CatalogProvider? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            PosterTile(title: title, slug: slug, coverURL: coverURL, kind: kind)
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Überschrift über einem Abschnitt der Kachelansicht — im Raster gibt es
+/// keine `Section`-Kopfzeile wie in der Liste.
+struct NoriGridHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(NoriTheme.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+    }
+}
+
 struct NoriSeriesLink<Label: View>: View {
     let slug: String
     let titleHint: String
