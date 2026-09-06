@@ -33,13 +33,27 @@ enum TMDBKeyStore {
         return resolved
     }
 
+    /// Mitgelieferter Schlüssel, damit Cover und Beschreibungen ohne
+    /// Einrichtung da sind.
+    ///
+    /// Das ist bewusst gegen die sonst hier geltende Regel „keine Schlüssel im
+    /// Quelltext" entschieden — vom Betreiber, für eine private App in einem
+    /// privaten Repository. Was das heißt, gehört trotzdem aufgeschrieben: der
+    /// Schlüssel liegt damit in jedem Klon, in jedem Build und dauerhaft in
+    /// der Git-Historie, und aus einer IPA lässt er sich herausziehen. Wird das
+    /// Repository je öffentlich, ist er es auch.
+    ///
+    /// Der Schlüsselbund hat weiterhin Vorrang: wer einen eigenen Schlüssel
+    /// einträgt, benutzt seinen eigenen.
+    private static let builtIn = "30d39455d8ae27f049ab32c4b4bd608d"
+
     private static func resolve() -> String? {
         if let stored = readKeychain(), !stored.isEmpty { return stored }
         let bundled = Bundle.main.object(forInfoDictionaryKey: "TMDBAPIKey") as? String
         // Bei fehlender Build-Einstellung bleibt in der Info.plist der
         // unaufgelöste Platzhalter stehen — der ist kein Schlüssel.
-        guard let bundled, !bundled.isEmpty, !bundled.hasPrefix("$(") else { return nil }
-        return bundled
+        if let bundled, !bundled.isEmpty, !bundled.hasPrefix("$(") { return bundled }
+        return builtIn
     }
 
     /// Wurde der Schlüssel von Hand eingetragen (und lässt sich damit löschen)?

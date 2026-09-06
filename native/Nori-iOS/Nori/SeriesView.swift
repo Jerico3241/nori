@@ -56,8 +56,12 @@ struct SeriesView: View {
                                             .font(.caption)
                                             .foregroundStyle(NoriTheme.muted)
                                     }
+                                    // Erst zeigen, wenn tatsächlich etwas
+                                    // angesehen wurde. „0 % gesehen 0/1" auf
+                                    // einer Serie, die man noch nie geöffnet
+                                    // hat, ist keine Angabe, sondern Lärm.
                                     let stats = library.seasonStats(slug: slug, season: season, episodes: detail.episodes)
-                                    if stats.total > 0 {
+                                    if library.hasProgress(slug: slug, season: season), stats.total > 0 {
                                         Text("\(stats.pct)% gesehen  \(stats.watched)/\(stats.total)")
                                             .font(.caption.weight(.medium))
                                     }

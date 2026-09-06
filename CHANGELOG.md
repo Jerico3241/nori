@@ -4,8 +4,32 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.12.0**, iOS/iPadOS **1.12.0**,
+unterschiedlich schnell bewegen: macOS **1.12.1**, iOS/iPadOS **1.12.1**,
 Windows **1.8.0**.
+
+## [macOS 1.12.1] · [iOS 1.12.1] – 2026-09-06
+
+### Behoben
+
+- **„Weiter · Folge 1" auf einer nie geöffneten Serie.** `nextPlay` landete
+  ohne jeden Fortschritt im Zweig „next". Es heißt jetzt „Abspielen",
+  solange nichts angefangen wurde.
+- **Die Fortschrittsangabe stand auf jeder Detailseite**, auch mit „0 %
+  gesehen 0/1". Sie erscheint erst, wenn tatsächlich etwas angesehen wurde.
+- **Der Regler im Player zeigte zwei Spuren übereinander** und einen Griff,
+  der über den linken Rand hinausstand: der Systemregler bringt eine eigene
+  Spur mit, dahinter lag zusätzlich die Pufferanzeige. Ersetzt durch einen
+  eigenen Regler aus drei Kapseln und einem Punkt — eine Spur, ein Griff,
+  Puffer sichtbar.
+
+### Geändert
+
+- **TMDB-Schlüssel liegt jetzt bei.** Cover, Breitbilder und Beschreibungen
+  sind damit ohne Einrichtung da. Bewusst gegen die Regel „keine Schlüssel
+  im Quelltext" entschieden — vom Betreiber, für eine private App in einem
+  privaten Repository. Ein im Schlüsselbund hinterlegter Schlüssel hat
+  weiterhin Vorrang. `check_no_secrets()` lässt genau diese eine
+  Deklaration durch; jeder weitere einkompilierte Schlüssel fällt auf.
 
 ## [iOS 1.12.0] – 2026-09-06
 
