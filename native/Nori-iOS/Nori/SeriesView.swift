@@ -12,7 +12,14 @@ struct SeriesView: View {
     @State private var loading = true
     @State private var play: PlayTarget?
     @State private var coverColor = NoriTheme.accent
+    /// Standbilder und Beschreibungen der Folgen, nach Nummer.
+    @State private var episodeInfo: [Int: EpisodeInfo] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
+    /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
+    /// nicht — ein Schlüssel nur aus der Staffel würde das verpassen.
+    private var episodeTaskID: String { "\(slug)|\(season)|\(detail == nil ? 0 : 1)" }
 
     struct PlayTarget: Identifiable {
         var id: String { "\(episode.number)-\(resumeAt)" }
@@ -96,7 +103,12 @@ struct SeriesView: View {
                                 }
                             }
                             ForEach(detail.episodes) { ep in
-                                EpisodeRow(series: detail, episode: ep, season: season) { resumeAt in
+                                EpisodeRow(
+                                    series: detail,
+                                    episode: ep,
+                                    season: season,
+                                    info: episodeInfo[ep.number]
+                                ) { resumeAt in
                                     play = PlayTarget(series: detail, episode: ep, resumeAt: resumeAt, provider: library.provider)
                                 }
                             }
@@ -123,6 +135,20 @@ struct SeriesView: View {
         }
         .task {
             await load(season: nil)
+        }
+        .task(id: episodeTaskID) {
+            guard let detail else { return }
+            // Erst das, was schon dasteht: die Liste erscheint mit Bildern,
+            // ohne auf TMDB zu warten. Der Aufruf trägt danach nach.
+            episodeInfo = await EpisodeIndex.shared.cached(slug: slug, season: season)
+            let loaded = await EpisodeIndex.shared.load(
+                slug: slug,
+                title: detail.title,
+                season: season,
+                kind: library.provider
+            )
+            guard !Task.isCancelled, !loaded.isEmpty else { return }
+            episodeInfo = loaded
         }
         .task(id: detail?.coverPath) {
             guard let url = AniworldClient.coverURL(detail?.coverPath, provider: library.provider) else { return }
@@ -175,7 +201,21 @@ struct EpisodeRow: View {
     let series: SeriesDetail
     let episode: Episode
     let season: String
+    /// Bild und Beschreibung aus TMDB. `nil`, solange nichts geladen ist oder
+    /// TMDB die Serie nicht kennt — dann sieht die Zeile aus wie zuvor, nur
+    /// mit einer Kachel im 16:9-Format statt eines Quadrats.
+    var info: EpisodeInfo? = nil
     let play: (Double) -> Void
+
+    /// AniWorld und Serienstream lassen den deutschen Titel gelegentlich leer.
+    /// Dann trägt der TMDB-Titel die Zeile, und erst wenn auch der fehlt, die
+    /// Nummer.
+    private var shownTitle: String {
+        let own = episode.germanTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !own.isEmpty { return own }
+        if let other = info?.title, !other.isEmpty { return other }
+        return "Folge \(episode.number)"
+    }
 
     var body: some View {
         let item = library.progress(slug: series.slug, season: season, episode: episode.number, path: episode.path)
@@ -184,27 +224,23 @@ struct EpisodeRow: View {
         Button {
             play(library.resumeEnabled ? resumePosition(item) : 0)
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(NoriTheme.elevated)
-                        .frame(width: 44, height: 44)
-                    if complete {
-                        Image(systemName: "checkmark")
-                    } else {
-                        Text("\(episode.number)").font(.headline)
-                    }
-                }
+            HStack(alignment: .top, spacing: 12) {
+                thumb(complete: complete, ratio: ratio)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(episode.germanTitle).font(.body.weight(.medium)).lineLimit(1)
+                    Text(shownTitle).font(.body.weight(.medium)).lineLimit(2)
                     if !episode.englishTitle.isEmpty {
                         Text(episode.englishTitle).font(.caption).foregroundStyle(NoriTheme.muted).lineLimit(1)
                     }
-                    if ratio > 0, !complete {
-                        ProgressView(value: ratio).tint(NoriTheme.accent)
+                    if let text = info?.overview, !text.isEmpty {
+                        Text(text)
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if let item, !complete, item.positionSec >= 8 {
                     Text("\(Int(ratio * 100))%").font(.caption).foregroundStyle(NoriTheme.muted)
                 }
@@ -212,6 +248,59 @@ struct EpisodeRow: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(NoriPressStyle(enabled: !reduceMotion))
+    }
+
+    /// Die Folgenkachel: das Standbild aus TMDB, sonst die Nummer wie bisher.
+    ///
+    /// Der Fortschritt liegt als schmaler Streifen am unteren Rand statt als
+    /// `ProgressView` unter dem Titel — dort stand er zwischen Titel und
+    /// Beschreibung im Weg, und am Bild ist er die geläufige Form.
+    private func thumb(complete: Bool, ratio: Double) -> some View {
+        ZStack {
+            NoriTheme.elevated
+            if let url = info?.stillURL {
+                // image.tmdb.org braucht keine Kopfzeilen; `NoriCoverImage`
+                // bringt aber den Zwischenspeicher mit, den `AsyncImage` nicht
+                // hat — dieselbe Folge wird beim Blättern nicht neu geladen.
+                NoriCoverImage(url: url, referer: "https://www.themoviedb.org/") {
+                    Color.clear
+                }
+            }
+            if complete {
+                Color.black.opacity(info?.stillURL == nil ? 0 : 0.5)
+                Image(systemName: "checkmark")
+                    .font(.headline)
+            } else if info?.stillURL == nil {
+                Text("\(episode.number)").font(.headline)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if info?.stillURL != nil, !complete {
+                Text("\(episode.number)")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.6), in: Capsule())
+                    .padding(5)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if ratio > 0, !complete {
+                GeometryReader { geo in
+                    Rectangle()
+                        .fill(NoriTheme.accent)
+                        .frame(width: geo.size.width * min(max(ratio, 0), 1), height: 3)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                }
+                .frame(height: 3)
+            }
+        }
+        .frame(width: 112, height: 63)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(NoriTheme.border)
+        }
     }
 }
 
