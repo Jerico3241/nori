@@ -219,7 +219,12 @@ struct HeroCarousel: View {
     let items: [HeroItem]
     @State private var current: String = ""
 
-    private var height: CGFloat { 520 }
+    /// Ein Poster steht 2:3. Bei rund 390 Punkten Breite wären das 585 Punkte
+    /// Höhe — so viel darf der Kopfbereich nicht nehmen, sonst ist von der
+    /// Startseite nichts weiter zu sehen. 560 ist der Kompromiss: das Poster
+    /// wird nur knapp beschnitten, und zwar unten, wo Verlauf und Schrift
+    /// liegen.
+    private var height: CGFloat { 560 }
 
     var body: some View {
         TabView(selection: $current) {
@@ -347,27 +352,44 @@ struct HeroSlide: View {
         return "F\(progress.episode) weiterschauen"
     }
 
-    @ViewBuilder
+    /// Das Bild hinter einer Kopfseite.
+    ///
+    /// Zwei Dinge, die vorher nicht stimmten:
+    ///
+    /// **Die Überlappung beim Wischen.** `scaledToFill` meldet nach außen eine
+    /// größere Größe, als ihm angeboten wurde. Der ZStack wuchs damit über die
+    /// Seitenbreite hinaus, und `clipped()` schnitt auf diese *größere* Fläche
+    /// zu — das Bild lief also seitlich in die Nachbarseite hinein. `Color.clear`
+    /// nimmt dagegen genau die angebotene Größe an; erst darüber gelegt und dann
+    /// beschnitten endet das Bild da, wo die Seite endet.
+    ///
+    /// **Das Breitbild.** Ein 16:9-Backdrop in einer hochkant stehenden Fläche
+    /// zeigt einen schmalen Streifen aus der Bildmitte — meist Hintergrund, oft
+    /// unkenntlich. Das Poster hat mit 2:3 fast genau das Seitenverhältnis
+    /// dieser Fläche und wird deshalb zuerst genommen; oben ausgerichtet, damit
+    /// beschnitten wird, wo ohnehin der Verlauf und die Schrift liegen.
     private var backdrop: some View {
-        ZStack(alignment: .bottom) {
-            if let url = details.backdrop ?? details.poster {
-                NoriCoverImage(url: url, referer: item.kind.origin + "/") {
+        Color.clear
+            .overlay(alignment: .top) {
+                if let url = details.poster ?? details.backdrop {
+                    NoriCoverImage(url: url, referer: item.kind.origin + "/") {
+                        NoriTheme.elevated
+                    }
+                } else {
                     NoriTheme.elevated
                 }
-            } else {
-                NoriTheme.elevated
             }
-
-            // Zwei Verläufe: einer trägt die Schrift unten, der andere nimmt
-            // dem Bild oben die Härte gegen die Statusleiste.
-            LinearGradient(
-                colors: [.clear, NoriTheme.bg.opacity(0.75), NoriTheme.bg],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .clipped()
-        .allowsHitTesting(false)
+            .overlay {
+                // Zwei Verläufe: einer trägt die Schrift unten, der andere
+                // nimmt dem Bild oben die Härte gegen die Statusleiste.
+                LinearGradient(
+                    colors: [.clear, NoriTheme.bg.opacity(0.75), NoriTheme.bg],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .clipped()
+            .allowsHitTesting(false)
     }
 }
 

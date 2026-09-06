@@ -33,19 +33,21 @@ struct WatchlistView: View {
                     description: Text("Titel über das Herz merken. Anime und Serien bleiben getrennt gespeichert.")
                 )
                 .foregroundStyle(NoriTheme.muted)
-            } else if layout == .grid {
-                grid
             } else {
-                list
+                VStack(spacing: 0) {
+                    LayoutBar(layout: $layout)
+                    if layout == .grid {
+                        grid
+                    } else {
+                        list
+                    }
+                }
             }
         }
         .navigationTitle("Merkliste")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 KindSwitch(provider: Bindable(library).provider)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                LayoutSwitch(layout: $layout)
             }
         }
     }

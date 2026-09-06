@@ -144,6 +144,10 @@ struct SeriesView: View {
             let loaded = await EpisodeIndex.shared.load(
                 slug: slug,
                 title: detail.title,
+                // Die Quelle führt Serien oft unter einem eingedeutschten oder
+                // verkürzten Namen, den TMDB nicht kennt. Die Alternativtitel
+                // von der Detailseite treffen dann meist.
+                alternates: detail.alts,
                 season: season,
                 kind: library.provider
             )
@@ -207,14 +211,36 @@ struct EpisodeRow: View {
     var info: EpisodeInfo? = nil
     let play: (Double) -> Void
 
-    /// AniWorld und Serienstream lassen den deutschen Titel gelegentlich leer.
-    /// Dann trägt der TMDB-Titel die Zeile, und erst wenn auch der fehlt, die
-    /// Nummer.
+    /// „Episode 7" ist kein Titel, sondern die Nummer in Worten. Beide Quellen
+    /// setzen das ein, wo sie keinen echten Titel haben — und daneben steht
+    /// dann noch einmal dasselbe als englischer Titel.
+    private static func isPlaceholder(_ text: String) -> Bool {
+        text.range(
+            of: #"^\s*(episode|folge|ep\.?)\s*\d+\s*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    /// Der Titel der Quelle, sofern es einer ist; sonst der von TMDB, sonst
+    /// die Nummer.
     private var shownTitle: String {
         let own = episode.germanTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !own.isEmpty, !Self.isPlaceholder(own) { return own }
+        if let other = info?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !other.isEmpty, !Self.isPlaceholder(other) {
+            return other
+        }
         if !own.isEmpty { return own }
-        if let other = info?.title, !other.isEmpty { return other }
         return "Folge \(episode.number)"
+    }
+
+    /// Der englische Titel, aber nur wenn er etwas hinzufügt: dieselbe
+    /// Zeichenkette zweimal untereinander ist keine Auskunft.
+    private var shownSubtitle: String? {
+        let other = episode.englishTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !other.isEmpty, !Self.isPlaceholder(other) else { return nil }
+        guard other.caseInsensitiveCompare(shownTitle) != .orderedSame else { return nil }
+        return other
     }
 
     var body: some View {
@@ -228,8 +254,8 @@ struct EpisodeRow: View {
                 thumb(complete: complete, ratio: ratio)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(shownTitle).font(.body.weight(.medium)).lineLimit(2)
-                    if !episode.englishTitle.isEmpty {
-                        Text(episode.englishTitle).font(.caption).foregroundStyle(NoriTheme.muted).lineLimit(1)
+                    if let shownSubtitle {
+                        Text(shownSubtitle).font(.caption).foregroundStyle(NoriTheme.muted).lineLimit(1)
                     }
                     if let text = info?.overview, !text.isEmpty {
                         Text(text)
