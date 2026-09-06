@@ -27,6 +27,19 @@ struct HomeView: View {
 
     private let grid = [GridItem(.adaptive(minimum: 158, maximum: 200), spacing: 18)]
 
+    /// Warum die Liste leer ist — in der Sprache des Bereichs.
+    ///
+    /// „Der Katalog von K-Drama ist leer" wäre falsch: K-Drama ist kein
+    /// Katalog, sondern ein Ausschnitt aus dem von Serienstream. Leer heißt
+    /// hier, dass der Katalog steht, aber kein Titel das Genre trägt.
+    private var emptyHint: String {
+        if library.scope == .all { return "Beide Kataloge sind gerade leer." }
+        if let genre = library.scope.genre {
+            return "Im Katalog von \(library.scope.provider?.label ?? "Serienstream") steht gerade kein Titel unter „\(genre)“."
+        }
+        return "Der Katalog von \(library.scope.label) ist gerade leer."
+    }
+
     var body: some View {
         NoriScreen {
             ScrollView {
@@ -71,9 +84,7 @@ struct HomeView: View {
                             ContentUnavailableView(
                                 "Nichts geladen",
                                 systemImage: "tray",
-                                description: Text(library.scope == .all
-                                    ? "Beide Kataloge sind gerade leer."
-                                    : "Der Katalog von \(library.scope.label) ist gerade leer.")
+                                description: Text(emptyHint)
                             )
                             .frame(maxWidth: .infinity, minHeight: 220)
                         }

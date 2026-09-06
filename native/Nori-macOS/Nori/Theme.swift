@@ -112,7 +112,7 @@ struct ScopePicker: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .help("Alles anzeigen oder auf Anime (AniWorld) bzw. Serien (Serienstream) einschränken")
+        .help("Alles anzeigen oder auf Anime (AniWorld), Serien (Serienstream) bzw. K-Dramas einschränken")
     }
 }
 

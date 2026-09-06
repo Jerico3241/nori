@@ -2,6 +2,9 @@ import SwiftUI
 
 struct CalendarView: View {
     @Environment(LibraryStore.self) private var library
+    // Der Kalender braucht den Katalog, um „K-Drama" überhaupt erkennen zu
+    // können: ein `AiringEntry` trägt Slug und Quelle, aber keine Genres.
+    @Environment(CatalogStore.self) private var catalogStore
     @State private var payload: CalendarPayload?
     @State private var error: String?
     @State private var loading = true
@@ -56,10 +59,20 @@ struct CalendarView: View {
                 .disabled(loading)
             }
         }
-        .task(id: library.scope) { await load() }
+        // Auch am Katalog aufgehängt: bei einem Bereich mit Genre entscheidet
+        // er mit, was der Kalender zeigen darf. Lädt er nach dem Kalender
+        // fertig, muss der Kalender noch einmal durch den Filter.
+        .task(id: reloadKey) { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .noriRefreshRequested)) { _ in
             Task { await load(force: true) }
         }
+    }
+
+    /// Wechselt, wenn sich der Bereich ändert — oder der Katalog, sofern der
+    /// Bereich überhaupt an einem Genre hängt.
+    private var reloadKey: String {
+        guard library.scope.genre != nil else { return library.scope.rawValue }
+        return "\(library.scope.rawValue)|\(catalogStore.items.count)"
     }
 
     func grouped(_ rows: [AiringEntry]) -> [(label: String, rows: [AiringEntry])] {
@@ -76,7 +89,11 @@ struct CalendarView: View {
         loading = payload == nil
         error = nil
         do {
-            payload = try await Self.merged(scope: library.scope, force: force)
+            payload = try await Self.merged(
+                scope: library.scope,
+                slugs: catalogStore.slugs(for: library.scope),
+                force: force
+            )
         } catch {
             self.error = error.localizedDescription
         }
@@ -89,7 +106,16 @@ struct CalendarView: View {
     /// „kommend" und „kürzlich" dieselbe Regel benutzt wie bei einer einzelnen
     /// Quelle. Über die Kennung entdoppeln: dieselbe Folge kann bei beiden
     /// Seiten am selben Tag laufen.
-    static func merged(scope: LibraryScope, force: Bool) async throws -> CalendarPayload {
+    ///
+    /// `slugs` schränkt zusätzlich ein, wenn der Bereich an einem Genre hängt.
+    /// `nil` heißt „nicht einschränken" — nicht „nichts zeigen": solange der
+    /// Katalog noch lädt, ist ein vollständiger Kalender die bessere Antwort
+    /// als ein leerer.
+    static func merged(
+        scope: LibraryScope,
+        slugs: Set<String>? = nil,
+        force: Bool
+    ) async throws -> CalendarPayload {
         let sources = scope.provider.map { [$0] } ?? CatalogProvider.allCases
         var all: [AiringEntry] = []
         var seen: Set<String> = []
@@ -99,6 +125,7 @@ struct CalendarView: View {
             do {
                 let payload = try await AniworldClient.shared.getCalendar(provider: source, force: force)
                 for entry in payload.upcoming + payload.recent where !seen.contains(entry.id) {
+                    if let slugs, !slugs.contains(entry.slug) { continue }
                     seen.insert(entry.id)
                     all.append(entry)
                 }

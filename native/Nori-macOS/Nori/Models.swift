@@ -90,10 +90,18 @@ enum CatalogProvider: String, Codable, CaseIterable, Identifiable {
 /// Titel führt. Der Bereich entscheidet nur, was in den Listen steht. Vorher
 /// war beides dasselbe — der Umschalter war ein Moduswechsel, und eine Liste
 /// konnte nur Titel einer Quelle enthalten.
+///
+/// Seit `kdrama` ist ein Bereich außerdem **nicht mehr gleichbedeutend mit
+/// einer Quelle**. K-Dramas sind keine dritte Seite: Serienstream führt sie
+/// selbst, unter dem Genre „K-Drama" auf `/serien?by=genre`. Der Bereich ist
+/// deshalb ein Paar aus Quelle *und* Genre — beides zusammen ergibt den
+/// Ausschnitt. Das ist der Grund, warum `provider` allein nicht mehr zum
+/// Filtern reicht und es `includes(item:)` gibt.
 enum LibraryScope: String, Codable, CaseIterable, Identifiable {
     case all
     case aniworld
     case serienstream
+    case kdrama
 
     var id: String { rawValue }
 
@@ -102,6 +110,7 @@ enum LibraryScope: String, Codable, CaseIterable, Identifiable {
         case .all: return "Alle"
         case .aniworld: return "Anime"
         case .serienstream: return "Serien"
+        case .kdrama: return "K-Drama"
         }
     }
 
@@ -111,6 +120,7 @@ enum LibraryScope: String, Codable, CaseIterable, Identifiable {
         case .all: return "Alle Titel"
         case .aniworld: return "Alle Anime"
         case .serienstream: return "Alle Serien"
+        case .kdrama: return "Alle K-Dramas"
         }
     }
 
@@ -120,16 +130,49 @@ enum LibraryScope: String, Codable, CaseIterable, Identifiable {
         case .all: return nil
         case .aniworld: return .aniworld
         case .serienstream: return .serienstream
+        // K-Dramas stehen bei Serienstream. Der Bereich lädt also denselben
+        // Katalog wie `.serienstream` und schränkt ihn danach über `genre`
+        // ein — es wird nichts zusätzlich abgerufen.
+        case .kdrama: return .serienstream
+        }
+    }
+
+    /// Genre, auf das der Bereich zusätzlich einschränkt, oder `nil`.
+    ///
+    /// Die Zeichenkette ist die Überschrift, unter der die Quelle ihre Titel
+    /// führt — der Parser übernimmt sie unverändert aus dem `<h3>` der
+    /// Katalogseite. Verglichen wird deshalb ohne Rücksicht auf Groß- und
+    /// Kleinschreibung: schreibt die Seite morgen „K-Drama" anders, bleibt
+    /// der Bereich gefüllt, statt still leer zu laufen.
+    var genre: String? {
+        switch self {
+        case .all, .aniworld, .serienstream: return nil
+        case .kdrama: return "K-Drama"
         }
     }
 
     /// Gehört ein Eintrag dieser Quelle in den Bereich?
+    ///
+    /// Nur die Quelle — für Einträge, die kein Genre mitbringen (Fortschritt,
+    /// Verlauf, Kalender). Für Katalogeinträge ist `includes(item:)` richtig.
     func includes(_ other: CatalogProvider?) -> Bool {
         guard let provider else { return true }
         // Einträge ohne Quelle stammen aus einem älteren gespeicherten Stand
         // und werden nicht ausgefiltert — sonst verschwänden sie ganz.
         guard let other else { return true }
         return provider == other
+    }
+
+    /// Gehört ein Katalogeintrag in den Bereich? Quelle **und** Genre.
+    ///
+    /// Anders als bei der Quelle gibt es hier keine Nachsicht mit fehlenden
+    /// Angaben: ein Titel ohne Genres ist in `.kdrama` kein K-Drama, sondern
+    /// einer, über den nichts bekannt ist. Ihn trotzdem aufzunehmen, machte
+    /// den Bereich zur zweiten Serienliste.
+    func includes(item: CatalogItem) -> Bool {
+        guard includes(item.provider) else { return false }
+        guard let genre else { return true }
+        return item.genres.contains { $0.caseInsensitiveCompare(genre) == .orderedSame }
     }
 }
 
