@@ -45,6 +45,7 @@ SHARED_STRUCTURE: list[str] = []
 # APIs, die es schlicht nicht gibt. Jede Zeile hier hat einmal einen Build
 # gekostet.
 NONEXISTENT = {
+    r"\.transportBarCustomMenuItems": "transportBarCustomMenuItems ist unter iOS nicht verfügbar; keine tvOS-API im iOS-Player verwenden.",
     r"\\\.openSettings": (
         "EnvironmentValues.openSettings existiert nicht. "
         "Für einen Knopf, der die Einstellungen öffnet: SettingsLink (macOS 14+)."
@@ -570,3 +571,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

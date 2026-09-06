@@ -9,8 +9,8 @@ Windows **1.8.0**.
 
 ## [iOS 1.9.11] – 2026-09-06
 
-- Hoster und Quellsprache als native AVKit-Menüs (transportBarCustomMenuItems) integriert. Die separate Playerleiste entfällt während der Wiedergabe; AVKit steuert Darstellung und Ausblenden zusammen mit den Systembedienelementen.
-- Titel/Folge als Player-Metadaten übergeben; Schließen als native Menüaktion sowie weiterhin im Lade-/Fehlerzustand erreichbar.
+- Separate Playerleiste durch einen kleinen Liquid-Glass-Menüknopf im Video ersetzt (ab iOS 26, Material-Fallback auf älteren Systemen). Hoster/Quellsprache als UIKit-Menüs; nach vier Sekunden ausgeblendet, per Videotipp wieder sichtbar. Eigenständige Sichtbarkeitssteuerung; bei VoiceOver bleibt der Knopf erreichbar.
+- Titel/Folge als Player-Metadaten übergeben; Schließen als Menüaktion sowie weiterhin im Lade-/Fehlerzustand erreichbar.
 
 ## [iOS 1.9.10] – 2026-09-06
 

@@ -27,6 +27,10 @@ struct PlayerScreen: View {
     @State private var statusTask: Task<Void, Never>?
     @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
+    @State private var optionsVisible = true
+    @State private var optionsTick = 0
+    @State private var menuOpen = false
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
@@ -40,8 +44,25 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let player {
-                PlayerLayer(player: player, menuItems: nativePlaybackMenus)
+                PlayerLayer(player: player)
                     .ignoresSafeArea()
+                    .simultaneousGesture(TapGesture().onEnded {
+                        menuOpen = false
+                        optionsVisible = true
+                        optionsTick &+= 1
+                    })
+                    .overlay(alignment: .topLeading) {
+                        if optionsVisible || voiceOverEnabled {
+                            glassOptions
+                                .padding(.leading, 16)
+                                .padding(.top, 64)
+                        }
+                    }
+                    .task(id: optionsTick) {
+                        try? await Task.sleep(for: .seconds(4))
+                        guard !Task.isCancelled, !menuOpen, !voiceOverEnabled else { return }
+                        optionsVisible = false
+                    }
             } else {
                 if let error {
                     errorView(error)
@@ -104,8 +125,8 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    /// AVKit ordnet diese Menüs neben seinen eigenen Bedienelementen an und
-    /// blendet sie gemeinsam mit ihnen aus. Keine zweite SwiftUI-Leiste.
+    /// Native UIKit-Menüs hinter einem kleinen Glas-Knopf. Die tvOS-
+    /// Transportleisten-Erweiterung ist unter iOS nicht verfügbar.
     @MainActor
     private var nativePlaybackMenus: [UIMenuElement] {
         var menus: [UIMenuElement] = []
@@ -116,7 +137,11 @@ struct PlayerScreen: View {
             let hosterActions = hosters.map { hoster in
                 UIAction(title: hoster,
                          state: source?.hoster.caseInsensitiveCompare(hoster) == .orderedSame ? .on : .off) { _ in
-                    Task { @MainActor in await switchHoster(to: hoster) }
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchHoster(to: hoster)
+                    }
                 }
             }
             if !hosterActions.isEmpty {
@@ -126,7 +151,11 @@ struct PlayerScreen: View {
             let languageActions = languages.map { lang in
                 UIAction(title: languageLabel(lang),
                          state: source?.lang.caseInsensitiveCompare(lang) == .orderedSame ? .on : .off) { _ in
-                    Task { @MainActor in await switchLanguage(to: lang) }
+                    Task { @MainActor in
+                        menuOpen = false
+                        optionsTick &+= 1
+                        await switchLanguage(to: lang)
+                    }
                 }
             }
             if !languageActions.isEmpty {
@@ -140,6 +169,20 @@ struct PlayerScreen: View {
             }
         })
         return menus
+    }
+
+    @ViewBuilder
+    private var glassOptions: some View {
+        if #available(iOS 26.0, *) {
+            optionsButton.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            optionsButton.background(.ultraThinMaterial, in: Circle())
+        }
+    }
+
+    private var optionsButton: some View {
+        PlayerOptionsButton(menuItems: nativePlaybackMenus) { menuOpen = true }
+            .frame(width: 44, height: 44)
     }
 
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
@@ -501,12 +544,10 @@ struct PlayerScreen: View {
 
 struct PlayerLayer: UIViewControllerRepresentable {
     let player: AVPlayer
-    let menuItems: [UIMenuElement]
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        controller.transportBarCustomMenuItems = menuItems
         controller.allowsPictureInPicturePlayback = true
         controller.updatesNowPlayingInfoCenter = true
         return controller
@@ -514,7 +555,27 @@ struct PlayerLayer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
         if vc.player !== player { vc.player = player }
-        vc.transportBarCustomMenuItems = menuItems
     }
 }
 
+
+/// UIKit übernimmt Menüpräsentation und Auswahlzustände; kein Eingriff in AVKit-Unteransichten.
+struct PlayerOptionsButton: UIViewRepresentable {
+    let menuItems: [UIMenuElement]
+    let onOpen: () -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        button.tintColor = .white
+        button.accessibilityLabel = "Hoster und Quellsprache"
+        button.showsMenuAsPrimaryAction = true
+        button.addAction(UIAction { _ in onOpen() }, for: .menuActionTriggered)
+        button.menu = UIMenu(children: menuItems)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.menu = UIMenu(children: menuItems)
+    }
+}
