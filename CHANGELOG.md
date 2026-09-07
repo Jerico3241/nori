@@ -4,8 +4,56 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.15.0**,
+unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.16.0**,
 Windows **1.8.0**, Android **0.1.0**.
+
+## [iOS 1.16.0] - 2026-09-07
+
+### Hinzugefuegt
+
+- **Bereichspillen ueber der Startseite.** Alle, Anime, Serien, K-Drama
+  stehen jetzt direkt im Inhalt statt im Menue der Navigationsleiste. In den
+  uebrigen Tabs bleibt es beim Menue - eine Pillenreihe ueber jeder Ansicht
+  waere nur Wiederholung.
+- **Schriftzuege aus TMDB.** Der Kern holt ueber `/tv/{id}/images` das
+  freigestellte Logo einer Serie und legt es im Cover-Index ab. Es kostet
+  einen eigenen Abruf - `/search/tv` liefert es nicht mit - und wird deshalb
+  nur dort geholt, wo es sichtbar wird: im Kopfbereich und auf den
+  Weiterschauen-Kacheln. Deutsch vor Englisch vor sprachlos, PNG vor SVG
+  (SVG kann `AsyncImage` nicht darstellen).
+
+### Geaendert
+
+- **Der Kopfbereich traegt das Breitbild statt des Posters.** Die Flaeche ist
+  jetzt selbst 16:9, das Poster waere darin das falsche Format. Das Logo
+  liegt unten links im Bild, der Titel als Text ist der Rueckfall - viele
+  Serien haben bei TMDB gar kein Logo. Von 560 auf 430 Punkte Hoehe: die
+  Startseite zeigt wieder mehr als nur den Kopfbereich.
+- **Die Weiterschauen-Kacheln stehen im Querformat**, mit Backdrop als Bild,
+  Logo unten links und dem Fortschritt als Streifen **im** Bild. Darunter die
+  Restzeit - "Noch 14 Min." sagt, worauf man sich einlaesst, ein Prozentwert
+  nicht.
+- **Antippen spielt sofort ab.** Vorher fuehrte die Kachel auf die
+  Detailseite. Jetzt entscheidet `nextPlay` im Kern: die zuletzt angefangene
+  Folge, solange sie nicht zu Ende gesehen ist - sonst die naechste
+  unfertige. Solange die Serie geholt wird, liegt ein Fortschrittsring auf
+  der Kachel; ohne den wirkte das Antippen tot.
+
+### Behoben
+
+- **`nextPlay` nahm die Vorgabequelle statt der Quelle des Titels.** Seit die
+  Bibliothek beide Quellen zusammenfuehrt, ist ein Titel der *anderen* Seite
+  der Normalfall - die Fortschrittssuche griff dann daneben und begann von
+  vorn. Die Quelle wird jetzt uebergeben; ohne Angabe bleibt es beim alten
+  Verhalten.
+
+### Sonstiges
+
+- `tools/check-apple-sources.py` kennt `NoriTheme.danger`. Ein erfundenes
+  Symbol in einem ViewBuilder meldet der Compiler nicht als "has no member",
+  sondern als `failed to produce diagnostic for expression` mit Spalte auf
+  `some View` - das sieht nach einem zu komplexen Ausdruck aus und fuehrt in
+  die Irre. Hat hier drei Build-Durchlaeufe gekostet.
 
 ## [iOS 1.15.0] – 2026-09-07
 

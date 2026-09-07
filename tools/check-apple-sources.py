@@ -50,6 +50,14 @@ NONEXISTENT = {
         "EnvironmentValues.openSettings existiert nicht. "
         "Für einen Knopf, der die Einstellungen öffnet: SettingsLink (macOS 14+)."
     ),
+    r"NoriTheme\.danger": (
+        "NoriTheme hat kein 'danger'. Vorhanden sind bg, surface, elevated, fg, "
+        "muted, accent, border — für Fehlertexte .red verwenden. "
+        "Ein erfundenes Symbol in einem ViewBuilder meldet der Compiler nicht "
+        "als 'has no member', sondern als 'failed to produce diagnostic for "
+        "expression' mit Spaltenangabe auf 'some View' — die Meldung sieht "
+        "nach einem zu komplexen Ausdruck aus und führt in die Irre."
+    ),
 }
 
 # Symbole, die neuer sind als das Deployment-Target des jeweiligen Targets.
