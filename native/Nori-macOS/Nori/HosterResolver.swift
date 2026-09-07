@@ -1,4 +1,14 @@
 import Foundation
+// `URLSession` und alles, was daran hängt — `URLRequest`, `HTTPURLResponse`,
+// `HTTPCookieStorage` —, liegt außerhalb von Apple in einem eigenen Modul.
+// Auf Apple ist dieser Import wirkungslos: dort gibt es FoundationNetworking
+// nicht, und `canImport` ist schlicht falsch. Ohne ihn scheitert der
+// Android-Durchbau an dutzenden Fehlern, die alle dasselbe sagen —
+// „'URLSession' is unavailable: This type has moved to the
+// FoundationNetworking module."
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Ein Fund im HTML einer Hosterseite.
 struct MediaHit: Equatable {

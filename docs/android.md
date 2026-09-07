@@ -72,23 +72,57 @@ Beide Dateien bleiben zwischen iOS und macOS **byte-gleich** —
 
 ## Einrichtung auf dem Runner
 
-Der Android-Durchbau braucht mehr als Xcode:
+Der Android-Durchbau braucht mehr als Xcode. Vier Schritte, und zwei davon
+sind Fallen, die sich als Fehler im Quelltext tarnen:
 
-1. **Swift-SDK für Android.** Ein quergebautes SDK-Bundle von swift.org
-   beziehungsweise der Swift-Android-Workgroup:
+1. **Open-Source-Toolchain von swift.org.** Nicht die aus Xcode. Ein
+   Cross-Compilation-SDK verlangt die offene Toolchain in **exakt** der
+   Version des SDK-Bundles. Xcodes Toolchain kommt trotzdem durch
+   `swift sdk list` — die SDK-Liste liegt im Benutzerverzeichnis und weiß
+   nichts von der Toolchain. Der Build läuft dann los und scheitert an
+   dutzenden Fehlern, die nach kaputtem Quelltext aussehen.
+
+   Ausgewählt wird sie über `TOOLCHAINS`:
+
    ```bash
-   swift sdk install <URL-des-Bundles>
-   swift sdk list          # muss einen android-Eintrag zeigen
+   export TOOLCHAINS=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+     ~/Library/Developer/Toolchains/swift-6.3.3-RELEASE.xctoolchain/Info.plist)
    ```
-2. **Android NDK**, passend zur SDK-Version.
-3. Für die spätere App zusätzlich das **Android SDK** (Android Studio oder
-   die Command-line-Tools) mit akzeptierten Lizenzen.
 
-Prüfen lässt sich Punkt 1 mit:
+2. **Android NDK**, r27d oder neuer.
+
+3. **Swift-SDK für Android**, in derselben Version wie die Toolchain:
+
+   ```bash
+   swift sdk install https://download.swift.org/swift-6.3.3-release/android-sdk/\
+swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_android.artifactbundle.tar.gz \
+     --checksum d160cc3206dd1886dae3fef2337af5e25ec034692cd0ec225721c56cc69da7f5
+   ```
+
+4. **Das SDK gegen das NDK einrichten.** Das Bundle zeigt über
+   `sdkRootPath: ndk-sysroot` auf ein Verzeichnis, das es *nicht mitbringt* —
+   es entsteht erst durch ein Skript, das im Bundle selbst liegt. Fehlt der
+   Schritt, bricht der Build mitten in SwiftSoup mit
+   „`'semaphore.h' file not found`" ab:
+
+   ```bash
+   export ANDROID_NDK_HOME=/opt/homebrew/share/android-commandlinetools/ndk/<version>
+   bash ~/Library/org.swift.swiftpm/swift-sdks/\
+swift-6.3.3-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh
+   ```
+
+Für die spätere App kommt das **Android SDK** dazu (Android Studio oder die
+Command-line-Tools) mit akzeptierten Lizenzen.
+
+Alle vier Punkte prüft:
 
 ```bash
 tools/require-swift-android.sh
 ```
+
+Es vergleicht inzwischen auch Toolchain-Version gegen SDK-Version und besteht
+auf dem eingerichteten `ndk-sysroot` — beides, weil ein Fehlschlag sonst erst
+im Build auffällt und dort nach etwas ganz anderem aussieht.
 
 ## Der Durchbau
 
@@ -159,14 +193,30 @@ die Apple-Symbole schon; die einfarbige Ebene kommt dort dazu.
 
 ## Wie es weitergeht
 
-1. **Durchbau** — dieser Schritt. Übersetzt der Kern für Android?
+1. **Durchbau** — ✅ **erledigt.** Der geteilte Kern übersetzt für
+   `aarch64-unknown-linux-android`.
 2. **Brücke** — Swift-Kern als `.so`, angebunden über JNI beziehungsweise
    `swift-java`. Erst hier zeigt sich der wirkliche Aufwand.
 3. **Oberfläche** — Compose mit Material 3 und dynamischen Farben (siehe
    oben): Startseite, Katalog, Kalender, Merkliste, Detailseite. Media3 für
    den Player.
 
-Punkt 1 ist billig und entscheidet alles Weitere. Scheitert er — etwa weil
-SwiftSoup oder Observation für Android nicht durchbauen —, ist eine
-Kotlin-Portierung des Kerns die Rückfallebene, und wir wissen es nach einer
-Runde statt nach Wochen.
+Punkt 1 war billig und hat alles Weitere entschieden. Das Ergebnis:
+
+> `Build of target: 'NoriCore' complete!`
+
+SwiftSoup, Observation und Foundation bauen für Android durch. **Die
+Kotlin-Rückfallebene entfällt** — der geteilte Kern trägt, und die Parser für
+AniWorld und Serienstream müssen nicht ein zweites Mal geschrieben und
+danach dauerhaft doppelt repariert werden. Genau das war die teure Frage.
+
+Nötig war dafür genau eine Änderung am Quelltext, und sie steht in derselben
+Reihe wie `Security` und `ImageIO` weiter oben: `URLSession` und alles, was
+daran hängt, liegt außerhalb von Apple im Modul `FoundationNetworking`.
+`AniworldClient.swift` und `HosterResolver.swift` importieren es jetzt über
+`#if canImport(FoundationNetworking)` — auf Apple wirkungslos, für Android
+der Unterschied zwischen 50 Fehlern und einem grünen Build.
+
+Die dritte Darwin-Bindung ist damit auch benannt; die Tabelle „Was Swift auf
+Android kann" oben nennt `URLSession` als vorhanden, was stimmt — nur eben
+aus einem anderen Modul.
