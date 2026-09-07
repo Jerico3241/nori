@@ -365,13 +365,13 @@ struct HeroCarousel: View {
     let items: [HeroItem]
     @State private var current: String = ""
 
-    /// Bildkarte im Breitbild plus Zeile, Beschreibung und Knöpfe darunter.
+    /// Nur noch die Bildkarte plus Platz fuer die Seitenpunkte.
     ///
-    /// Früher standen hier 560 Punkte für ein hochkantes Poster. Seit das
-    /// Backdrop trägt, ist die Karte bei rund 350 Punkten Breite nur noch
-    /// etwa 197 Punkte hoch — der Rest ist Text, und die Startseite zeigt
-    /// wieder mehr als nur den Kopfbereich.
-    private var height: CGFloat { 430 }
+    /// 560 waren es, als der Kopfbereich ein hochkantes Poster samt
+    /// Steckbrief trug; 430 mit Breitbild und Text darunter. Ohne Text bleibt
+    /// die Karte selbst: bei rund 350 Punkten Breite sind das etwa 197 Punkte
+    /// plus Rand und Punkte.
+    private var height: CGFloat { 250 }
 
     var body: some View {
         TabView(selection: $current) {
@@ -393,97 +393,48 @@ struct HeroCarousel: View {
 }
 
 struct HeroSlide: View {
-    @Environment(LibraryStore.self) private var library
     let item: HeroItem
 
     @State private var details = CoverDetails(poster: nil, backdrop: nil, overview: nil, rating: nil)
     @State private var logo: URL?
 
-    private var progress: WatchProgress? {
-        library.continueWatching().first { $0.slug == item.slug }
-    }
-
-    private var meta: String {
-        var parts = [item.kind.label]
-        parts.append(contentsOf: item.genres.prefix(3))
-        return parts.joined(separator: " · ")
-    }
-
-    private var playLabel: String {
-        progress == nil ? "Jetzt ansehen" : "Weiterschauen"
-    }
-
+    /// Nur Bild und Schriftzug — die ganze Flaeche fuehrt zur Serie.
+    ///
+    /// Frueher standen hier zusaetzlich Titel, Quelle, Genres, Beschreibung
+    /// und zwei Knoepfe. Das war ein Steckbrief, kein Kopfbereich: die Karte
+    /// nahm 560 Punkte, und die Startseite begann faktisch erst darunter.
+    ///
+    /// Alles davon gibt es eine Ebene tiefer ohnehin. Der Kopfbereich hat
+    /// jetzt genau eine Aufgabe — zeigen, worum es geht, und beim Antippen
+    /// dorthin fuehren. Merken laesst sich ein Titel auf der Detailseite.
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        NoriSeriesLink(
+            slug: item.slug,
+            titleHint: item.title,
+            scaleOnPress: true,
+            provider: item.kind
+        ) {
             banner
-            Text(meta)
-                .font(.caption)
-                .foregroundStyle(NoriTheme.muted)
-                .lineLimit(1)
-
-            if let overview = details.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(.footnote)
-                    .foregroundStyle(NoriTheme.fg.opacity(0.85))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: 12) {
-                NoriSeriesLink(
-                    slug: item.slug,
-                    titleHint: item.title,
-                    provider: item.kind
-                ) {
-                    Label(playLabel, systemImage: "play.fill")
-                        .font(.callout.weight(.bold))
-                        // Der Akzent ist hell — Schrift darauf muss dunkel
-                        // sein, sonst steht Weiß auf Weiß.
-                        .foregroundStyle(NoriTheme.bg)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-
-                Button {
-                    library.toggleFavorite(item.slug, title: item.title)
-                } label: {
-                    Image(systemName: library.isFavorite(item.slug) ? "bookmark.fill" : "bookmark")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(NoriTheme.fg)
-                        .frame(width: 48, height: 46)
-                        .background(NoriTheme.elevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(NoriTheme.border)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(library.isFavorite(item.slug) ? "Von der Merkliste nehmen" : "Auf die Merkliste")
-            }
         }
         .padding(.horizontal, 20)
-        // Platz für die Seitenpunkte des TabView, die sonst auf den Knöpfen
+        // Platz fuer die Seitenpunkte des TabView, die sonst auf dem Bild
         // liegen.
-        .padding(.bottom, 34)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 30)
         .task(id: item.slug) {
             details = await CoverIndex.shared.detailsLoading(
                 slug: item.slug,
                 title: item.title,
                 kind: item.kind
             )
-            // Ohne TMDB-Treffer hat `details` weder Breitbild noch Poster, und
-            // der Kopfbereich bliebe schwarz. Das Cover der Quelle steht nur
-            // auf der Detailseite; die Kacheln holen es sich längst so.
+            // Ohne TMDB-Treffer haette der Kopfbereich weder Breitbild noch
+            // Poster und bliebe schwarz. Das Cover der Quelle steht nur auf
+            // der Detailseite; die Kacheln holen es sich laengst so.
             if details.backdrop == nil, details.poster == nil {
                 details.poster = await CoverIndex.shared.fetchSourceCover(
                     slug: item.slug,
                     provider: item.kind
                 )
             }
-            // Das Logo kostet einen eigenen Abruf und wird deshalb erst hier
-            // geholt — nicht bei jeder Kachel im Katalog.
             logo = await CoverIndex.shared.logoLoading(
                 slug: item.slug,
                 title: item.title,
@@ -493,12 +444,10 @@ struct HeroSlide: View {
         }
     }
 
-    /// Die Bildkarte: Breitbild, darüber unten links der Schriftzug.
+    /// Die Bildkarte: Breitbild, darueber unten links der Schriftzug.
     ///
-    /// Anders als vorher trägt hier das **Backdrop** und nicht das Poster.
-    /// Der Kopfbereich stand früher hochkant, wo ein 16:9-Bild nur einen
-    /// schmalen Streifen aus der Mitte gezeigt hätte; jetzt ist die Fläche
-    /// selbst 16:9, und das Poster wäre das falsche Format.
+    /// Das **Backdrop** traegt, nicht das Poster: die Flaeche ist selbst
+    /// 16:9, und ein 2:3-Poster darin waere das falsche Format.
     private var banner: some View {
         Color.clear
             .aspectRatio(16 / 9, contentMode: .fit)
@@ -512,8 +461,8 @@ struct HeroSlide: View {
                 }
             }
             .overlay {
-                // Trägt den Schriftzug unten. Ohne den Verlauf steht ein
-                // weißes Logo auf einem womöglich hellen Bild.
+                // Traegt den Schriftzug unten. Ohne den Verlauf steht ein
+                // weisses Logo womoeglich auf einem hellen Bild.
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.15), .black.opacity(0.75)],
                     startPoint: .center,
@@ -526,17 +475,17 @@ struct HeroSlide: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Der Schriftzug — das TMDB-Logo, sonst der Titel als Text.
+    /// Der Schriftzug - das TMDB-Logo, sonst der Titel als Text.
     ///
-    /// Der Rückfall ist der Normalfall, nicht die Ausnahme: viele Serien
-    /// haben bei TMDB gar kein Logo, und für die soll der Kopfbereich nicht
-    /// namenlos bleiben.
+    /// Der Rueckfall ist der Normalfall, nicht die Ausnahme: viele Serien
+    /// haben bei TMDB gar kein Logo, und fuer die darf der Kopfbereich nicht
+    /// namenlos bleiben. Ohne Titelzeile darunter waere er das sonst.
     @ViewBuilder
     private var titleArt: some View {
         if let logo {
             // `AsyncImage` und nicht `NoriCoverImage`: letzteres zeichnet
-            // immer mit `scaledToFill`, was ein Cover füllen soll — ein
-            // freigestellter Schriftzug würde dabei beschnitten. Und TMDB
+            // immer mit `scaledToFill`, was ein Cover fuellen soll - ein
+            // freigestellter Schriftzug wuerde dabei beschnitten. Und TMDB
             // braucht keinen Referer, anders als die Hoster-Bilder.
             AsyncImage(url: logo) { image in
                 image.resizable().scaledToFit()

@@ -24,11 +24,14 @@ Windows **1.8.0**, Android **0.1.0**.
 
 ### Geaendert
 
-- **Der Kopfbereich traegt das Breitbild statt des Posters.** Die Flaeche ist
-  jetzt selbst 16:9, das Poster waere darin das falsche Format. Das Logo
-  liegt unten links im Bild, der Titel als Text ist der Rueckfall - viele
-  Serien haben bei TMDB gar kein Logo. Von 560 auf 430 Punkte Hoehe: die
-  Startseite zeigt wieder mehr als nur den Kopfbereich.
+- **Der Kopfbereich ist nur noch Bild.** Breitbild statt Poster, der
+  freigestellte Schriftzug unten links, und die ganze Flaeche fuehrt beim
+  Antippen zur Serie. Titel, Quelle, Genres, Beschreibung und zwei Knoepfe
+  sind weg - das war ein Steckbrief, kein Kopfbereich, und alles davon steht
+  eine Ebene tiefer ohnehin. Von 560 auf 250 Punkte Hoehe: die Startseite
+  beginnt wieder oben statt unter dem Kopfbereich. Der Titel als Text bleibt
+  der Rueckfall, denn viele Serien haben bei TMDB kein Logo - ohne Titelzeile
+  darunter waere der Kopfbereich sonst namenlos.
 - **Die Weiterschauen-Kacheln stehen im Querformat**, mit Backdrop als Bild,
   Logo unten links und dem Fortschritt als Streifen **im** Bild. Darunter die
   Restzeit - "Noch 14 Min." sagt, worauf man sich einlaesst, ein Prozentwert
