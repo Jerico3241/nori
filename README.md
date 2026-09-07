@@ -17,7 +17,7 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.16.1** | Native SwiftUI-App, aktueller Hauptstand |
+| iOS / iPadOS | **1.17.0** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche; Player und Startseite liegen hinter dem iOS-Stand |
 | Android | **0.1.0** | Compose-App auf dem geteilten Swift-Kern; Katalog, Detailseite und Player, noch ohne Cover im Katalog |
 | Windows | **1.8.0** | Electron / Node Portable Build |

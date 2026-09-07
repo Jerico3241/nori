@@ -4,8 +4,34 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.16.1**,
+unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.17.0**,
 Windows **1.8.0**, Android **0.1.0**.
+
+## [iOS 1.17.0] - 2026-09-07
+
+### Geaendert
+
+- **Die Detailseite folgt dem Aufbau von Serien-Apps.** Statt Poster-Kachel
+  neben dem Titel traegt jetzt ein grosser Backdrop den Kopf, mit dem
+  freigestellten TMDB-Schriftzug darueber. Darunter zwei Zeilen Eckdaten —
+  Jahr und Genres, dann Staffelzahl, Stand und Bewertung.
+- **Merkliste als Pille, dazu ein Ueberlaufmenue** („Von vorn abspielen",
+  „Fortschritt dieser Staffel vergessen"). Das Herz in der Navigationsleiste
+  entfaellt.
+- **Umschalter Details / Folgen.** Beschreibung, Alternativtitel, FSK und
+  Quelle stehen unter „Details" und draengen sich nicht mehr zwischen Kopf
+  und Folgenliste.
+- **„Als Naechstes"** zeigt die kommenden Folgen als waagerechte Karten mit
+  Standbild — beginnend bei der Folge, die `nextPlay` bestimmt.
+- **„Alle Folgen"** listet die Staffeln; die gewaehlte klappt ihre Folgen
+  darunter auf. Frueher war die Staffelwahl eine Knopfreihe und die
+  Folgenliste stand lose darunter.
+
+### Bekannte Abweichung von der Vorlage
+
+- Die Staffelzeilen tragen **kein Vorschaubild**. TMDB liefert Staffelposter
+  nur teilweise, und die Quellen gar nicht; dieselbe Serienkachel an jeder
+  Zeile waere Wiederholung statt Auskunft.
 
 ## [iOS 1.16.1] - 2026-09-07
 
