@@ -4,16 +4,9 @@ on:
   push:
     paths:
       - 'native/Nori-macOS/**'
+      - 'native/NoriCore/**'
       - '.github/workflows/build-macos.yml'
   workflow_dispatch:
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,10 +20,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Xcode 15 bringt das macOS-14-SDK mit, das dieses Target braucht. Die
-      # Prüfung sagt bei einem frisch aufgesetzten Runner, was fehlt — sonst
-      # bricht der erste xcodebuild-Aufruf nur mit „requires Xcode, but active
-      # developer directory … is a command line tools instance" ab.
       - name: Toolchain prüfen
         run: tools/require-xcode.sh 15
 

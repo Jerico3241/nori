@@ -1,26 +1,13 @@
 name: Package iOS IPA
 
-# Legt eine unsignierte Nori.ipa als Artefakt ab, damit man sie herunterladen
-# kann, ohne selbst einen Mac mit Xcode zu bemühen. Signiert wird danach auf
-# dem Gerät (Feather, ESign, SideStore …) oder mit einem eigenen Zertifikat.
-#
-# Dieselbe Bauform wie `native/Nori-iOS/IPA-bauen.command`, damit lokal und in
-# der CI dasselbe herauskommt. Ändert sich hier etwas, gehört es auch dorthin.
 on:
   push:
     branches: [main]
     paths:
       - 'native/Nori-iOS/**'
+      - 'native/NoriCore/**'
       - '.github/workflows/package-ios-ipa.yml'
   workflow_dispatch:
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,9 +21,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Mindestens Xcode 16 — dieselbe Begründung wie in build-ios.yml: die App
-      # verwendet hinter `#available` iOS-18-APIs, und `#available` prüft nur
-      # zur Laufzeit.
       - name: Toolchain prüfen
         run: tools/require-xcode.sh 16
 
@@ -89,19 +73,12 @@ jobs:
           rm -rf "$WORK"
           mkdir -p "$WORK/Payload"
           cp -R "$APP" "$WORK/Payload/Nori.app"
-          # Ohne Signatur ist ein mitgeliefertes Provisioning-Profil sinnlos und
-          # verwirrt die Werkzeuge, die nachher signieren.
           rm -f "$WORK/Payload/Nori.app/embedded.mobileprovision"
           (cd "$WORK" && zip -qry "${{ steps.meta.outputs.name }}.ipa" Payload)
 
           echo "path=$WORK/${{ steps.meta.outputs.name }}.ipa" >> "$GITHUB_OUTPUT"
           ls -lh "$WORK/${{ steps.meta.outputs.name }}.ipa"
 
-      # Ohne Gerät in Reichweite ist das Log die einzige Quelle darüber, was in
-      # der IPA tatsächlich steckt. Genau die Werte, an denen eine Installation
-      # scheitert, stehen hier: gegen welches SDK gebaut wurde, ab welcher
-      # iOS-Version die App laufen will, ob ein Icon eingebettet ist und ob der
-      # Payload-Aufbau stimmt.
       - name: Inhalt der IPA protokollieren
         shell: bash
         run: |
@@ -119,8 +96,6 @@ jobs:
           done
 
           echo "── Icons im Bundle ──────────────────────────"
-          # Der Assetkatalog liegt als Assets.car; einzelne AppIcon-PNGs legt
-          # der Compiler zusätzlich ab. Fehlt beides, hat das Gerät kein Icon.
           ls "$APP" | grep -i -E 'assets\.car|appicon' || echo "weder Assets.car noch AppIcon-Dateien"
 
           echo "── Signatur ─────────────────────────────────"
