@@ -1,8 +1,8 @@
 # Nori — Arbeitsanleitung
 
-Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld
-(Anime) und Serienstream (Serien), Merkliste, Verlauf, Wiedergabefortschritt,
-Kalender, integrierter Player.
+Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge
+von AniWorld (Anime) und Serienstream (Serien), Merkliste, Verlauf,
+Wiedergabefortschritt, Kalender, integrierter Player.
 
 ## Aufbau
 
@@ -11,11 +11,28 @@ Kalender, integrierter Player.
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
 | `desktop/` | Electron-Hülle für Windows | ja |
+| `apps/webos/` | LG webOS, React + TypeScript + Enact Spotlight | ja |
+| `shared/nori-core/` | geteilter Kern in TypeScript | ja |
+| `services/nori-api/` | Provider-Schicht als HTTP-Dienst | ja |
 | `server/` | **gebautes** Nitro/Node-Bundle | nein, generiert |
 | `tools/` | Prüfskripte | ja |
 
 `server/` besteht aus minifizierten `.mjs`-Dateien mit Hash-Namen. Das ist
 Build-Ausgabe, kein Quellcode — Änderungen daran sind immer falsch.
+
+## Zwei Kerne, ein Vertrag
+
+Es gibt den Kern **zweimal**: in Swift für die Apple-Targets und in TypeScript
+unter `shared/nori-core` für webOS und den Nori-Server. Das ist keine Dublette
+aus Versehen — TypeScript kann Swift nicht einbinden —, aber es ist eine
+Gefahr: Feldnamen, die 90-%-Regel, die Resume-Schwelle, der Schlüssel
+`provider|episodePath`, die Hoster-Rangfolge und die Sprachwahl **müssen** auf
+beiden Seiten gleich sein. Maßgeblich ist `native/*/contract.json`.
+
+Wer eine dieser Regeln ändert, ändert sie an drei Stellen: Swift, TypeScript,
+contract.json — und in beiden Testreihen, die absichtlich dieselben
+HTML-Ausschnitte benutzen (`native/Tests/NoriCoreTests/Fixtures.swift` und
+`shared/nori-core/test/fixtures.ts`).
 
 ## Die wichtigste Regel
 
@@ -50,6 +67,19 @@ Prüft Target-Trennung, geteilte Dateien, die API-Decke und eine gepflegte
 Liste nicht existierender APIs. Sekundenschnell, ersetzt aber keinen Build.
 Nach jedem roten Build gehört die Ursache dort als neue Zeile hinein.
 
+**Für die webOS-Seite** gibt es echte Prüfungen, die hier durchlaufen — anders
+als bei Swift ist die Toolchain vorhanden:
+
+```bash
+npm --prefix shared/nori-core test     # 34 Tests gegen dieselben Fixtures
+npm --prefix apps/webos run build      # tsc --noEmit und Vite
+python3 tools/check-webos-package.py   # Quelltext, .ipk, appinfo.json
+```
+
+Die Oberfläche lässt sich zusätzlich mit einer nachgebauten Fernbedienung
+durchspielen (`apps/webos/test/`, siehe `docs/webos.md`). Der Lauf braucht
+Playwright und einen Chromium; er ist bewusst keine Abhängigkeit des Pakets.
+
 Wie man die CI-Logs auswertet und was ein PR zum Fertigwerden braucht:
 `.claude/skills/steward/SKILL.md`.
 
@@ -80,7 +110,7 @@ testen / committen?" gehören nicht dazu.
 ## Konventionen
 
 - Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
-- Commit-Betreff mit Plattform-Präfix: `macOS: …`, `iOS: …`.
+- Commit-Betreff mit Plattform-Präfix: `macOS: …`, `iOS: …`, `webOS: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
 - Versionsnummern und `CHANGELOG.md` bei jeder Funktionsänderung mitpflegen;
   die Stellen listet `.claude/skills/steward/SKILL.md`. Die Plattformen haben
@@ -89,8 +119,9 @@ testen / committen?" gehören nicht dazu.
 ## Datenmodell
 
 `LibraryStore` hält Merkliste, Verlauf und Fortschritt in
-`~/Library/Application Support/Nori/library.json`, Schema **v3**, optional
-gespiegelt über `NSUbiquitousKeyValueStore`.
+`~/Library/Application Support/Nori/library.json`, Schema **v4**. Die
+webOS-App legt denselben Aufbau im `localStorage` des Fernsehers ab
+(`shared/nori-core/src/library.ts`) — dieselben Felder, dieselbe Migration.
 
 Fortschritt wird nach `provider|episodePath` geschlüsselt — dieselbe Serie bei
 AniWorld und Serienstream bleibt getrennt. Wer Felder in `WatchProgress` oder

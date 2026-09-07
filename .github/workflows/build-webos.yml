@@ -1,0 +1,75 @@
+name: Build webOS
+
+# Anders als die Apple-Läufe auf `ubuntu-latest`, nicht auf dem Mac.
+#
+# Der self-hosted Mac ist der einzige Swift-Typechecker und deshalb der
+# Engpass des Projekts; die webOS-App braucht ihn nicht — sie braucht Node.
+# Auf GitHubs Linux-Runnern zählt eine Minute einfach statt zehnfach, und der
+# Lauf ist damit auch dann grün, wenn der Mac gerade aus ist.
+on:
+  push:
+    paths:
+      - 'apps/webos/**'
+      - 'shared/nori-core/**'
+      - 'services/nori-api/**'
+      - 'tools/check-webos-package.py'
+      - '.github/workflows/build-webos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Der geteilte Kern zuerst: er ist die Abhängigkeit der beiden anderen
+      # Pakete, und seine Tests prüfen dieselben HTML-Ausschnitte wie die
+      # Swift-Tests unter native/Tests.
+      - name: Kern bauen und prüfen
+        working-directory: shared/nori-core
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Nori-Server übersetzen
+        working-directory: services/nori-api
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: webOS-App bauen
+        working-directory: apps/webos
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Paket schnüren
+        working-directory: apps/webos
+        run: npm run webos:package
+
+      # Prüft Quelltext und fertiges .ipk auf fremde Namen und Adressen und
+      # validiert appinfo.json.
+      - name: Paket prüfen
+        run: python3 tools/check-webos-package.py
+
+      - name: Paket als Artefakt ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nori-webOS
+          path: apps/webos/*.ipk
+          if-no-files-found: error
+          retention-days: 30

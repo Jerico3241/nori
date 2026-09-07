@@ -20,8 +20,10 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 | iOS / iPadOS | **1.14.5** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche; Player und Startseite liegen hinter dem iOS-Stand |
 | Windows | **1.8.0** | Electron / Node Portable Build |
+| LG webOS | **1.0.0** | TV-App mit Fernbedienungsnavigation; auf einem echten Gerät noch nicht erprobt |
 
-Die nativen Apple-Versionen liegen unter `native/`.
+Die nativen Apple-Versionen liegen unter `native/`, die TV-Version unter
+`apps/webos/`.
 
 ## Funktionen
 
@@ -92,11 +94,18 @@ Damit ist die gemeinsame Datenbasis für iPhone/iPad und Mac im Code vorhanden.
 | `native/Nori-macOS/` | Native macOS-App mit SwiftUI und AVKit |
 | `desktop/` | Electron-Hülle für Windows |
 | `server/` | Gebauter Nitro/Node-Webserver für die Windows-Version |
+| `apps/webos/` | TV-App für LG webOS (React, TypeScript, Enact Spotlight) |
+| `shared/nori-core/` | Gemeinsamer Kern in TypeScript für alle JavaScript-Clients |
+| `services/nori-api/` | Provider-Schicht als HTTP-Dienst für die TV-App |
 
 Gemeinsames Datenmodell / Contract:
 
 - `native/Nori-iOS/contract.json`
 - `native/Nori-macOS/contract.json`
+
+`shared/nori-core` ist die TypeScript-Seite desselben Vertrags: dieselben
+Feldnamen, dieselben Regeln, dasselbe Ablageformat. Eine `library.json` aus der
+iOS- oder macOS-App liest sich dort ohne Umschreiben.
 
 ## iPhone / iPad
 
@@ -163,6 +172,100 @@ Ein fertiges Portable-Paket liegt unter den GitHub-Releases als `Nori-Portable-x
 Nach dem Entpacken kann entweder die portable Anwendung direkt gestartet oder das enthaltene Installationsskript verwendet werden.
 
 Lokale Daten werden bei der Windows-Version separat gespeichert und sind derzeit nicht Teil der nativen Apple-iCloud-Synchronisation.
+
+## Nori for LG webOS
+
+Eine eigenständige TV-App, vollständig mit der Fernbedienung bedienbar und auf
+1920 × 1080 ausgelegt. Ausführlich: [docs/webos.md](docs/webos.md).
+
+### Voraussetzungen
+
+- Node 20 oder neuer
+- Ein LG-Fernseher mit webOS 6 oder neuer im Entwicklermodus
+- Für Installation und Protokolle das LG-SDK: `npm i -g @webosose/ares-cli`
+
+Zum **Bauen** wird das SDK nicht gebraucht — `npm run webos:package` schnürt das
+`.ipk` selbst.
+
+### Build und Paket
+
+```bash
+cd apps/webos
+npm install
+npm run build
+npm run webos:package     # ergibt tv.nori.app_1.0.0_all.ipk
+```
+
+Vom Repository-Stamm aus: `npm run webos:build` und `npm run webos:package`.
+
+### Nori-Server
+
+Der Fernseher holt Katalog und Stream über einen kleinen Dienst, statt die
+Quellen selbst abzurufen. Der Grund ist nicht Bequemlichkeit: viele Hoster
+liefern nur mit einer `Referer`-Kopfzeile aus, und die darf ein Browser nicht
+setzen.
+
+```bash
+cd services/nori-api
+npm install
+npm run dev               # hört auf 0.0.0.0:8730
+```
+
+Die Adresse wird in der App unter *Einstellungen → Verbindung* eingetragen.
+Alternativ steht dort „Direkt vom Fernseher" — dann benutzt der Client denselben
+Kern selbst, was ohne Einrichtung auskommt, aber vom Verhalten des Geräts und
+des Hosters abhängt.
+
+### Installation
+
+1. LG-Konto anlegen und am Fernseher anmelden.
+2. Im Content Store die App **Developer Mode** installieren, anmelden,
+   *Dev Mode Status* einschalten. Der Fernseher zeigt danach Passphrase und
+   IP-Adresse.
+3. Gerät eintragen:
+
+   ```bash
+   ares-setup-device --add tv --info "{'host':'192.168.1.50','port':'9922','username':'prisoner'}"
+   ares-novacom --device tv --getkey
+   ```
+
+4. Installieren und starten:
+
+   ```bash
+   npm run webos:install tv
+   npm run webos:launch tv
+   ```
+
+5. Verlängern: der Entwicklermodus läuft nach etwa 50 Stunden ab. **Extend Dev
+   Mode Status** in derselben App setzt die Frist zurück.
+
+### Debugging
+
+```bash
+npm run webos:inspect tv                      # Web-Inspector
+node apps/webos/tools/webos-cli.mjs log tv    # Protokoll des Geräts
+```
+
+Alles von Nori trägt das Präfix `[Nori:webOS]`.
+
+### Unterstützte Stände
+
+Gebaut auf Chrome 79 — die Engine von webOS 6. Damit läuft dasselbe Paket auf
+**webOS 6 bis 26**. Auf einem echten Gerät ist der Stand noch nicht erprobt.
+
+### Architektur
+
+```
+webOS-Client  →  Nori-Server  →  AniWorld / Serienstream
+                      ↓
+               HosterResolver
+                      ↓
+       Weiterreichung mit Referer  →  Hoster
+```
+
+Beide Seiten benutzen `shared/nori-core`; hosterspezifische Logik gibt es
+deshalb nur einmal. Der Client selbst kennt keinen Hoster — er bekommt ein
+`PlaySource` und eine Adresse, die er laden kann.
 
 ## Lokaler Web-Server
 
