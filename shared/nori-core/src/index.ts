@@ -1,9 +1,8 @@
 // Gemeinsamer Kern von Nori für alle JavaScript-Clients.
 //
-// Die Apple-Apps teilen fünf Swift-Dateien (Models, LibraryStore,
-// AniworldClient, HosterResolver, HTML); dies ist deren Entsprechung für
-// TypeScript. Beide Seiten beschreiben denselben Vertrag —
-// `native/*/contract.json`.
+// Die Apple-Apps teilen ihren Kern unter `native/NoriCore/`; dies ist dessen
+// Entsprechung für TypeScript. Beide Seiten richten sich nach demselben
+// Vertrag — `config/contract.json`.
 
 export * from "./models.js";
 export * from "./rules.js";

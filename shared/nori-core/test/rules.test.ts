@@ -50,7 +50,7 @@ test("Fortschritt wird nach Quelle und Pfad geschlüsselt", () => {
   );
 });
 
-test("Abschluss- und Resume-Regel aus contract.json", () => {
+test("Abschluss- und Resume-Regel aus config/contract.json", () => {
   assert.equal(isEpisodeComplete(progress({ positionSec: 1260, durationSec: 1400 })), true);
   assert.equal(isEpisodeComplete(progress({ positionSec: 1259, durationSec: 1400 })), false);
   assert.equal(isEpisodeComplete(progress({ completed: true, positionSec: 0 })), true);

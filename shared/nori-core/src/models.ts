@@ -1,13 +1,14 @@
-// Datenmodell von Nori, eins zu eins aus `native/Nori-macOS/Nori/Models.swift`.
+// Datenmodell von Nori, eins zu eins aus
+// `native/NoriCore/Sources/NoriCore/Models.swift`.
 //
 // Diese Datei ist die TypeScript-Seite desselben Vertrags, den
-// `native/*/contract.json` beschreibt. Sie erfindet **kein** zweites Modell:
+// `config/contract.json` beschreibt. Sie erfindet **kein** zweites Modell:
 // Feldnamen, Optionalität und Bedeutung sind aus dem Swift-Kern übernommen,
 // damit eine `library.json` aus der iOS- oder macOS-App hier ohne Umschreiben
 // gelesen werden kann und umgekehrt.
 //
-// Wer hier ein Feld ändert, ändert es auch in Models.swift (beide Apple-Targets
-// byte-gleich, siehe .claude/skills/apple-parity) und in contract.json.
+// Wer hier ein Feld ändert, ändert es auch in
+// `native/NoriCore/Sources/NoriCore/Models.swift` und in `config/contract.json`.
 
 /** Woher ein Titel stammt. */
 export type CatalogProvider = "aniworld" | "serienstream";

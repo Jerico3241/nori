@@ -13,11 +13,11 @@ shared/nori-core/    gemeinsamer Kern in TypeScript — Modelle, Provider,
 services/nori-api/   Provider-Schicht als HTTP-Dienst, benutzt denselben Kern
 ```
 
-Der Kern ist die TypeScript-Seite desselben Vertrags, den die Apple-Targets in
-Swift teilen (`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`,
-`HTML`) und den `native/*/contract.json` beschreibt. Feldnamen, Regeln und
-Ablageformat sind übernommen, nicht neu erfunden: eine `library.json` aus der
-iOS- oder macOS-App liest sich hier ohne Umschreiben.
+Der Kern ist die TypeScript-Entsprechung von `native/NoriCore/`, dem
+gemeinsamen Swift-Kern der Apple-Apps. Maßgeblich ist für beide
+`config/contract.json`. Feldnamen, Regeln und Ablageformat sind übernommen,
+nicht neu erfunden: eine `library.json` aus der iOS- oder macOS-App liest sich
+hier ohne Umschreiben.
 
 ### Warum es den Nori-Server gibt
 

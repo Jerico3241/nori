@@ -19,9 +19,8 @@ auf 1920 × 1080 ausgelegt und auf andere Auflösungen mitskalierend.
 ### Hinzugefügt
 
 - **`shared/nori-core`** — der gemeinsame Kern für JavaScript-Clients. Die
-  TypeScript-Seite desselben Vertrags, den die Apple-Targets in Swift teilen
-  (`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`, `HTML`) und
-  den `native/*/contract.json` beschreibt: dieselben Feldnamen, dieselbe
+  TypeScript-Entsprechung von `native/NoriCore/`; maßgeblich ist für beide
+  `config/contract.json`: dieselben Feldnamen, dieselbe
   90-%-Regel, dieselbe Resume-Schwelle, derselbe Schlüssel
   `provider|episodePath`, dieselbe Hoster-Rangfolge. Eine `library.json` aus
   der iOS- oder macOS-App liest sich dort ohne Umschreiben. 34 Tests laufen

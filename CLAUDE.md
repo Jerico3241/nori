@@ -1,148 +1,130 @@
 # Nori — Arbeitsanleitung
 
-Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge
-von AniWorld (Anime) und Serienstream (Serien), Merkliste, Verlauf,
-Wiedergabefortschritt, Kalender, integrierter Player.
+Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
 
 ## Aufbau
 
 | Ordner | Inhalt | Bearbeiten? |
 | --- | --- | --- |
+| `native/NoriCore/Sources/NoriCore/` | gemeinsamer Swift-Kern | ja |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
+| `native/Tests/` | Tests des gemeinsamen Kerns | ja |
 | `desktop/` | Electron-Hülle für Windows | ja |
+| `server/` | gebautes Nitro/Node-Bundle | nein, generiert |
+| `shared/nori-core/` | gemeinsamer Kern in TypeScript | ja |
 | `apps/webos/` | LG webOS, React + TypeScript + Enact Spotlight | ja |
-| `shared/nori-core/` | geteilter Kern in TypeScript | ja |
-| `services/nori-api/` | Provider-Schicht als HTTP-Dienst | ja |
-| `server/` | **gebautes** Nitro/Node-Bundle | nein, generiert |
+| `services/nori-api/` | Provider-Schicht als HTTP-Dienst für die TV-App | ja |
+| `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
 
-`server/` besteht aus minifizierten `.mjs`-Dateien mit Hash-Namen. Das ist
-Build-Ausgabe, kein Quellcode — Änderungen daran sind immer falsch.
+`server/` besteht aus generierten `.mjs`-Dateien mit Hash-Namen. Änderungen daran sind falsch; der ursprüngliche Web-Sourcecode gehört separat ins Repository, falls Windows wieder aktiv weiterentwickelt wird.
 
-## Zwei Kerne, ein Vertrag
+## Gemeinsamer Apple-Core
 
-Es gibt den Kern **zweimal**: in Swift für die Apple-Targets und in TypeScript
-unter `shared/nori-core` für webOS und den Nori-Server. Das ist keine Dublette
-aus Versehen — TypeScript kann Swift nicht einbinden —, aber es ist eine
-Gefahr: Feldnamen, die 90-%-Regel, die Resume-Schwelle, der Schlüssel
-`provider|episodePath`, die Hoster-Rangfolge und die Sprachwahl **müssen** auf
-beiden Seiten gleich sein. Maßgeblich ist `native/*/contract.json`.
+Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`:
 
-Wer eine dieser Regeln ändert, ändert sie an drei Stellen: Swift, TypeScript,
-contract.json — und in beiden Testreihen, die absichtlich dieselben
-HTML-Ausschnitte benutzen (`native/Tests/NoriCoreTests/Fixtures.swift` und
-`shared/nori-core/test/fixtures.ts`).
+- `Models.swift`
+- `LibraryStore.swift`
+- `AniworldClient.swift`
+- `HosterResolver.swift`
+- `HTML.swift`
 
-## Die wichtigste Regel
+Die gleichnamigen Pfade in den iOS- und macOS-Ordnern sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Die Xcode-Projekte referenzieren weiterhin ihre bekannten Pfade und bauen dadurch dieselben Quellen.
 
-Die beiden Apple-Targets haben teilweise **gleiche Dateinamen bei
-unterschiedlichem Inhalt**. Fünf Dateien müssen byte-gleich bleiben
-(`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`, `HTML`),
-sämtliche Views sowie `NoriApp.swift` und `Theme.swift` laufen seit dem
-macOS-Umbau dagegen **bewusst** auseinander.
+Die Oberflächen bleiben bewusst getrennt: `NoriApp.swift`, `Theme.swift`, Views und Player-Integration dürfen zwischen iOS und macOS voneinander abweichen.
 
-Die macOS-App war ursprünglich eine fast wörtliche Kopie der iOS-App. Dadurch
-liefen mehrere iOS-Muster auf dem Mac ins Leere (`.refreshable` ohne Wirkung,
-Drag-Gesten ohne Touch, erzwungenes Dark Mode). Diese Kopie nicht
-wiederherstellen.
+## Zweiter Kern: TypeScript
 
-Details: `.claude/skills/apple-parity/SKILL.md`.
+Den Kern gibt es **zweimal** — in Swift unter `native/NoriCore/` für die
+Apple-Apps und in TypeScript unter `shared/nori-core/` für die webOS-App und
+den Nori-Server. Das ist keine versehentliche Dublette, TypeScript kann Swift
+nicht einbinden; es ist aber eine Gefahr.
+
+Maßgeblich ist für beide `config/contract.json`. Gleich bleiben müssen
+insbesondere: Feldnamen, die 90-%-Abschlussregel, die Resume-Schwelle von
+8 Sekunden, der Schlüssel `provider|normalizedEpisodePath`, die
+Hoster-Rangfolge und die Sprachreihenfolge.
+
+Wer eine dieser Regeln ändert, ändert sie an drei Stellen — Swift,
+TypeScript, `config/contract.json` — und in **beiden** Testreihen. Die
+benutzen absichtlich dieselben HTML-Ausschnitte:
+
+- `native/Tests/NoriCoreTests/Fixtures.swift`
+- `shared/nori-core/test/fixtures.ts`
 
 ## Bauen und Prüfen
-
-**Es gibt in dieser Umgebung keinen Swift-Compiler.** Der einzige Typechecker
-ist der GitHub-Actions-Lauf `Build macOS` (~1 Minute, ausgelöst durch Pushes
-auf `native/Nori-macOS/**`). Er läuft wie alle Workflows auf einem
-self-hosted Mac — ist der aus, warten die Jobs in der Warteschlange, statt zu
-scheitern. Einrichtung: `docs/self-hosted-runner.md`.
 
 Vor jedem Push:
 
 ```bash
 python3 tools/check-apple-sources.py
+cd native && swift test
 ```
 
-Prüft Target-Trennung, geteilte Dateien, die API-Decke und eine gepflegte
-Liste nicht existierender APIs. Sekundenschnell, ersetzt aber keinen Build.
-Nach jedem roten Build gehört die Ursache dort als neue Zeile hinein.
+Die echten App-Typechecks laufen über GitHub Actions auf dem self-hosted Mac:
 
-**Für die webOS-Seite** gibt es echte Prüfungen, die hier durchlaufen — anders
-als bei Swift ist die Toolchain vorhanden:
+- `Build iOS`
+- `Build macOS`
+- `Swift tests`
+
+Änderungen an `native/NoriCore/**` müssen beide Apple-Builds auslösen.
+
+Für die webOS-Seite gibt es echte Prüfungen, die auch im Container durchlaufen
+— anders als bei Swift ist die Toolchain dort vorhanden:
 
 ```bash
-npm --prefix shared/nori-core test     # 34 Tests gegen dieselben Fixtures
+npm --prefix shared/nori-core test     # Kern gegen dieselben Fixtures
 npm --prefix apps/webos run build      # tsc --noEmit und Vite
 python3 tools/check-webos-package.py   # Quelltext, .ipk, appinfo.json
 ```
 
 Die Oberfläche lässt sich zusätzlich mit einer nachgebauten Fernbedienung
-durchspielen (`apps/webos/test/`, siehe `docs/webos.md`). Der Lauf braucht
-Playwright und einen Chromium; er ist bewusst keine Abhängigkeit des Pakets.
-
-Wie man die CI-Logs auswertet und was ein PR zum Fertigwerden braucht:
-`.claude/skills/steward/SKILL.md`.
-
-Auf einem echten Mac:
-
-```bash
-open native/Nori-macOS/NoriMac.xcodeproj   # Scheme „Nori", Ziel „My Mac", ⌘R
-```
-
-SwiftSoup wird als Swift-Package aufgelöst. Zum reinen Starten reicht ein
-Personal Team unter Signing & Capabilities; iCloud-Sync braucht zusätzlich die
-Key-Value-Store-Capability, die noch nicht eingerichtet ist.
-
-## Arbeitsweise
-
-Durcharbeiten, nicht nachfragen. Eine Aufgabe wird bis zum Ende gebracht —
-Änderung, `tools/check-apple-sources.py`, Commit, Push, PR, CI-Lauf auswerten,
-rote Läufe reparieren — ohne zwischendurch auf eine Bestätigung zu warten.
-Enthält eine Anfrage mehrere Punkte, folgt der nächste Punkt direkt auf den
-vorigen; größere Punkte werden zu eigenen PRs, aber nacheinander und
-selbstständig.
-
-Nachgefragt wird nur, wenn eine Angabe fehlt, die niemand außer dem Betreiber
-liefern kann (etwa eine OAuth-Client-ID) oder wenn zwei Auslegungen zu
-grundverschiedener Arbeit führen würden. Fragen der Form „soll ich bauen /
-testen / committen?" gehören nicht dazu.
+durchspielen (`apps/webos/test/`, siehe `docs/webos.md`). Der Lauf `Build
+webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
 
 ## Konventionen
 
-- Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
-- Commit-Betreff mit Plattform-Präfix: `macOS: …`, `iOS: …`, `webOS: …`.
+- Oberflächentexte, README und Commit-Nachrichten sind deutsch.
+- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- Versionsnummern und `CHANGELOG.md` bei jeder Funktionsänderung mitpflegen;
-  die Stellen listet `.claude/skills/steward/SKILL.md`. Die Plattformen haben
-  eigene Stände.
+- App-Versionen stammen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
+- `config/contract.json` enthält keine App-Version.
 
 ## Datenmodell
 
-`LibraryStore` hält Merkliste, Verlauf und Fortschritt in
-`~/Library/Application Support/Nori/library.json`, Schema **v4**. Die
-webOS-App legt denselben Aufbau im `localStorage` des Fernsehers ab
-(`shared/nori-core/src/library.ts`) — dieselben Felder, dieselbe Migration.
+`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v4**.
 
-Fortschritt wird nach `provider|episodePath` geschlüsselt — dieselbe Serie bei
-AniWorld und Serienstream bleibt getrennt. Wer Felder in `WatchProgress` oder
-`Bag` ändert: neue Felder optional halten, `migrateProgress` erweitern und
-`schemaVersion` erhöhen, sonst verlieren bestehende Installationen ihren
-Stand.
+`config/contract.json` muss denselben Schemawert dokumentieren. Änderungen an `WatchProgress` oder der gespeicherten `Bag` brauchen eine rückwärtskompatible Migration; neue Felder möglichst optional halten.
+
+Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei AniWorld und Serienstream darf ihren Fortschritt nicht gegenseitig überschreiben.
+
+`shared/nori-core/src/library.ts` legt denselben Aufbau ab — dieselben Felder, dieselbe Migration —, damit die webOS-App und die Apple-Apps denselben Stand lesen können.
+
+## Synchronisation
+
+Der Core kennt nur das Protokoll `LibrarySyncProvider`. Konkrete Anbieter wie Google Drive, Dropbox oder WebDAV werden außerhalb des Stores angebunden. Ohne Provider bleibt Nori lokal.
+
+Keine Cloud-Implementierung direkt in `LibraryStore` verdrahten.
+
+## Contract
+
+Kanonisch:
+
+```text
+config/contract.json
+```
+
+`native/Nori-iOS/contract.json` und `native/Nori-macOS/contract.json` sind nur Kompatibilitäts-Symlinks darauf.
 
 ## Hoster
 
-`HosterResolver` akzeptiert nur HTTPS-Ziele und blockt lokale und private
-Netzwerkadressen. Diese Prüfung nicht aufweichen. Hoster ändern ihre Seiten
-jederzeit — schlägt die Stream-Auflösung fehl, liegt das häufig dort und nicht
-am Nori-Code.
+`HosterResolver` akzeptiert nur HTTPS-Ziele und blockiert lokale/private Netzwerkadressen. Diese Prüfung nicht aufweichen.
+
+Hoster ändern ihre Seiten häufig. Stream-Auflösungsfehler zuerst anhand Redirect, Referer, Schutzseite und Hoster-spezifischer Extraktion untersuchen.
 
 ## Schlüssel
 
-Keine Schlüssel im Quelltext — `tools/check-apple-sources.py` meldet lange
-Hex-Zeichenketten und Zuweisungen an Namen wie `apiKey`.
+Der TMDB-Schlüssel kann über Schlüsselbund bzw. Build-Einstellung bereitgestellt werden. Im aktuellen privaten Projekt existiert zusätzlich bewusst ein eingebauter Fallback-Schlüssel in `TMDBKeyStore`; diese Ausnahme ist eng begrenzt und in `tools/check-apple-sources.py` dokumentiert.
 
-Der TMDB-Schlüssel kommt aus `TMDBKeyStore` (in `AniworldClient.swift`):
-Schlüsselbund zuerst, sonst `TMDBAPIKey` aus der Info.plist, die aus der
-Build-Einstellung `TMDB_API_KEY` gefüllt wird. Ohne Schlüssel fragt die App
-TMDB gar nicht erst an und zeigt die Cover von AniWorld und Serienstream — das
-ist ein gültiger Zustand, kein Fehler.
+Keine weiteren Secrets oder Zugangsdaten fest in den Quelltext schreiben.

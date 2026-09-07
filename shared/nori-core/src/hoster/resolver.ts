@@ -3,7 +3,7 @@
 // Der Ablauf ist derselbe wie in `HosterResolver.swift`: Weiterleitung der
 // Quelle folgen, bis sie beim Hoster landet, dessen Seite holen, den Stream
 // herausziehen. Die Reihenfolge der Hoster und die Sprachwahl kommen aus
-// `contract.json` und stimmen mit den Apple-Apps überein.
+// `config/contract.json` und stimmen mit den Apple-Apps überein.
 
 import { NORI_USER_AGENT, NoriError, PROVIDERS, type CatalogProvider, type HosterOption, type PlaySource } from "../models.js";
 import { hosterRank, normalizeEpisodePath } from "../rules.js";
@@ -11,7 +11,7 @@ import type { HttpClient } from "../http.js";
 import { isExternalOrigin, isSafeRemoteURL, looksCaptcha } from "./safety.js";
 import { firstMedia, siteMedia, toEmbed } from "./sites.js";
 
-/** Bevorzugten Hoster nach vorn, sonst nach der Rangliste aus contract.json. */
+/** Bevorzugten Hoster nach vorn, sonst nach der Rangliste aus config/contract.json. */
 export function orderHosters(hosters: HosterOption[], preferred?: string | null): HosterOption[] {
   const want = (preferred ?? "").toLowerCase();
   return [...hosters].sort((a, b) => {

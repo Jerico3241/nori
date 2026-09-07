@@ -1,4 +1,5 @@
-// Die Regeln aus `Models.swift` und `contract.json`, unverändert übernommen.
+// Die Regeln aus `NoriCore/Models.swift` und `config/contract.json`,
+// unverändert übernommen.
 //
 // Sie entscheiden, was „gesehen" heißt, wo fortgesetzt wird und wie der
 // Fortschritt geschlüsselt ist. Weicht ein Client hier ab, zeigt er einen
@@ -75,7 +76,7 @@ export function formatClock(sec: number): string {
   return `${m}:${pad(r)}`;
 }
 
-/** Reihenfolge der Hoster aus contract.json. Kleiner ist besser. */
+/** Reihenfolge der Hoster aus config/contract.json. Kleiner ist besser. */
 export function hosterRank(name: string): number {
   const n = name.toLowerCase().replace(/[^a-z]/g, "");
   if (n.includes("voe")) return 0;

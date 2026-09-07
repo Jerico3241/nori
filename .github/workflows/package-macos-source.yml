@@ -1,26 +1,19 @@
 name: Package macOS Source
 
-# Zwischenstand von main als Quellpaket — praktisch, um kurz etwas
-# auszuprobieren. Das dauerhafte Paket entsteht im Release-Workflow aus einem
-# Tag; dieses hier verfällt nach 30 Tagen.
 on:
   push:
     branches: [main]
     paths:
       - 'native/Nori-macOS/**'
+      - 'native/NoriCore/**'
+      - 'native/Package.swift'
+      - 'native/Tests/**'
+      - 'config/contract.json'
       - '.github/workflows/package-macos-source.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,8 +26,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # Der Name trug bisher keine Version. Wer zwei Pakete nebeneinander
-      # liegen hatte, konnte nicht sagen, welches welches ist.
       - name: Version lesen
         id: meta
         run: |
@@ -46,8 +37,16 @@ jobs:
 
       - name: Create macOS source package
         run: |
-          ditto -c -k --sequesterRsrc --keepParent native/Nori-macOS \
-            "${{ steps.meta.outputs.name }}.zip"
+          set -euo pipefail
+          zip -r -y -q "${{ steps.meta.outputs.name }}.zip" \
+            native/Nori-macOS \
+            native/NoriCore \
+            native/Package.swift \
+            native/Tests \
+            config/contract.json \
+            README.md \
+            CHANGELOG.md
+          unzip -l "${{ steps.meta.outputs.name }}.zip" | tail -1
 
       - name: Upload package
         uses: actions/upload-artifact@v5
