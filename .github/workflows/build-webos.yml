@@ -1,11 +1,16 @@
 name: Build webOS
 
-# Anders als die Apple-Läufe auf `ubuntu-latest`, nicht auf dem Mac.
+# Läuft auf demselben self-hosted Mac wie alle anderen Läufe. Bei einem
+# privaten Repository zählt eine GitHub-Minute — genau daran war das Kontingent
+# schon einmal aufgebraucht.
 #
-# Der self-hosted Mac ist der einzige Swift-Typechecker und deshalb der
-# Engpass des Projekts; die webOS-App braucht ihn nicht — sie braucht Node.
-# Auf GitHubs Linux-Runnern zählt eine Minute einfach statt zehnfach, und der
-# Lauf ist damit auch dann grün, wenn der Mac gerade aus ist.
+# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
+# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
+# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
+#
+# Anders als die Swift-Läufe braucht dieser hier kein Xcode, nur Node. Er ist
+# damit der einzige Lauf des Projekts, der eine Änderung tatsächlich
+# durchbauen und testen kann, statt sie nur statisch zu prüfen.
 on:
   push:
     paths:
@@ -25,12 +30,14 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Node ist auf dem Runner nicht garantiert und soll auch nicht in einer
+      # Version festhängen, die zufällig dort liegt.
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:

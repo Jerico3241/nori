@@ -167,6 +167,12 @@ python3 tools/check-webos-package.py   # Quelltext und .ipk, appinfo.json
 cd apps/webos && npm run typecheck
 ```
 
+In der CI macht das der Lauf **Build webOS**, ausgelöst durch Pushes auf
+`apps/webos/**`, `shared/nori-core/**` und `services/nori-api/**`. Er läuft auf
+demselben self-hosted Mac wie alle anderen Läufe (siehe
+`docs/self-hosted-runner.md`) — ist der aus, wartet der Job in der
+Warteschlange, statt zu scheitern. Xcode braucht er nicht, nur Node.
+
 Die Oberfläche lässt sich mit einer nachgebauten Fernbedienung durchspielen:
 
 ```bash

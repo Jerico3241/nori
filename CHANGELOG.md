@@ -66,9 +66,10 @@ auf 1920 × 1080 ausgelegt und auf andere Auflösungen mitskalierend.
   Namen und Adressen fremder Apps und validiert `appinfo.json` gegen die Liste
   der Felder, die webOS tatsächlich kennt.
 - **`.github/workflows/build-webos.yml`** baut Kern, Server und App, schnürt
-  das Paket und legt es als Artefakt ab. Auf `ubuntu-latest`, nicht auf dem
-  self-hosted Mac: der ist der einzige Swift-Typechecker und soll der Engpass
-  bleiben, den er ist.
+  das Paket, prüft es und legt es als Artefakt ab. Auf demselben self-hosted
+  Mac wie alle anderen Läufe. Er braucht kein Xcode, nur Node — und ist damit
+  der einzige Lauf des Projekts, der eine Änderung wirklich durchbaut und
+  testet, statt sie nur statisch zu prüfen.
 
 ### Bekannte Einschränkungen
 
