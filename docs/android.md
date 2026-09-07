@@ -193,13 +193,27 @@ die Apple-Symbole schon; die einfarbige Ebene kommt dort dazu.
 
 ## Wie es weitergeht
 
-1. **Durchbau** — ✅ **erledigt.** Der geteilte Kern übersetzt für
+1. **Durchbau** — ✅ Der geteilte Kern übersetzt für
    `aarch64-unknown-linux-android`.
-2. **Brücke** — Swift-Kern als `.so`, angebunden über JNI beziehungsweise
-   `swift-java`. Erst hier zeigt sich der wirkliche Aufwand.
-3. **Oberfläche** — Compose mit Material 3 und dynamischen Farben (siehe
-   oben): Startseite, Katalog, Kalender, Merkliste, Detailseite. Media3 für
-   den Player.
+2. **Brücke** — ✅ `native/NoriBridge/` exportiert reines C-ABI, der
+   JNI-Shim liegt als C-Datei im Android-Projekt. Kein `swift-java` nötig:
+   fünfzehn Funktionen, JSON hinein, JSON heraus.
+3. **Oberfläche** — ✅ Compose mit Material 3 und dynamischen Farben:
+   Startseite, Katalog, Kalender, Merkliste, Einstellungen, Detailseite und
+   ein Player auf Media3.
+
+**Was noch fehlt**, damit Android neben den Apple-Apps bestehen kann:
+
+- **Cover im Katalog.** Die Katalogseiten der Quellen sind reine Titellisten;
+  die Bilder holt auf Apple `CoverIndex` von TMDB, und dieser Weg ist noch
+  nicht über die Brücke geführt. Auf der Detailseite laden Cover bereits,
+  weil deren Adresse im HTML steht.
+- **Ein Bild im Player.** Im Emulator scheitert der Software-Decoder mit
+  `MediaCodec$CodecException`. Bis dorthin trägt die Kette nachweislich —
+  ExoPlayer bekommt Daten und schiebt sie in den Codec —, aber ein Bild war
+  noch nicht zu sehen. Das entscheidet ein echtes Gerät, nicht der Emulator.
+- **Kopfkarussell und Folgenbilder**, die iOS seit 1.14 hat. Beides hängt an
+  denselben TMDB-Daten wie die Cover.
 
 Punkt 1 war billig und hat alles Weitere entschieden. Das Ergebnis:
 

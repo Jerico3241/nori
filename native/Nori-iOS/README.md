@@ -2,6 +2,17 @@
 
 Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeitet lokal; Merkliste und Fortschritt benötigen keinen Account.
 
+## Neu in 1.16
+
+- Bereiche statt Quellen: Alle, Anime, Serien, **K-Drama** — die koreanischen
+  Serien führt Serienstream selbst unter diesem Genre.
+- Beide Kataloge werden zusammengeführt; fällt eine Quelle aus, bleibt die
+  andere sichtbar.
+- Kopfbereich als reine Bildfläche mit freigestelltem TMDB-Schriftzug, beim
+  Antippen führt er zur Serie.
+- „Schau weiter" im Querformat mit Backdrop, Logo und Restzeit — Antippen
+  startet die zuletzt angefangene Folge, sonst die nächste unfertige.
+
 ## Nori 1.9
 
 - echtes Autoplay der nächsten Folge mit 8-Sekunden-Countdown und Abbrechen/sofort Abspielen

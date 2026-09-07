@@ -12,6 +12,10 @@ __pycache__/
 # Xcode
 xcuserdata/
 DerivedData/
+# IPA-bauen.command legt sein DerivedData unter build/ ab, nicht unter
+# DerivedData/ — 180 MB, die sonst als unversionierte Dateien herumliegen und
+# irgendwann versehentlich mitcommittet werden.
+native/Nori-iOS/build/
 *.xcuserstate
 *.xccheckout
 *.xcscmblueprint

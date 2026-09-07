@@ -10,12 +10,18 @@ Kalender, integrierter Player.
 | --- | --- | --- |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
+| `native/Nori-Android/` | Android, Kotlin + Compose, minSdk 28 | ja |
+| `native/NoriBridge/` | C-ABI-Brücke vom Kern nach Kotlin | ja |
 | `desktop/` | Electron-Hülle für Windows | ja |
 | `server/` | **gebautes** Nitro/Node-Bundle | nein, generiert |
-| `tools/` | Prüfskripte | ja |
+| `tools/` | Prüfskripte und Bauhilfen | ja |
 
 `server/` besteht aus minifizierten `.mjs`-Dateien mit Hash-Namen. Das ist
 Build-Ausgabe, kein Quellcode — Änderungen daran sind immer falsch.
+
+`native/Nori-Android/app/src/main/jniLibs/` ist ebenfalls Build-Ausgabe:
+`tools/build-android-core.sh` legt dort den Swift-Kern und die Swift-Laufzeit
+ab, rund 110 MB. Nicht versioniert, nicht von Hand bearbeiten.
 
 ## Die wichtigste Regel
 
@@ -34,30 +40,56 @@ Details: `.claude/skills/apple-parity/SKILL.md`.
 
 ## Bauen und Prüfen
 
-**Es gibt in dieser Umgebung keinen Swift-Compiler.** Der einzige Typechecker
-ist der GitHub-Actions-Lauf `Build macOS` (~1 Minute, ausgelöst durch Pushes
-auf `native/Nori-macOS/**`). Er läuft wie alle Workflows auf einem
-self-hosted Mac — ist der aus, warten die Jobs in der Warteschlange, statt zu
-scheitern. Einrichtung: `docs/self-hosted-runner.md`.
-
-Vor jedem Push:
+Auf diesem Mac steht seit dem 7.9.2026 eine vollständige Toolchain: Xcode-beta
+für iOS und macOS, und eine Open-Source-Swift-Toolchain samt Android-SDK für
+den geteilten Kern. **Vor dem Push wird lokal gebaut, nicht in der CI
+geraten.** Ein Durchlauf kostet Sekunden bis Minuten, ein CI-Lauf eine Minute
+plus Wartezeit auf den Runner.
 
 ```bash
-python3 tools/check-apple-sources.py
+python3 tools/check-apple-sources.py          # Sekunden, vor jedem Push
+cd native && swift test                       # 135 Tests auf den Kernregeln
 ```
 
-Prüft Target-Trennung, geteilte Dateien, die API-Decke und eine gepflegte
-Liste nicht existierender APIs. Sekundenschnell, ersetzt aber keinen Build.
-Nach jedem roten Build gehört die Ursache dort als neue Zeile hinein.
+Ein Target übersetzen:
+
+```bash
+# iOS gegen den Simulator
+cd native/Nori-iOS && xcodebuild -project Nori.xcodeproj -scheme Nori \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+
+# macOS
+cd native/Nori-macOS && xcodebuild -project NoriMac.xcodeproj -scheme Nori \
+  -destination 'platform=macOS' build
+
+# Geteilter Kern für Android (braucht TOOLCHAINS, siehe docs/android.md)
+tools/build-android-core.sh debug
+```
+
+Das Prüfskript ersetzt keinen Build: es prüft Target-Trennung, geteilte
+Dateien, die API-Decke und eine gepflegte Liste nicht existierender APIs.
+Nach jedem roten Build gehört die Ursache dort als neue Zeile hinein — der
+letzte Zugang war `NoriTheme.danger`, ein erfundenes Symbol, das in einem
+ViewBuilder als `failed to produce diagnostic for expression` erscheint und
+deshalb wie ein zu komplexer Ausdruck aussieht.
+
+Die CI bleibt die Instanz, die zählt: `Build macOS`, `Build iOS`,
+`Swift tests` und `check-sources` laufen bei jedem Push auf einem
+self-hosted Mac. Ist der aus, warten die Jobs in der Warteschlange, statt zu
+scheitern. Einrichtung: `docs/self-hosted-runner.md`.
 
 Wie man die CI-Logs auswertet und was ein PR zum Fertigwerden braucht:
 `.claude/skills/steward/SKILL.md`.
 
-Auf einem echten Mac:
+Zum Ausprobieren:
 
 ```bash
 open native/Nori-macOS/NoriMac.xcodeproj   # Scheme „Nori", Ziel „My Mac", ⌘R
 ```
+
+Die iOS-App lässt sich im Simulator starten und dort auch bedienen —
+`xcrun simctl` genügt, ein angestecktes Gerät ist dafür nicht nötig. Für eine
+unsignierte IPA: `native/Nori-iOS/IPA-bauen.command`.
 
 SwiftSoup wird als Swift-Package aufgelöst. Zum reinen Starten reicht ein
 Personal Team unter Signing & Capabilities; iCloud-Sync braucht zusätzlich die

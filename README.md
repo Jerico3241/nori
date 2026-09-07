@@ -19,6 +19,7 @@ Die App nutzt verfügbare Hoster automatisch nach Priorität und erlaubt währen
 | --- | --- | --- |
 | iOS / iPadOS | **1.16.0** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche; Player und Startseite liegen hinter dem iOS-Stand |
+| Android | **0.1.0** | Compose-App auf dem geteilten Swift-Kern; Katalog, Detailseite und Player, noch ohne Cover im Katalog |
 | Windows | **1.8.0** | Electron / Node Portable Build |
 
 Die nativen Apple-Versionen liegen unter `native/`.
@@ -90,6 +91,8 @@ Damit ist die gemeinsame Datenbasis für iPhone/iPad und Mac im Code vorhanden.
 | --- | --- |
 | `native/Nori-iOS/` | Native iOS/iPadOS-App mit SwiftUI und AVPlayer |
 | `native/Nori-macOS/` | Native macOS-App mit SwiftUI und AVKit |
+| `native/Nori-Android/` | Android-App mit Kotlin, Compose und Media3 |
+| `native/NoriBridge/` | C-ABI-Brücke, über die Kotlin den Swift-Kern aufruft |
 | `desktop/` | Electron-Hülle für Windows |
 | `server/` | Gebauter Nitro/Node-Webserver für die Windows-Version |
 
@@ -154,6 +157,22 @@ Bei Änderungen an der macOS-App bzw. am Workflow wird automatisch ein Artefakt 
 
 Das Artefakt kann über den jeweiligen erfolgreichen GitHub-Actions-Lauf heruntergeladen werden.
 
+## Android
+
+Voraussetzungen: JDK 17, Android SDK mit NDK, sowie eine Open-Source-Swift-
+Toolchain samt Android-SDK — der Kern ist derselbe Swift-Code wie auf Apple.
+Die vier Einrichtungsschritte stehen in [docs/android.md](docs/android.md);
+zwei davon sind Fallen, die sich als Fehler im Quelltext tarnen.
+
+```bash
+tools/build-android-core.sh debug     # Swift-Kern + Laufzeit nach jniLibs/
+cd native/Nori-Android && gradle assembleDebug
+```
+
+Das APK liegt danach unter
+`native/Nori-Android/app/build/outputs/apk/debug/`. Es ist rund 100 MB groß,
+weil die unstrippte Swift-Laufzeit mitfährt, und läuft nur auf **arm64-v8a**.
+
 ## Windows
 
 Der Windows-Stand ist aktuell **1.8.0**.
@@ -185,11 +204,18 @@ Die Electron-Hülle erwartet denselben Server packaged unter `resources/nori-ser
 
 ## Noch offen
 
-Für einen vollständig verifizierten Release-Stand stehen insbesondere noch an:
-
-- iCloud-Capabilities und Signing für iOS und macOS final konfigurieren
-- Sync auf echten Geräten testen
-- iOS- und macOS-Builds in Xcode vollständig verifizieren
-- Hoster unter realen Bedingungen testen
-- anschließend einen sauber versionierten nächsten Release vorbereiten
+- **iCloud-Capabilities und Signing** für iOS und macOS final konfigurieren,
+  danach Sync auf echten Geräten testen. Ohne die Entitlements bleibt die
+  lokale Speicherung funktionsfähig, die Geräte-Synchronisation aber nicht
+  garantiert.
+- **Cover im Android-Katalog.** Die Katalogseiten der Quellen sind reine
+  Titellisten; die Bilder holt auf Apple `CoverIndex` von TMDB, und dieser
+  Weg fehlt in der Brücke noch. Der auffälligste Unterschied zu den
+  Apple-Apps.
+- **Android auf einem echten Gerät prüfen.** Im Emulator scheitert der
+  Software-Decoder mit `MediaCodec$CodecException`; die Kette bis dorthin
+  trägt, ein Bild war aber noch nicht zu sehen.
+- **Hoster unter realen Bedingungen testen.** Sie ändern ihre Seiten
+  jederzeit — eine fehlgeschlagene Stream-Auflösung liegt häufig dort und
+  nicht am Nori-Code.
 
