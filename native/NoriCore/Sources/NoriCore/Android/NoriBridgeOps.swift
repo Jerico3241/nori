@@ -371,3 +371,5 @@ struct LibrarySnapshot: Encodable {
         scope = store.scope.rawValue
     }
 }
+
+#endif

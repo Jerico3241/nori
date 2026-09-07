@@ -65,31 +65,14 @@ jobs:
               exit 1
           fi
 
-      # Die Ziel-Tripel stehen im artifactbundle und heißen je nach
-      # SDK-Fassung anders. Raten wäre hier teuer: ein falsches Tripel sieht
-      # aus wie ein fehlendes SDK.
+      # Die Zieltripel stehen im SDK-Bündel und heißen je nach Fassung
+      # anders. Raten wäre hier teuer: ein falsches Tripel sieht aus wie ein
+      # fehlendes SDK.
       - name: Ziel-Tripel ermitteln
         id: triples
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os, glob
-          hits = glob.glob(os.path.expanduser("~/.swiftpm/swift-sdks/*.artifactbundle/info.json"))
-          triples = set()
-          for path in hits:
-              info = json.load(open(path))
-              for artifact in info.get("artifacts", {}).values():
-                  for variant in artifact.get("variants", []):
-                      for triple in variant.get("supportedTriples", []) or []:
-                          triples.add(triple)
-          print("all=" + " ".join(sorted(triples)))
-          def pick(prefix):
-              found = sorted(t for t in triples if t.startswith(prefix))
-              return found[0] if found else ""
-          print("arm64=" + pick("aarch64-unknown-linux-android"))
-          print("x86_64=" + pick("x86_64-unknown-linux-android"))
-          PY
-          cat "$GITHUB_OUTPUT"
+          python3 tools/android-triples.py --github-output | tee -a "$GITHUB_OUTPUT"
 
       - name: libNoriAndroid.so bauen (arm64-v8a)
         run: |
