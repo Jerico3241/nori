@@ -4,8 +4,37 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.16.0**,
+unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.16.1**,
 Windows **1.8.0**, Android **0.1.0**.
+
+## [iOS 1.16.1] - 2026-09-07
+
+### Behoben
+
+- **Das Oeffnen eines Titels aenderte die Vorgabequelle.** Merkliste und
+  Detailseite setzten `library.provider` auf die Quelle des geoeffneten
+  Titels — ein Ueberbleibsel aus der Zeit, als der Umschalter ein
+  Moduswechsel war. Seit die Bibliothek beide Quellen zusammenfuehrt, ist das
+  schaedlich: `source(of:)` faellt fuer Eintraege ohne eigene Quellangabe auf
+  `library.provider` zurueck, und die Merkliste teilt danach in „Anime" und
+  „Serien" auf. Ein einziges Oeffnen verschob damit fremde Eintraege zwischen
+  den Abschnitten. Nachweisbar an einer gespeicherten Bibliothek, in der
+  `provider` auf einer Quelle stand, die der Nutzer nie gewaehlt hatte.
+
+### Entfernt
+
+- **Die Einstellung „Vorgabequelle".** Was in den Listen steht, entscheidet
+  seit 1.15.0 der Bereich; die Quelle eines einzelnen Titels steht am Eintrag
+  selbst. Damit blieb der Schalter ohne erkennbare Wirkung — und wer ihn
+  umstellte, veraenderte still, in welchem Abschnitt der Merkliste alte
+  Eintraege ohne Quellangabe landen. Das Feld bleibt im Datenmodell als
+  Rueckfall erhalten, ist aber nicht mehr bedienbar.
+
+### Sonstiges
+
+- Der gewaehlte Bereich ueberlebt den Neustart. Das tat er schon seit 1.15.0
+  — geprueft, nicht angenommen: `scope` steht in `library.json`, und nach
+  Beenden und Neustart stand die Auswahl unveraendert.
 
 ## [iOS 1.16.0] - 2026-09-07
 

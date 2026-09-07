@@ -173,13 +173,24 @@ struct SeriesView: View {
         }
     }
 
+    /// Die Serie laden — **ohne** globalen Zustand anzufassen.
+    ///
+    /// Frueher setzte diese Funktion `library.provider` auf die Quelle, aus
+    /// der die Serie kam, und die Merkliste tat dasselbe beim Oeffnen. Das
+    /// stammt aus der Zeit, als der Umschalter ein Moduswechsel war. Seit die
+    /// Bibliothek beide Quellen zusammenfuehrt, ist es schaedlich: `source(of:)`
+    /// faellt fuer Eintraege ohne eigene Quellangabe auf `library.provider`
+    /// zurueck, und die Merkliste teilt danach in „Anime" und „Serien" auf.
+    /// Ein einziges Oeffnen verschob damit fremde Eintraege zwischen den
+    /// Abschnitten. Was ein Titel oeffnet, steht in `providerOverride`
+    /// beziehungsweise am Eintrag selbst — dafuer braucht es keinen globalen
+    /// Schalter.
     func load(season: String?) async {
         loading = detail == nil
         error = nil
         let first = providerOverride ?? library.provider
         do {
             let loaded = try await AniworldClient.shared.getSeries(provider: first, slug: slug, season: season)
-            if library.provider != first { library.provider = first }
             detail = loaded
             self.season = loaded.activeSeason
             library.remember(slug: slug, title: loaded.title, provider: first)
@@ -187,7 +198,6 @@ struct SeriesView: View {
             let other: CatalogProvider = first == .aniworld ? .serienstream : .aniworld
             do {
                 let loaded = try await AniworldClient.shared.getSeries(provider: other, slug: slug, season: season)
-                library.provider = other
                 detail = loaded
                 self.season = loaded.activeSeason
                 library.remember(slug: slug, title: loaded.title, provider: other)

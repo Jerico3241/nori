@@ -93,8 +93,7 @@ struct WatchlistView: View {
                     slug: item.slug,
                     titleHint: item.title,
                     scaleOnPress: true,
-                    provider: src,
-                    onOpen: { library.provider = src }
+                    provider: src
                 ) {
                     NoriGridCard(title: item.title, slug: item.slug, kind: src)
                 }
@@ -104,7 +103,7 @@ struct WatchlistView: View {
     }
 
     private func row(_ item: (slug: String, title: String), _ src: CatalogProvider) -> some View {
-        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: src, onOpen: { library.provider = src }) {
+        NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: src) {
             HStack(spacing: 12) {
                 PosterTile(title: item.title, slug: item.slug, compact: true, kind: src)
                     .frame(width: 44)
