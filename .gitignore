@@ -41,3 +41,8 @@ Nori-Daten/
 Nori-Portable-x64.zip
 Nori.exe
 *.app
+native/Nori-Android/app/src/main/jniLibs/
+native/Nori-Android/.gradle/
+native/Nori-Android/build/
+native/Nori-Android/app/build/
+native/Nori-Android/local.properties
