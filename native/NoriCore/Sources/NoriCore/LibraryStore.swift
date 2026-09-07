@@ -68,14 +68,7 @@ final class LibraryStore {
     /// Merkliste, Verlauf und Fortschritt. Die App ruft weiterhin
     /// `LibraryStore()` und landet im Anwendungsunterstützungsordner.
     init(directory: URL? = nil) {
-        let folder: URL
-        if let directory {
-            folder = directory
-        } else {
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            folder = dir.appendingPathComponent("Nori", isDirectory: true)
-        }
+        let folder = directory ?? NoriStorage.directory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         url = folder.appendingPathComponent("library.json")
         load()

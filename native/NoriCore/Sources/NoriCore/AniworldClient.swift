@@ -497,10 +497,7 @@ actor CoverIndex {
     private static let maxConcurrentLookups = 4
 
     init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = NoriStorage.prepared()
         storeURL = folder.appendingPathComponent("covers.json")
 
         if let data = try? Data(contentsOf: storeURL),
@@ -1033,10 +1030,7 @@ actor EpisodeIndex {
     private static let storeVersion = 1
 
     init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let folder = dir.appendingPathComponent("Nori", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = NoriStorage.prepared()
         storeURL = folder.appendingPathComponent("episodes.json")
 
         if let data = try? Data(contentsOf: storeURL),

@@ -1,8 +1,18 @@
 name: Build Android
 
-# Werkstattlauf für die Android-App. Erhebt, welche Werkzeuge auf welchem
-# Runner tatsächlich vorhanden sind — GitHub-gehostetes Ubuntu bringt das
-# Android-SDK mit, der self-hosted Mac das Swift-SDK für den Kern.
+# Baut die Android-App auf dem self-hosted Mac.
+#
+# Zwei Stufen, in dieser Reihenfolge:
+#
+#   1. NoriCore als `libNoriAndroid.so` je ABI cross-übersetzen — Swift-SDK
+#      für Android, Open-Source-Toolchain, nicht die aus Xcode.
+#   2. Gradle daraus die APK bauen lassen. Die `.so`-Dateien liegen dann in
+#      `jniLibs`; der Gradle-Build braucht deshalb weder NDK noch CMake.
+#
+# Java und das Android-SDK bringt der Runner nicht mit (dort steht ein Java 8,
+# mit dem sich kein AGP 8 bauen lässt). Beides wird deshalb in ein eigenes
+# Verzeichnis unter `~/Library/Android` geholt und dort zwischengespeichert —
+# ohne das System-Java anzufassen.
 on:
   workflow_dispatch:
   push:
@@ -17,37 +27,110 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  hosted:
-    name: Ubuntu (gehostet)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 10
-    steps:
-      - name: Umgebung erheben
-        run: |
-          echo "== java =="; java -version 2>&1 || true
-          echo "== ANDROID_HOME=$ANDROID_HOME =="
-          ls "$ANDROID_HOME/platforms" 2>/dev/null || echo "keine platforms"
-          ls "$ANDROID_HOME/build-tools" 2>/dev/null || echo "keine build-tools"
-          ls "$ANDROID_HOME/ndk" 2>/dev/null || echo "kein ndk"
-          curl -sS -o /dev/null -w 'download.swift.org: %{http_code}\n' https://download.swift.org/ || true
-          df -h / | tail -1; nproc
-
-  mac:
-    name: Self-hosted Mac
+  core:
+    name: NoriCore für Android
     runs-on: [self-hosted, macOS]
-    continue-on-error: true
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
-      - name: Umgebung erheben
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Reihenfolge wichtig: erst das SDK bestimmen, daraus die Toolchain
+      # wählen. Xcodes Toolchain baut zwar los, scheitert dann aber an
+      # dutzenden Fehlern, die nach kaputtem Quelltext aussehen.
+      - name: SDK und Toolchain bestimmen
+        id: sdk
         run: |
-          echo "== swift =="; swift --version 2>&1 || true
-          echo "== swift sdk list =="; swift sdk list 2>&1 || true
-          echo "== toolchains =="
-          ls ~/Library/Developer/Toolchains /Library/Developer/Toolchains 2>/dev/null || true
-          echo "== java =="; java -version 2>&1 || echo "kein java"
-          echo "== android sdk =="
-          ls "$ANDROID_HOME" 2>/dev/null || echo "ANDROID_HOME leer: $ANDROID_HOME"
-          ls ~/Library/Android/sdk 2>/dev/null || echo "kein ~/Library/Android/sdk"
-          echo "== ndk =="; ls ~/Library/Android/sdk/ndk 2>/dev/null || true
-          echo "== platz =="; df -h / | tail -1
+          set -euo pipefail
+          CHOSEN="$(swift sdk list 2>/dev/null | grep -i android | head -1 | tr -d '[:space:]')"
+          if [ -z "$CHOSEN" ]; then
+              echo "::error::Kein Android-Swift-SDK auf dem Runner. Siehe docs/android.md."
+              exit 1
+          fi
+          echo "SDK: $CHOSEN"
+          echo "id=$CHOSEN" >> "$GITHUB_OUTPUT"
+
+          VERSION="${CHOSEN#swift-}"; VERSION="${VERSION%%-RELEASE*}"
+          for dir in "$HOME/Library/Developer/Toolchains" /Library/Developer/Toolchains; do
+              PLIST="$dir/swift-$VERSION-RELEASE.xctoolchain/Info.plist"
+              if [ -f "$PLIST" ]; then
+                  ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
+                  echo "Toolchain $VERSION: $ID"
+                  echo "TOOLCHAINS=$ID" >> "$GITHUB_ENV"
+                  break
+              fi
+          done
+          if ! grep -q TOOLCHAINS "$GITHUB_ENV"; then
+              echo "::error::Keine Open-Source-Toolchain $VERSION gefunden (siehe docs/android.md)."
+              exit 1
+          fi
+
+      # Die Ziel-Tripel stehen im artifactbundle und heißen je nach
+      # SDK-Fassung anders. Raten wäre hier teuer: ein falsches Tripel sieht
+      # aus wie ein fehlendes SDK.
+      - name: Ziel-Tripel ermitteln
+        id: triples
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, glob
+          hits = glob.glob(os.path.expanduser("~/.swiftpm/swift-sdks/*.artifactbundle/info.json"))
+          triples = set()
+          for path in hits:
+              info = json.load(open(path))
+              for artifact in info.get("artifacts", {}).values():
+                  for variant in artifact.get("variants", []):
+                      for triple in variant.get("supportedTriples", []) or []:
+                          triples.add(triple)
+          print("all=" + " ".join(sorted(triples)))
+          def pick(prefix):
+              found = sorted(t for t in triples if t.startswith(prefix))
+              return found[0] if found else ""
+          print("arm64=" + pick("aarch64-unknown-linux-android"))
+          print("x86_64=" + pick("x86_64-unknown-linux-android"))
+          PY
+          cat "$GITHUB_OUTPUT"
+
+      - name: libNoriAndroid.so bauen (arm64-v8a)
+        run: |
+          set -euo pipefail
+          test -n "${{ steps.triples.outputs.arm64 }}" || { echo "::error::Kein arm64-Tripel im SDK."; exit 1; }
+          swift build -c release \
+            --product NoriAndroid \
+            --swift-sdk "${{ steps.triples.outputs.arm64 }}" \
+            --scratch-path "$RUNNER_TEMP/build-arm64"
+        working-directory: native
+
+      - name: libNoriAndroid.so bauen (x86_64)
+        run: |
+          set -euo pipefail
+          test -n "${{ steps.triples.outputs.x86_64 }}" || { echo "::error::Kein x86_64-Tripel im SDK."; exit 1; }
+          swift build -c release \
+            --product NoriAndroid \
+            --swift-sdk "${{ steps.triples.outputs.x86_64 }}" \
+            --scratch-path "$RUNNER_TEMP/build-x86_64"
+        working-directory: native
+
+      # Neben der eigenen Bibliothek muss die Swift-Laufzeit mit in die APK.
+      # Sie liegt im SDK-Bundle und ist nicht Teil des Systems — ohne sie
+      # startet die App auf einem sauberen Gerät nicht.
+      - name: Laufzeit und Bibliothek einsammeln
+        run: |
+          set -euo pipefail
+          python3 tools/collect-android-libs.py \
+            --arm64-build "$RUNNER_TEMP/build-arm64" \
+            --x86-64-build "$RUNNER_TEMP/build-x86_64" \
+            --arm64-triple "${{ steps.triples.outputs.arm64 }}" \
+            --x86-64-triple "${{ steps.triples.outputs.x86_64 }}" \
+            --out native/Nori-Android/app/src/main/jniLibs
+
+      - name: Übersicht
+        run: |
+          find native/Nori-Android/app/src/main/jniLibs -name '*.so' -exec ls -lh {} \; | sort -k9
+
+      - name: jniLibs hochladen
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-android-jnilibs
+          path: native/Nori-Android/app/src/main/jniLibs
+          if-no-files-found: error
