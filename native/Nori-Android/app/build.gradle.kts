@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -79,5 +80,20 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+
+    // Der Kern liefert JSON. Von Hand geparst wäre `SeriesDetail` mit
+    // Staffeln und Folgen eine Fehlerquelle ohne Gegenwert.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Cover. Coil kann Compose direkt und bringt seinen eigenen Cache mit.
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Player. Media3/ExoPlayer statt AVPlayer — HLS und MP4, und beide
+    // brauchen den Referer als Kopfzeile, sonst liefern die Hoster nichts.
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

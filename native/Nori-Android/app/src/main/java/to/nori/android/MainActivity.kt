@@ -1,204 +1,171 @@
 package to.nori.android
 
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-
-/**
- * Material You, aber immer dunkel.
- *
- * Dieselbe Entscheidung wie in docs/android.md beschrieben: der Inhalt sind
- * Cover, und ein heller Grund kämpft dagegen an. Die Farbtöne kommen ab
- * Android 12 aus dem Hintergrundbild, das Schema bleibt dunkel.
- */
-@Composable
-private fun NoriTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val scheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        dynamicDarkColorScheme(context)
-    } else {
-        darkColorScheme(
-            primary = Color(0xFF7BD88F),
-            background = Color(0xFF0E0F12),
-            surface = Color(0xFF16181D),
-        )
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
-}
-
-/** Ein Katalogeintrag, so wie ihn der Swift-Kern als JSON liefert. */
-private data class Item(val slug: String, val title: String, val genres: String)
-
-private sealed interface State {
-    data object Idle : State
-    data object Loading : State
-    data class Failed(val message: String) : State
-    data class Loaded(val items: List<Item>) : State
-}
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { NoriTheme { Root() } }
+        enableEdgeToEdge()
+        setContent {
+            NoriTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    Root()
+                }
+            }
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Die fünf Bereiche, dieselben wie auf dem iPhone.
+ *
+ * Bewusst eine `NavigationBar` unten und kein Schubladenmenü: auf iOS ist es
+ * eine Tab-Leiste, und ein Nutzer, der beide Apps hat, soll nicht umlernen.
+ */
+private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
+    HOME("home", "Start", Icons.Filled.Home),
+    CATALOG("catalog", "Katalog", Icons.Filled.Search),
+    CALENDAR("calendar", "Kalender", Icons.Filled.DateRange),
+    WATCHLIST("watchlist", "Merkliste", Icons.Filled.Favorite),
+    SETTINGS("settings", "Mehr", Icons.Filled.Settings),
+}
+
 @Composable
 private fun Root() {
-    var state by remember { mutableStateOf<State>(State.Idle) }
-    var provider by remember { mutableStateOf("aniworld") }
-    var ping by remember { mutableStateOf(NoriBridge.loadError?.let { "Fehler: $it" } ?: "") }
+    val model: NoriViewModel = viewModel()
+    val nav = rememberNavController()
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Scaffold(
-            topBar = { TopAppBar(title = { Text("Nori") }) }
-        ) { insets ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(insets)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (NoriBridge.loadError != null) {
-                    Text(
-                        "Der Swift-Kern ließ sich nicht laden.\n${NoriBridge.loadError}",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    return@Column
-                }
+    if (NoriBridge.loadError != null) {
+        StatusBox(
+            "Der Swift-Kern ließ sich nicht laden.\n\n${NoriBridge.loadError}",
+            isError = true,
+        )
+        return
+    }
 
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    listOf("aniworld" to "Anime", "serienstream" to "Serien")
-                        .forEachIndexed { index, (raw, label) ->
-                            SegmentedButton(
-                                selected = provider == raw,
-                                onClick = { provider = raw },
-                                shape = SegmentedButtonDefaults.itemShape(index, 2)
-                            ) { Text(label) }
-                        }
-                }
+    val entry by nav.currentBackStackEntryAsState()
+    val route = entry?.destination?.route
 
-                Button(onClick = { ping = runCatching { NoriBridge.ping() }.getOrElse { "Fehler: ${it.message}" } }) {
-                    Text("Lebenszeichen")
-                }
-                if (ping.isNotEmpty()) {
-                    Text(ping, style = MaterialTheme.typography.bodySmall)
-                }
-
-                LoadButton(provider) { state = it }
-
-                when (val current = state) {
-                    is State.Idle -> Text("Noch nichts geladen.")
-                    is State.Loading -> CircularProgressIndicator()
-                    is State.Failed -> Text(
-                        current.message,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    is State.Loaded -> {
-                        Text("${current.items.size} Titel")
-                        LazyColumn(
-                            contentPadding = PaddingValues(vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(current.items) { item ->
-                                Column {
-                                    Text(item.title, style = MaterialTheme.typography.bodyLarge)
-                                    if (item.genres.isNotEmpty()) {
-                                        Text(
-                                            item.genres,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+    androidx.compose.material3.Scaffold(
+        bottomBar = {
+            // Auf der Detailseite und im Player ist die Leiste im Weg.
+            if (route in Tab.entries.map { it.route }) {
+                NavigationBar {
+                    Tab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = route == tab.route,
+                            onClick = {
+                                nav.navigate(tab.route) {
+                                    popUpTo(Tab.HOME.route) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                            }
-                        }
+                            },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun LoadButton(provider: String, onState: (State) -> Unit) {
-    val scope = rememberCoroutineScope()
-    Button(onClick = {
-        onState(State.Loading)
-        scope.launch {
-            // Zwingend abseits des Main-Threads: die Brücke blockiert, bis
-            // der Swift-actor geantwortet hat.
-            val json = withContext(Dispatchers.IO) {
-                runCatching { NoriBridge.catalogJson(provider) }
-                    .getOrElse { """{"error":"${it.message}"}""" }
-            }
-            onState(parse(json))
-        }
-    }) {
-        Text("Katalog laden")
-    }
-}
-
-private fun parse(json: String): State = runCatching {
-    val trimmed = json.trim()
-    if (trimmed.startsWith("{")) {
-        val error = JSONObject(trimmed).optString("error", "Unbekannter Fehler")
-        return State.Failed(error)
-    }
-    val array = JSONArray(trimmed)
-    val items = buildList {
-        for (i in 0 until array.length()) {
-            val row = array.getJSONObject(i)
-            val genres = row.optJSONArray("genres")
-            add(
-                Item(
-                    slug = row.optString("slug"),
-                    title = row.optString("title"),
-                    genres = buildList {
-                        if (genres != null) for (g in 0 until genres.length()) add(genres.getString(g))
-                    }.take(3).joinToString(" · ")
+    ) { insets ->
+        NavHost(
+            navController = nav,
+            startDestination = Tab.HOME.route,
+            modifier = Modifier.padding(insets),
+        ) {
+            composable(Tab.HOME.route) { HomeScreen(model, nav) }
+            composable(Tab.CATALOG.route) { CatalogScreen(model, nav) }
+            composable(Tab.CALENDAR.route) { CalendarScreen(model, nav) }
+            composable(Tab.WATCHLIST.route) { WatchlistScreen(model, nav) }
+            composable(Tab.SETTINGS.route) { SettingsScreen(model) }
+            composable("series/{provider}/{slug}") { backStack ->
+                SeriesScreen(
+                    model = model,
+                    nav = nav,
+                    provider = Provider.from(backStack.arguments?.getString("provider")),
+                    slug = backStack.arguments?.getString("slug").orEmpty(),
                 )
-            )
+            }
+            composable("player/{provider}/{path}") { backStack ->
+                PlayerScreen(
+                    model = model,
+                    nav = nav,
+                    provider = Provider.from(backStack.arguments?.getString("provider")),
+                    // Der Folgenpfad enthält Schrägstriche und wird deshalb
+                    // kodiert übergeben.
+                    path = java.net.URLDecoder.decode(
+                        backStack.arguments?.getString("path").orEmpty(), "UTF-8"
+                    ),
+                )
+            }
         }
     }
-    State.Loaded(items)
-}.getOrElse { State.Failed("Antwort nicht lesbar: ${it.message}") }
+}
+
+/** Zur Detailseite. Der Slug kann Sonderzeichen tragen, deshalb kodiert. */
+fun NavHostController.openSeries(provider: Provider, slug: String) {
+    navigate("series/${provider.raw}/${java.net.URLEncoder.encode(slug, "UTF-8")}")
+}
+
+/** In den Player. */
+fun NavHostController.openPlayer(provider: Provider, path: String) {
+    navigate("player/${provider.raw}/${java.net.URLEncoder.encode(path, "UTF-8")}")
+}
+
+/**
+ * Der Quellenumschalter, wie auf iOS eine segmentierte Kapsel.
+ *
+ * Anders als auf dem Mac gibt es hier (noch) keinen K-Drama-Bereich: der
+ * hängt an `LibraryScope`, und die gemeinsame Bibliothek ist auf iOS und
+ * Android noch nicht eingebaut.
+ */
+@Composable
+fun KindSwitch(model: NoriViewModel) {
+    val current by model.provider.collectAsState()
+    SingleChoiceSegmentedButtonRow {
+        Provider.entries.forEachIndexed { index, source ->
+            SegmentedButton(
+                selected = current == source,
+                onClick = { model.switch(source) },
+                shape = SegmentedButtonDefaults.itemShape(index, Provider.entries.size),
+            ) { Text(source.label) }
+        }
+    }
+}
