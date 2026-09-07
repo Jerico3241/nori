@@ -5,6 +5,7 @@ on:
     paths:
       - 'native/Nori-macOS/**'
       - 'native/NoriCore/**'
+      - 'tools/require-xcode.sh'
       - '.github/workflows/build-macos.yml'
   workflow_dispatch:
 

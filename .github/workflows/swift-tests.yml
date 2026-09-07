@@ -1,24 +1,12 @@
 name: Swift tests
 
-# Nur `push`, kein `pull_request`: Für Branches in diesem Repository laufen
-# beide Ereignisse auf demselben Baum — der Zweig sitzt auf main auf, der
-# Merge-Commit ist der Branch-Kopf. Das prüfte alles doppelt und kostete die
-# doppelten Minuten. GitHub ordnet die push-Läufe dem Pull Request ohnehin zu,
-# sie erscheinen dort also weiterhin als Prüfungen.
 on:
   push:
     paths:
       - 'native/**'
+      - 'tools/require-xcode.sh'
       - '.github/workflows/swift-tests.yml'
   workflow_dispatch:
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,19 +20,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # `swift test` läuft nicht mit den Command Line Tools allein: Paket und
-      # Abhängigkeiten übersetzen zwar, das Testziel scheitert dann aber an
-      # „unable to resolve module dependency: 'XCTest'" — XCTest gehört zu
-      # Xcode. Vorher prüfen, sonst steht der Grund erst am Ende eines
-      # mehrminütigen Laufs zwischen tausend Compilerzeilen.
+      # Wählt ein vollständiges Xcode mit funktionierendem Swift-Compiler aus
+      # und schreibt DEVELOPER_DIR für die folgenden Schritte nach GITHUB_ENV.
       - name: Toolchain prüfen
-        run: |
-          tools/require-xcode.sh 15
-          swift --version
+        run: tools/require-xcode.sh 15
 
-      # Das Paket bindet Models.swift aus dem macOS-Target ein, ohne sie zu
-      # kopieren. Die Datei ist zwischen iOS und macOS byte-gleich, der Test
-      # deckt damit beide Plattformen ab.
+      - name: Swift-Version prüfen
+        run: swift --version
+
+      # Das Paket baut die kanonischen Quellen aus
+      # native/NoriCore/Sources/NoriCore. Damit prüfen diese Tests exakt den
+      # Kern, den iOS und macOS über ihre Symlinks einbinden.
       - name: Run core tests
         working-directory: native
         run: swift test --enable-code-coverage

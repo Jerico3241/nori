@@ -5,6 +5,7 @@ on:
     paths:
       - 'native/Nori-iOS/**'
       - 'native/NoriCore/**'
+      - 'tools/require-xcode.sh'
       - '.github/workflows/build-ios.yml'
   workflow_dispatch:
 
@@ -21,9 +22,10 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Toolchain prüfen
-        run: |
-          tools/require-xcode.sh 16
-          xcodebuild -showsdks | grep -i iphonesimulator || true
+        run: tools/require-xcode.sh 16
+
+      - name: iOS SDK prüfen
+        run: xcodebuild -showsdks | grep -i iphonesimulator
 
       - name: Resolve Swift packages
         run: |
