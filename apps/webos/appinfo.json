@@ -1,0 +1,18 @@
+{
+  "id": "tv.nori.app",
+  "version": "1.0.0",
+  "vendor": "Nori",
+  "type": "web",
+  "main": "index.html",
+  "title": "Nori",
+  "appDescription": "Anime und Serien für das Wohnzimmer",
+  "icon": "icon-80.png",
+  "largeIcon": "icon-130.png",
+  "iconColor": "#05060a",
+  "splashBackground": "splash-1920x1080.png",
+  "bgColor": "#05060a",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "transparent": false,
+  "supportPortraitMode": false
+}
