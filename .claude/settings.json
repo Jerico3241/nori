@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 tools/check-apple-sources.py)",
+      "Bash(adb devices)",
+      "Bash(adb logcat *)",
+      "Bash(adb shell getprop *)",
+      "Bash(adb shell pidof *)",
+      "Bash(swift sdk list)",
+      "Bash(swift --version)",
+      "Bash(xcrun simctl list *)",
+      "Bash(git fetch *)",
+      "Bash(git merge-base *)",
+      "mcp__ccd_session_mgmt__list_sessions",
+      "mcp__ccd_session_mgmt__get_session"
+    ]
+  }
+}

@@ -1,25 +1,36 @@
 import SwiftUI
 
-/// Umschalter zwischen Anime und Serien.
+/// Umschalter für den Bereich der Bibliothek.
 ///
-/// War ein handgebauter Schieber: ein Stapel aus Kapsel, Daumen und zwei
-/// Textfeldern, deren Breiten von Hand aufeinander abgestimmt waren. Auf der
-/// Startseite stand der Daumen dann nicht mehr unter seiner Beschriftung.
-/// Solche Geometrie zahlt sich nicht aus — das Systembauteil kann dasselbe,
-/// bringt Dynamic Type, VoiceOver und die richtige Darstellung in jeder
-/// Navigationsleiste von sich aus mit.
-struct KindSwitch: View {
-    @Binding var provider: CatalogProvider
+/// Hieß einmal `KindSwitch` und schaltete zwischen zwei Quellen um. Seit es
+/// `LibraryScope` gibt, wählt er einen **Ausschnitt**: „Alle", „Anime",
+/// „Serien" oder „K-Drama". Die Quelle entscheidet weiter, wohin ein
+/// einzelner Titel führt — nur nicht mehr, was in den Listen steht.
+///
+/// ## Warum ein Menü und kein segmentierter Regler
+///
+/// Auf dem Mac sitzt derselbe Umschalter als segmentierter `Picker` in der
+/// Seitenleiste, wo Platz ist. In einer iPhone-Navigationsleiste sind vier
+/// Segmente zu viel: „K-Drama" allein braucht mehr Breite als die beiden
+/// alten Segmente zusammen, und mit Dynamic Type wird daraus Gedränge oder
+/// abgeschnittener Text. Ein Menü zeigt stattdessen den aktuellen Bereich und
+/// bleibt gleich breit, egal wie viele Bereiche dazukommen.
+struct ScopeSwitch: View {
+    @Binding var scope: LibraryScope
 
     var body: some View {
-        Picker("Quelle", selection: $provider) {
-            ForEach(CatalogProvider.allCases) { item in
-                Text(item.kind).tag(item)
+        Menu {
+            Picker("Bereich", selection: $scope) {
+                ForEach(LibraryScope.allCases) { item in
+                    Text(item.label).tag(item)
+                }
             }
+            .pickerStyle(.inline)
+        } label: {
+            Label(scope.label, systemImage: "line.3.horizontal.decrease.circle")
+                .labelStyle(.titleAndIcon)
         }
-        .pickerStyle(.segmented)
-        .frame(width: 148)
-        .accessibilityLabel("Quelle")
+        .accessibilityLabel("Bereich: \(scope.label)")
     }
 }
 
@@ -82,7 +93,7 @@ struct HomeView: View {
                     }
 
                     if !catalog.isEmpty {
-                        PosterRow(title: "Beliebte \(library.provider.kind)") {
+                        PosterRow(title: "Beliebte Titel") {
                             ForEach(catalog.prefix(20)) { item in
                                 catalogCard(item)
                             }
@@ -106,7 +117,7 @@ struct HomeView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                KindSwitch(provider: Bindable(library).provider)
+                ScopeSwitch(scope: Bindable(library).scope)
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -140,7 +151,7 @@ struct HomeView: View {
     /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
     /// Einträge vergleichen.
     private var rowsKey: String {
-        "\(library.provider.rawValue)|\(catalog.count)"
+        "\(library.scope.rawValue)|\(catalog.count)"
     }
 
     private func buildHero() -> [HeroItem] {

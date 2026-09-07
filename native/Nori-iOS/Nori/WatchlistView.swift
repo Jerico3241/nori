@@ -47,7 +47,7 @@ struct WatchlistView: View {
         .navigationTitle("Merkliste")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                KindSwitch(provider: Bindable(library).provider)
+                ScopeSwitch(scope: Bindable(library).scope)
             }
         }
     }

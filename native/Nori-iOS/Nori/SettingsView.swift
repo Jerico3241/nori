@@ -15,7 +15,7 @@ struct SettingsView: View {
                     NavigationLink {
                         QuelleSettingsView()
                     } label: {
-                        LabeledContent("Aktive Quelle", value: library.provider.label)
+                        LabeledContent("Vorgabequelle", value: library.provider.label)
                     }
                     .listRowBackground(NoriTheme.surface)
                 }
@@ -86,7 +86,7 @@ struct QuelleSettingsView: View {
                     }
                     .pickerStyle(.inline)
                 } footer: {
-                    Text("AniWorld zeigt Anime, Serienstream zeigt Serien. Katalog, Kalender und Player folgen der Auswahl.")
+                    Text("Wohin ein Titel führt, der keine eigene Quelle mitbringt — etwa ein Eintrag aus einem älteren gespeicherten Stand. Was in den Listen steht, entscheidet dagegen der Bereich oben rechts: Alle, Anime, Serien oder K-Drama.")
                 }
             }
             .scrollContentBackground(.hidden)

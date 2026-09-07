@@ -4,8 +4,40 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
+unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.15.0**,
 Windows **1.8.0**, Android **0.1.0**.
+
+## [iOS 1.15.0] – 2026-09-07
+
+### Hinzugefügt
+
+- **Bereich „K-Drama" auf dem iPhone.** Der Umschalter oben rechts wählt jetzt
+  einen Ausschnitt der Bibliothek: Alle, Anime, Serien oder K-Drama. Die
+  koreanischen Serien führt Serienstream selbst unter diesem Genre — rund
+  hundert Titel, die vorher nur über die Suche zu finden waren. Katalog,
+  Startseite und Kalender folgen dem Bereich.
+
+### Geändert
+
+- **iOS lädt beide Kataloge und führt sie zusammen.** Bisher wurde nur der
+  Katalog der aktiven Quelle geholt, eine Liste konnte also nie Titel beider
+  Seiten enthalten — „Alle" war damit nicht darstellbar und „K-Drama" erst
+  recht nicht. Der Mac macht es seit 1.12.0 genauso. Fällt eine Quelle aus,
+  zeigt die App die andere weiter, statt leer zu bleiben.
+- **Der Umschalter ist ein Menü statt eines segmentierten Reglers.** Auf dem
+  Mac sitzt er als Segmentregler in der Seitenleiste, wo Platz ist; in einer
+  iPhone-Navigationsleiste sind vier Segmente zu viel — „K-Drama" allein
+  braucht mehr Breite als die beiden alten Segmente zusammen, und mit Dynamic
+  Type wird daraus abgeschnittener Text. Das Menü bleibt gleich breit, egal
+  wie viele Bereiche dazukommen.
+- **Der Kalender führt beide Quellen zusammen** und filtert im
+  K-Drama-Bereich über die Slugs des Katalogs mit: ein Kalendereintrag trägt
+  Slug und Quelle, aber keine Genres. Steht der Katalog noch nicht, wird
+  bewusst nicht eingeschränkt — ein vollständiger Kalender ist die bessere
+  Antwort als ein leerer.
+- In den Einstellungen heißt „Aktive Quelle" jetzt **„Vorgabequelle"**. Sie
+  entscheidet nur noch, wohin ein Titel ohne eigene Quellangabe führt; was in
+  den Listen steht, bestimmt der Bereich.
 
 ## [Android 0.1.0] – 2026-09-06
 
