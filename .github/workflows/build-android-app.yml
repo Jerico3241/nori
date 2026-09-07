@@ -1,0 +1,31 @@
+name: Build Android
+
+# Baut die Android-App. Anders als `Build Android core` läuft dieser Workflow
+# auf einem von GitHub gehosteten Ubuntu-Runner: dort liegt das Android-SDK
+# fertig installiert, und der self-hosted Mac soll dafür nicht umgebaut werden.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Umgebung erheben
+        run: |
+          echo "== java =="; java -version 2>&1 || true
+          echo "== ANDROID_HOME =$ANDROID_HOME= SDK_ROOT =$ANDROID_SDK_ROOT="
+          ls "$ANDROID_HOME" 2>/dev/null || true
+          echo "== platforms =="; ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          echo "== build-tools =="; ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
+          echo "== ndk =="; ls "$ANDROID_HOME/ndk" 2>/dev/null || true
+          echo "== cmdline-tools =="; ls "$ANDROID_HOME/cmdline-tools" 2>/dev/null || true
+          echo "== swift erreichbar? =="
+          curl -sS -o /dev/null -w 'download.swift.org: %{http_code}\n' https://download.swift.org/ || true
+          curl -sS -o /dev/null -w 'maven.google.com: %{http_code}\n' https://maven.google.com/ || true
+          echo "== disk =="; df -h / | tail -1
+          echo "== nproc =="; nproc
