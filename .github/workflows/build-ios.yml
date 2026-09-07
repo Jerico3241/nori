@@ -1,24 +1,13 @@
 name: Build iOS
 
-# Nur `push`, kein `pull_request`: Für Branches in diesem Repository laufen
-# beide Ereignisse auf demselben Baum — der Zweig sitzt auf main auf, der
-# Merge-Commit ist der Branch-Kopf. Das prüfte alles doppelt und kostete die
-# doppelten Minuten. GitHub ordnet die push-Läufe dem Pull Request ohnehin zu,
-# sie erscheinen dort also weiterhin als Prüfungen.
 on:
   push:
     paths:
       - 'native/Nori-iOS/**'
+      - 'native/NoriCore/**'
+      - 'tools/require-xcode.sh'
       - '.github/workflows/build-ios.yml'
   workflow_dispatch:
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,15 +21,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Mindestens Xcode 16: die App nutzt hinter `#available(iOS 18.0, *)` die
-      # Zoom-Übergänge (matchedTransitionSource, navigationTransition(.zoom)).
-      # `#available` prüft nur zur Laufzeit — übersetzt werden muss trotzdem
-      # gegen ein SDK, das die Symbole kennt. Xcode 15.4 bringt iOS-SDK 17.5
-      # und scheitert daran mit „has no member".
       - name: Toolchain prüfen
-        run: |
-          tools/require-xcode.sh 16
-          xcodebuild -showsdks | grep -i iphonesimulator || true
+        run: tools/require-xcode.sh 16
+
+      - name: iOS SDK prüfen
+        run: xcodebuild -showsdks | grep -i iphonesimulator
 
       - name: Resolve Swift packages
         run: |
@@ -49,8 +34,6 @@ jobs:
             -project native/Nori-iOS/Nori.xcodeproj \
             -scheme Nori
 
-      # Gegen den Simulator bauen: dafür wird keine Signatur gebraucht, und
-      # der Typechecker läuft trotzdem über den gesamten iOS-Code.
       - name: Build Nori for iOS Simulator
         run: |
           set -o pipefail

@@ -1,98 +1,71 @@
 ---
 name: apple-parity
-description: Regeln für Änderungen an den nativen Apple-Targets von Nori (native/Nori-iOS, native/Nori-macOS) — welche Dateien zwischen iOS und macOS geteilt sind und identisch bleiben müssen, welche bewusst auseinanderlaufen, und welche iOS-Muster auf dem Mac nicht funktionieren. Verwenden, sobald Swift-Code unter native/ angefasst wird, ein Feature in beide Apple-Apps soll, oder eine der beiden Apps sich "wie ein Port" anfühlt.
+description: Regeln für Änderungen an den nativen Apple-Targets von Nori und am gemeinsamen NoriCore.
 ---
 
-# Apple-Targets: was geteilt wird und was nicht
+# Apple-Targets und gemeinsamer Kern
 
-Nori hat zwei getrennte Xcode-Projekte mit teilweise gleichen Dateinamen.
-**Gleicher Dateiname heißt nicht gleicher Inhalt.** Vor jeder Änderung
-einsortieren, in welche der drei Klassen die Datei fällt.
+## 1. Gemeinsame Kernlogik
 
-## 1. Wortgleich geteilt — Änderung immer in beide Targets
+Die folgenden Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`:
 
-`Models.swift` · `LibraryStore.swift` · `AniworldClient.swift` ·
-`HosterResolver.swift` · `HTML.swift`
+`Models.swift` · `LibraryStore.swift` · `AniworldClient.swift` · `HosterResolver.swift` · `HTML.swift`
 
-Diese fünf Dateien enthalten keine einzige plattformspezifische Zeile und sind
-Byte für Byte identisch. Wer eine davon nur in einem Target ändert, erzeugt
-still divergierende Datenmodelle — der Bibliotheksstand wird dann zwischen
-iPhone und Mac über iCloud inkompatibel.
+Die gleichnamigen Dateien unter `native/Nori-iOS/Nori/` und `native/Nori-macOS/Nori/` sind Git-Symlinks auf diese Quelle. Änderungen niemals in einem einzelnen Plattformpfad separat vornehmen.
 
-Nach der Änderung:
+Nach Strukturänderungen prüfen:
 
 ```bash
-diff native/Nori-iOS/Nori/<Datei> native/Nori-macOS/Nori/<Datei>   # muss leer sein
+readlink native/Nori-iOS/Nori/Models.swift
+readlink native/Nori-macOS/Nori/Models.swift
+cd native && swift test
 ```
 
-## 2. Logisch geteilt, unterschiedlich formuliert
+`tools/check-apple-sources.py` bleibt als zusätzliche statische Prüfung bestehen.
 
-Zurzeit leer.
+## 2. Bewusst getrennte UI
 
-`HTML.swift` gehörte bis zum ersten iOS-Build hierher: beide Fassungen
-parsten dasselbe HTML, die macOS-Fassung war aber bereits umstrukturiert.
-Der iOS-Build zeigte, dass die iOS-Fassung gar nicht übersetzte — lange
-Optional-Ketten mit `try`, an denen der Typechecker abbrach, und fehlende
-`try` an `nextElementSibling()`. Seitdem ist die macOS-Fassung in beiden
-Targets, und die Datei steht in Klasse 1.
-
-Die Klasse bleibt beschrieben, weil sie jederzeit wieder entstehen kann:
-sobald eine geteilte Datei aus Plattformgründen auseinanderlaufen muss,
-gehört sie in `SHARED_STRUCTURE` in `tools/check-apple-sources.py` — dort
-wird dann nur noch die Menge der Deklarationen verglichen.
-
-## 3. Bewusst getrennt — nicht angleichen
-
-`NoriApp.swift` · `Theme.swift` · alle `*View.swift` · `PlayerScreen.swift`
-
-Die macOS-Oberfläche folgt seit dem Umbau Desktop-Konventionen und ist **kein**
-Spiegel der iOS-Oberfläche mehr. Diese Dateien anzugleichen macht die
-Mac-App wieder kaputt.
+`NoriApp.swift` · `Theme.swift` · alle `*View.swift` · plattformspezifische Player-Dateien
 
 | Thema | iOS | macOS |
 | --- | --- | --- |
-| Navigation | `TabView` + `.tabItem` | `NavigationSplitView` mit Seitenleiste |
-| Quellenumschalter | `KindSwitch` (Drag-Kapsel) | segmentierter `Picker` in der Seitenleiste |
-| Einstellungen | Tab „Mehr" | `Settings`-Scene (⌘,) mit Tab-Bereichen |
-| Player | `.sheet` | eigene `Window`-Scene über `PlayerHost` |
-| Neu laden | `.refreshable` | Toolbar-Knopf + ⌘R über `focusedSceneValue` |
-| Farben | fest dunkel | `NSColor(name:dynamicProvider:)`, folgt dem System |
-| Listen | `.listRowBackground` | `.listStyle(.inset(alternatesRowBackgrounds: true))` |
+| Navigation | `TabView` | `NavigationSplitView` |
+| Einstellungen | App-Tab/Ansicht | `Settings`-Scene (⌘,) |
+| Player | iOS-Player / Sheet | eigenes Fenster / AVKit |
+| Aktualisieren | `.refreshable` | Toolbar-Knopf + ⌘R |
+| Bedienung | Touch/Gesten | Maus, Hover, Kontextmenüs, Shortcuts |
+| Erscheinungsbild | mobile UI | dynamische Mac-Farben |
 
-## iOS-Muster, die auf dem Mac ins Leere greifen
+Die Mac-App ist kein wörtlicher Port der iOS-Oberfläche.
 
-Kompilieren teils anwendungslos, deshalb fallen sie ohne Prüfung nicht auf:
+## iOS-Muster, die auf dem Mac vermieden werden
 
-- `.refreshable` — Pull-to-Refresh existiert auf macOS nicht. Ohne
-  Toolbar-Knopf ist die Ansicht **gar nicht** neu ladbar.
-- `.preferredColorScheme(.dark)` — ignoriert die Systemeinstellung.
-- `.listRowBackground` / `.scrollContentBackground(.hidden)` — übermalt die
-  native Auswahlmarkierung.
-- `.fullScreenCover`, `.navigationBarTitleDisplayMode`,
-  `.navigationBarBackButtonHidden` — iOS-only.
-- Drag-Gesten als einzige Bedienung eines Schalters — auf dem Mac gibt es
-  einen Mauszeiger, keine Wischgeste.
-- Zu kleine Rasterzellen (`GridItem(.adaptive(minimum: 110))`) — auf einem
-  1280 px breiten Fenster briefmarkengroß.
+- `.refreshable` als einzige Aktualisierung
+- `.fullScreenCover`
+- `.navigationBarTitleDisplayMode`
+- `.navigationBarBackButtonHidden`
+- Drag-Gesten als einzige Bedienmöglichkeit
+- erzwungenes Farbschema, wenn das Systemerscheinungsbild unterstützt werden soll
+- zu kleine adaptive Rasterzellen für Desktop-Fenster
 
-Umgekehrt gehört auf den Mac dazu, was iOS nicht kennt: `.onHover`,
-`.contextMenu`, `.help()`-Tooltips, `.keyboardShortcut`.
+Auf dem Mac gehören stattdessen je nach Kontext `.onHover`, `.contextMenu`, `.help()` und `.keyboardShortcut` dazu.
 
 ## API-Decke
 
-| Target | Minimum | Bedeutung |
-| --- | --- | --- |
-| macOS | 14.0 | keine macOS-15-APIs (`Tab`-basiertes `TabView`, `.sidebarAdaptable`, `.toolbar(removing:)`, `.searchFocused`) |
-| iOS | 17.0 | |
+| Target | Minimum |
+| --- | --- |
+| macOS | 14.0 |
+| iOS | 17.0 |
 
-`SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion —
-`if`/`switch`-Ausdrücke und Makros stehen zur Verfügung.
+Keine APIs verwenden, die das jeweilige Deployment-Target oder das SDK des konfigurierten Xcode-Runners überschreiten.
 
-## Vor dem Push
+## Core-Änderungen und CI
+
+Eine Änderung unter `native/NoriCore/**` betrifft immer beide Apple-Apps. Deshalb müssen `Build iOS`, `Build macOS` und `Swift tests` darauf reagieren.
+
+Vor dem Push:
 
 ```bash
 python3 tools/check-apple-sources.py
+cd native && swift test
 ```
-
-Ersetzt keinen Build. Der einzige echte Typechecker ist der
-GitHub-Actions-Lauf `Build macOS`; siehe `.claude/skills/steward/SKILL.md`.

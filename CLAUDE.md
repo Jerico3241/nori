@@ -1,117 +1,93 @@
 # Nori — Arbeitsanleitung
 
-Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld
-(Anime) und Serienstream (Serien), Merkliste, Verlauf, Wiedergabefortschritt,
-Kalender, integrierter Player.
+Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
 
 ## Aufbau
 
 | Ordner | Inhalt | Bearbeiten? |
 | --- | --- | --- |
+| `native/NoriCore/Sources/NoriCore/` | gemeinsamer Swift-Kern | ja |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
+| `native/Tests/` | Tests des gemeinsamen Kerns | ja |
 | `desktop/` | Electron-Hülle für Windows | ja |
-| `server/` | **gebautes** Nitro/Node-Bundle | nein, generiert |
+| `server/` | gebautes Nitro/Node-Bundle | nein, generiert |
+| `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
 
-`server/` besteht aus minifizierten `.mjs`-Dateien mit Hash-Namen. Das ist
-Build-Ausgabe, kein Quellcode — Änderungen daran sind immer falsch.
+`server/` besteht aus generierten `.mjs`-Dateien mit Hash-Namen. Änderungen daran sind falsch; der ursprüngliche Web-Sourcecode gehört separat ins Repository, falls Windows wieder aktiv weiterentwickelt wird.
 
-## Die wichtigste Regel
+## Gemeinsamer Apple-Core
 
-Die beiden Apple-Targets haben teilweise **gleiche Dateinamen bei
-unterschiedlichem Inhalt**. Fünf Dateien müssen byte-gleich bleiben
-(`Models`, `LibraryStore`, `AniworldClient`, `HosterResolver`, `HTML`),
-sämtliche Views sowie `NoriApp.swift` und `Theme.swift` laufen seit dem
-macOS-Umbau dagegen **bewusst** auseinander.
+Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`:
 
-Die macOS-App war ursprünglich eine fast wörtliche Kopie der iOS-App. Dadurch
-liefen mehrere iOS-Muster auf dem Mac ins Leere (`.refreshable` ohne Wirkung,
-Drag-Gesten ohne Touch, erzwungenes Dark Mode). Diese Kopie nicht
-wiederherstellen.
+- `Models.swift`
+- `LibraryStore.swift`
+- `AniworldClient.swift`
+- `HosterResolver.swift`
+- `HTML.swift`
 
-Details: `.claude/skills/apple-parity/SKILL.md`.
+Die gleichnamigen Pfade in den iOS- und macOS-Ordnern sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Die Xcode-Projekte referenzieren weiterhin ihre bekannten Pfade und bauen dadurch dieselben Quellen.
+
+Die Oberflächen bleiben bewusst getrennt: `NoriApp.swift`, `Theme.swift`, Views und Player-Integration dürfen zwischen iOS und macOS voneinander abweichen.
 
 ## Bauen und Prüfen
-
-**Es gibt in dieser Umgebung keinen Swift-Compiler.** Der einzige Typechecker
-ist der GitHub-Actions-Lauf `Build macOS` (~1 Minute, ausgelöst durch Pushes
-auf `native/Nori-macOS/**`). Er läuft wie alle Workflows auf einem
-self-hosted Mac — ist der aus, warten die Jobs in der Warteschlange, statt zu
-scheitern. Einrichtung: `docs/self-hosted-runner.md`.
 
 Vor jedem Push:
 
 ```bash
 python3 tools/check-apple-sources.py
+cd native && swift test
 ```
 
-Prüft Target-Trennung, geteilte Dateien, die API-Decke und eine gepflegte
-Liste nicht existierender APIs. Sekundenschnell, ersetzt aber keinen Build.
-Nach jedem roten Build gehört die Ursache dort als neue Zeile hinein.
+Die echten App-Typechecks laufen über GitHub Actions auf dem self-hosted Mac:
 
-Wie man die CI-Logs auswertet und was ein PR zum Fertigwerden braucht:
-`.claude/skills/steward/SKILL.md`.
+- `Build iOS`
+- `Build macOS`
+- `Swift tests`
 
-Auf einem echten Mac:
-
-```bash
-open native/Nori-macOS/NoriMac.xcodeproj   # Scheme „Nori", Ziel „My Mac", ⌘R
-```
-
-SwiftSoup wird als Swift-Package aufgelöst. Zum reinen Starten reicht ein
-Personal Team unter Signing & Capabilities; iCloud-Sync braucht zusätzlich die
-Key-Value-Store-Capability, die noch nicht eingerichtet ist.
-
-## Arbeitsweise
-
-Durcharbeiten, nicht nachfragen. Eine Aufgabe wird bis zum Ende gebracht —
-Änderung, `tools/check-apple-sources.py`, Commit, Push, PR, CI-Lauf auswerten,
-rote Läufe reparieren — ohne zwischendurch auf eine Bestätigung zu warten.
-Enthält eine Anfrage mehrere Punkte, folgt der nächste Punkt direkt auf den
-vorigen; größere Punkte werden zu eigenen PRs, aber nacheinander und
-selbstständig.
-
-Nachgefragt wird nur, wenn eine Angabe fehlt, die niemand außer dem Betreiber
-liefern kann (etwa eine OAuth-Client-ID) oder wenn zwei Auslegungen zu
-grundverschiedener Arbeit führen würden. Fragen der Form „soll ich bauen /
-testen / committen?" gehören nicht dazu.
+Änderungen an `native/NoriCore/**` müssen beide Apple-Builds auslösen.
 
 ## Konventionen
 
-- Oberflächentexte, README und Commit-Nachrichten sind **deutsch**.
-- Commit-Betreff mit Plattform-Präfix: `macOS: …`, `iOS: …`.
+- Oberflächentexte, README und Commit-Nachrichten sind deutsch.
+- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- Versionsnummern und `CHANGELOG.md` bei jeder Funktionsänderung mitpflegen;
-  die Stellen listet `.claude/skills/steward/SKILL.md`. Die Plattformen haben
-  eigene Stände.
+- App-Versionen stammen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
+- `config/contract.json` enthält keine App-Version.
 
 ## Datenmodell
 
-`LibraryStore` hält Merkliste, Verlauf und Fortschritt in
-`~/Library/Application Support/Nori/library.json`, Schema **v3**, optional
-gespiegelt über `NSUbiquitousKeyValueStore`.
+`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v4**.
 
-Fortschritt wird nach `provider|episodePath` geschlüsselt — dieselbe Serie bei
-AniWorld und Serienstream bleibt getrennt. Wer Felder in `WatchProgress` oder
-`Bag` ändert: neue Felder optional halten, `migrateProgress` erweitern und
-`schemaVersion` erhöhen, sonst verlieren bestehende Installationen ihren
-Stand.
+`config/contract.json` muss denselben Schemawert dokumentieren. Änderungen an `WatchProgress` oder der gespeicherten `Bag` brauchen eine rückwärtskompatible Migration; neue Felder möglichst optional halten.
+
+Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei AniWorld und Serienstream darf ihren Fortschritt nicht gegenseitig überschreiben.
+
+## Synchronisation
+
+Der Core kennt nur das Protokoll `LibrarySyncProvider`. Konkrete Anbieter wie Google Drive, Dropbox oder WebDAV werden außerhalb des Stores angebunden. Ohne Provider bleibt Nori lokal.
+
+Keine Cloud-Implementierung direkt in `LibraryStore` verdrahten.
+
+## Contract
+
+Kanonisch:
+
+```text
+config/contract.json
+```
+
+`native/Nori-iOS/contract.json` und `native/Nori-macOS/contract.json` sind nur Kompatibilitäts-Symlinks darauf.
 
 ## Hoster
 
-`HosterResolver` akzeptiert nur HTTPS-Ziele und blockt lokale und private
-Netzwerkadressen. Diese Prüfung nicht aufweichen. Hoster ändern ihre Seiten
-jederzeit — schlägt die Stream-Auflösung fehl, liegt das häufig dort und nicht
-am Nori-Code.
+`HosterResolver` akzeptiert nur HTTPS-Ziele und blockiert lokale/private Netzwerkadressen. Diese Prüfung nicht aufweichen.
+
+Hoster ändern ihre Seiten häufig. Stream-Auflösungsfehler zuerst anhand Redirect, Referer, Schutzseite und Hoster-spezifischer Extraktion untersuchen.
 
 ## Schlüssel
 
-Keine Schlüssel im Quelltext — `tools/check-apple-sources.py` meldet lange
-Hex-Zeichenketten und Zuweisungen an Namen wie `apiKey`.
+Der TMDB-Schlüssel kann über Schlüsselbund bzw. Build-Einstellung bereitgestellt werden. Im aktuellen privaten Projekt existiert zusätzlich bewusst ein eingebauter Fallback-Schlüssel in `TMDBKeyStore`; diese Ausnahme ist eng begrenzt und in `tools/check-apple-sources.py` dokumentiert.
 
-Der TMDB-Schlüssel kommt aus `TMDBKeyStore` (in `AniworldClient.swift`):
-Schlüsselbund zuerst, sonst `TMDBAPIKey` aus der Info.plist, die aus der
-Build-Einstellung `TMDB_API_KEY` gefüllt wird. Ohne Schlüssel fragt die App
-TMDB gar nicht erst an und zeigt die Cover von AniWorld und Serienstream — das
-ist ein gültiger Zustand, kein Fehler.
+Keine weiteren Secrets oder Zugangsdaten fest in den Quelltext schreiben.

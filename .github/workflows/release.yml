@@ -1,17 +1,5 @@
 name: Release
 
-# Ausgelöst durch einen Tag, nicht durch einen Push auf main: ein Release ist
-# eine bewusste Entscheidung, kein Nebenprodukt jedes Commits.
-#
-#   git tag macos-v1.10.2 && git push origin macos-v1.10.2
-#   git tag ios-v1.9.4    && git push origin ios-v1.9.4
-#
-# Die beiden Plattformen haben eigene Versionsstände und deshalb eigene Tags.
-#
-# Alternativ von Hand über „Run workflow" starten und den Tag angeben: dann
-# legt der Workflow ihn auf dem gewählten Stand selbst an — aber erst, nachdem
-# die beiden Prüfungen unten durchgelaufen sind. So entsteht kein Tag, den
-# hinterher niemand mehr loswird, weil die Version nicht passt.
 on:
   push:
     tags:
@@ -20,19 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag, z. B. macos-v1.10.2'
+        description: 'Tag, z. B. macos-v1.14.3'
         required: true
 
 permissions:
   contents: write
-
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,9 +23,6 @@ jobs:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 10
     steps:
-      # `github.ref` ist bei einem Tag-Push der Tag und bei „Run workflow" der
-      # Branch, auf dem gestartet wurde. Beides ist der richtige Stand; der Tag
-      # aus `inputs` existiert an dieser Stelle womöglich noch gar nicht.
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -70,12 +47,9 @@ jobs:
             exit 1
           fi
 
-          # Gegenprobe: der Tag muss zu dem sagen, was im Projekt steht.
-          # Sonst entsteht ein Release, dessen Inhalt eine andere Version ist.
           IN_PROJECT="$(grep -oE 'MARKETING_VERSION = [0-9.]+' "$PROJECT" | head -1 | awk '{print $3}')"
           if [ "$IN_PROJECT" != "$VERSION" ]; then
             echo "Tag sagt $VERSION, $PROJECT sagt $IN_PROJECT." >&2
-            echo "Erst die Version im Projekt anheben, dann taggen." >&2
             exit 1
           fi
 
@@ -101,8 +75,6 @@ jobs:
             echo "Personal Team signieren; ein fertiges Programm liegt hier nicht bei."
           } >> notes.md
 
-      # Beim Tag-Push gibt es den Tag schon. Beim Start von Hand entsteht er
-      # hier — nach den Prüfungen oben, nicht davor.
       - name: Tag anlegen, falls er noch fehlt
         if: github.event_name == 'workflow_dispatch'
         shell: bash
@@ -122,16 +94,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          zip -r -q "${{ steps.meta.outputs.asset }}" "${{ steps.meta.outputs.dir }}"
-          # Geteilte Kernregeln und ihre Tests gehören dazu, sonst lässt sich
-          # das Paket nicht prüfen.
-          zip -r -q "${{ steps.meta.outputs.asset }}" native/Package.swift native/Tests
-          zip -q "${{ steps.meta.outputs.asset }}" CHANGELOG.md README.md
+          zip -r -y -q "${{ steps.meta.outputs.asset }}" \
+            "${{ steps.meta.outputs.dir }}" \
+            native/NoriCore \
+            native/Package.swift \
+            native/Tests \
+            config/contract.json \
+            CHANGELOG.md \
+            README.md
           unzip -l "${{ steps.meta.outputs.asset }}" | tail -1
 
-      # Bewusst über die REST-API statt über die gh-CLI: die liegt auf einem
-      # frischen Mac nicht, und der Runner soll ohne Homebrew auskommen. curl
-      # und python3 sind da, sobald Xcode installiert ist.
       - name: Release anlegen
         env:
           TOKEN: ${{ github.token }}
@@ -143,15 +115,12 @@ jobs:
           set -euo pipefail
           API="https://api.github.com/repos/${{ github.repository }}"
 
-          # Der Tag muss existieren — sonst würde die API ihn stillschweigend
-          # auf dem Standardzweig anlegen, und das Release zeigte auf den
-          # falschen Stand.
           git fetch --tags --quiet origin
           git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
             || { echo "Tag $TAG existiert nicht." >&2; exit 1; }
 
           BODY="$(python3 -c '
-          import json, os, sys
+          import json, os
           print(json.dumps({
               "tag_name": os.environ["TAG"],
               "name": os.environ["TITLE"],
@@ -172,5 +141,3 @@ jobs:
             -H "Content-Type: application/zip" \
             --data-binary "@$ASSET" \
             | python3 -c 'import json,sys; d=json.load(sys.stdin); print("Angehängt:", d.get("name") or sys.exit("Anhang fehlgeschlagen: " + json.dumps(d)[:400]))'
-
-          echo "Release: https://github.com/${{ github.repository }}/releases/tag/$TAG"
