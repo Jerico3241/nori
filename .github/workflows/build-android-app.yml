@@ -5,6 +5,12 @@ name: Build Android
 # fertig installiert, und der self-hosted Mac soll dafür nicht umgebaut werden.
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'native/Nori-Android/**'
+      - 'native/NoriCore/**'
+      - 'native/Package.swift'
+      - '.github/workflows/build-android-app.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
