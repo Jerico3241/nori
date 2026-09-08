@@ -16,6 +16,18 @@ import kotlinx.serialization.Serializable
  * bei jedem fehlenden Feld fehl.
  */
 
+/**
+ * Derselbe User-Agent, den der Kern verwendet.
+ *
+ * Er steht in `Models.swift` als `NoriOrigin.ua` und muss hier gleich sein:
+ * beide Quellen liefern Bildern gegenüber je nach User-Agent anderes aus, und
+ * ein Cover, das mit einer anderen Kennung geholt wird als die Seite, kommt
+ * teils gar nicht.
+ */
+const val NORI_USER_AGENT: String =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
 @Serializable
 enum class CatalogProvider {
     @SerialName("aniworld")

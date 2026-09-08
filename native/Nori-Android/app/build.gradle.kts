@@ -75,6 +75,13 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // Media3 kennzeichnet weite Teile seiner API als @UnstableApi. Das
+        // ist bei einer Bibliothek dieser Reichweite normal und kein Grund,
+        // jede Datei mit @OptIn zu pflastern — hier steht die Entscheidung
+        // einmal.
+        freeCompilerArgs.addAll(
+            "-opt-in=androidx.media3.common.util.UnstableApi",
+        )
     }
 }
 
@@ -95,7 +102,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.window)
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.androidx.media3.common)
@@ -104,7 +110,6 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.androidx.media3.session)
-    implementation(libs.androidx.media3.ui.compose)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

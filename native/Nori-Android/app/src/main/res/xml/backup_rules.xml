@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    library.json, covers.json und episodes.json gehören in die Sicherung: das
+    ist die Merkliste, der Verlauf und der Wiedergabefortschritt. Der
+    Bildzwischenspeicher nicht — der baut sich von selbst wieder auf.
+-->
+<full-backup-content>
+    <include domain="file" path="." />
+    <exclude domain="cache" path="." />
+</full-backup-content>
