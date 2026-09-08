@@ -55,44 +55,43 @@ def fail(message: str) -> None:
     problems.append(message)
 
 
-def main() -> int:
-    apks = sorted(APK_DIR.glob("*.apk"))
-    if not apks:
-        print(f"Keine Release-APK unter {APK_DIR}", file=sys.stderr)
-        return 1
-    apk = apks[0]
-    print(f"Geprüft wird: {apk.relative_to(ROOT)}  ({apk.stat().st_size / 1_048_576:.1f} MB)")
+def check_apk(apk: Path) -> set[str]:
+    """Eine APK prüfen. Gibt die enthaltenen ABIs zurück."""
+    print(f"\n{apk.name}  ({apk.stat().st_size / 1_048_576:.1f} MB)")
+    contained: set[str] = set()
 
     with zipfile.ZipFile(apk) as archive:
         entries = set(archive.namelist())
 
         for abi in ABIS:
-            library = f"lib/{abi}/libNoriAndroid.so"
-            if library not in entries:
-                fail(f"{library} fehlt in der APK — auf {abi} startet die App nicht.")
-                continue
-
             present = {
                 name.rsplit("/", 1)[-1]
                 for name in entries
                 if name.startswith(f"lib/{abi}/") and name.endswith(".so")
             }
+            if not present:
+                continue
+            contained.add(abi)
+
+            if "libNoriAndroid.so" not in present:
+                fail(f"{apk.name}: lib/{abi}/libNoriAndroid.so fehlt — dort startet die App nicht.")
+                continue
 
             try:
-                core = Elf(archive.read(library))
+                core = Elf(archive.read(f"lib/{abi}/libNoriAndroid.so"))
             except ValueError:
-                fail(f"{library} ließ sich nicht als ELF lesen.")
+                fail(f"{apk.name}: lib/{abi}/libNoriAndroid.so ließ sich nicht als ELF lesen.")
                 continue
 
             symbols = core.dynamic_symbols()
             if JNI_SYMBOL not in symbols:
                 fail(
-                    f"{abi}: {JNI_SYMBOL} wird nicht exportiert. Der Name muss zu "
-                    "Paket und Klasse von NoriBridge.kt passen."
+                    f"{apk.name} ({abi}): {JNI_SYMBOL} wird nicht exportiert. Der Name "
+                    "muss zu Paket und Klasse von NoriBridge.kt passen."
                 )
             for symbol in C_SYMBOLS:
                 if symbol not in symbols:
-                    fail(f"{abi}: {symbol} wird nicht exportiert (@_cdecl in NoriBridge.swift).")
+                    fail(f"{apk.name} ({abi}): {symbol} fehlt (@_cdecl in NoriBridge.swift).")
 
             # Derselbe Maßstab, den der Lader auf dem Gerät anlegt: jede
             # Abhängigkeit jeder mitgelieferten Bibliothek muss auffindbar
@@ -101,33 +100,52 @@ def main() -> int:
                 try:
                     needed = Elf(archive.read(f"lib/{abi}/{name}")).needed()
                 except ValueError:
-                    fail(f"{abi}/{name} ließ sich nicht als ELF lesen.")
+                    fail(f"{apk.name}: {abi}/{name} ließ sich nicht als ELF lesen.")
                     continue
                 for dependency in needed:
                     if dependency in SYSTEM or dependency in present:
                         continue
                     fail(
-                        f"{abi}: {name} braucht {dependency}, das weder in der APK "
-                        "liegt noch eine Android-Systembibliothek ist."
+                        f"{apk.name} ({abi}): {name} braucht {dependency}, das weder in "
+                        "der APK liegt noch eine Android-Systembibliothek ist."
                     )
 
             print(f"  {abi}: {len(present)} Bibliotheken, {len(symbols)} Symbole, Abhängigkeiten vollständig")
 
+        if not contained:
+            fail(f"{apk.name}: enthält für keine unterstützte ABI native Bibliotheken.")
+
         # R8: die Kotlin-Seite der Brücke muss im DEX überlebt haben.
-        dex = b"".join(
-            archive.read(name) for name in sorted(entries) if name.endswith(".dex")
-        )
+        dex = b"".join(archive.read(name) for name in sorted(entries) if name.endswith(".dex"))
         if not dex:
-            fail("Kein DEX in der APK.")
+            fail(f"{apk.name}: kein DEX enthalten.")
         else:
             for needle in (b"Lde/nori/core/NoriBridge;", b"nativeCall"):
                 if needle not in dex:
                     fail(
-                        f"{needle.decode()} fehlt im DEX — R8 hat die Brücke entfernt. "
-                        "Keep-Regel in proguard-rules.pro prüfen."
+                        f"{apk.name}: {needle.decode()} fehlt im DEX — R8 hat die Brücke "
+                        "entfernt. Keep-Regel in proguard-rules.pro prüfen."
                     )
-            if not problems:
-                print("  DEX: NoriBridge.nativeCall vorhanden")
+            print("  DEX: NoriBridge.nativeCall vorhanden")
+
+    return contained
+
+
+def main() -> int:
+    apks = sorted(APK_DIR.glob("*.apk"))
+    if not apks:
+        print(f"Keine Release-APK unter {APK_DIR}", file=sys.stderr)
+        return 1
+
+    covered: set[str] = set()
+    for apk in apks:
+        covered |= check_apk(apk)
+
+    # Über alle APKs hinweg müssen beide Ziel-ABIs vorkommen. Sonst ist eine
+    # der beiden stillschweigend aus dem Build gefallen.
+    for abi in ABIS:
+        if abi not in covered:
+            fail(f"Keine einzige APK enthält Bibliotheken für {abi}.")
 
     if problems:
         print()
@@ -135,7 +153,7 @@ def main() -> int:
             print(f"FEHLER: {problem}", file=sys.stderr)
         return 1
 
-    print("\ncheck-android-apk: APK enthält Kern, Laufzeit und Brücke.")
+    print(f"\ncheck-android-apk: {len(apks)} APK(s) geprüft, Kern, Laufzeit und Brücke vorhanden.")
     return 0
 
 

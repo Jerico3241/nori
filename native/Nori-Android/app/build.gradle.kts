@@ -42,6 +42,22 @@ android {
         }
     }
 
+    // Je ABI eine eigene APK, dazu eine universelle.
+    //
+    // Die Swift-Laufzeit wiegt rund 25 MB je Architektur. In einer
+    // universellen APK liegt sie deshalb zweimal, obwohl jedes Gerät nur eine
+    // davon je benutzt. Die geteilten Dateien sind knapp halb so groß; die
+    // universelle bleibt daneben stehen, weil sie sich ohne Kenntnis des
+    // Zielgeräts weitergeben lässt.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"

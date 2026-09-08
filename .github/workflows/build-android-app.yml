@@ -192,9 +192,19 @@ jobs:
 
       # R8 darf die JNI-Brücke nicht entfernen. Ein Release-Build, der
       # durchläuft, beweist das nicht — die Methode fehlt erst zur Laufzeit.
-      # Deshalb wird im fertigen DEX nachgesehen.
-      - name: Brücke im Release-DEX nachweisen
+      # Deshalb wird in jeder fertigen APK nachgesehen.
+      - name: Brücke und Laufzeit in den APKs nachweisen
         run: python3 tools/check-android-apk.py
+
+      # Die universelle APK unter dem Namen, unter dem sie weitergegeben wird.
+      # Umbenannt wird hier und nicht in Gradle: die Ausgabenamen dort zu
+      # ändern geht nur über interne API.
+      - name: Release-APK benennen
+        run: |
+          set -euo pipefail
+          cd native/Nori-Android/app/build/outputs/apk/release
+          cp app-universal-release.apk Nori-Android-release.apk
+          ls -lh *.apk
 
       - name: APKs hochladen
         uses: actions/upload-artifact@v5
