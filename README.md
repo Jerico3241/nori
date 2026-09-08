@@ -50,7 +50,7 @@ nori/
 
 ### Gemeinsamer Apple-Core
 
-`Models.swift`, `LibraryStore.swift`, `HTML.swift`, `AniworldClient.swift` und `HosterResolver.swift` existieren nur noch einmal unter:
+`Models.swift`, `LibraryStore.swift`, `HTML.swift`, `AniworldClient.swift`, `HosterResolver.swift` und `HLSPlaylist.swift` existieren nur noch einmal unter:
 
 ```text
 native/NoriCore/Sources/NoriCore/
@@ -78,16 +78,51 @@ Beide Testreihen prüfen absichtlich dieselben HTML-Ausschnitte — `native/Test
 - Staffeln, Episoden und Filme
 - Cover und Metadaten
 
+### Oberfläche
+
+Die native Apple-Oberfläche orientiert sich seit dem Redesign an
+[Shirox](https://github.com/xibrox/Shirox) — Gestaltung, Bewegung und
+Bedienung. Technik, Provider und Datenmodell sind unverändert Nori. Was
+übernommen und was nachgebaut ist, steht in `docs/apple-redesign.md`, die
+Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
+
+- Kopfbereich über die volle Breite mit Parallaxe, Dehnung beim Herunterziehen
+  und Verlauf in den Hintergrund
+- Kachelreihen mit Titel im Bild, gleichbleibender Höhe und Druckrückmeldung
+- Zoom-Übergang von der Kachel in die Detailseite
+- Detailseite mit Abspielknopf, Kopfbild, Staffeln und Folgen
+- Liquid Glass auf iOS/macOS 26 und neuer, mit klassischem Rückfall darunter
+  und einem Schalter in den Einstellungen
+- ein Bewegungssystem statt verstreuter Einzelwerte; „Bewegung reduzieren"
+  schaltet Parallaxe, Dehnung und räumliche Übergänge ab, ohne Funktion zu
+  ändern
+- Zeigerrückmeldung und Kontextmenüs auf iPad und Mac
+
 ### Wiedergabe
 
-- Nativer Player über AVPlayer / AVKit
+- Nativer Player über AVPlayer / AVKit, mit eigener Bedienung statt
+  `AVPlayerViewController` — nur so lassen sich Hoster, Sprache und Untertitel
+  in die Leiste selbst legen statt daneben
 - HLS- und MP4-Wiedergabe
 - automatische Hoster-Auswahl
+- **eine** Hoster-Auswahl, in den Player-Controls; Wechsel behält Position und
+  Wiedergabezustand, die Bedienung bleibt dabei stehen
 - manueller Hoster- und Sprachwechsel
 - GerDub, GerSub und EN
-- Wiedergabegeschwindigkeit von 0,75× bis 2×
-- Picture-in-Picture, soweit System und Stream es unterstützen
-- automatischer Start der nächsten Folge
+- Qualitätsauswahl nur, wenn der Stream tatsächlich mehrere HLS-Stufen
+  anbietet — gelesen aus der Master-Playlist, nicht geraten
+- Untertitelspuren des Streams, soweit vorhanden
+- Wiedergabegeschwindigkeit von 0,5× bis 2×
+- Doppeltipp links und rechts springt zehn Sekunden, mit zusammengefasster
+  Anzeige bei mehreren Tippern
+- Fortschrittsregler mit Puffer- und Restzeitanzeige, folgt beim Ziehen dem
+  Finger
+- Bild einpassen oder formatfüllend
+- AirPlay über `AVRoutePickerView`, Picture-in-Picture über
+  `AVPictureInPictureController`
+- automatischer Start der nächsten Folge, mit Countdown-Ring und Abbruch
+- Bedienung blendet nach vier Sekunden aus — nicht im Stehen, nicht beim
+  Ziehen, nicht bei offenem Menü, nicht mit VoiceOver
 
 ### Fortschritt & Bibliothek
 
@@ -121,8 +156,11 @@ Die bisherigen Dateien `native/Nori-iOS/contract.json` und `native/Nori-macOS/co
 
 Voraussetzungen:
 
-- macOS mit Xcode 16 oder neuer für den aktuellen iOS-Stand
-- iOS/iPadOS 17 oder neuer
+- macOS mit **Xcode 26 oder neuer**: das Deployment-Target bleibt iOS 17,
+  aber Liquid Glass steht hinter `#available` und braucht trotzdem das
+  passende SDK
+- iOS/iPadOS 17 oder neuer zum Ausführen; Liquid Glass ab iOS 26, darunter
+  der klassische Rückfall
 
 ### Mit Xcode
 
@@ -138,8 +176,11 @@ Alternativ kann `native/Nori-iOS/IPA-bauen.command` verwendet werden.
 
 Voraussetzungen:
 
-- macOS 14 oder neuer
-- Xcode 15 oder neuer
+- macOS 14 oder neuer zum Ausführen; Liquid Glass ab macOS 26, darunter der
+  klassische Rückfall
+- **Xcode 26 oder neuer** zum Bauen — aus demselben Grund wie bei iOS: das
+  Deployment-Target bleibt macOS 14, das SDK muss die Glas-API trotzdem
+  kennen
 
 ### Mit Xcode
 
@@ -164,7 +205,7 @@ cd native
 swift test
 ```
 
-Die Tests liegen unter `native/Tests/NoriCoreTests/` und decken unter anderem AniWorld-/Serienstream-Parsing, Kalender, Providerpfade, Hoster-Auflösung, Bibliotheksmigration und Fortschrittsregeln ab.
+Die Tests liegen unter `native/Tests/NoriCoreTests/` und decken unter anderem AniWorld-/Serienstream-Parsing, Kalender, Providerpfade, Hoster-Auflösung, HLS-Qualitätsstufen, Bibliotheksmigration und Fortschrittsregeln ab.
 
 Der TypeScript-Kern wird gegen dieselben HTML-Ausschnitte geprüft:
 
