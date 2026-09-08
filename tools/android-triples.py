@@ -51,16 +51,41 @@ def discover() -> tuple[set[str], list[Path]]:
     return triples, seen
 
 
-def pick(triples: set[str], prefix: str) -> str:
-    # Bei mehreren API-Ständen (…android24, …android28) das höchste nehmen:
-    # es entspricht dem, was `minSdk` in der App verlangt.
-    hits = sorted(t for t in triples if t.startswith(prefix))
-    return hits[-1] if hits else ""
+def pick(triples: set[str], prefix: str, api: int) -> str:
+    """Das Tripel zur gewünschten API-Ebene.
+
+    Entscheidend ist, dass sie zu `minSdk` der App passt und **nicht** die
+    höchste verfügbare ist. Gegen API 36 gebaut, setzt der Compiler
+    `__ANDROID_API__=36` und darf Symbole verwenden, die es auf einem Gerät
+    mit Android 9 nicht gibt. Die APK ließe sich dort installieren und stürbe
+    beim Laden der Bibliothek — ein Fehler, den kein Build zeigt und den ein
+    Emulator mit aktuellem Android nie auslöst.
+    """
+    exact = f"{prefix}{api}"
+    if exact in triples:
+        return exact
+    # Sonst das nächstniedrigere: lieber älter als zu neu.
+    lower = sorted(
+        (t for t in triples if t.startswith(prefix) and level_of(t, prefix) <= api),
+        key=lambda t: level_of(t, prefix),
+    )
+    return lower[-1] if lower else ""
+
+
+def level_of(triple: str, prefix: str) -> int:
+    tail = triple[len(prefix):]
+    return int(tail) if tail.isdigit() else -1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--github-output", action="store_true")
+    parser.add_argument(
+        "--api",
+        type=int,
+        default=28,
+        help="API-Ebene, gegen die gebaut wird. Muss zu minSdk der App passen.",
+    )
     args = parser.parse_args()
 
     triples, seen = discover()
@@ -68,8 +93,8 @@ def main() -> int:
 
     lines = [
         "all=" + " ".join(sorted(android)),
-        "arm64=" + pick(android, "aarch64-unknown-linux-android"),
-        "x86_64=" + pick(android, "x86_64-unknown-linux-android"),
+        "arm64=" + pick(android, "aarch64-unknown-linux-android", args.api),
+        "x86_64=" + pick(android, "x86_64-unknown-linux-android", args.api),
     ]
 
     if args.github_output:

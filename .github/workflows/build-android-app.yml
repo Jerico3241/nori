@@ -72,7 +72,10 @@ jobs:
         id: triples
         run: |
           set -euo pipefail
-          python3 tools/android-triples.py --github-output | tee -a "$GITHUB_OUTPUT"
+          # --api 28 ist kein Detail: es muss zu `minSdk` in
+          # app/build.gradle.kts passen. Gegen eine höhere Ebene gebaut,
+          # laedt die Bibliothek auf aelteren Geraeten nicht.
+          python3 tools/android-triples.py --api 28 --github-output | tee -a "$GITHUB_OUTPUT"
 
       - name: libNoriAndroid.so bauen (arm64-v8a)
         run: |

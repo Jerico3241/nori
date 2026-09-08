@@ -65,8 +65,12 @@ enum NoriBridge {
     // Der Store ist eine Klasse ohne eigene Isolation und wird von jedem
     // JNI-Thread erreicht. Ein Schloss reicht: die Zugriffe sind kurz und
     // enden in einem Dateischreibvorgang.
-    private static let lock = NSLock()
-    private nonisolated(unsafe) static var store: LibraryStore?
+    //
+    // `internal` und nicht `private`: `private` ist in Swift dateiweit, und
+    // die Aufrufe stehen in NoriBridgeOps.swift. Das Modul ist die Grenze,
+    // die hier zählt — nach außen ist ohnehin nur die C-Schnittstelle sichtbar.
+    static let lock = NSLock()
+    nonisolated(unsafe) static var store: LibraryStore?
 
     // MARK: Puffer
 
