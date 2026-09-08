@@ -83,6 +83,21 @@ class PlayerViewModel(
     /** Zuletzt gespeicherte Position — verhindert Schreiben ohne Änderung. */
     private var lastSavedSec = -1.0
 
+    /**
+     * Kurze Meldungen im Player, etwa ein gescheiterter Hosterwechsel.
+     *
+     * Steht bewusst **vor** dem init-Block: `viewModelScope` läuft auf
+     * `Dispatchers.Main.immediate`, eine dort gestartete Coroutine kann also
+     * noch während der Konstruktion loslaufen und auf ein Feld greifen, das
+     * weiter unten steht.
+     */
+    private val _messages = MutableStateFlow<String?>(null)
+    val messages: StateFlow<String?> = _messages.asStateFlow()
+
+    fun clearMessage() {
+        _messages.value = null
+    }
+
     init {
         // Der Player behält die Geschwindigkeit aus den Einstellungen.
         engine.setSpeed(snapshot.value.playbackSpeed.toFloat())
@@ -184,7 +199,7 @@ class PlayerViewModel(
                 // Der Wechsel ist gescheitert — die laufende Wiedergabe soll
                 // deswegen nicht abbrechen. Der bisherige Zustand bleibt.
                 _state.value = previous
-                _messages.emitMessage("${option.name}: ${error.userMessage()}")
+                _messages.value = "${option.name}: ${error.userMessage()}"
             }
         }
     }
@@ -207,7 +222,7 @@ class PlayerViewModel(
                 _state.update { if (it is PlayerUiState.Ready) it.copy(source = source) else it }
                 engine.switchSource(source)
             } catch (error: Throwable) {
-                _messages.emitMessage(error.userMessage())
+                _messages.value = error.userMessage()
             }
         }
     }
@@ -293,19 +308,6 @@ class PlayerViewModel(
                 }
             }
         }
-    }
-
-    // MARK: Meldungen
-
-    private val _messages = MutableStateFlow<String?>(null)
-    val messages: StateFlow<String?> = _messages.asStateFlow()
-
-    fun clearMessage() {
-        _messages.value = null
-    }
-
-    private fun MutableStateFlow<String?>.emitMessage(text: String) {
-        value = text
     }
 
     override fun onCleared() {

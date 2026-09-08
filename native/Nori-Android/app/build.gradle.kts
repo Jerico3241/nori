@@ -29,12 +29,6 @@ android {
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
 
     packaging {
-        jniLibs {
-            // Die Swift-Laufzeit wird zur Laufzeit über System.loadLibrary
-            // geladen. Ohne das Auspacken findet der Linker die
-            // Abhängigkeiten von libNoriAndroid.so nicht.
-            useLegacyPackaging = true
-        }
         resources {
             excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES")
         }
@@ -66,10 +60,6 @@ android {
         compose = true
         buildConfig = true
     }
-
-    androidResources {
-        generateLocaleConfig = true
-    }
 }
 
 kotlin {
@@ -81,6 +71,10 @@ kotlin {
         // einmal.
         freeCompilerArgs.addAll(
             "-opt-in=androidx.media3.common.util.UnstableApi",
+            // ModalBottomSheet und rememberModalBottomSheetState sind
+            // weiterhin als experimentell gekennzeichnet. Ohne Opt-in ist
+            // das ein Uebersetzungsfehler, kein Hinweis.
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
         )
     }
 }

@@ -2,7 +2,6 @@ package de.nori.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -27,15 +26,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import de.nori.core.CatalogProvider
-import de.nori.core.Episode
 import de.nori.core.WatchProgress
 import de.nori.core.providerFromPath
 import de.nori.data.CoreState
@@ -234,7 +234,7 @@ private fun Graph(
 
             val model: SeriesViewModel = viewModel(
                 key = "series:${provider.wire}:$slug",
-                factory = viewModelFactory { SeriesViewModel(slug, title, provider) },
+                factory = viewModelFactory { initializer { SeriesViewModel(slug, title, provider) } },
             )
             SeriesScreen(
                 viewModel = model,
@@ -268,14 +268,16 @@ private fun Graph(
             val model: PlayerViewModel = viewModel(
                 key = "player:${request.provider.wire}:${request.start.path}",
                 factory = viewModelFactory {
-                    PlayerViewModel(
-                        context = context.applicationContext,
-                        slug = request.slug,
-                        seriesTitle = request.title,
-                        provider = request.provider,
-                        season = request.season,
-                        episodes = request.episodes,
-                    )
+                    initializer {
+                        PlayerViewModel(
+                            context = context.applicationContext,
+                            slug = request.slug,
+                            seriesTitle = request.title,
+                            provider = request.provider,
+                            season = request.season,
+                            episodes = request.episodes,
+                        )
+                    }
                 },
             )
 

@@ -32,30 +32,33 @@ extension NoriBridge {
         // MARK: Katalog und Metadaten
 
         case "catalog":
+            let provider = try args.provider()
             let result = try await AniworldClient.shared.getCatalog(
-                provider: try args.provider(),
+                provider: provider,
                 force: args.bool("force")
             )
             return try success(result)
 
         case "series":
+            let provider = try args.provider()
+            let slug = try args.string("slug")
             let detail = try await AniworldClient.shared.getSeries(
-                provider: try args.provider(),
-                slug: try args.string("slug"),
+                provider: provider,
+                slug: slug,
                 season: args.optionalString("season")
             )
             return try success(detail)
 
         case "watch":
-            let info = try await AniworldClient.shared.getWatch(
-                provider: try args.provider(),
-                path: try args.string("path")
-            )
+            let provider = try args.provider()
+            let path = try args.string("path")
+            let info = try await AniworldClient.shared.getWatch(provider: provider, path: path)
             return try success(info)
 
         case "calendar":
+            let provider = try args.provider()
             let payload = try await AniworldClient.shared.getCalendar(
-                provider: try args.provider(),
+                provider: provider,
                 force: args.bool("force")
             )
             return try success(payload)
@@ -63,48 +66,51 @@ extension NoriBridge {
         // MARK: Bilder und Beschreibungen
 
         case "coverDetails":
-            let details = await CoverIndex.shared.detailsLoading(
-                slug: try args.string("slug"),
-                title: try args.string("title"),
-                kind: try args.provider()
-            )
+            let slug = try args.string("slug")
+            let title = try args.string("title")
+            let provider = try args.provider()
+            let details = await CoverIndex.shared.detailsLoading(slug: slug, title: title, kind: provider)
             return try success(CoverDetailsDTO(details))
 
         case "coverCached":
             // Ohne Netz: was schon dasteht. Trägt den ersten Aufbau einer
             // Liste, damit Kacheln nicht leer beginnen.
-            let details = await CoverIndex.shared.details(for: try args.string("slug"))
+            let slug = try args.string("slug")
+            let details = await CoverIndex.shared.details(for: slug)
             return try success(CoverDetailsDTO(details))
 
         case "coverSource":
             // Letzter Ausweg wie auf Apple: die Detailseite der Quelle lesen.
-            let url = await CoverIndex.shared.fetchSourceCover(
-                slug: try args.string("slug"),
-                provider: try args.provider()
-            )
+            let slug = try args.string("slug")
+            let provider = try args.provider()
+            let url = await CoverIndex.shared.fetchSourceCover(slug: slug, provider: provider)
             return try success(["url": url?.absoluteString])
 
         case "coverCandidates":
-            let list = await CoverIndex.shared.candidates(
-                title: try args.string("title"),
-                kind: try args.provider()
-            )
+            let title = try args.string("title")
+            let provider = try args.provider()
+            let list = await CoverIndex.shared.candidates(title: title, kind: provider)
             return try success(list.map { CoverCandidateDTO(url: $0.url.absoluteString, label: $0.label, source: $0.source) })
 
         case "coverOverride":
+            let slug = try args.string("slug")
             await CoverIndex.shared.setOverride(
-                slug: try args.string("slug"),
+                slug: slug,
                 url: args.optionalString("url").flatMap(URL.init(string:))
             )
             return successRaw("{}")
 
         case "episodeInfo":
+            let slug = try args.string("slug")
+            let title = try args.string("title")
+            let season = try args.string("season")
+            let provider = try args.provider()
             let infos = await EpisodeIndex.shared.load(
-                slug: try args.string("slug"),
-                title: try args.string("title"),
+                slug: slug,
+                title: title,
                 alternates: args.strings("alternates"),
-                season: try args.string("season"),
-                kind: try args.provider()
+                season: season,
+                kind: provider
             )
             var out: [String: EpisodeInfo] = [:]
             for (number, info) in infos { out[String(number)] = info }
@@ -117,12 +123,13 @@ extension NoriBridge {
             // Folge wird eine abspielbare Adresse samt der Kopfzeilen, die
             // Media3 dafür mitschicken muss.
             let hosters = try args.decode([HosterOption].self, "hosters")
+            let provider = try args.provider()
             let source = try await HosterResolver.resolveBest(
                 hosters: hosters,
                 preferredHoster: args.string("preferredHoster", default: ""),
                 preferredLang: args.string("preferredLang", default: "DE"),
                 episodePath: args.string("episodePath", default: ""),
-                provider: try args.provider()
+                provider: provider
             )
             return try success(PlaySourceDTO(source))
 
@@ -130,10 +137,11 @@ extension NoriBridge {
             // Für den Hosterwechsel im Player: genau dieser Hoster, kein
             // Ausweichen auf einen anderen.
             let option = try args.decode(HosterOption.self, "hoster")
+            let provider = try args.provider()
             let source = try await HosterResolver.resolve(
                 option,
                 episodePath: args.string("episodePath", default: ""),
-                provider: try args.provider()
+                provider: provider
             )
             return try success(PlaySourceDTO(source))
 

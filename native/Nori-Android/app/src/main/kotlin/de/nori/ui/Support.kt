@@ -1,7 +1,5 @@
 package de.nori.ui
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import de.nori.core.CatalogProvider
 import de.nori.core.Episode
 
@@ -29,15 +27,4 @@ data class PlaybackRequest(
         @Volatile
         var pending: PlaybackRequest? = null
     }
-}
-
-/**
- * Ein ViewModel mit Konstruktorargumenten, ohne ein
- * Dependency-Injection-Rahmenwerk dafür einzuführen.
- */
-inline fun <reified T : ViewModel> viewModelFactory(
-    crossinline create: () -> T,
-): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <VM : ViewModel> create(modelClass: Class<VM>): VM = create() as VM
 }

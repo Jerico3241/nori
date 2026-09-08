@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -49,13 +47,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import de.nori.player.NoriTrackType
 import de.nori.ui.components.NoriChip
 import de.nori.ui.components.RoundIconButton
 import de.nori.ui.home.formatClock
@@ -79,9 +75,12 @@ fun PlayerScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
-    val playerError by viewModel.error.collectAsStateWithLifecycle()
     val countdown by viewModel.countdown.collectAsStateWithLifecycle()
     val message by viewModel.messages.collectAsStateWithLifecycle()
+
+    // Gewöhnliche Variable statt `by`-Delegat: nur so kann Kotlin darauf
+    // smart-casten, und der Fehlerzweig unten braucht das.
+    val failure = viewModel.error.collectAsStateWithLifecycle().value
 
     var controlsVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf<PlayerSheet?>(null) }
@@ -119,7 +118,7 @@ fun PlayerScreen(
             return@Box
         }
 
-        if (playback.isBuffering && playerError == null) {
+        if (playback.isBuffering && failure == null) {
             CircularProgressIndicator(
                 color = Color.White,
                 strokeWidth = 2.dp,
@@ -138,18 +137,15 @@ fun PlayerScreen(
                 onHoster = viewModel::switchHoster,
             )
 
-            is PlayerUiState.Ready -> {
-                playerError?.let { failure ->
-                    ErrorOverlay(
-                        message = failure.message,
-                        hosters = if (failure.sourceDead) current.hosters else emptyList(),
-                        onBack = onBack,
-                        onRetry = if (failure.retryable) viewModel::retry else null,
-                        onHoster = viewModel::switchHoster,
-                    )
-                    return@Box
-                }
-
+            is PlayerUiState.Ready -> if (failure != null) {
+                ErrorOverlay(
+                    message = failure.message,
+                    hosters = if (failure.sourceDead) current.hosters else emptyList(),
+                    onBack = onBack,
+                    onRetry = if (failure.retryable) viewModel::retry else null,
+                    onHoster = viewModel::switchHoster,
+                )
+            } else {
                 AnimatedVisibility(
                     visible = controlsVisible,
                     enter = fadeIn(),

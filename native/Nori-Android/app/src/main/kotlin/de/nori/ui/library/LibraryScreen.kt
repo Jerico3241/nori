@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,8 +12,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,15 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.nori.core.AiringEntry
 import de.nori.core.CatalogProvider
-import de.nori.core.providerFromPath
 import de.nori.ui.components.ContentPadding
 import de.nori.ui.components.EmptyState
 import de.nori.ui.components.LoadingState
 import de.nori.ui.components.NoriChip
-import de.nori.ui.components.OneLine
 import de.nori.ui.components.PosterCard
 import de.nori.ui.components.PosterRow
-import de.nori.ui.theme.NoriColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

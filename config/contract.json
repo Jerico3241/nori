@@ -63,7 +63,7 @@
     "playbackSpeeds": [0.75, 1.0, 1.25, 1.5, 2.0],
     "langOrder": ["DE", "GerSub", "EN"],
     "hosterOrder": ["voe", "vidmoly", "vidoza", "lulustream", "speedfiles", "filemoon", "doodstream"],
-    "nativePlay": "AVPlayer plays the resolved HTTPS media URL directly with the source referer when required.",
+    "nativePlay": "Apple: AVPlayer plays the resolved HTTPS media URL directly with the source referer when required. Android: Media3/ExoPlayer plays the same URL; referer, origin and user agent travel with PlaySource and are set as default request properties on the HTTP data source.",
     "provider": "CatalogProvider is persisted explicitly on new catalog, calendar, recent and progress records where applicable."
   }
 }

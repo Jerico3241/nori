@@ -1,6 +1,6 @@
 # Nori — Arbeitsanleitung
 
-Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
+Anime- und Serien-App für Apple-Plattformen, Android und Windows. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
 
 ## Aufbau
 
@@ -9,6 +9,7 @@ Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld 
 | `native/NoriCore/Sources/NoriCore/` | gemeinsamer Swift-Kern | ja |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
+| `native/Nori-Android/` | Android, Kotlin + Compose + Media3, minSdk 28 | ja |
 | `native/Tests/` | Tests des gemeinsamen Kerns | ja |
 | `desktop/` | Electron-Hülle für Windows | ja |
 | `server/` | gebautes Nitro/Node-Bundle | nein, generiert |
@@ -16,6 +17,25 @@ Anime- und Serien-App für Apple-Plattformen und Windows. Kataloge von AniWorld 
 | `tools/` | Prüfskripte | ja |
 
 `server/` besteht aus generierten `.mjs`-Dateien mit Hash-Namen. Änderungen daran sind falsch; der ursprüngliche Web-Sourcecode gehört separat ins Repository, falls Windows wieder aktiv weiterentwickelt wird.
+
+## Android
+
+Die Oberfläche ist Compose, die Logik bleibt der Swift-Kern. Verbunden sind
+beide über **eine** C-Funktion mit JSON hinein und heraus:
+
+```text
+Compose → ViewModels → NoriCore.kt → NoriBridge (JNI) → nori_bridge_call (Swift)
+```
+
+Die Swift-Seite steht in `native/NoriCore/Sources/NoriCore/Android/` und
+vollständig in `#if os(Android)`; die Xcode-Projekte listen ihre Quellen
+einzeln und sehen sie nicht.
+
+Regel wie beim Kern: **keine zweite Implementierung.** Kein Kotlin-Parser für
+AniWorld oder Serienstream, keine eigenen Fortschrittsregeln, keine parallele
+Bibliotheksdatei. Was der Kern kann, wird gefragt.
+
+Details, Einrichtung und bekannte Einschränkungen: `docs/android.md`.
 
 ## Gemeinsamer Apple-Core
 

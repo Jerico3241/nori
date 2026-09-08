@@ -195,11 +195,10 @@ die Apple-Symbole schon; die einfarbige Ebene kommt dort dazu.
 
 1. **Durchbau** — ✅ **erledigt.** Der geteilte Kern übersetzt für
    `aarch64-unknown-linux-android`.
-2. **Brücke** — Swift-Kern als `.so`, angebunden über JNI beziehungsweise
-   `swift-java`. Erst hier zeigt sich der wirkliche Aufwand.
-3. **Oberfläche** — Compose mit Material 3 und dynamischen Farben (siehe
-   oben): Startseite, Katalog, Kalender, Merkliste, Detailseite. Media3 für
-   den Player.
+2. **Brücke** — ✅ **gebaut.** Siehe unten.
+3. **Oberfläche** — ✅ **gebaut.** Compose mit Material 3 als Grundlage, aber
+   mit den Nori-Farben aus `Theme.swift` statt der Material-Vorgaben. Media3
+   für den Player.
 
 Punkt 1 war billig und hat alles Weitere entschieden. Das Ergebnis:
 
@@ -220,3 +219,207 @@ der Unterschied zwischen 50 Fehlern und einem grünen Build.
 Die dritte Darwin-Bindung ist damit auch benannt; die Tabelle „Was Swift auf
 Android kann" oben nennt `URLSession` als vorhanden, was stimmt — nur eben
 aus einem anderen Modul.
+
+## Die Brücke
+
+```text
+Compose UI
+   │
+Kotlin ViewModels · Repositories
+   │
+NoriCore.kt                       getippter Zugang, alles suspend
+   │  NoriBridge.nativeCall(ByteArray): ByteArray
+nori_jni.c                        JNI-Hülle, rund 40 Zeilen
+   │  nori_bridge_call(const char *): const char *
+NoriBridge.swift                  #if os(Android)
+   │
+AniworldClient · HosterResolver · LibraryStore · HTML
+```
+
+### Warum JSON durch eine einzige C-Funktion
+
+Über JNI ließen sich auch Objekte reichen. Das hieße: für jedes Modell eine
+Java-Klasse, für jedes Feld ein Getter, und bei jeder Änderung an
+`Models.swift` dieselbe Änderung noch zweimal. Genau das soll die Portierung
+vermeiden — es ist derselbe Grund, aus dem der Kern nicht in Kotlin
+nachgebaut wird.
+
+Die Modelle sind bereits `Codable`. Damit ist die billigste tragfähige Grenze
+eine Funktion, die JSON hinein und JSON heraus reicht:
+
+```c
+const char *nori_bridge_call(const char *request);
+void        nori_bridge_free(char *response);
+```
+
+Kotlin liest dieselben Felder mit kotlinx.serialization. Kommt in
+`Models.swift` ein optionales Feld dazu, baut **beides** weiter durch, ohne
+dass jemand etwas nachträgt.
+
+Der Preis steht auch fest: ein Katalog mit mehreren tausend Einträgen wird bei
+jedem Gang über die Brücke vollständig kodiert und dekodiert. Deshalb liegt
+diesseits ein Zwischenspeicher (`CatalogRepository`) — die Kosten fallen
+einmal je Quelle an, nicht je Bildschirm.
+
+### Byte-Felder statt Strings
+
+`GetStringUTFChars` und `NewStringUTF` arbeiten mit *modified UTF-8*. Das
+unterscheidet sich vom echten UTF-8 bei allem jenseits der BMP — bei einem
+Emoji in einem Serientitel kämen vier Bytes an, wo sechs erwartet werden.
+Übertragen werden deshalb `ByteArray`s; kodiert wird auf beiden Seiten mit
+echtem UTF-8.
+
+### Blockierend, mit Absicht
+
+Der Kern ist durchgängig `async`, eine C-Funktion ist es nicht. Der Aufruf
+startet eine Task und wartet auf einem Semaphor. Das ist zulässig, weil der
+aufrufende Thread ein JNI-Thread aus Kotlins `Dispatchers.IO` ist und nicht
+zum kooperativen Pool von Swift Concurrency gehört: die Task läuft auf einem
+anderen Thread weiter, blockiert wird nur der Anrufer. Auf Kotlin-Seite steht
+jeder Aufruf in `withContext(Dispatchers.IO)`, mit einem Deckel von zwölf
+gleichzeitigen Aufrufen.
+
+### Kein NDK im Gradle-Build
+
+`nori_jni.c` ist ein C-Target derselben SwiftPM-Paketbeschreibung und landet
+mit NoriCore in einer `libNoriAndroid.so`. Gradle kopiert die fertige Datei
+nach `jniLibs` — kein CMake, kein `externalNativeBuild`, keine zweite
+Toolchain-Einrichtung für jeden, der die App baut.
+
+### Die Swift-Laufzeit muss mit
+
+Auf Android ist sie **kein** Systembestandteil. `libswiftCore.so`,
+`libFoundation.so`, `libFoundationNetworking.so`, `libswift_Concurrency.so`
+und `libc++_shared.so` müssen in die APK, sonst stirbt die App beim
+`System.loadLibrary` — ein Fehler, der auf dem Entwicklerrechner nie
+auftritt. `tools/collect-android-libs.py` sammelt sie aus dem SDK-Bündel und
+bricht mit Namensliste ab, statt eine unvollständige APK durchzulassen.
+
+### Die API-Ebene muss zu `minSdk` passen
+
+Das Swift-SDK bietet Tripel von `android28` bis `android36`. Gegen 36 gebaut
+setzt der Compiler `__ANDROID_API__=36` und darf Symbole verwenden, die es
+auf einem Gerät mit Android 9 nicht gibt. Die APK ließe sich dort
+installieren und stürbe beim Laden. `tools/android-triples.py --api 28` wählt
+deshalb ausdrücklich die Ebene, die `minSdk` in `app/build.gradle.kts`
+verlangt — nicht die höchste verfügbare.
+
+## Die App
+
+```text
+native/Nori-Android/
+├── settings.gradle.kts
+├── gradle/libs.versions.toml     alle Fassungen an einer Stelle
+├── jni/                          C-Hülle, Teil des SwiftPM-Pakets
+└── app/src/main/
+    ├── kotlin/de/nori/
+    │   ├── core/                 Brücke, Modelle, getippter Zugang
+    │   ├── data/                 Repositories, ein Bibliotheksstand
+    │   ├── player/               Media3, Spuren, MediaSession
+    │   └── ui/                   Compose: Start, Suche, Detail, Bibliothek,
+    │                             Einstellungen, Player
+    └── jniLibs/                  wird vom Build gefüllt, nicht eingecheckt
+```
+
+### Ein Zustand, nicht zwei
+
+Merkliste, Verlauf, Fortschritt und Einstellungen liegen im Kern. Jede
+Änderung geht dorthin und gibt den **vollständigen** Stand zurück, den die App
+in genau einem `StateFlow` hält. Das ist die Antwort auf einen Fehler, den man
+in Compose leicht baut: jeder Bildschirm mit eigenem `mutableStateOf`, und die
+Merkliste zeigt einen Titel noch als gemerkt, den die Detailseite gerade
+entfernt hat.
+
+Auch die Regeln kommen von dort. „Ab 90 % gilt als gesehen" und „unter acht
+Sekunden kein Fortsetzen" sind keine Anzeigedetails; in Kotlin nachgebaut
+liefen sie früher oder später auseinander.
+
+### Der Player
+
+Er kennt weder AniWorld noch VOE. Er bekommt eine fertige `PlaySource` und
+spielt sie:
+
+```text
+Episode → NoriCore.watch      → Hoster
+        → NoriCore.resolveBest → PlaySource (URL + Kopfzeilen)
+        → NoriMediaSourceFactory → Media3
+```
+
+Die Kopfzeilen sind der Punkt, an dem eine Portierung still scheitert: viele
+Hoster liefern das Video nur aus, wenn der Abruf denselben `Referer` und
+`User-Agent` mitbringt wie der Abruf der Einbettungsseite. Media3 schickt von
+sich aus nur seinen eigenen User-Agent. Sie entstehen deshalb im Kern — aus
+derselben Quelle, mit der die Adresse gefunden wurde — und gehen über
+`OkHttpDataSource.setDefaultRequestProperties` unverändert weiter.
+
+Ein Hosterwechsel merkt sich die Stelle, löst neu auf, tauscht die
+MediaSource und setzt die Stelle zurück. Die Folge wird nicht neu geöffnet,
+der Fortschritt nicht angefasst.
+
+Wiedergabefehler werden eingeordnet statt durchgereicht: 401/403 und 404
+heißen „anderer Hoster", 429 und 5xx heißen „nochmal versuchen", ein
+Parserfehler heißt meist „der Hoster hat eine Fehlerseite geschickt". Danach
+richtet sich, was der Player anbietet.
+
+### CloudStream als Referenz
+
+CloudStream 4.8.0 (Commit `8bdc599`) beantwortet gut, *welche* Android-APIs
+so ein Player braucht und welche Fallstricke es bei HLS, Kopfzeilen und
+Spurauswahl gibt. Übernommen wurde daraus **kein Code** — CloudStream steht
+unter GPLv3, und Nori soll kein Derivat werden.
+
+## Bauen
+
+Auf dem self-hosted Mac über `.github/workflows/build-android-app.yml`, in
+zwei Stufen:
+
+1. **`core`** — `libNoriAndroid.so` je ABI, mit dem Swift-SDK für Android.
+2. **`apk`** — Gradle. Der Lauf holt sich vorher ein eigenes JDK 21 und das
+   Android-SDK nach `~/Library/Android` (`tools/android-sdk.sh`); das
+   System-Java des Runners bleibt unangetastet.
+
+Von Hand, mit eingerichteter Toolchain:
+
+```bash
+cd native
+swift build -c release --product NoriAndroid \
+  --swift-sdk aarch64-unknown-linux-android28
+python3 ../tools/collect-android-libs.py --help
+
+cd Nori-Android
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+Danach prüft `python3 tools/check-android-apk.py`, ob in der Release-APK
+tatsächlich steht, was drinstehen muss: die Bibliothek für beide ABIs, die
+vollständige Swift-Laufzeit, das exportierte JNI-Symbol und die von R8
+verschonte Brücke im DEX. Ein grüner Gradle-Lauf beweist keins davon.
+
+## Unterstützte ABIs
+
+| ABI | Stand |
+| --- | --- |
+| `arm64-v8a` | gebaut — das ist die ABI echter Geräte |
+| `x86_64` | gebaut — für den Emulator |
+| `armeabi-v7a` | nicht gebaut; das SDK könnte es, aber 32-Bit-Geräte sind kein Ziel |
+
+`abiFilters` in `app/build.gradle.kts` nennt genau die beiden gebauten. Eine
+dritte stillschweigend mitzupacken hieße: eine APK, die auf dem Gerät am
+fehlenden `libNoriAndroid.so` stirbt.
+
+## Bekannte Einschränkungen
+
+- **Android TV ist vorbereitet, nicht fertig.** Die Architektur verbaut es
+  nicht — der Player hängt nicht an Touch, die ViewModels wissen nichts von
+  der Oberfläche, und `LEANBACK_LAUNCHER` steht im Manifest. Eine eigene
+  TV-Oberfläche mit Fokusführung gibt es aber noch nicht.
+- **Untertitel kommen nur aus dem Stream selbst.** Der Kern liefert keine
+  externen Untertiteldateien; was Media3 an eingebetteten Spuren findet, ist
+  wählbar, mehr nicht.
+- **Kein eigener Ablageort für einen TMDB-Schlüssel.** Auf Apple liegt er im
+  Schlüsselbund; auf Android trägt bis auf Weiteres der eingebaute Schlüssel.
+  Ein eigener Ort (EncryptedSharedPreferences) gehört in die Android-App,
+  nicht in den geteilten Kern.
+- **Keine Synchronisation.** Wie auf Apple: `LibrarySyncProvider` ist da,
+  angebunden ist nichts.

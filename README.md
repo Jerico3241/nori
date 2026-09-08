@@ -19,6 +19,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | --- | --- | --- |
 | iOS / iPadOS | **1.14.5** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| Android | **1.0.0** | Native Compose-App auf demselben Swift-Kern |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
 
 ## Projektstruktur
@@ -28,8 +29,12 @@ nori/
 ├── native/
 │   ├── NoriCore/
 │   │   └── Sources/NoriCore/     # gemeinsame Swift-Kernlogik
+│   │       └── Android/          # C-Schnittstelle, nur #if os(Android)
 │   ├── Nori-iOS/                 # iOS/iPadOS SwiftUI + AVPlayer
 │   ├── Nori-macOS/               # macOS SwiftUI + AVKit/AppKit
+│   ├── Nori-Android/             # Kotlin, Compose, Media3
+│   │   ├── jni/                  # JNI-Hülle, Teil des SwiftPM-Pakets
+│   │   └── app/                  # die App
 │   ├── Package.swift             # NoriCore für Tests/Android
 │   └── Tests/NoriCoreTests/      # Tests des gemeinsamen Kerns
 ├── config/
@@ -142,6 +147,83 @@ Alternativ:
 native/Nori-macOS/Mac-App-bauen.command
 ```
 
+## Android
+
+Native Compose-App auf **demselben** `NoriCore`, den iOS und macOS bauen —
+kein WebView, kein zweiter Parser für AniWorld und Serienstream, keine
+parallele Fortschrittslogik.
+
+```text
+Compose UI → ViewModels → NoriCore.kt
+                            │ JNI (eine C-Funktion, JSON hinein und heraus)
+                          NoriCore (Swift)
+```
+
+Ausführlich in [docs/android.md](docs/android.md).
+
+### Voraussetzungen
+
+| | |
+| --- | --- |
+| Gerät | Android 9 (API 28) oder neuer |
+| ABIs | `arm64-v8a`, `x86_64` |
+| Zum Bauen | Swift 6.3.3 Open-Source-Toolchain **und** das Swift-SDK für Android in derselben Fassung |
+| | Android NDK r27d oder neuer, gegen das SDK eingerichtet |
+| | JDK 17 oder neuer, Android-SDK mit Plattform 36 |
+
+Die Swift-Einrichtung prüft `tools/require-swift-android.sh`. Sie ist der
+aufwendige Teil; das Android-SDK holt sich der CI-Lauf über
+`tools/android-sdk.sh` selbst.
+
+### Bauen
+
+```bash
+# 1. Kern je ABI als libNoriAndroid.so
+cd native
+swift build -c release --product NoriAndroid \
+  --swift-sdk aarch64-unknown-linux-android28
+
+# 2. Bibliothek und Swift-Laufzeit nach jniLibs
+python3 ../tools/collect-android-libs.py \
+  --arm64-build .build --x86-64-build .build \
+  --arm64-triple aarch64-unknown-linux-android28 \
+  --x86-64-triple x86_64-unknown-linux-android28 \
+  --out Nori-Android/app/src/main/jniLibs
+
+# 3. APK
+cd Nori-Android
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+Ausgabe:
+
+```text
+native/Nori-Android/app/build/outputs/apk/release/app-release.apk
+```
+
+Auf dem self-hosted Mac erledigt das `.github/workflows/build-android-app.yml`
+in zwei Stufen und lädt beide APKs als Artefakt hoch.
+
+### Was der Build nicht beweist
+
+Ein grüner Gradle-Lauf heißt nur, dass Kotlin übersetzt. Ob die App auf einem
+Gerät startet, hängt an drei Dingen, die genau dort verloren gehen: der
+nativen Bibliothek je ABI, der **vollständigen** Swift-Laufzeit (auf Android
+kein Systembestandteil) und der JNI-Methode, die R8 im Release-Build entfernt,
+weil sie in Kotlin keinen Aufrufer hat. Alle drei prüft
+`tools/check-android-apk.py` in der fertigen APK — inklusive eines Blicks in
+die ELF-Symboltabelle.
+
+### Bekannte Einschränkungen
+
+- Android TV ist architektonisch berücksichtigt, hat aber noch keine eigene
+  Oberfläche mit Fokusführung.
+- Untertitel kommen ausschließlich aus dem Stream selbst; externe Dateien
+  liefert der Kern nicht.
+- Ein eigener Ablageort für einen selbst eingetragenen TMDB-Schlüssel fehlt;
+  bis dahin trägt der eingebaute.
+
 ## Tests
 
 Der gemeinsame Kern wird über SwiftPM geprüft:
@@ -164,7 +246,7 @@ Der Windows-Stand ist derzeit **1.8.0** und wird als Legacy-Bereich behandelt:
 
 ## CI / Releases
 
-Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am gemeinsamen `native/NoriCore/` müssen sowohl den iOS- als auch den macOS-Build auslösen, zusätzlich zu den Swift-Tests.
+Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am gemeinsamen `native/NoriCore/` müssen den iOS-Build, den macOS-Build und den Android-Lauf auslösen, zusätzlich zu den Swift-Tests.
 
 Release-Quellpakete müssen neben dem jeweiligen Plattformordner auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md` enthalten, damit die Symlinks im Xcode-Projekt auflösbar bleiben.
 

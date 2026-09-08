@@ -5,7 +5,64 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
-Windows **1.8.0**.
+Android **1.0.0**, Windows **1.8.0**.
+
+## [Android 1.0.0] – 2026-09-08
+
+Nori für Android. Native Compose-App auf **demselben** `NoriCore`, den iOS und
+macOS bauen — kein WebView, kein zweiter Parser, keine parallele
+Fortschrittslogik.
+
+### Hinzugefügt
+
+- **Die Brücke.** Eine C-Funktion, JSON hinein und JSON heraus:
+  `nori_bridge_call`. Die Modelle sind bereits `Codable`; Kotlin liest
+  dieselben Felder mit kotlinx.serialization. Kommt in `Models.swift` ein
+  optionales Feld dazu, baut beides weiter durch. Übertragen werden
+  Byte-Felder statt Strings — `NewStringUTF` erwartet *modified UTF-8* und
+  liefert bei einem Emoji im Serientitel Unsinn.
+- **Kein NDK im Gradle-Build.** `nori_jni.c` ist ein C-Target derselben
+  SwiftPM-Paketbeschreibung und landet mit NoriCore in einer
+  `libNoriAndroid.so`. Gradle kopiert die fertige Datei nach `jniLibs`.
+- **Die App**: Startseite mit Kopfbereich, Weiterschauen, Beliebtem, neuen
+  Folgen und Genre-Reihen; Suche über den Katalog; Detailseite mit Staffeln,
+  Folgenbildern und Fortschritt; Merkliste, Verlauf, Kalender; Einstellungen.
+  Ab 600 dp eine Navigationsschiene statt der Leiste, ab 840 dp stehen Cover
+  und Text der Detailseite nebeneinander.
+- **Der Player** über Media3: Hosterwechsel unter Beibehaltung der Stelle,
+  Sprachwahl, Ton- und Untertitelspuren, Qualitätswahl, Tempo 0,75× bis 2×,
+  Bild-in-Bild mit dem Seitenverhältnis des Videos, MediaSession für
+  Benachrichtigung und Sperrbildschirm, Autoplay mit acht Sekunden Countdown.
+- **`tools/check-android-apk.py`.** Prüft die fertige Release-APK auf das, was
+  ein Build nicht zeigt: Bibliothek je ABI, vollständige Swift-Laufzeit,
+  exportiertes JNI-Symbol im ELF, und ob R8 die Brücke im DEX gelassen hat.
+  Sie hat in Kotlin keinen Aufrufer — der steht in C.
+- **`tools/android-sdk.sh`.** Holt JDK 21 und das Android-SDK nach
+  `~/Library/Android`. Das System-Java des Runners bleibt unangetastet; auf
+  ihm steht ein Java 8, mit dem sich kein AGP 8 bauen lässt.
+- **`tools/make-android-icons.py`.** Launcher-Icons aus demselben 1024er-Master
+  wie die Apple-Sets. Der Vordergrund wird auf 72/108 eingerückt, sonst
+  schneidet ein rundes Startmenü die Ränder ab.
+
+### Geändert
+
+- **`NoriStorage` in `Models.swift`.** Der Ablageort von `library.json`,
+  `covers.json` und `episodes.json` stand dreimal identisch im Quelltext.
+  Jetzt an einer Stelle, von Android auf `Context.filesDir` gesetzt. Auf
+  Apple unverändertes Verhalten.
+- **`Package.swift`** bekommt das Produkt `NoriAndroid` (dynamisch) und das
+  C-Target `NoriJNI`.
+- **`config/contract.json`**: `nativePlay` nennt jetzt beide Wege — AVPlayer
+  auf Apple, Media3 auf Android, in beiden Fällen mit dem Referer der Quelle.
+
+### Bekannte Einschränkungen
+
+- Android TV ist architektonisch berücksichtigt (Player nicht an Touch
+  gebunden, `LEANBACK_LAUNCHER` im Manifest), hat aber noch keine eigene
+  Oberfläche mit Fokusführung.
+- Untertitel kommen ausschließlich aus dem Stream selbst.
+- Kein eigener Ablageort für einen selbst eingetragenen TMDB-Schlüssel; bis
+  dahin trägt der eingebaute.
 
 ## [iOS 1.14.5] · [macOS 1.14.2] – 2026-09-06
 
