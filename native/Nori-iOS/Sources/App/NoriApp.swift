@@ -15,7 +15,19 @@ struct NoriApp: App {
 
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
+    /// Beide Kataloge, zusammengeführt und alphabetisch. Bleibt beim
+    /// Bereichswechsel stehen, damit nicht jedes Mal neu geladen wird.
+    @State private var allItems: [CatalogItem] = []
+    /// Der Ausschnitt, den die Ansichten sehen.
     @State private var catalog: [CatalogItem] = []
+
+    /// Die Slugs des Bereichs — oder `nil`, wenn er gar nicht nach Genre
+    /// einschränkt. Nur der Kalender braucht das: seine Einträge kennen
+    /// Slug und Quelle, aber keine Genres.
+    private var scopeSlugs: Set<String>? {
+        guard library.scope.genre != nil else { return nil }
+        return Set(catalog.map(\.slug))
+    }
     @State private var error: String?
     @State private var loading = true
 
@@ -32,7 +44,7 @@ struct RootView: View {
             .tabItem { Label("Katalog", systemImage: "square.grid.2x2") }
 
             NavigationStack {
-                CalendarView()
+                CalendarView(slugs: scopeSlugs)
             }
             .tabItem { Label("Kalender", systemImage: "calendar") }
 
@@ -47,18 +59,65 @@ struct RootView: View {
             .tabItem { Label("Mehr", systemImage: "gearshape") }
         }
         .tint(NoriTheme.accent)
-        .task(id: library.provider) { await load() }
+        .task(id: library.scope) { await load() }
     }
 
+    /// Beide Kataloge laden, zusammenführen, nach Bereich ausschneiden.
+    ///
+    /// Vorher lud iOS **nur** den Katalog der aktiven Quelle. Damit konnte
+    /// eine Liste nie Titel beider Seiten enthalten — „Alle" wäre nicht
+    /// darstellbar gewesen, und „K-Drama" erst recht nicht, weil der Bereich
+    /// zwar an Serienstream hängt, aber als Ausschnitt daraus. Der Mac macht
+    /// es seit dem Umbau genauso.
+    ///
+    /// Fehlschläge werden je Quelle festgehalten: fällt nur eine Seite aus,
+    /// zeigt die App die andere weiter, statt leer zu bleiben.
     func load() async {
         loading = catalog.isEmpty
         error = nil
-        do {
-            let result = try await AniworldClient.shared.getCatalog(provider: library.provider)
-            catalog = result.items
-        } catch {
-            self.error = error.localizedDescription
+
+        async let anime = Self.fetch(.aniworld)
+        async let serien = Self.fetch(.serienstream)
+        let results = await [anime, serien]
+
+        var merged: [CatalogItem] = []
+        var failures: [CatalogProvider: String] = [:]
+        for (provider, outcome) in zip([CatalogProvider.aniworld, .serienstream], results) {
+            switch outcome {
+            case .success(let items): merged.append(contentsOf: items)
+            case .failure(let message): failures[provider] = message
+            }
+        }
+
+        if !merged.isEmpty {
+            allItems = merged.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+        }
+        catalog = allItems.filter { library.scope.includes(item: $0) }
+
+        // Nur melden, was den gewählten Bereich betrifft. Fällt AniWorld aus,
+        // während „Serien" gewählt ist, ist das keine Meldung wert.
+        if let named = library.scope.provider {
+            error = failures[named]
+        } else {
+            error = failures.count == 2
+                ? failures.values.sorted().joined(separator: " · ")
+                : nil
         }
         loading = false
+    }
+
+    private enum Outcome {
+        case success([CatalogItem])
+        case failure(String)
+    }
+
+    private static func fetch(_ provider: CatalogProvider) async -> Outcome {
+        do {
+            return .success(try await AniworldClient.shared.getCatalog(provider: provider).items)
+        } catch {
+            return .failure(error.localizedDescription)
+        }
     }
 }

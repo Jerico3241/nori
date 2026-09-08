@@ -7,6 +7,154 @@ Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
 Windows **1.8.0**, LG webOS **1.0.0**.
 
+## [iOS 1.17.1] — 2026-09-08
+
+### Behoben
+
+- Den iOS-Stand 1.17.0 aus dem bisherigen Android-Arbeitsbranch in die aktuelle
+  Feature-Struktur und den zentralen NoriCore integriert.
+- Die Fortschrittsanzeige auf der Detailseite verwendet die Quelle des Titels,
+  auch wenn die gespeicherte Vorgabequelle auf den anderen Katalog zeigt.
+- Regressionstest für Fortsetzen und Fortschrittsanzeige bei abweichender Vorgabequelle.
+
+## [iOS 1.17.0] - 2026-09-07
+
+### Geaendert
+
+- **Die Detailseite folgt dem Aufbau von Serien-Apps.** Statt Poster-Kachel
+  neben dem Titel traegt jetzt ein grosser Backdrop den Kopf, mit dem
+  freigestellten TMDB-Schriftzug darueber. Darunter zwei Zeilen Eckdaten —
+  Jahr und Genres, dann Staffelzahl, Stand und Bewertung.
+- **Merkliste als Pille, dazu ein Ueberlaufmenue** („Von vorn abspielen",
+  „Fortschritt dieser Staffel vergessen"). Das Herz in der Navigationsleiste
+  entfaellt.
+- **Umschalter Details / Folgen.** Beschreibung, Alternativtitel, FSK und
+  Quelle stehen unter „Details" und draengen sich nicht mehr zwischen Kopf
+  und Folgenliste.
+- **„Als Naechstes"** zeigt die kommenden Folgen als waagerechte Karten mit
+  Standbild — beginnend bei der Folge, die `nextPlay` bestimmt.
+- **„Alle Folgen"** listet die Staffeln; die gewaehlte klappt ihre Folgen
+  darunter auf. Frueher war die Staffelwahl eine Knopfreihe und die
+  Folgenliste stand lose darunter.
+
+### Bekannte Abweichung von der Vorlage
+
+- Die Staffelzeilen tragen **kein Vorschaubild**. TMDB liefert Staffelposter
+  nur teilweise, und die Quellen gar nicht; dieselbe Serienkachel an jeder
+  Zeile waere Wiederholung statt Auskunft.
+
+## [iOS 1.16.1] - 2026-09-07
+
+### Behoben
+
+- **Das Oeffnen eines Titels aenderte die Vorgabequelle.** Merkliste und
+  Detailseite setzten `library.provider` auf die Quelle des geoeffneten
+  Titels — ein Ueberbleibsel aus der Zeit, als der Umschalter ein
+  Moduswechsel war. Seit die Bibliothek beide Quellen zusammenfuehrt, ist das
+  schaedlich: `source(of:)` faellt fuer Eintraege ohne eigene Quellangabe auf
+  `library.provider` zurueck, und die Merkliste teilt danach in „Anime" und
+  „Serien" auf. Ein einziges Oeffnen verschob damit fremde Eintraege zwischen
+  den Abschnitten. Nachweisbar an einer gespeicherten Bibliothek, in der
+  `provider` auf einer Quelle stand, die der Nutzer nie gewaehlt hatte.
+
+### Entfernt
+
+- **Die Einstellung „Vorgabequelle".** Was in den Listen steht, entscheidet
+  seit 1.15.0 der Bereich; die Quelle eines einzelnen Titels steht am Eintrag
+  selbst. Damit blieb der Schalter ohne erkennbare Wirkung — und wer ihn
+  umstellte, veraenderte still, in welchem Abschnitt der Merkliste alte
+  Eintraege ohne Quellangabe landen. Das Feld bleibt im Datenmodell als
+  Rueckfall erhalten, ist aber nicht mehr bedienbar.
+
+### Sonstiges
+
+- Der gewaehlte Bereich ueberlebt den Neustart. Das tat er schon seit 1.15.0
+  — geprueft, nicht angenommen: `scope` steht in `library.json`, und nach
+  Beenden und Neustart stand die Auswahl unveraendert.
+
+## [iOS 1.16.0] - 2026-09-07
+
+### Hinzugefuegt
+
+- **Bereichspillen ueber der Startseite.** Alle, Anime, Serien, K-Drama
+  stehen jetzt direkt im Inhalt statt im Menue der Navigationsleiste. In den
+  uebrigen Tabs bleibt es beim Menue - eine Pillenreihe ueber jeder Ansicht
+  waere nur Wiederholung.
+- **Schriftzuege aus TMDB.** Der Kern holt ueber `/tv/{id}/images` das
+  freigestellte Logo einer Serie und legt es im Cover-Index ab. Es kostet
+  einen eigenen Abruf - `/search/tv` liefert es nicht mit - und wird deshalb
+  nur dort geholt, wo es sichtbar wird: im Kopfbereich und auf den
+  Weiterschauen-Kacheln. Deutsch vor Englisch vor sprachlos, PNG vor SVG
+  (SVG kann `AsyncImage` nicht darstellen).
+
+### Geaendert
+
+- **Der Kopfbereich ist nur noch Bild.** Breitbild statt Poster, der
+  freigestellte Schriftzug unten links, und die ganze Flaeche fuehrt beim
+  Antippen zur Serie. Titel, Quelle, Genres, Beschreibung und zwei Knoepfe
+  sind weg - das war ein Steckbrief, kein Kopfbereich, und alles davon steht
+  eine Ebene tiefer ohnehin. Von 560 auf 250 Punkte Hoehe: die Startseite
+  beginnt wieder oben statt unter dem Kopfbereich. Der Titel als Text bleibt
+  der Rueckfall, denn viele Serien haben bei TMDB kein Logo - ohne Titelzeile
+  darunter waere der Kopfbereich sonst namenlos.
+- **Die Weiterschauen-Kacheln stehen im Querformat**, mit Backdrop als Bild,
+  Logo unten links und dem Fortschritt als Streifen **im** Bild. Darunter die
+  Restzeit - "Noch 14 Min." sagt, worauf man sich einlaesst, ein Prozentwert
+  nicht.
+- **Antippen spielt sofort ab.** Vorher fuehrte die Kachel auf die
+  Detailseite. Jetzt entscheidet `nextPlay` im Kern: die zuletzt angefangene
+  Folge, solange sie nicht zu Ende gesehen ist - sonst die naechste
+  unfertige. Solange die Serie geholt wird, liegt ein Fortschrittsring auf
+  der Kachel; ohne den wirkte das Antippen tot.
+
+### Behoben
+
+- **`nextPlay` nahm die Vorgabequelle statt der Quelle des Titels.** Seit die
+  Bibliothek beide Quellen zusammenfuehrt, ist ein Titel der *anderen* Seite
+  der Normalfall - die Fortschrittssuche griff dann daneben und begann von
+  vorn. Die Quelle wird jetzt uebergeben; ohne Angabe bleibt es beim alten
+  Verhalten.
+
+### Sonstiges
+
+- `tools/check-apple-sources.py` kennt `NoriTheme.danger`. Ein erfundenes
+  Symbol in einem ViewBuilder meldet der Compiler nicht als "has no member",
+  sondern als `failed to produce diagnostic for expression` mit Spalte auf
+  `some View` - das sieht nach einem zu komplexen Ausdruck aus und fuehrt in
+  die Irre. Hat hier drei Build-Durchlaeufe gekostet.
+
+## [iOS 1.15.0] – 2026-09-07
+
+### Hinzugefügt
+
+- **Bereich „K-Drama" auf dem iPhone.** Der Umschalter oben rechts wählt jetzt
+  einen Ausschnitt der Bibliothek: Alle, Anime, Serien oder K-Drama. Die
+  koreanischen Serien führt Serienstream selbst unter diesem Genre — rund
+  hundert Titel, die vorher nur über die Suche zu finden waren. Katalog,
+  Startseite und Kalender folgen dem Bereich.
+
+### Geändert
+
+- **iOS lädt beide Kataloge und führt sie zusammen.** Bisher wurde nur der
+  Katalog der aktiven Quelle geholt, eine Liste konnte also nie Titel beider
+  Seiten enthalten — „Alle" war damit nicht darstellbar und „K-Drama" erst
+  recht nicht. Der Mac macht es seit 1.12.0 genauso. Fällt eine Quelle aus,
+  zeigt die App die andere weiter, statt leer zu bleiben.
+- **Der Umschalter ist ein Menü statt eines segmentierten Reglers.** Auf dem
+  Mac sitzt er als Segmentregler in der Seitenleiste, wo Platz ist; in einer
+  iPhone-Navigationsleiste sind vier Segmente zu viel — „K-Drama" allein
+  braucht mehr Breite als die beiden alten Segmente zusammen, und mit Dynamic
+  Type wird daraus abgeschnittener Text. Das Menü bleibt gleich breit, egal
+  wie viele Bereiche dazukommen.
+- **Der Kalender führt beide Quellen zusammen** und filtert im
+  K-Drama-Bereich über die Slugs des Katalogs mit: ein Kalendereintrag trägt
+  Slug und Quelle, aber keine Genres. Steht der Katalog noch nicht, wird
+  bewusst nicht eingeschränkt — ein vollständiger Kalender ist die bessere
+  Antwort als ein leerer.
+- In den Einstellungen heißt „Aktive Quelle" jetzt **„Vorgabequelle"**. Sie
+  entscheidet nur noch, wohin ein Titel ohne eigene Quellangabe führt; was in
+  den Listen steht, bestimmt der Bereich.
+
 ## [webOS 1.0.0] – 2026-09-07
 
 Erste Fassung von **Nori für LG webOS**. Eine eigenständige TV-App, keine auf

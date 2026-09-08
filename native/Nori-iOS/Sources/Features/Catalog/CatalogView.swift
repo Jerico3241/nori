@@ -39,7 +39,7 @@ struct CatalogView: View {
         .refreshable { await reload() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                KindSwitch(provider: Bindable(library).provider)
+                ScopeSwitch(scope: Bindable(library).scope)
             }
         }
     }
