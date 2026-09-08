@@ -725,7 +725,13 @@ struct PlayerScreen: View {
                     // Fängt die Wiedergabe erst nach dem Puffern an, muss
                     // das Wegblenden von hier aus angestoßen werden — beim
                     // Start lief es ins Leere.
-                    if running { scheduleHide() }
+                    //
+                    // Über `Task { @MainActor in … }`: der Beobachter läuft
+                    // zwar auf der Hauptwarteschlange, ist dem Compiler
+                    // gegenüber aber nicht an den Main-Actor gebunden. Ein
+                    // direkter Aufruf ist unter Swift 6 ein Fehler und hier
+                    // schon eine Warnung.
+                    if running { Task { @MainActor in scheduleHide() } }
                 }
                 if let range = item.loadedTimeRanges.last?.timeRangeValue {
                     let end = (range.start + range.duration).seconds
