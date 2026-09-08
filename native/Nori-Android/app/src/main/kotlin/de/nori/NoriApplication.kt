@@ -1,9 +1,6 @@
 package de.nori
 
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.os.Build
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -17,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import okio.Path.Companion.toOkioPath
 
 class NoriApplication : Application(), SingletonImageLoader.Factory {
 
@@ -28,7 +26,6 @@ class NoriApplication : Application(), SingletonImageLoader.Factory {
         // hochgefahren: er liest dabei library.json, und die Startseite
         // braucht „Weiterschauen" direkt.
         scope.launch { Nori.start(this@NoriApplication) }
-        createNotificationChannel()
     }
 
     /**
@@ -53,29 +50,11 @@ class NoriApplication : Application(), SingletonImageLoader.Factory {
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(cacheDir.resolve("covers"))
+                    // Coil arbeitet mit okio-Pfaden, nicht mit java.io.File.
+                    .directory(cacheDir.resolve("covers").toOkioPath())
                     .maxSizeBytes(256L * 1024 * 1024)
                     .build()
             }
             .crossfade(true)
             .build()
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(
-            NotificationChannel(
-                PLAYBACK_CHANNEL,
-                "Wiedergabe",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Steuerung der laufenden Wiedergabe"
-                setShowBadge(false)
-            }
-        )
-    }
-
-    companion object {
-        const val PLAYBACK_CHANNEL = "nori.playback"
-    }
 }
