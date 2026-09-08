@@ -408,6 +408,32 @@ verschonte Brücke im DEX. Ein grüner Gradle-Lauf beweist keins davon.
 dritte stillschweigend mitzupacken hieße: eine APK, die auf dem Gerät am
 fehlenden `libNoriAndroid.so` stirbt.
 
+## Warum die APK so groß ist
+
+| Datei | Größe |
+| --- | --- |
+| `app-arm64-v8a-release.apk` | 74 MB |
+| `app-x86_64-release.apk` | 76 MB |
+| `Nori-Android-release.apk` (universell) | 146 MB |
+
+Die Swift-Laufzeit wiegt je Architektur rund 25 MB und muss mitgeliefert
+werden — auf Android ist sie kein Systembestandteil. In der universellen APK
+liegt sie zweimal, obwohl jedes Gerät nur eine davon benutzt; deshalb die
+Aufteilung nach ABI.
+
+Zwei Dinge sind dabei nicht selbstverständlich:
+
+- **Gestrippt wird beim Einsammeln, nicht von AGP.** Ohne NDK im Android-SDK
+  meldet AGP nur „Unable to strip the following libraries, packaging them as
+  they are" und packt die vollständigen Debugsymbole ein — das waren 247 MB
+  statt 146. `tools/collect-android-libs.py` ruft deshalb `llvm-strip` aus dem
+  NDK auf. `--strip-unneeded` lässt `.dynsym` unangetastet, also genau die
+  Tabelle, über die der Lader die Brücke findet.
+- **Das ist der Preis der Architektur.** Ein in Kotlin nachgebauter Kern wäre
+  ein paar hundert Kilobyte groß. Er müsste aber bei jeder Änderung an
+  AniWorld oder Serienstream ein zweites Mal repariert werden — und genau das
+  ist der teure Teil, nicht die Dateigröße.
+
 ## Bekannte Einschränkungen
 
 - **Android TV ist vorbereitet, nicht fertig.** Die Architektur verbaut es

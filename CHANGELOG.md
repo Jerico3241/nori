@@ -55,8 +55,22 @@ Fortschrittslogik.
 - **`config/contract.json`**: `nativePlay` nennt jetzt beide Wege — AVPlayer
   auf Apple, Media3 auf Android, in beiden Fällen mit dem Referer der Quelle.
 
+### Toolchain
+
+AGP 9.4, Gradle 9.7.1, Kotlin 2.4.20, `compileSdk`/`targetSdk` 37, `minSdk`
+28. Die 37 ist keine Vorliebe: Compose 1.12 und `okhttp-android` 5.5
+verlangen sie ausdrücklich, und AGP 9 bringt Kotlin selbst mit — das
+Kotlin-Android-Plugin zusätzlich anzuwenden ist dort ein Fehler.
+
 ### Bekannte Einschränkungen
 
+- **Auf keinem Gerät gelaufen.** Geprüft ist, was der Build und die
+  APK-Analyse zeigen können: beide ABIs gebaut, Swift-Laufzeit vollständig,
+  JNI-Symbol exportiert, Brücke von R8 verschont. Ob AniWorld antwortet, ob
+  ein Hoster einen Stream liefert und ob Media3 ihn abspielt, ist damit
+  **nicht** gezeigt.
+- Die APK ist groß: 74 MB je ABI, 146 MB universell. Die Swift-Laufzeit ist
+  auf Android kein Systembestandteil und muss mit.
 - Android TV ist architektonisch berücksichtigt (Player nicht an Touch
   gebunden, `LEANBACK_LAUNCHER` im Manifest), hat aber noch keine eigene
   Oberfläche mit Fokusführung.

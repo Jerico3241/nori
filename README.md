@@ -169,7 +169,8 @@ Ausführlich in [docs/android.md](docs/android.md).
 | ABIs | `arm64-v8a`, `x86_64` |
 | Zum Bauen | Swift 6.3.3 Open-Source-Toolchain **und** das Swift-SDK für Android in derselben Fassung |
 | | Android NDK r27d oder neuer, gegen das SDK eingerichtet |
-| | JDK 17 oder neuer, Android-SDK mit Plattform 37 |
+| | JDK 21, Android-SDK mit Plattform 37 |
+| Toolchain | AGP 9.4, Gradle 9.7.1, Kotlin 2.4.20, `compileSdk`/`targetSdk` 37 |
 
 Die Swift-Einrichtung prüft `tools/require-swift-android.sh`. Sie ist der
 aufwendige Teil; das Android-SDK holt sich der CI-Lauf über
@@ -196,14 +197,20 @@ cd Nori-Android
 ./gradlew assembleRelease
 ```
 
-Ausgabe:
+Ausgabe unter `native/Nori-Android/app/build/outputs/apk/release/`:
 
-```text
-native/Nori-Android/app/build/outputs/apk/release/app-release.apk
-```
+| Datei | Größe | Für |
+| --- | --- | --- |
+| `app-arm64-v8a-release.apk` | 74 MB | echte Geräte |
+| `app-x86_64-release.apk` | 76 MB | Emulator |
+| `Nori-Android-release.apk` | 146 MB | beide ABIs, ohne Kenntnis des Zielgeräts weiterzugeben |
+
+Die Swift-Laufzeit wiegt rund 25 MB je Architektur und liegt in der
+universellen APK deshalb zweimal. Das ist der Preis dafür, den Kern nicht
+zweimal zu schreiben.
 
 Auf dem self-hosted Mac erledigt das `.github/workflows/build-android-app.yml`
-in zwei Stufen und lädt beide APKs als Artefakt hoch.
+in zwei Stufen und lädt alle APKs als Artefakt hoch.
 
 ### Was der Build nicht beweist
 
