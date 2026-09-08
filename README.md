@@ -169,7 +169,7 @@ Ausführlich in [docs/android.md](docs/android.md).
 | ABIs | `arm64-v8a`, `x86_64` |
 | Zum Bauen | Swift 6.3.3 Open-Source-Toolchain **und** das Swift-SDK für Android in derselben Fassung |
 | | Android NDK r27d oder neuer, gegen das SDK eingerichtet |
-| | JDK 17 oder neuer, Android-SDK mit Plattform 36 |
+| | JDK 17 oder neuer, Android-SDK mit Plattform 37 |
 
 Die Swift-Einrichtung prüft `tools/require-swift-android.sh`. Sie ist der
 aufwendige Teil; das Android-SDK holt sich der CI-Lauf über

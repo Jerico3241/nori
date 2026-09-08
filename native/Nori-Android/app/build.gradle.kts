@@ -7,12 +7,17 @@ plugins {
 
 android {
     namespace = "de.nori"
-    compileSdk = 36
+    // 37, nicht 36: Compose 1.12 und okhttp-android 5.5 verlangen es
+    // ausdrücklich („requires libraries and applications that depend on it to
+    // compile against version 37 or later"). Der Build bricht sonst schon in
+    // der Abhängigkeitsprüfung ab. `minSdk` bleibt davon unberührt — die
+    // App läuft weiter ab Android 9.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "de.nori"
         minSdk = 28
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
 

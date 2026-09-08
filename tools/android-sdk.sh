@@ -25,8 +25,8 @@ JDK_DIR="$TOOLS_HOME/jdk-21"
 # womit gebaut wurde, ohne durch die Lauf-Historie zu gehen.
 JDK_VERSION="21.0.5+11"
 CMDLINE_TOOLS="11076708"   # cmdline-tools 12.0
-PLATFORM="android-36"
-BUILD_TOOLS="36.0.0"
+PLATFORM="android-37"
+BUILD_TOOLS="37.0.0"
 
 case "$(uname -m)" in
     arm64)  JDK_ARCH="aarch64" ;;
@@ -79,10 +79,16 @@ SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
 # `yes |` ist hier kein Hack: sdkmanager fragt jede Lizenz einzeln ab und
 # bricht ohne Antwort ab. Die Lizenzen sind die von Google, unverändert.
 yes 2>/dev/null | "$SDKMANAGER" --licenses > /dev/null || true
-"$SDKMANAGER" \
-    "platform-tools" \
-    "platforms;$PLATFORM" \
-    "build-tools;$BUILD_TOOLS" > /dev/null
+"$SDKMANAGER" "platform-tools" > /dev/null
+
+# Plattform und Build-Tools nur versuchen: sind die Fassungen hier veraltet,
+# holt AGP sich selbst, was es braucht — die Lizenzen sind angenommen und die
+# Command-line-Tools liegen bereit. Ein harter Abbruch an einer Versionsnummer
+# waere hier der falsche Ort.
+if ! "$SDKMANAGER" "platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" > /dev/null 2>&1; then
+    echo "Hinweis: $PLATFORM / build-tools $BUILD_TOOLS nicht installierbar."
+    echo "AGP laedt die benoetigten Bestandteile beim Build selbst nach."
+fi
 
 export PATH="$SDK_DIR/platform-tools:$PATH"
 echo "ANDROID_HOME=$ANDROID_HOME"

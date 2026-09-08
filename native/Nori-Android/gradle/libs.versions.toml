@@ -1,6 +1,6 @@
 # Eine Stelle für alle Fassungen. Was hier nicht steht, steht nirgends.
 [versions]
-agp = "8.13.0"
+agp = "9.1.0"
 kotlin = "2.4.20"
 coroutines = "1.10.2"
 serialization = "1.11.0"
