@@ -73,15 +73,13 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        // Media3 kennzeichnet weite Teile seiner API als @UnstableApi. Das
-        // ist bei einer Bibliothek dieser Reichweite normal und kein Grund,
-        // jede Datei mit @OptIn zu pflastern — hier steht die Entscheidung
-        // einmal.
+        // ModalBottomSheet und rememberModalBottomSheetState sind als
+        // experimentell gekennzeichnet. Ohne Opt-in wäre das ein
+        // Übersetzungsfehler, kein Hinweis.
+        //
+        // Media3s @UnstableApi stand hier ebenfalls und war wirkungslos:
+        // „is not an opt-in requirement marker". Der Build übersetzt ohne.
         freeCompilerArgs.addAll(
-            "-opt-in=androidx.media3.common.util.UnstableApi",
-            // ModalBottomSheet und rememberModalBottomSheetState sind
-            // weiterhin als experimentell gekennzeichnet. Ohne Opt-in ist
-            // das ein Uebersetzungsfehler, kein Hinweis.
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
         )
     }

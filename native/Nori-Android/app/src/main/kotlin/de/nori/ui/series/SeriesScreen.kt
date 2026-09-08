@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Check
@@ -180,7 +180,7 @@ private fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
         size = 40.dp,
         background = Color.Black.copy(alpha = 0.45f),
     ) {
-        Icon(Icons.Rounded.ArrowBack, contentDescription = "Zurück", tint = NoriColors.fg)
+        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Zurück", tint = NoriColors.fg)
     }
 }
 

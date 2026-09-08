@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
@@ -261,7 +261,7 @@ private fun LoadingOverlay(note: String, onBack: () -> Unit) {
             size = 40.dp,
             background = Color.White.copy(alpha = 0.12f),
         ) {
-            Icon(Icons.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
         }
     }
 }
@@ -294,7 +294,7 @@ private fun ErrorOverlay(
                 .padding(12.dp),
             size = 40.dp,
         ) {
-            Icon(Icons.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
         }
 
         Column(
@@ -367,7 +367,7 @@ private fun Controls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             RoundIconButton(onClick = onBack, size = 40.dp) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Zurück", tint = Color.White)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
