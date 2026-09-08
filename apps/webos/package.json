@@ -10,7 +10,6 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "assets": "node tools/make-assets.mjs",
     "mock": "node test/mock-server.mjs",
     "test:tv": "node test/remote-control.test.mjs",
     "webos:package": "node tools/package-ipk.mjs",

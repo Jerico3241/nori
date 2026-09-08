@@ -140,16 +140,13 @@ input.spottable:focus {
   color: #8b93a7;
 }
 
+/* Das App-Symbol selbst, nicht nachgezeichnet. Die Rundung ist die Kachelform
+   des Fernsehers und gehört zur Darstellung, nicht zum Bild. */
 .boot-mark {
-  display: grid;
-  place-items: center;
   width: 6rem;
   height: 6rem;
-  background: linear-gradient(150deg, #f47521, #c1490d);
   border-radius: 1.75rem;
-  color: #14060a;
-  font-size: 3.25rem;
-  font-weight: 800;
+  object-fit: cover;
 }
 
 .boot-splash p {
