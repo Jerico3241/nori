@@ -24,9 +24,18 @@ struct SettingsView: View {
 
 private struct GeneralSettingsTab: View {
     @Environment(LibraryStore.self) private var library
+    /// Der Schalter für das Glas. Auf Systemen vor macOS 26 gibt es keines;
+    /// der Hinweis darunter sagt das dann statt einer Beschreibung.
+    @AppStorage(NoriGlassSetting.key) private var liquidGlass = true
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? NoriRelease.version
+    }
+
+    private var glassNote: String {
+        NoriGlassChip<EmptyView>.systemHasGlass
+            ? "Schwebende Bedienelemente aus Glas — im Kopfbereich und in den Menüs. Ausgeschaltet zeichnet Nori dieselben Elemente als getönte Flächen."
+            : "Braucht macOS 26 oder neuer. Auf diesem System zeichnet Nori die Bedienelemente als getönte Flächen."
     }
 
     var body: some View {
@@ -40,6 +49,14 @@ private struct GeneralSettingsTab: View {
                 }
             } footer: {
                 Text("AniWorld zeigt Anime, Serienstream zeigt Serien. Katalog, Kalender und Player folgen der Auswahl.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+
+            Section {
+                Toggle("Liquid Glass", isOn: $liquidGlass)
+            } footer: {
+                Text(glassNote)
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
             }
