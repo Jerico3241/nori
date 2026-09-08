@@ -53,6 +53,7 @@ keinen Shirox-Quelltext.
 | `PlayerProgressSlider` | `PlayerProgressSlider.swift` | nachgebaut, ohne Skip-Segmente (hat Nori nicht) |
 | `PlayerMenuButton` | `PlayerMenuButton.swift` | adaptiert (UIKit-Menü) |
 | `PlayerDoubleTapSeek` | `PlayerSeekOverlay.swift` | adaptiert |
+| HLS-Qualität (`HLSQualityPreferenceTests`) | `HLSPlaylist.swift` im Kern | neu geschrieben, mit eigenen Tests |
 | `PlayerSkipButton` (85 s) | — | nicht übernommen: Nori kennt keine Intro-Segmente |
 | `PlayerVolumeSlider` | — | nicht übernommen: iPhone hat Hardwaretasten |
 | `PlayerSubtitleSettingsView` | Untertitelmenü in der Leiste | verkleinert: Nori hat nur AVFoundation-Spuren, keine eigenen Renderer |
@@ -81,13 +82,14 @@ kann, weicht es ab:
 
 | Token | Kurve | Zweck |
 | --- | --- | --- |
-| `press` | `easeOut 0.12` | Kachel-/Knopfdruck |
-| `micro` | `easeOut 0.18` | Zustandswechsel an einem Element |
-| `ui` | `spring(0.32, bounce: 0.12)` | Leisten, Kapseln, Menüs |
-| `controlsIn` | `spring(0.34, bounce: 0.18)` | Bedienung erscheint |
-| `controlsOut` | `easeOut 0.26` | Bedienung verschwindet |
-| `content` | `spring(0.45, bounce: 0.1)` | Hero-, Inhaltswechsel |
+| `press` | `easeOut(0.12)` | Kachel-/Knopfdruck |
+| `micro` | `easeOut(0.18)` | Zustandswechsel an einem Element |
+| `ui` | `spring(response: 0.32, damping: 0.86)` | Leisten, Kapseln, Pillen |
+| `controlsIn` | `spring(response: 0.34, damping: 0.78)` | Bedienung erscheint (nur iOS) |
+| `controlsOut` | `easeOut(0.26)` | Bedienung verschwindet (nur iOS) |
+| `content` | `spring(response: 0.45, damping: 0.9)` | Hero-, Inhaltswechsel |
 | `scrub` | `interactiveSpring(0.3, 0.7)` | Regler unter dem Finger |
+| `hover` | `easeOut(0.14)` | Element unter dem Mauszeiger (nur macOS) |
 
 Ein- und Ausblenden sind **absichtlich unsymmetrisch**: lebendig hinein,
 ruhig hinaus. Bei aktivem *Bewegung reduzieren* liefert jedes Token `nil`
@@ -122,3 +124,19 @@ Liquid Glass braucht das SDK von Xcode 26 oder neuer. Die Workflows
 `Build iOS`, `Build macOS` und `Package iOS IPA` fordern das über
 `tools/require-xcode.sh 26` ausdrücklich an; ein älterer Mac bricht mit
 klarer Meldung ab, statt an `has no member` zu scheitern.
+
+## Was beim Umbau nebenbei aufgefallen ist
+
+Vier Fehler, die es vorher schon gab und die beim Umbau sichtbar wurden:
+
+1. **`timeControlStatus == .playing`** war viermal pro Sekunde falsch: beim
+   Puffern steht der Stand auf `.waitingToPlayAtSpecifiedRate`. Das
+   Play/Pause-Symbol sprang hin und her, und die Bedienung blendete beim
+   Nachladen nicht mehr weg, weil sie sich für angehalten hielt.
+2. **SwiftUI-`Menu` im Player** wurde bei jedem Neuzeichnen des Rumpfs
+   geschlossen und neu aufgeklappt — der Rumpf zeichnet viermal pro Sekunde.
+   Die Hosterliste flackerte, bis sie sich von selbst schloss.
+3. **Der Hosterwechsel** ließ die Ansicht auf den Ladebildschirm zurückfallen,
+   samt Verlust der Wiedergabeposition im Regler.
+4. **Kacheln wurden bei jedem Erscheinen geleert** und neu aufgebaut. Beim
+   Zurückscrollen sah eine längst geladene Kachel aus, als lade sie neu.
