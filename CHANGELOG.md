@@ -7,6 +7,17 @@ Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
 Windows **1.8.0**, LG webOS **1.0.0**.
 
+## [iOS 1.17.2] — 2026-09-08
+
+### Behoben
+
+- Ausdrücklich gewählte Sprache und Hoster werden nicht mehr still durch eine
+  andere Auswahl ersetzt. Der automatische Start behält seine Rückfälle.
+- Die Hoster-Auswahl zeigt nur Angebote der aktuellen Sprache. Einstellungen
+  werden erst nach erfolgreicher Stream-Auflösung gespeichert.
+- Die Fehlerkorrektur und zwei Regressionstests stammen aus der lokalen Kopie;
+  die aktuelle Player-Oberfläche bleibt bestehen.
+
 ## [iOS 1.17.1] — 2026-09-08
 
 ### Behoben

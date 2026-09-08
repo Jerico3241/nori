@@ -119,6 +119,14 @@ enum HosterResolver {
         }
     }
 
+    /// Für eine ausdrückliche Auswahl gibt es keinen stillen Sprach-/Hoster-Fallback.
+    static func matching(_ hosters: [HosterOption], language: String, hoster: String? = nil) -> [HosterOption] {
+        hosters.filter {
+            $0.lang.caseInsensitiveCompare(language) == .orderedSame &&
+            (hoster == nil || $0.name.caseInsensitiveCompare(hoster!) == .orderedSame)
+        }
+    }
+
     static func pickLang(_ hosters: [HosterOption], pref: String) -> [HosterOption] {
         let order = [pref, "DE", "GerSub", "EN"]
         for lang in order {
