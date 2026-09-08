@@ -157,7 +157,7 @@ struct SeriesView: View {
                     startPoint: .topTrailing,
                     endPoint: .bottomLeading
                 )
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: coverColor)
+                .animation(NoriMotion.allowed(NoriMotion.content, reduceMotion: reduceMotion), value: coverColor)
             }
 
             LinearGradient(

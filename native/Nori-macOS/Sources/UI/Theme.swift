@@ -372,7 +372,7 @@ struct PosterTile: View {
             .accessibilityElement()
             .accessibilityLabel(Text(title))
             .accessibilityAddTraits(.isImage)
-            .animation(.easeOut(duration: 0.16), value: hovering)
+            .noriAnimation(NoriMotion.hover, value: hovering)
             .onHover { hovering = $0 }
             .task(id: source.rawValue + "|" + slug + "|" + (coverURL?.absoluteString ?? "")) {
                 remote = nil

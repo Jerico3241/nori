@@ -147,7 +147,7 @@ struct GenreTile: View {
             .scaleEffect(hovering ? 1.02 : 1)
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .noriAnimation(NoriMotion.hover, value: hovering)
         .onHover { hovering = $0 }
         .help("\(name) – \(count) Titel")
     }

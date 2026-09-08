@@ -606,6 +606,9 @@ struct HeroSlide: View {
                         .frame(height: NoriControl.hit)
                         .background(Capsule().fill(NoriTheme.fg))
                 }
+                // Ohne das liest VoiceOver auf jeder Seite des Kopfbereichs
+                // dasselbe „Ansehen" vor, ohne zu sagen, was.
+                .accessibilityLabel("\(item.title) ansehen")
 
                 BookmarkChip(slug: item.slug, title: item.title)
             }
