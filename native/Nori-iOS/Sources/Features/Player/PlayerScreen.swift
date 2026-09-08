@@ -27,8 +27,29 @@ struct PlayerScreen: View {
     @State private var statusTask: Task<Void, Never>?
     @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
-    @State private var optionsVisible = true
-    @State private var optionsTick = 0
+    /// Ist die Bedienung sichtbar. Wird nie hart gesetzt, immer über
+    /// `setControlsVisible` — sonst blenden Tipp, Knopfdruck und Zeitablauf
+    /// mit drei verschiedenen Kurven ein und aus.
+    @State private var controlsVisible = true
+    /// Aufgabe, die die Bedienung nach ein paar Sekunden wieder wegnimmt.
+    @State private var hideTask: Task<Void, Never>?
+    /// Ein Menü der unteren Leiste steht offen. Solange bleibt die Bedienung
+    /// stehen — sie unter dem geöffneten Menü wegzublenden wäre grotesk.
+    @State private var menuOpen = false
+    /// Der Regler wird gerade gezogen.
+    @State private var scrubbing = false
+    /// Läuft gerade ein Sprung. Verhindert, dass das Ziehen den Player mit
+    /// Sprüngen überschwemmt; der jeweils letzte Wunsch wird nachgeholt.
+    @State private var seeking = false
+    @State private var pendingSeek: Double?
+    /// Bild formatfüllend statt eingepasst. Auf einem iPhone im Querformat
+    /// bleiben sonst breite schwarze Balken.
+    @State private var fillVideo = false
+    /// Die tatsächlich angebotenen Qualitätsstufen des laufenden Streams.
+    /// Leer, wenn der Hoster nur eine Spur liefert — dann erscheint die
+    /// Auswahl gar nicht.
+    @State private var variants: [HLSVariant] = []
+    @State private var activeQuality = PlayerScreen.qualityAuto
     /// Für die eigene Bedienung: Stand, Position und Puffer kamen vorher von
     /// AVKit und wurden nirgends gebraucht.
     @State private var isPlaying = false
@@ -42,8 +63,11 @@ struct PlayerScreen: View {
 
     /// Kennung für „keine Untertitel". Ein leerer Text wäre als Auswahl nicht
     /// von „noch nichts gewählt" zu unterscheiden.
-    static let subtitleOff = "__aus__" 
+    static let subtitleOff = "__aus__"
+    /// Dasselbe für „Qualität automatisch".
+    static let qualityAuto = "__auto__" 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
@@ -56,26 +80,26 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             if let player {
-                VideoSurface(player: player) { layer in pip.attach(to: layer) }
+                VideoSurface(player: player, onLayer: { layer in pip.attach(to: layer) }, fill: fillVideo)
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.18)) { optionsVisible.toggle() }
-                        if optionsVisible { optionsTick &+= 1 }
+
+                // Die Sprungfläche liegt **unter** der Bedienung. Tipper auf
+                // freie Stellen fallen durch und schalten die Bedienung um;
+                // Tipper auf einen Knopf fängt die Bedienung ab, solange sie
+                // sichtbar ist.
+                PlayerSeekOverlay(
+                    step: 10,
+                    onSingleTap: { toggleControls() },
+                    onSeek: { delta in
+                        seek(to: position + delta)
+                        scheduleHide()
                     }
-                    .overlay {
-                        if optionsVisible || voiceOverEnabled {
-                            controls.transition(.opacity)
-                        }
-                    }
-                    // Nur ausblenden, während etwas läuft. Im Stehen die
-                    // Bedienung wegzunehmen wäre die Zeit, in der man sie
-                    // am ehesten braucht.
-                    .task(id: optionsTick) {
-                        try? await Task.sleep(for: .seconds(4))
-                        guard !Task.isCancelled, !voiceOverEnabled, isPlaying else { return }
-                        withAnimation(.easeOut(duration: 0.25)) { optionsVisible = false }
-                    }
+                )
+                .ignoresSafeArea()
+
+                controls
             } else {
                 if let error {
                     errorView(error)
@@ -92,13 +116,25 @@ struct PlayerScreen: View {
                 }
                 .padding()
             }
+
             if let seconds = autoplaySeconds,
                let next = library.nextEpisode(after: currentEpisode, in: series.episodes) {
                 autoplayCard(seconds: seconds, next: next)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(NoriMotion.allowed(NoriMotion.ui, reduceMotion: reduceMotion), value: autoplaySeconds != nil)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        // Ein Menü der unteren Leiste liegt in einem eigenen Fenster des
+        // Systems. Schließt es, wird Noris Fenster wieder Schlüsselfenster —
+        // das ist das verlässliche Signal „Menü zu". Das Aufklappen meldet
+        // der Menüknopf selbst.
+        .onReceive(NotificationCenter.default.publisher(for: UIWindow.didBecomeKeyNotification)) { _ in
+            guard menuOpen else { return }
+            menuOpen = false
+            scheduleHide()
+        }
         .task { await startPlayback(resumeAt: currentResumeAt) }
         .onDisappear { teardown(saveCurrent: true) }
     }
@@ -138,13 +174,25 @@ struct PlayerScreen: View {
         .padding(24)
     }
 
-    /// Die eigene Bedienleiste. Alle Auswahlmöglichkeiten liegen darin —
-    /// Hoster, Sprache, Untertitel und Geschwindigkeit —, statt dass eine
+    /// Die Bedienung. Alle Auswahlmöglichkeiten liegen darin — Hoster,
+    /// Qualität, Sprache, Untertitel, Geschwindigkeit —, statt dass eine
     /// davon als eigener Knopf über dem Bild schwebt.
+    ///
+    /// Jeder Rückruf über `Task { @MainActor in … }`: `controls` ist eine
+    /// ausgelagerte View-Hilfe und damit **nicht** an den Main-Actor
+    /// gebunden, `var body` dagegen schon. Ein direkter Aufruf einer
+    /// @MainActor-Methode von hier aus ist ein Übersetzungsfehler — im
+    /// iOS-Build schon zweimal passiert.
     private var controls: some View {
         PlayerControls(
-            title: series.title,
-            subtitle: "Staffel \(season) · Folge \(currentEpisode.number)",
+            // Bei VoiceOver bleibt die Bedienung stehen: eine Leiste, die
+            // sich nach vier Sekunden selbst entfernt, ist nicht bedienbar,
+            // wenn man sie erst antippen und vorlesen lassen muss.
+            visible: controlsVisible || voiceOverEnabled,
+            seriesTitle: series.title,
+            episodeSubtitle: "Staffel \(season) · Folge \(currentEpisode.number)",
+            episodeNumber: episodeTitleText == nil ? nil : "Folge \(currentEpisode.number)",
+            episodeTitle: episodeTitleText ?? "Folge \(currentEpisode.number)",
             isPlaying: isPlaying,
             position: position,
             duration: duration,
@@ -152,16 +200,16 @@ struct PlayerScreen: View {
             speed: library.playbackSpeed,
             hosters: hosterChoices,
             activeHoster: source?.hoster,
+            qualities: qualityChoices,
+            activeQuality: activeQuality,
             languages: languageChoices,
             activeLanguage: source?.lang,
             subtitles: subtitleChoices,
             activeSubtitle: activeSubtitle,
+            hasNextEpisode: library.nextEpisode(after: currentEpisode, in: series.episodes) != nil,
+            isFilled: fillVideo,
+            isSwitching: isSwitching,
             pip: pip,
-            // Jeder Rückruf über `Task { @MainActor in … }`: `controls` ist
-            // eine ausgelagerte View-Hilfe und damit **nicht** an den
-            // Main-Actor gebunden, `var body` dagegen schon. Ein direkter
-            // Aufruf einer @MainActor-Methode von hier aus ist ein
-            // Übersetzungsfehler — im iOS-Build schon zweimal passiert.
             onClose: {
                 Task { @MainActor in
                     save(forceComplete: false)
@@ -169,12 +217,23 @@ struct PlayerScreen: View {
                 }
             },
             onPlayPause: { Task { @MainActor in togglePlayback() } },
-            onSkip: { seconds in Task { @MainActor in seek(to: position + seconds) } },
+            onSkip: { seconds in
+                Task { @MainActor in
+                    seek(to: position + seconds)
+                    scheduleHide()
+                }
+            },
+            onScrub: { target in Task { @MainActor in scrubSeek(to: target) } },
             onSeek: { target in Task { @MainActor in seek(to: target) } },
             onScrubbing: { active in
-                // Während gezogen wird nicht wegblenden.
                 Task { @MainActor in
-                    if active { optionsVisible = true } else { optionsTick &+= 1 }
+                    scrubbing = active
+                    if active {
+                        hideTask?.cancel()
+                        setControlsVisible(true)
+                    } else {
+                        scheduleHide()
+                    }
                 }
             },
             onSpeed: { value in
@@ -182,23 +241,55 @@ struct PlayerScreen: View {
                     library.playbackSpeed = value
                     player?.defaultRate = value
                     if isPlaying { player?.rate = value }
-                    optionsTick &+= 1
+                    scheduleHide()
                 }
             },
             onHoster: { hoster in
                 Task { @MainActor in
-                    optionsTick &+= 1
+                    scheduleHide()
                     await switchHoster(to: hoster)
                 }
             },
+            onQuality: { id in Task { @MainActor in selectQuality(id) } },
             onLanguage: { lang in
                 Task { @MainActor in
-                    optionsTick &+= 1
+                    scheduleHide()
                     await switchLanguage(to: lang)
                 }
             },
-            onSubtitle: { id in Task { @MainActor in selectSubtitle(id) } }
+            onSubtitle: { id in Task { @MainActor in selectSubtitle(id) } },
+            onNextEpisode: { Task { @MainActor in await playNextEpisode() } },
+            onToggleFill: {
+                Task { @MainActor in
+                    fillVideo.toggle()
+                    scheduleHide()
+                }
+            },
+            onMenuOpen: {
+                Task { @MainActor in
+                    menuOpen = true
+                    hideTask?.cancel()
+                }
+            }
         )
+    }
+
+    /// Der Titel der laufenden Folge, falls es einen gibt.
+    ///
+    /// „Episode 7" ist keiner, sondern die Nummer in Worten — beide Quellen
+    /// setzen das ein, wo sie nichts Besseres haben. Dann steht unten nur
+    /// „Folge 7", und die kleine Zeile darüber entfällt.
+    private var episodeTitleText: String? {
+        for candidate in [currentEpisode.germanTitle, currentEpisode.englishTitle] {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let placeholder = trimmed.range(
+                of: #"^\s*(episode|folge|ep\.?)\s*\d+\s*$"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
+            if !placeholder { return trimmed }
+        }
+        return nil
     }
 
     private var hosterChoices: [PlayerChoice] {
@@ -224,11 +315,12 @@ struct PlayerScreen: View {
             isPlaying = false
             // Beim Anhalten sichtbar bleiben, sonst verschwindet die
             // Bedienung genau dann, wenn man sie sucht.
-            optionsVisible = true
+            hideTask?.cancel()
+            setControlsVisible(true)
         } else {
             player.playImmediately(atRate: library.playbackSpeed)
             isPlaying = true
-            optionsTick &+= 1
+            scheduleHide()
         }
     }
 
@@ -239,6 +331,115 @@ struct PlayerScreen: View {
         position = target
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         savePosition(target, duration: duration)
+    }
+
+    /// Ein Sprung während des Ziehens.
+    ///
+    /// Grob und mit Toleranz: das Bild soll dem Finger folgen, und ein
+    /// bildgenauer Sprung viermal pro Sekunde bringt jeden Stream ins
+    /// Stocken. Solange einer läuft, wird der nächste Wunsch nur gemerkt und
+    /// danach nachgeholt — sonst stapeln sich beim Ziehen Dutzende Sprünge.
+    @MainActor
+    private func scrubSeek(to seconds: Double) {
+        guard let player, duration > 0 else { return }
+        let target = min(max(seconds, 0), duration)
+        position = target
+        guard !seeking else {
+            pendingSeek = target
+            return
+        }
+        seeking = true
+        let tolerance = CMTime(seconds: 0.6, preferredTimescale: 600)
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: tolerance,
+            toleranceAfter: tolerance
+        ) { _ in
+            Task { @MainActor in
+                seeking = false
+                if let next = pendingSeek {
+                    pendingSeek = nil
+                    scrubSeek(to: next)
+                }
+            }
+        }
+    }
+
+    // MARK: - Sichtbarkeit der Bedienung
+
+    /// Die einzige Stelle, an der sich die Sichtbarkeit ändert.
+    ///
+    /// Damit erscheint und verschwindet die Bedienung immer mit derselben
+    /// Kurve, egal ob Tipp, Knopfdruck oder Zeitablauf sie ausgelöst hat.
+    /// Hinein lebendig, hinaus ruhig — eine Feder auf dem Rückweg liest sich
+    /// wie ein Fehler.
+    @MainActor
+    private func setControlsVisible(_ visible: Bool) {
+        let curve = visible ? NoriMotion.controlsIn : NoriMotion.controlsOut
+        withAnimation(NoriMotion.allowed(curve, reduceMotion: reduceMotion)) {
+            controlsVisible = visible
+        }
+    }
+
+    @MainActor
+    private func toggleControls() {
+        // Ein Tipp aufs Bild heißt, dass kein Menü offen steht — ein offenes
+        // hätte ihn geschluckt. Also auch hier zurücksetzen, falls das
+        // Schließsignal einmal ausbleibt.
+        menuOpen = false
+        setControlsVisible(!controlsVisible)
+        if controlsVisible { scheduleHide() }
+    }
+
+    /// Die Bedienung nach vier Sekunden wieder wegnehmen.
+    ///
+    /// Nicht ausgeblendet wird, solange etwas angehalten ist, ein Menü offen
+    /// steht, der Regler gezogen wird oder VoiceOver läuft. Im Stehen die
+    /// Bedienung wegzunehmen wäre die Zeit, in der man sie am ehesten
+    /// braucht.
+    @MainActor
+    private func scheduleHide() {
+        hideTask?.cancel()
+        setControlsVisible(true)
+        guard isPlaying, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, isPlaying, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
+            setControlsVisible(false)
+        }
+    }
+
+    // MARK: - Qualität
+
+    /// Die Stufen, die der laufende Stream wirklich anbietet.
+    ///
+    /// Nur bei einer HLS-Master-Playlist mit mehreren Spuren. Liefert der
+    /// Hoster eine einzelne Datei — der Normalfall bei MP4 —, bleibt die
+    /// Liste leer und die Auswahl erscheint nicht.
+    private var qualityChoices: [PlayerChoice] {
+        guard !variants.isEmpty else { return [] }
+        return [PlayerChoice(id: Self.qualityAuto, label: "Automatisch")]
+            + variants.map { PlayerChoice(id: $0.label, label: $0.label) }
+    }
+
+    /// Eine Stufe erzwingen.
+    ///
+    /// Über `preferredPeakBitRate`, den einzigen dokumentierten Weg, AVPlayer
+    /// auf eine Spur festzulegen. Die Bitrate wird knapp über die der Stufe
+    /// gesetzt, damit sie selbst noch hineinpasst, die nächsthöhere aber
+    /// nicht mehr. `0` heißt „AVPlayer entscheidet".
+    @MainActor
+    private func selectQuality(_ id: String) {
+        guard let item = player?.currentItem else { return }
+        if id == Self.qualityAuto {
+            item.preferredPeakBitRate = 0
+        } else if let variant = variants.first(where: { $0.label == id }) {
+            item.preferredPeakBitRate = Double(variant.bandwidth) * 1.05
+        } else {
+            return
+        }
+        activeQuality = id
+        scheduleHide()
     }
 
     /// Untertitelspuren des Streams. Viele Hoster liefern gar keine — dann
@@ -265,35 +466,82 @@ struct PlayerScreen: View {
             item.select(option, in: group)
         }
         activeSubtitle = id
-        optionsTick &+= 1
+        scheduleHide()
     }
 
+    /// Die Karte für die nächste Folge.
+    ///
+    /// Der Countdown steht als Ring um den Startknopf, nicht als Zahl im
+    /// Fließtext: er zeigt die verbleibende Zeit, ohne dass man mitlesen
+    /// muss, und der Knopf darunter ist das, was man ohnehin ansteuert.
     private func autoplayCard(seconds: Int, next: Episode) -> some View {
         VStack {
             Spacer()
             HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("Nächste Folge")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.65))
-                    Text("Folge \(next.number) startet in \(seconds) s")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text(nextEpisodeTitle(next))
                         .font(.headline)
                         .foregroundStyle(.white)
+                        .lineLimit(1)
                 }
-                Spacer()
+
+                Spacer(minLength: 8)
+
                 Button("Abbrechen") { Task { @MainActor in cancelAutoplay() } }
-                    .buttonStyle(.bordered)
-                Button("Jetzt abspielen") {
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .frame(height: 40)
+                    .noriGlass(Capsule(), off: Color.white.opacity(0.18))
+                    .buttonStyle(NoriPressStyle())
+
+                Button {
                     autoplayTask?.cancel()
                     autoplaySeconds = nil
                     Task { await playNextEpisode() }
+                } label: {
+                    ZStack {
+                        // Der Ring läuft von voll auf leer. Die Feder je
+                        // Sekunde statt einer linearen Bewegung: der Wert
+                        // kommt sekundenweise, ein linearer Übergang wirkt
+                        // dabei ruckartig.
+                        Circle()
+                            .stroke(.white.opacity(0.22), lineWidth: 3)
+                        Circle()
+                            .trim(from: 0, to: min(max(Double(seconds) / 8, 0), 1))
+                            .stroke(NoriTheme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .noriAnimation(NoriMotion.content, value: seconds)
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 46, height: 46)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoriPressStyle())
+                .accessibilityLabel("Nächste Folge jetzt abspielen")
             }
-            .padding(16)
-            .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 18))
-            .padding()
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: NoriRadius.overlay, style: .continuous))
+            .noriGlass(
+                RoundedRectangle(cornerRadius: NoriRadius.overlay, style: .continuous),
+                off: Color.clear
+            )
+            .padding(.horizontal, NoriSpacing.screen)
+            .padding(.bottom, 8)
         }
+        .accessibilityAddTraits(.isModal)
+    }
+
+    private func nextEpisodeTitle(_ next: Episode) -> String {
+        let title = next.germanTitle.isEmpty ? next.englishTitle : next.germanTitle
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Folge \(next.number)" }
+        return "Folge \(next.number) · \(trimmed)"
     }
 
     @MainActor
@@ -307,6 +555,8 @@ struct PlayerScreen: View {
         let generation = playbackGeneration
         error = nil
         source = nil
+        variants = []
+        activeQuality = Self.qualityAuto
         watchInfo = nil
         duration = 0
         isSwitching = true
@@ -410,7 +660,20 @@ struct PlayerScreen: View {
                 position = pos
                 let dur = item.duration.seconds
                 if dur.isFinite { duration = dur }
-                isPlaying = av.timeControlStatus == .playing
+                // `.playing` allein wäre falsch: beim Puffern steht der
+                // Stand auf `.waitingToPlayAtSpecifiedRate`, und das viermal
+                // pro Sekunde. Das Symbol sprang dann zwischen Pause und
+                // Abspielen hin und her, und die Bedienung blendete beim
+                // Nachladen nicht mehr weg, weil sie sich für angehalten
+                // hielt. Gemeint ist „läuft, oder will laufen".
+                let running = av.timeControlStatus != .paused
+                if running != isPlaying {
+                    isPlaying = running
+                    // Fängt die Wiedergabe erst nach dem Puffern an, muss
+                    // das Wegblenden von hier aus angestoßen werden — beim
+                    // Start lief es ins Leere.
+                    if running { scheduleHide() }
+                }
                 if let range = item.loadedTimeRanges.last?.timeRangeValue {
                     let end = (range.start + range.duration).seconds
                     if end.isFinite { buffered = end }
@@ -440,6 +703,17 @@ struct PlayerScreen: View {
             buffered = 0
             await loadSubtitles(for: item)
             currentResumeAt = 0
+            // Nach dem Start die Bedienung zeigen und den Wegblendezähler
+            // anwerfen — sonst steht sie beim Hosterwechsel stumm da oder
+            // fehlt beim ersten Bild ganz.
+            scheduleHide()
+            // Die Qualitätsstufen erst danach: sie brauchen einen zweiten
+            // Abruf der Playlist, und der darf den Start nicht aufhalten.
+            Task { @MainActor in
+                let found = await HLSPlaylist.variants(of: url, referer: play.referer)
+                guard generation == playbackGeneration, !Task.isCancelled else { return }
+                variants = found
+            }
             statusTask = Task { @MainActor in
                 // AVPlayerItem meldet .failed asynchron, nachdem der erste
                 // Datenabruf fehlgeschlagen ist.

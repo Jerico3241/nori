@@ -219,13 +219,25 @@ private struct NoriZoomDest: ViewModifier {
     }
 }
 
+/// Der Druck auf eine Kachel oder einen Knopf.
+///
+/// Ein einziger Stil für die ganze App: eine Kachel, die anders drückt als
+/// die daneben, fällt auf, ohne dass sich benennen lässt, woran es liegt.
+/// Zusätzlich zur Verkleinerung eine Spur Deckkraft — auf einem dunklen
+/// Grund ist die Größenänderung allein kaum zu sehen.
 struct NoriPressStyle: ButtonStyle {
     var enabled: Bool = true
+    /// Wie stark. Große Flächen dürfen weniger schrumpfen als kleine,
+    /// sonst wirkt die Bewegung übertrieben.
+    var scale: CGFloat = 0.96
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(enabled && configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+        let active = enabled && !reduceMotion && configuration.isPressed
+        return configuration.label
+            .scaleEffect(active ? scale : 1)
+            .opacity(enabled && configuration.isPressed ? 0.86 : 1)
+            .animation(NoriMotion.allowed(NoriMotion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 

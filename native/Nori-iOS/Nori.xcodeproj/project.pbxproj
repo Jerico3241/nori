@@ -26,6 +26,14 @@
 		AB30 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AP02 /* SwiftSoup */; };
 		AB40 /* NoriDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC40 /* NoriDesign.swift */; };
 		AB41 /* NoriGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC41 /* NoriGlass.swift */; };
+		AB50 /* PlayerSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC50 /* PlayerSurface.swift */; };
+		AB51 /* PlayerTopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC51 /* PlayerTopBar.swift */; };
+		AB52 /* PlayerCenterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC52 /* PlayerCenterControls.swift */; };
+		AB53 /* PlayerBottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC53 /* PlayerBottomBar.swift */; };
+		AB54 /* PlayerProgressSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC54 /* PlayerProgressSlider.swift */; };
+		AB55 /* PlayerMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC55 /* PlayerMenuButton.swift */; };
+		AB56 /* PlayerSeekOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC56 /* PlayerSeekOverlay.swift */; };
+		AB57 /* PlayerQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC57 /* PlayerQuality.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +57,14 @@
 		AC21 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AC40 /* NoriDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriDesign.swift; sourceTree = "<group>"; };
 		AC41 /* NoriGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriGlass.swift; sourceTree = "<group>"; };
+		AC50 /* PlayerSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSurface.swift; sourceTree = "<group>"; };
+		AC51 /* PlayerTopBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerTopBar.swift; sourceTree = "<group>"; };
+		AC52 /* PlayerCenterControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerCenterControls.swift; sourceTree = "<group>"; };
+		AC53 /* PlayerBottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerBottomBar.swift; sourceTree = "<group>"; };
+		AC54 /* PlayerProgressSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerProgressSlider.swift; sourceTree = "<group>"; };
+		AC55 /* PlayerMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenuButton.swift; sourceTree = "<group>"; };
+		AC56 /* PlayerSeekOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSeekOverlay.swift; sourceTree = "<group>"; };
+		AC57 /* PlayerQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerQuality.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +107,14 @@
 				AC14 /* CalendarView.swift */,
 				AC40 /* NoriDesign.swift */,
 				AC41 /* NoriGlass.swift */,
+				AC50 /* PlayerSurface.swift */,
+				AC51 /* PlayerTopBar.swift */,
+				AC52 /* PlayerCenterControls.swift */,
+				AC53 /* PlayerBottomBar.swift */,
+				AC54 /* PlayerProgressSlider.swift */,
+				AC55 /* PlayerMenuButton.swift */,
+				AC56 /* PlayerSeekOverlay.swift */,
+				AC57 /* PlayerQuality.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -198,6 +222,14 @@
 				AB14 /* CalendarView.swift in Sources */,
 				AB40 /* NoriDesign.swift in Sources */,
 				AB41 /* NoriGlass.swift in Sources */,
+				AB50 /* PlayerSurface.swift in Sources */,
+				AB51 /* PlayerTopBar.swift in Sources */,
+				AB52 /* PlayerCenterControls.swift in Sources */,
+				AB53 /* PlayerBottomBar.swift in Sources */,
+				AB54 /* PlayerProgressSlider.swift in Sources */,
+				AB55 /* PlayerMenuButton.swift in Sources */,
+				AB56 /* PlayerSeekOverlay.swift in Sources */,
+				AB57 /* PlayerQuality.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
