@@ -458,7 +458,12 @@ def check_main_actor_calls(folder: Path, label: str) -> None:
     `Task { @MainActor in methode() }`.
 
     Erkannt wird bewusst grob: ein Aufruf einer bekannten `@MainActor`-Methode
-    in einer View-Hilfe, ohne `await` und ohne `Task {` auf derselben Zeile.
+    in einer View-Hilfe, außerhalb jedes `Task {`-Blocks und ohne `await`.
+
+    Der Block wird über die Klammertiefe verfolgt, nicht über die Zeile. Ein
+    `Task { @MainActor in` über mehrere Zeilen — die übliche Bauform in den
+    Rückrufen des Players — galt vorher als Fehler, obwohl genau das die
+    empfohlene Lösung ist.
     """
     for path in swift_files(folder):
         lines = path.read_text().splitlines()
@@ -476,22 +481,44 @@ def check_main_actor_calls(folder: Path, label: str) -> None:
         # (außer `var body`) und der nächsten Deklaration auf gleicher Ebene.
         declaration = re.compile(r"^\s{4}(?:@\w+\s+)*(?:private\s+)?(var|func)\s+(\w+)")
         current: str | None = None
+        # Klammertiefe, ab der wir uns in einem `Task { … }` befinden. Leer
+        # heißt: außerhalb.
+        task_depths: list[int] = []
+        depth = 0
         for index, line in enumerate(lines):
             match = declaration.match(line)
             if match:
                 is_view_helper = "some View" in line and match.group(2) != "body"
                 current = match.group(2) if is_view_helper else None
+                task_depths = []
+                depth = 0
                 continue
-            if current is None or "await" in line or "Task {" in line or "Task{" in line:
-                continue
-            for name in isolated:
-                if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
-                    add(
-                        "ERROR",
-                        f"{label}/{path.name}:{index + 1}",
-                        f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
-                        f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
-                    )
+
+            opens_task = "Task {" in line or "Task{" in line
+            in_task = bool(task_depths)
+            if current is not None and not in_task and not opens_task and "await" not in line:
+                for name in isolated:
+                    if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
+                        add(
+                            "ERROR",
+                            f"{label}/{path.name}:{index + 1}",
+                            f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
+                            f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
+                        )
+
+            # Klammern der Zeile verrechnen; ein `Task {` merkt sich die Tiefe,
+            # auf der sein Block endet.
+            for char in line:
+                if char == "{":
+                    depth += 1
+                    if opens_task and not task_depths:
+                        task_depths.append(depth)
+                        opens_task = False
+                elif char == "}":
+                    if task_depths and depth == task_depths[-1]:
+                        task_depths.pop()
+                    depth -= 1
+            continue
 
 
 def png_info(path: Path) -> tuple[int, int, bool] | None:
