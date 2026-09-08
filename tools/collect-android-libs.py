@@ -124,6 +124,40 @@ def index_libraries(arch: str) -> dict[str, Path]:
     return found
 
 
+def strip_candidates() -> list[Path]:
+    """Wo `llvm-strip` liegen kann.
+
+    Nicht im Sysroot: das enthält `usr/lib` und `usr/include`, nicht die
+    Werkzeuge. Die liegen im NDK unter
+    `toolchains/llvm/prebuilt/<host>/bin/`. Gesucht wird deshalb von den
+    bekannten Wurzeln **aufwärts** — vom Sysroot aus ist das NDK ein paar
+    Ebenen höher — und zusätzlich an den üblichen Installationsorten.
+    """
+    seen: list[Path] = []
+
+    def add(path: Path) -> None:
+        if path.is_dir() and path not in seen:
+            seen.append(path)
+
+    for root in sdk_roots():
+        add(root)
+        # Vom Sysroot aus aufwaerts: irgendwo darueber liegt das NDK.
+        for parent in list(root.parents)[:6]:
+            candidate = parent / "toolchains" / "llvm" / "prebuilt"
+            if candidate.is_dir():
+                add(candidate)
+
+    # Die ueblichen Orte, falls die Suche oben nichts hergibt.
+    for pattern in (
+        Path.home() / "Library/Android/sdk/ndk",
+        Path("/opt/homebrew/share/android-commandlinetools/ndk"),
+        Path("/usr/local/share/android-commandlinetools/ndk"),
+    ):
+        add(pattern)
+
+    return seen
+
+
 def find_strip() -> Path | None:
     """`llvm-strip` aus dem NDK.
 
@@ -133,13 +167,21 @@ def find_strip() -> Path | None:
     allein die Swift-Laufzeit und `libNoriAndroid.so` ihre vollständigen
     Debugsymbole in die APK: aus rund 60 MB werden knapp 250.
     """
-    for root in sdk_roots():
+    roots = strip_candidates()
+    for root in roots:
         for folder, _, files in os.walk(root, followlinks=True):
-            if not folder.endswith(("/bin", "\\bin")):
+            if not folder.endswith("bin"):
                 continue
-            for name in ("llvm-strip", "llvm-strip.exe"):
-                if name in files:
-                    return Path(folder) / name
+            if "llvm-strip" in files:
+                return Path(folder) / "llvm-strip"
+
+    found = shutil.which("llvm-strip")
+    if found:
+        return Path(found)
+
+    print("Kein llvm-strip gefunden. Durchsucht wurde:")
+    for root in roots:
+        print(f"  {root}")
     return None
 
 
