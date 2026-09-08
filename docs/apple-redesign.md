@@ -24,9 +24,9 @@ Dateien trägt einen Herkunftshinweis im Kopf:
 
 | Nori | Shirox-Vorlage |
 | --- | --- |
-| `NoriGlass.swift` (`glassChrome`, `softScrollEdges`) | `Views/Shared/View+GlassChrome.swift` |
+| `NoriGlass.swift` (`noriGlass`, `noriSoftScrollEdges`) | `Views/Shared/View+GlassChrome.swift` |
 | `PlayerMenuButton.swift` (UIKit-`UIMenu` statt SwiftUI-`Menu`) | `Views/Player/PlayerMenuButton.swift` |
-| `PlayerSeekOverlay.swift` (Vollflächen-Erkenner, `SingleTouchTapGR`) | `Views/Player/PlayerDoubleTapSeek.swift` |
+| `PlayerSeekOverlay.swift` (Vollflächen-Erkenner, `SingleTouchTap`) | `Views/Player/PlayerDoubleTapSeek.swift` |
 
 **Nachgebaut (Prinzip übernommen, für Nori neu geschrieben)** — Bedienleisten,
 Fortschrittsregler, Hero, Karten, Bewegungskurven. Diese Dateien enthalten
@@ -97,14 +97,20 @@ bzw. eine reine Überblendung — die Funktion ändert sich dabei nicht.
 
 ## Liquid Glass
 
-`glassChrome(_:enabled:tint:off:)` ist die einzige Stelle, an der
+`noriGlass(_:enabled:tint:off:)` ist die einzige Stelle, an der
 `glassEffect` vorkommt. Auf iOS/macOS 26+ echtes Liquid Glass mit
 `.interactive()`, darunter der klassische Rückfall (Material bzw. getönte
 Fläche mit Rand). Eingesetzt wird es gezielt:
 
-- Player: obere Leiste, Mitteltasten, rechte Bedienungsgruppe, Reglerspur
-- Startseite: Bereichspillen, „Alle ansehen"-Knöpfe
-- Detailseite: Merken-/Menüzeile
+- Player: Schließknopf, AirPlay/PiP-Gruppe, Mitteltasten, Optionsgruppe,
+  Reglerspur, Fehleransicht
+- Startseite: Bereichspillen, Merken-Knopf im Kopfbereich
+- Detailseite: Merken-Knopf und Überlaufmenü
+- macOS: Karussellpfeile und Merken-Knopf
+
+Abschaltbar über *Einstellungen › Darstellung › Liquid Glass*. Ausgeschaltet
+nimmt Nori denselben Weg wie ein System vor 26 — damit ist der Rückfall auch
+auf aktuellen Geräten prüfbar.
 
 **Nicht** an Postern, Karten oder Reihen — dort steht das Artwork im
 Mittelpunkt.
