@@ -36,6 +36,11 @@ SHARED_IDENTICAL = [
     # Optional-Ketten, an denen der Typechecker abbrach, und fehlende `try`.
     # Die macOS-Fassung hatte dieselbe Logik bereits aufgelöst.
     "HTML.swift",
+    # Auswertung der HLS-Master-Playlist. Nur der iOS-Player benutzt sie
+    # bisher — die Mac-Fassung spielt mit den Systemreglern —, aber sie
+    # gehört zur Stream-Auswertung und liegt deshalb im gemeinsamen Kern,
+    # wo `swift test` sie erreicht.
+    "HLSPlaylist.swift",
 ]
 
 # Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag

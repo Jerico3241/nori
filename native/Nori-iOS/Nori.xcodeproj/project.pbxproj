@@ -33,7 +33,7 @@
 		AB54 /* PlayerProgressSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC54 /* PlayerProgressSlider.swift */; };
 		AB55 /* PlayerMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC55 /* PlayerMenuButton.swift */; };
 		AB56 /* PlayerSeekOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC56 /* PlayerSeekOverlay.swift */; };
-		AB57 /* PlayerQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC57 /* PlayerQuality.swift */; };
+		AB57 /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC57 /* HLSPlaylist.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -64,7 +64,7 @@
 		AC54 /* PlayerProgressSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerProgressSlider.swift; sourceTree = "<group>"; };
 		AC55 /* PlayerMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenuButton.swift; sourceTree = "<group>"; };
 		AC56 /* PlayerSeekOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSeekOverlay.swift; sourceTree = "<group>"; };
-		AC57 /* PlayerQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerQuality.swift; sourceTree = "<group>"; };
+		AC57 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,7 +114,7 @@
 				AC54 /* PlayerProgressSlider.swift */,
 				AC55 /* PlayerMenuButton.swift */,
 				AC56 /* PlayerSeekOverlay.swift */,
-				AC57 /* PlayerQuality.swift */,
+				AC57 /* HLSPlaylist.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -229,7 +229,7 @@
 				AB54 /* PlayerProgressSlider.swift in Sources */,
 				AB55 /* PlayerMenuButton.swift in Sources */,
 				AB56 /* PlayerSeekOverlay.swift in Sources */,
-				AB57 /* PlayerQuality.swift in Sources */,
+				AB57 /* HLSPlaylist.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -170,9 +170,39 @@ struct NoriSeriesLink<Label: View>: View {
         } label: {
             label()
                 .contentShape(Rectangle())
+                // Zeigerrückmeldung auf dem iPad und mit Magic Keyboard: die
+                // Kachel hebt sich unter dem Zeiger an. Auf dem iPhone ohne
+                // Zeiger passiert nichts — der Modifikator kostet dort nichts.
+                .hoverEffect(.lift)
                 .modifier(NoriZoomSource(id: slug, namespace: noriZoom, enabled: !reduceMotion))
         }
-        .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress && !reduceMotion))
+        .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress))
+        .contextMenu {
+            NoriFavoriteButton(slug: slug, title: titleHint)
+        }
+    }
+}
+
+/// Merken oder vergessen als Menüeintrag.
+///
+/// Eigene Ansicht, damit das Kontextmenü nicht die ganze Kachel an den Store
+/// bindet: `library.isFavorite` in der Kachel selbst zu lesen ließe jede
+/// Kachel bei jeder Änderung der Merkliste neu zeichnen.
+private struct NoriFavoriteButton: View {
+    @Environment(LibraryStore.self) private var library
+    let slug: String
+    let title: String
+
+    var body: some View {
+        let marked = library.isFavorite(slug)
+        Button {
+            library.toggleFavorite(slug, title: title)
+        } label: {
+            Label(
+                marked ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen",
+                systemImage: marked ? "bookmark.slash" : "bookmark"
+            )
+        }
     }
 }
 

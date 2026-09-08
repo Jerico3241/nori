@@ -26,6 +26,7 @@
 		AB30 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AP02 /* SwiftSoup */; };
 		AB40 /* NoriDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC40 /* NoriDesign.swift */; };
 		AB41 /* NoriGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC41 /* NoriGlass.swift */; };
+		AB60 /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC60 /* HLSPlaylist.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +50,7 @@
 		AC21 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AC40 /* NoriDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriDesign.swift; sourceTree = "<group>"; };
 		AC41 /* NoriGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriGlass.swift; sourceTree = "<group>"; };
+		AC60 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,6 +93,7 @@
 				AC15 /* CategoriesView.swift */,
 				AC40 /* NoriDesign.swift */,
 				AC41 /* NoriGlass.swift */,
+				AC60 /* HLSPlaylist.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -198,6 +201,7 @@
 				AB15 /* CategoriesView.swift in Sources */,
 				AB40 /* NoriDesign.swift in Sources */,
 				AB41 /* NoriGlass.swift in Sources */,
+				AB60 /* HLSPlaylist.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
