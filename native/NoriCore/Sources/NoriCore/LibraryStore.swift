@@ -171,8 +171,9 @@ final class LibraryStore {
     /// Schleife unten und bekam damit die Beschriftung „Weiter" — obwohl es
     /// nichts fortzusetzen gab. Auch die Fortschrittsangabe hing daran und
     /// stand mit „0 % gesehen" auf jeder Detailseite.
-    func hasProgress(slug: String, season: String) -> Bool {
-        progress.values.contains {
+    func hasProgress(slug: String, season: String, source: CatalogProvider? = nil) -> Bool {
+        let provider = source ?? self.provider
+        return progress.values.contains {
             $0.slug == slug
                 && $0.season == season
                 && ($0.provider ?? providerFromPath($0.episodePath)) == provider
@@ -180,8 +181,21 @@ final class LibraryStore {
         }
     }
 
-    func nextPlay(slug: String, season: String, episodes: [Episode]) -> (episode: Int, resumeAt: Double, kind: String) {
+    /// Welche Folge beim Antippen laufen soll.
+    ///
+    /// `source` gibt die Quelle vor, statt die Vorgabequelle zu nehmen. Ohne
+    /// das griff die Suche daneben, sobald ein Titel der *anderen* Seite
+    /// angetippt wurde — seit die Bibliothek beide Quellen zusammenführt, ist
+    /// das der Normalfall und nicht die Ausnahme. Ohne Angabe bleibt es beim
+    /// alten Verhalten, damit bestehende Aufrufe unverändert weiterlaufen.
+    func nextPlay(
+        slug: String,
+        season: String,
+        episodes: [Episode],
+        source: CatalogProvider? = nil
+    ) -> (episode: Int, resumeAt: Double, kind: String) {
         guard !episodes.isEmpty else { return (1, 0, "play") }
+        let provider = source ?? self.provider
         let relevant = progress.values.filter { $0.slug == slug && ($0.provider ?? providerFromPath($0.episodePath)) == provider }
         if let latest = relevant.max(by: { $0.updatedAt < $1.updatedAt }), latest.season == season, !isEpisodeComplete(latest), episodes.contains(where: { $0.number == latest.episode }) {
             let at = resumeEnabled ? resumePosition(latest) : 0

@@ -456,6 +456,17 @@ actor CoverIndex {
     /// Detailseite jeder Serie geladen werden müsste.
     private var overviews: [String: String] = [:]
     private var ratings: [String: Double] = [:]
+    /// Das Schriftzug-Logo der Serie, freigestellt auf durchsichtigem Grund.
+    ///
+    /// Anders als Poster, Backdrop und Beschreibung fällt es bei der
+    /// Cover-Suche **nicht** nebenbei ab: `/search/tv` liefert es nicht mit,
+    /// es braucht einen eigenen Abruf auf `/tv/{id}/images`. Deshalb wird es
+    /// nur dort geholt, wo es auch gezeigt wird — im Kopfbereich und auf den
+    /// Weiterschauen-Kacheln.
+    private var logos: [String: URL] = [:]
+    /// Fehlschläge nur im Arbeitsspeicher: TMDB wächst, ein Neustart darf es
+    /// erneut versuchen. Dieselbe Überlegung wie bei `tvIDMissed`.
+    private var logoMissed: Set<String> = []
     /// Die TMDB-Kennung des Treffers. Sie fällt bei der Cover-Suche ohnehin an
     /// und ist der Einstieg zu allem, was unterhalb der Serie liegt — die
     /// Folgenbilder und -beschreibungen holt `EpisodeIndex` darüber.
@@ -520,6 +531,7 @@ actor CoverIndex {
                 backdrops = (bag.backdrops ?? [:]).compactMapValues(URL.init(string:))
                 overviews = bag.overviews ?? [:]
                 ratings = bag.ratings ?? [:]
+                logos = (bag.logos ?? [:]).compactMapValues(URL.init(string:))
             }
             // Ohne Versionsprüfung: die Kennungen sind neu, ältere Dateien
             // haben sie schlicht nicht. Eine Erhöhung von `storeVersion` würde
@@ -607,6 +619,89 @@ actor CoverIndex {
 
     func backdrop(for slug: String) -> URL? { backdrops[slug] }
 
+    func logo(for slug: String) -> URL? { logos[slug] }
+
+    /// Das Logo, notfalls nachgeschlagen.
+    ///
+    /// Zwei Abrufe im schlechtesten Fall: erst die TMDB-Kennung (die meist
+    /// schon von der Cover-Suche vorliegt), dann `/tv/{id}/images`. Deshalb
+    /// nur aufrufen, wo das Logo auch sichtbar wird.
+    func logoLoading(
+        slug: String,
+        title: String,
+        alternates: [String] = [],
+        kind: CatalogProvider
+    ) async -> URL? {
+        if let known = logos[slug] { return known }
+        if logoMissed.contains(slug) { return nil }
+        guard let key = key else { return nil }
+        guard let id = await tvIDLoading(slug: slug, title: title, alternates: alternates, kind: kind) else {
+            logoMissed.insert(slug)
+            return nil
+        }
+
+        // `include_image_language` ist nicht optional: ohne den Parameter
+        // filtert TMDB nach der Sprache der Anfrage und liefert für die
+        // meisten Serien eine leere Liste zurück. `null` steht für Logos ohne
+        // Sprachkennzeichnung — bei Anime oft die einzigen.
+        guard var comps = URLComponents(string: "https://api.themoviedb.org/3/tv/\(id)/images") else { return nil }
+        comps.queryItems = [
+            URLQueryItem(name: "api_key", value: key),
+            URLQueryItem(name: "include_image_language", value: "de,en,null"),
+        ]
+        guard let url = comps.url else { return nil }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let rows = json["logos"] as? [[String: Any]],
+                !rows.isEmpty
+            else {
+                logoMissed.insert(slug)
+                return nil
+            }
+            guard let path = Self.bestLogoPath(rows) else {
+                logoMissed.insert(slug)
+                return nil
+            }
+            guard let logo = URL(string: "https://image.tmdb.org/t/p/w500\(path)") else { return nil }
+            logos[slug] = logo
+            scheduleSave()
+            return logo
+        } catch {
+            return nil
+        }
+    }
+
+    /// Das brauchbarste Logo aus der TMDB-Antwort.
+    ///
+    /// Deutsch vor Englisch vor sprachlos, und **PNG vor SVG**: SVG kann
+    /// `AsyncImage` nicht darstellen, ein SVG-Logo bliebe also unsichtbar.
+    /// Bei gleicher Sprache entscheidet die Bewertung.
+    private static func bestLogoPath(_ rows: [[String: Any]]) -> String? {
+        func rank(_ row: [String: Any]) -> Int {
+            switch row["iso_639_1"] as? String {
+            case "de": return 0
+            case "en": return 1
+            default: return 2
+            }
+        }
+        let usable = rows.filter { row in
+            guard let path = row["file_path"] as? String else { return false }
+            return !path.lowercased().hasSuffix(".svg")
+        }
+        guard !usable.isEmpty else { return nil }
+        return usable
+            .sorted {
+                if rank($0) != rank($1) { return rank($0) < rank($1) }
+                let a = $0["vote_average"] as? Double ?? 0
+                let b = $1["vote_average"] as? Double ?? 0
+                return a > b
+            }
+            .first?["file_path"] as? String
+    }
+
     /// Alles, was die Startseite über einen Titel zeigen kann, in einem Zug —
     /// spart pro Kachel mehrere Sprünge auf den Actor.
     func details(for slug: String) -> CoverDetails {
@@ -617,7 +712,8 @@ actor CoverIndex {
             // Leerer Eintrag heißt „nachgeschlagen, TMDB hat keine
             // Beschreibung" — dann nicht bei jedem Aufruf erneut suchen.
             overview: (text?.isEmpty ?? true) ? nil : text,
-            rating: ratings[slug]
+            rating: ratings[slug],
+            logo: logos[slug]
         )
     }
 
@@ -680,6 +776,8 @@ actor CoverIndex {
         var overviews: [String: String]?
         var ratings: [String: Double]?
         var tvIDs: [String: Int]?
+        // Ab Cover-Index v3. Optional, damit ältere covers.json weiter lesbar bleibt.
+        var logos: [String: String]?
         var version: Int?
     }
 
@@ -713,6 +811,7 @@ actor CoverIndex {
             overviews: overviews,
             ratings: ratings,
             tvIDs: tvIDs,
+            logos: logos.mapValues(\.absoluteString),
             version: Self.storeVersion
         )
         guard let data = try? JSONEncoder().encode(bag) else { return }
@@ -982,6 +1081,9 @@ struct CoverDetails: Hashable {
     var backdrop: URL?
     var overview: String?
     var rating: Double?
+    /// Freigestellter Schriftzug. Nur gefüllt, wenn ihn jemand angefordert
+    /// hat — er kostet einen eigenen Abruf, siehe `logoLoading`.
+    var logo: URL? = nil
 
     /// Bewertung als Fünf-Sterne-Skala; TMDB liefert 0–10.
     var stars: Double? { rating.map { $0 / 2 } }

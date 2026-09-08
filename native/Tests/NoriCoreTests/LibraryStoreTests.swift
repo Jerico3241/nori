@@ -27,6 +27,25 @@ final class LibraryStoreTests: XCTestCase {
         try Data(json.utf8).write(to: directory.appendingPathComponent("library.json"))
     }
 
+    func testNextPlayUsesExplicitSourceWithoutChangingDefault() {
+        let store = LibraryStore(directory: directory)
+        store.provider = .serienstream
+        let path = "/anime/stream/demo/staffel-1/episode-2"
+        store.upsert(WatchProgress(slug: "demo", title: "Demo", season: "1", episode: 2,
+            episodePath: path, germanTitle: "Folge", englishTitle: "Episode",
+            positionSec: 120, durationSec: 1400, updatedAt: 1, lang: "DE",
+            completed: false, provider: .aniworld))
+        let episodes = [1, 2].map { Episode(number: $0, germanTitle: "Folge", englishTitle: "",
+            path: "/anime/stream/demo/staffel-1/episode-\($0)", hosters: [], languages: []) }
+        let result = store.nextPlay(slug: "demo", season: "1", episodes: episodes, source: .aniworld)
+        XCTAssertTrue(store.hasProgress(slug: "demo", season: "1", source: .aniworld))
+        XCTAssertFalse(store.hasProgress(slug: "demo", season: "1"))
+        XCTAssertEqual(result.episode, 2)
+        XCTAssertEqual(result.resumeAt, 120)
+        XCTAssertEqual(store.provider, .serienstream)
+        XCTAssertEqual(store.nextPlay(slug: "demo", season: "1", episodes: episodes).resumeAt, 0)
+    }
+
     // MARK: - Leerer und kaputter Stand
 
     func testEmptyDirectoryGivesDefaults() {

@@ -11,14 +11,6 @@ struct SettingsView: View {
         @Bindable var library = library
         NoriScreen {
             List {
-                Section("Quelle") {
-                    NavigationLink {
-                        QuelleSettingsView()
-                    } label: {
-                        LabeledContent("Aktive Quelle", value: library.provider.label)
-                    }
-                    .listRowBackground(NoriTheme.surface)
-                }
                 Section("Wiedergabe") {
                     NavigationLink("Sprache, Hoster, Resume") {
                         PlaybackSettingsView()
@@ -68,31 +60,6 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
         }
         .navigationTitle("Einstellungen")
-    }
-}
-
-struct QuelleSettingsView: View {
-    @Environment(LibraryStore.self) private var library
-
-    var body: some View {
-        @Bindable var library = library
-        NoriScreen {
-            Form {
-                Section {
-                    Picker("Quelle", selection: $library.provider) {
-                        ForEach(CatalogProvider.allCases) { item in
-                            Text(item.label).tag(item)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                } footer: {
-                    Text("AniWorld zeigt Anime, Serienstream zeigt Serien. Katalog, Kalender und Player folgen der Auswahl.")
-                }
-            }
-            .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("Quelle")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

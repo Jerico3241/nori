@@ -1,25 +1,75 @@
 import SwiftUI
 
-/// Umschalter zwischen Anime und Serien.
+/// Umschalter für den Bereich der Bibliothek.
 ///
-/// War ein handgebauter Schieber: ein Stapel aus Kapsel, Daumen und zwei
-/// Textfeldern, deren Breiten von Hand aufeinander abgestimmt waren. Auf der
-/// Startseite stand der Daumen dann nicht mehr unter seiner Beschriftung.
-/// Solche Geometrie zahlt sich nicht aus — das Systembauteil kann dasselbe,
-/// bringt Dynamic Type, VoiceOver und die richtige Darstellung in jeder
-/// Navigationsleiste von sich aus mit.
-struct KindSwitch: View {
-    @Binding var provider: CatalogProvider
+/// Hieß einmal `KindSwitch` und schaltete zwischen zwei Quellen um. Seit es
+/// `LibraryScope` gibt, wählt er einen **Ausschnitt**: „Alle", „Anime",
+/// „Serien" oder „K-Drama". Die Quelle entscheidet weiter, wohin ein
+/// einzelner Titel führt — nur nicht mehr, was in den Listen steht.
+///
+/// ## Warum ein Menü und kein segmentierter Regler
+///
+/// Auf dem Mac sitzt derselbe Umschalter als segmentierter `Picker` in der
+/// Seitenleiste, wo Platz ist. In einer iPhone-Navigationsleiste sind vier
+/// Segmente zu viel: „K-Drama" allein braucht mehr Breite als die beiden
+/// alten Segmente zusammen, und mit Dynamic Type wird daraus Gedränge oder
+/// abgeschnittener Text. Ein Menü zeigt stattdessen den aktuellen Bereich und
+/// bleibt gleich breit, egal wie viele Bereiche dazukommen.
+struct ScopeSwitch: View {
+    @Binding var scope: LibraryScope
 
     var body: some View {
-        Picker("Quelle", selection: $provider) {
-            ForEach(CatalogProvider.allCases) { item in
-                Text(item.kind).tag(item)
+        Menu {
+            Picker("Bereich", selection: $scope) {
+                ForEach(LibraryScope.allCases) { item in
+                    Text(item.label).tag(item)
+                }
             }
+            .pickerStyle(.inline)
+        } label: {
+            Label(scope.label, systemImage: "line.3.horizontal.decrease.circle")
+                .labelStyle(.titleAndIcon)
         }
-        .pickerStyle(.segmented)
-        .frame(width: 148)
-        .accessibilityLabel("Quelle")
+        .accessibilityLabel("Bereich: \(scope.label)")
+    }
+}
+
+/// Die Bereiche als Pillenreihe über dem Inhalt.
+///
+/// Auf der Startseite steht der Umschalter direkt im Inhalt statt in der
+/// Navigationsleiste: dort ist er sichtbar, ohne dass man ihn suchen muss,
+/// und er hat Platz für vier Beschriftungen. In den übrigen Tabs bleibt es
+/// beim Menü in der Leiste — dort wäre eine Pillenreihe über jeder Ansicht
+/// nur Wiederholung.
+struct ScopeChips: View {
+    @Binding var scope: LibraryScope
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(LibraryScope.allCases) { item in
+                    let active = item == scope
+                    Button {
+                        scope = item
+                    } label: {
+                        Text(item.label)
+                            .font(.subheadline.weight(active ? .bold : .medium))
+                            .foregroundStyle(active ? NoriTheme.bg : NoriTheme.fg)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule().fill(active ? NoriTheme.fg : NoriTheme.elevated)
+                            )
+                            .overlay {
+                                Capsule().strokeBorder(active ? .clear : NoriTheme.border)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(active ? [.isSelected] : [])
+                }
+            }
+            .padding(.horizontal, 20)
+        }
     }
 }
 
@@ -47,11 +97,24 @@ struct HomeView: View {
 
     @State private var genreRows: [GenreRow] = []
     @State private var heroItems: [HeroItem] = []
+    /// Läuft eine Folge, die direkt aus „Schau weiter" gestartet wurde.
+    @State private var play: SeriesView.PlayTarget?
+    /// Der Folgenpfad, dessen Serie gerade geladen wird — die Kachel zeigt
+    /// so lange einen Fortschrittsring. Ohne das wirkt das Antippen tot: die
+    /// Detailseite muss erst geholt werden, bevor klar ist, welche Folge
+    /// überhaupt läuft.
+    @State private var preparing: String?
+    /// Fehler der Direktwiedergabe. Getrennt von `error`, das von außen kommt
+    /// und den Katalog betrifft.
+    @State private var playError: String?
 
     var body: some View {
         NoriScreen {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 26) {
+                    ScopeChips(scope: Bindable(library).scope)
+                        .padding(.top, 8)
+
                     if let error {
                         errorBanner(error)
                             .padding(.horizontal, 20)
@@ -65,24 +128,10 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity, minHeight: 260)
                     }
 
-                    let watching = library.continueWatching()
-                    if !watching.isEmpty {
-                        PosterRow(title: "Weiterschauen") {
-                            ForEach(watching) { item in
-                                NoriSeriesLink(
-                                    slug: item.slug,
-                                    titleHint: item.title,
-                                    scaleOnPress: true,
-                                    provider: providerFromPath(item.episodePath)
-                                ) {
-                                    ContinueCard(item: item)
-                                }
-                            }
-                        }
-                    }
+                    continueSection
 
                     if !catalog.isEmpty {
-                        PosterRow(title: "Beliebte \(library.provider.kind)") {
+                        PosterRow(title: "Beliebte Titel") {
                             ForEach(catalog.prefix(20)) { item in
                                 catalogCard(item)
                             }
@@ -99,21 +148,118 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 28)
             }
-            // Der Kopfbereich läuft bis unter die Statusleiste. Ohne das säße
-            // er unter einem grauen Streifen und wäre kein Kopfbereich mehr,
-            // sondern eine Karte.
-            .ignoresSafeArea(edges: .top)
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                KindSwitch(provider: Bindable(library).provider)
-            }
+
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(item: $play) { target in
+            PlayerScreen(
+                series: target.series,
+                episode: target.episode,
+                season: target.series.activeSeason,
+                resumeAt: target.resumeAt,
+                provider: target.provider
+            )
+        }
         .task(id: rowsKey) {
             genreRows = Self.buildRows(from: catalog)
             heroItems = buildHero()
+        }
+    }
+
+    /// Aus „Schau weiter" heraus direkt abspielen.
+    ///
+    /// Welche Folge, entscheidet `nextPlay` im Kern: die zuletzt angefangene,
+    /// solange sie nicht zu Ende gesehen ist — sonst die nächste unfertige.
+    /// Genau deshalb muss die Detailseite vorher geholt werden: ohne die
+    /// Folgenliste ist „die nächste" nicht bestimmbar.
+    ///
+    /// Die Quelle wird ausdrücklich mitgegeben. Ohne sie nähme `nextPlay` die
+    /// Vorgabequelle, und die passt bei einer gemeinsamen Bibliothek regelmäßig
+    /// nicht zum angetippten Titel.
+    private func resume(_ item: WatchProgress) async {
+        let source = item.provider ?? providerFromPath(item.episodePath)
+        preparing = item.episodePath
+        playError = nil
+        defer { preparing = nil }
+        do {
+            let detail = try await AniworldClient.shared.getSeries(
+                provider: source,
+                slug: item.slug,
+                season: item.season
+            )
+            let target = library.nextPlay(
+                slug: item.slug,
+                season: item.season,
+                episodes: detail.episodes,
+                source: source
+            )
+            guard let episode = detail.episodes.first(where: { $0.number == target.episode }) else {
+                playError = "Folge \(target.episode) ist in dieser Staffel nicht mehr eingetragen."
+                return
+            }
+            play = SeriesView.PlayTarget(
+                series: detail,
+                episode: episode,
+                resumeAt: library.resumeEnabled ? target.resumeAt : 0,
+                provider: source
+            )
+        } catch {
+            playError = error.localizedDescription
+        }
+    }
+
+    /// Die Weiterschauen-Zeile als eigene Teilansicht.
+    ///
+    /// Ausgelagert, weil der Typechecker beim Aufbau als Ganzes aufgab:
+    /// `failed to produce diagnostic for expression` — die Variante von
+    /// `unable to type-check this expression in reasonable time`, bei der
+    /// nicht einmal mehr eine brauchbare Meldung herauskommt. Jede weitere
+    /// Verschachtelung im `LazyVStack` kostet den Prüfer überproportional
+    /// viel; kleine Teilansichten kosten nichts.
+    /// Ausserhalb des ViewBuilders berechnet: eine `let`-Bindung im Builder
+    /// selbst hat den Typechecker erneut aussteigen lassen.
+    private var watching: [WatchProgress] { library.continueWatching() }
+
+    @ViewBuilder
+    private var continueSection: some View {
+        if !watching.isEmpty {
+            PosterRow(title: "Schau weiter") {
+                ForEach(watching) { item in
+                    continueButton(item)
+                }
+            }
+        }
+        if let playError {
+            Text(playError)
+                .font(.footnote)
+                .foregroundStyle(Color.red)
+                .padding(.horizontal, 20)
+        }
+    }
+
+    private func continueButton(_ item: WatchProgress) -> some View {
+        Button {
+            Task { await resume(item) }
+        } label: {
+            ContinueCard(item: item)
+                .overlay { preparingVeil(for: item) }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.title + " weiterschauen")
+    }
+
+    /// Der Schleier, solange die Serie geholt wird. Ohne ihn wirkt das
+    /// Antippen tot: bis feststeht, welche Folge laeuft, muss erst die
+    /// Detailseite da sein.
+    @ViewBuilder
+    private func preparingVeil(for item: WatchProgress) -> some View {
+        if preparing == item.episodePath {
+            ZStack {
+                Color.black.opacity(0.45)
+                ProgressView().tint(.white)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -140,7 +286,7 @@ struct HomeView: View {
     /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
     /// Einträge vergleichen.
     private var rowsKey: String {
-        "\(library.provider.rawValue)|\(catalog.count)"
+        "\(library.scope.rawValue)|\(catalog.count)"
     }
 
     private func buildHero() -> [HeroItem] {
@@ -219,12 +365,13 @@ struct HeroCarousel: View {
     let items: [HeroItem]
     @State private var current: String = ""
 
-    /// Ein Poster steht 2:3. Bei rund 390 Punkten Breite wären das 585 Punkte
-    /// Höhe — so viel darf der Kopfbereich nicht nehmen, sonst ist von der
-    /// Startseite nichts weiter zu sehen. 560 ist der Kompromiss: das Poster
-    /// wird nur knapp beschnitten, und zwar unten, wo Verlauf und Schrift
-    /// liegen.
-    private var height: CGFloat { 560 }
+    /// Nur noch die Bildkarte plus Platz fuer die Seitenpunkte.
+    ///
+    /// 560 waren es, als der Kopfbereich ein hochkantes Poster samt
+    /// Steckbrief trug; 430 mit Breitbild und Text darunter. Ohne Text bleibt
+    /// die Karte selbst: bei rund 350 Punkten Breite sind das etwa 197 Punkte
+    /// plus Rand und Punkte.
+    private var height: CGFloat { 250 }
 
     var body: some View {
         TabView(selection: $current) {
@@ -246,132 +393,66 @@ struct HeroCarousel: View {
 }
 
 struct HeroSlide: View {
-    @Environment(LibraryStore.self) private var library
     let item: HeroItem
 
     @State private var details = CoverDetails(poster: nil, backdrop: nil, overview: nil, rating: nil)
+    @State private var logo: URL?
 
-    private var progress: WatchProgress? {
-        library.continueWatching().first { $0.slug == item.slug }
-    }
-
-    private var meta: String {
-        var parts = [item.kind.label]
-        parts.append(contentsOf: item.genres.prefix(3))
-        return parts.joined(separator: " · ")
-    }
-
+    /// Nur Bild und Schriftzug — die ganze Flaeche fuehrt zur Serie.
+    ///
+    /// Frueher standen hier zusaetzlich Titel, Quelle, Genres, Beschreibung
+    /// und zwei Knoepfe. Das war ein Steckbrief, kein Kopfbereich: die Karte
+    /// nahm 560 Punkte, und die Startseite begann faktisch erst darunter.
+    ///
+    /// Alles davon gibt es eine Ebene tiefer ohnehin. Der Kopfbereich hat
+    /// jetzt genau eine Aufgabe — zeigen, worum es geht, und beim Antippen
+    /// dorthin fuehren. Merken laesst sich ein Titel auf der Detailseite.
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Spacer(minLength: 0)
-
-            Text(item.title)
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-
-            Text(meta)
-                .font(.caption)
-                .foregroundStyle(NoriTheme.muted)
-                .lineLimit(1)
-
-            if let overview = details.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(.footnote)
-                    .foregroundStyle(NoriTheme.fg.opacity(0.85))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: 12) {
-                NoriSeriesLink(
-                    slug: item.slug,
-                    titleHint: item.title,
-                    provider: item.kind
-                ) {
-                    Label(playLabel, systemImage: "play.fill")
-                        .font(.callout.weight(.bold))
-                        // Der Akzent ist hell — Schrift darauf muss dunkel
-                        // sein, sonst steht Weiß auf Weiß.
-                        .foregroundStyle(NoriTheme.bg)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-
-                Button {
-                    library.toggleFavorite(item.slug, title: item.title)
-                } label: {
-                    Image(systemName: library.isFavorite(item.slug) ? "bookmark.fill" : "bookmark")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(NoriTheme.fg)
-                        .frame(width: 48, height: 46)
-                        .background(NoriTheme.elevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(NoriTheme.border)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(library.isFavorite(item.slug) ? "Von der Merkliste nehmen" : "Auf die Merkliste")
-            }
-            .padding(.top, 4)
+        NoriSeriesLink(
+            slug: item.slug,
+            titleHint: item.title,
+            scaleOnPress: true,
+            provider: item.kind
+        ) {
+            banner
         }
         .padding(.horizontal, 20)
-        // Platz für die Seitenpunkte des TabView, die sonst auf den Knöpfen
+        // Platz fuer die Seitenpunkte des TabView, die sonst auf dem Bild
         // liegen.
-        .padding(.bottom, 34)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Das Bild als Hintergrund, nicht als Ebene im Stapel: ein
-        // `scaledToFill`-Bild meldet nach außen eine größere Größe, als ihm
-        // angeboten wurde, und würde den Kopfbereich aufblähen. Als
-        // Hintergrund beeinflusst es die Größe nicht.
-        .background(alignment: .bottom) {
-            backdrop
-        }
+        .padding(.bottom, 30)
         .task(id: item.slug) {
             details = await CoverIndex.shared.detailsLoading(
                 slug: item.slug,
                 title: item.title,
                 kind: item.kind
             )
-            // Ohne TMDB-Treffer hat `details` weder Breitbild noch Poster, und
-            // der Kopfbereich bliebe schwarz — genau das war zu sehen. Das
-            // Cover der Quelle steht nur auf der Detailseite; die Kacheln
-            // holen es sich längst so, der Kopfbereich tat es nicht.
-            guard details.backdrop == nil, details.poster == nil else { return }
-            details.poster = await CoverIndex.shared.fetchSourceCover(
+            // Ohne TMDB-Treffer haette der Kopfbereich weder Breitbild noch
+            // Poster und bliebe schwarz. Das Cover der Quelle steht nur auf
+            // der Detailseite; die Kacheln holen es sich laengst so.
+            if details.backdrop == nil, details.poster == nil {
+                details.poster = await CoverIndex.shared.fetchSourceCover(
+                    slug: item.slug,
+                    provider: item.kind
+                )
+            }
+            logo = await CoverIndex.shared.logoLoading(
                 slug: item.slug,
-                provider: item.kind
+                title: item.title,
+                alternates: [],
+                kind: item.kind
             )
         }
     }
 
-    private var playLabel: String {
-        guard let progress else { return "Jetzt ansehen" }
-        return "F\(progress.episode) weiterschauen"
-    }
-
-    /// Das Bild hinter einer Kopfseite.
+    /// Die Bildkarte: Breitbild, darueber unten links der Schriftzug.
     ///
-    /// Zwei Dinge, die vorher nicht stimmten:
-    ///
-    /// **Die Überlappung beim Wischen.** `scaledToFill` meldet nach außen eine
-    /// größere Größe, als ihm angeboten wurde. Der ZStack wuchs damit über die
-    /// Seitenbreite hinaus, und `clipped()` schnitt auf diese *größere* Fläche
-    /// zu — das Bild lief also seitlich in die Nachbarseite hinein. `Color.clear`
-    /// nimmt dagegen genau die angebotene Größe an; erst darüber gelegt und dann
-    /// beschnitten endet das Bild da, wo die Seite endet.
-    ///
-    /// **Das Breitbild.** Ein 16:9-Backdrop in einer hochkant stehenden Fläche
-    /// zeigt einen schmalen Streifen aus der Bildmitte — meist Hintergrund, oft
-    /// unkenntlich. Das Poster hat mit 2:3 fast genau das Seitenverhältnis
-    /// dieser Fläche und wird deshalb zuerst genommen; oben ausgerichtet, damit
-    /// beschnitten wird, wo ohnehin der Verlauf und die Schrift liegen.
-    private var backdrop: some View {
+    /// Das **Backdrop** traegt, nicht das Poster: die Flaeche ist selbst
+    /// 16:9, und ein 2:3-Poster darin waere das falsche Format.
+    private var banner: some View {
         Color.clear
-            .overlay(alignment: .top) {
-                if let url = details.poster ?? details.backdrop {
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .overlay {
+                if let url = details.backdrop ?? details.poster {
                     NoriCoverImage(url: url, referer: item.kind.origin + "/") {
                         NoriTheme.elevated
                     }
@@ -380,16 +461,48 @@ struct HeroSlide: View {
                 }
             }
             .overlay {
-                // Zwei Verläufe: einer trägt die Schrift unten, der andere
-                // nimmt dem Bild oben die Härte gegen die Statusleiste.
+                // Traegt den Schriftzug unten. Ohne den Verlauf steht ein
+                // weisses Logo womoeglich auf einem hellen Bild.
                 LinearGradient(
-                    colors: [.clear, NoriTheme.bg.opacity(0.75), NoriTheme.bg],
-                    startPoint: .top,
+                    colors: [.clear, .black.opacity(0.15), .black.opacity(0.75)],
+                    startPoint: .center,
                     endPoint: .bottom
                 )
             }
-            .clipped()
-            .allowsHitTesting(false)
+            .overlay(alignment: .bottomLeading) {
+                titleArt.padding(16)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// Der Schriftzug - das TMDB-Logo, sonst der Titel als Text.
+    ///
+    /// Der Rueckfall ist der Normalfall, nicht die Ausnahme: viele Serien
+    /// haben bei TMDB gar kein Logo, und fuer die darf der Kopfbereich nicht
+    /// namenlos bleiben. Ohne Titelzeile darunter waere er das sonst.
+    @ViewBuilder
+    private var titleArt: some View {
+        if let logo {
+            // `AsyncImage` und nicht `NoriCoverImage`: letzteres zeichnet
+            // immer mit `scaledToFill`, was ein Cover fuellen soll - ein
+            // freigestellter Schriftzug wuerde dabei beschnitten. Und TMDB
+            // braucht keinen Referer, anders als die Hoster-Bilder.
+            AsyncImage(url: logo) { image in
+                image.resizable().scaledToFit()
+            } placeholder: {
+                EmptyView()
+            }
+            .frame(maxWidth: 210, maxHeight: 64, alignment: .bottomLeading)
+            .accessibilityLabel(item.title)
+        } else {
+            Text(item.title)
+                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                .frame(maxWidth: 260, alignment: .leading)
+        }
     }
 }
 
@@ -441,24 +554,103 @@ struct CatalogCard: View {
 struct ContinueCard: View {
     @Environment(LibraryStore.self) private var library
     let item: WatchProgress
+
+    @State private var backdrop: URL?
+    @State private var logo: URL?
+
+    private var source: CatalogProvider {
+        item.provider ?? providerFromPath(item.episodePath)
+    }
+
+    /// „Noch 21 Min." statt einer Prozentzahl.
+    ///
+    /// Die Restzeit sagt, worauf man sich einlässt; ein Prozentwert nicht.
+    /// Fehlt die Dauer — etwa weil der Fortschritt aus einem älteren Stand
+    /// stammt —, tritt Staffel und Folge an die Stelle.
+    private var caption: String {
+        let left = item.durationSec - item.positionSec
+        guard item.durationSec > 0, left > 30 else {
+            return "S\(item.season) · F\(item.episode)"
+        }
+        return "Noch \(Int(left / 60)) Min.  ·  S\(item.season) F\(item.episode)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            PosterTile(
-                title: item.title,
-                slug: item.slug,
-                kind: providerFromPath(item.episodePath)
-            )
-            Text(item.title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("S\(item.season) · F\(item.episode) · \(formatClock(item.positionSec))")
+            Color.clear
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay {
+                    if let backdrop {
+                        NoriCoverImage(url: backdrop, referer: source.origin + "/") {
+                            NoriTheme.elevated
+                        }
+                    } else {
+                        NoriTheme.elevated
+                    }
+                }
+                .overlay {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.7)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                }
+                .overlay(alignment: .bottomLeading) { titleArt.padding(10) }
+                .overlay(alignment: .bottom) {
+                    // Der Fortschritt liegt **im** Bild, nicht darunter: so
+                    // bleibt unter der Kachel Platz für die Restzeit, und die
+                    // Kachel wird nicht höher als das Bild plus eine Zeile.
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(.white.opacity(0.25))
+                            Rectangle()
+                                .fill(NoriTheme.accent)
+                                .frame(width: geo.size.width * watchRatio(item))
+                        }
+                    }
+                    .frame(height: 3)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Text(caption)
                 .font(.caption2)
                 .foregroundStyle(NoriTheme.muted)
                 .lineLimit(1)
-            ProgressView(value: watchRatio(item))
-                .tint(NoriTheme.accent)
         }
-        .frame(width: 124, alignment: .leading)
+        .frame(width: 210, alignment: .leading)
+        .task(id: item.slug) {
+            let details = await CoverIndex.shared.detailsLoading(
+                slug: item.slug,
+                title: item.title,
+                kind: source
+            )
+            backdrop = details.backdrop ?? details.poster
+            logo = await CoverIndex.shared.logoLoading(
+                slug: item.slug,
+                title: item.title,
+                kind: source
+            )
+        }
+    }
+
+    /// Schriftzug im Bild — Logo, sonst der Titel.
+    @ViewBuilder
+    private var titleArt: some View {
+        if let logo {
+            AsyncImage(url: logo) { image in
+                image.resizable().scaledToFit()
+            } placeholder: {
+                EmptyView()
+            }
+            .frame(maxWidth: 120, maxHeight: 34, alignment: .bottomLeading)
+            .accessibilityLabel(item.title)
+        } else {
+            Text(item.title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .shadow(color: .black.opacity(0.7), radius: 4, y: 1)
+                .frame(maxWidth: 150, alignment: .leading)
+        }
     }
 }
