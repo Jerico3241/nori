@@ -27,6 +27,11 @@ struct PlayerScreen: View {
     @State private var statusTask: Task<Void, Never>?
     @State private var playbackGeneration = UUID()
     @State private var isSwitching = false
+    /// Es läuft ein Wechsel, bei dem die Bedienung stehen bleiben soll —
+    /// Hoster, Sprache, erneuter Versuch. Der Player wird dabei kurz
+    /// abgeräumt; ohne dieses Merkmal fiele die Ansicht auf den Ladebildschirm
+    /// zurück, und die eben benutzte Auswahl wäre mitsamt Leiste weg.
+    @State private var keepChrome = false
     /// Ist die Bedienung sichtbar. Wird nie hart gesetzt, immer über
     /// `setControlsVisible` — sonst blenden Tipp, Knopfdruck und Zeitablauf
     /// mit drei verschiedenen Kurven ein und aus.
@@ -68,6 +73,7 @@ struct PlayerScreen: View {
     static let qualityAuto = "__auto__" 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(NoriGlassSetting.key) private var glass = true
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
         self.series = series
@@ -98,9 +104,7 @@ struct PlayerScreen: View {
                     }
                 )
                 .ignoresSafeArea()
-
-                controls
-            } else {
+            } else if !keepChrome {
                 if let error {
                     errorView(error)
                 } else {
@@ -108,13 +112,32 @@ struct PlayerScreen: View {
                 }
                 VStack {
                     HStack {
-                        Button("Schließen", systemImage: "xmark") { dismiss() }
-                            .buttonStyle(.bordered)
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: NoriControl.hit, height: NoriControl.hit)
+                                .noriGlass(Circle(), enabled: glass, off: Color.white.opacity(0.22))
+                        }
+                        .buttonStyle(NoriPressStyle())
+                        .accessibilityLabel("Wiedergabe schließen")
                         Spacer()
                     }
                     Spacer()
                 }
-                .padding()
+                .padding(.horizontal, 18)
+                .padding(.top, 10)
+            }
+
+            // Die Bedienung überlebt den Hosterwechsel. Während des Wechsels
+            // gibt es keinen Player, aber Leisten, Titel und Fortschritt
+            // stehen weiter; an der Stelle der Mitteltasten dreht sich ein
+            // Ring. Ohne das sprang die Ansicht auf den Ladebildschirm, und
+            // die eben benutzte Hosterliste war mitsamt Leiste verschwunden.
+            if player != nil || keepChrome {
+                controls
             }
 
             if let seconds = autoplaySeconds,
@@ -148,30 +171,53 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Was steht, wenn kein Stream zustande kommt.
+    ///
+    /// Hoster fallen aus, liefern Schutzseiten oder Adressen, die AVPlayer
+    /// nicht abspielt — das ist der Normalfall bei diesen Quellen, nicht die
+    /// Ausnahme. Deshalb stehen hier die beiden Wege, die tatsächlich helfen,
+    /// als gleichwertige Knöpfe: noch einmal versuchen und den nächsten
+    /// Hoster nehmen. Welcher Hoster gescheitert ist, steht in der Meldung.
     private func errorView(_ message: String) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
+        VStack(spacing: 18) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 42))
                 .foregroundStyle(.white.opacity(0.85))
+                .symbolRenderingMode(.hierarchical)
+
             Text(message)
+                .font(.callout)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
-            HStack(spacing: 12) {
-                Button("Erneut versuchen") {
-                    Task { await retry() }
-                }
-                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: 420)
 
-                Button("Anderen Hoster") {
+            VStack(spacing: 10) {
+                Button {
                     Task { await tryAlternativeHoster() }
+                } label: {
+                    Label("Anderen Hoster versuchen", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(NoriTheme.bg)
+                        .padding(.horizontal, 22)
+                        .frame(height: NoriControl.hit)
+                        .background(Capsule().fill(NoriTheme.fg))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(NoriPressStyle(scale: 0.97))
 
-                Button("Schließen") { dismiss() }
-                    .buttonStyle(.bordered)
+                Button {
+                    Task { await retry() }
+                } label: {
+                    Text("Noch einmal versuchen")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 22)
+                        .frame(height: NoriControl.hit)
+                        .noriGlass(Capsule(), enabled: glass, off: Color.white.opacity(0.18))
+                }
+                .buttonStyle(NoriPressStyle(scale: 0.97))
             }
         }
-        .padding(24)
+        .padding(28)
     }
 
     /// Die Bedienung. Alle Auswahlmöglichkeiten liegen darin — Hoster,
@@ -401,10 +447,14 @@ struct PlayerScreen: View {
     private func scheduleHide() {
         hideTask?.cancel()
         setControlsVisible(true)
-        guard isPlaying, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
+        // Während eines Hosterwechsels gibt es keine Sprungfläche, über die
+        // sich die Bedienung zurückholen ließe. Sie darf deshalb nicht
+        // weggeblendet werden, sonst steht man vor einem schwarzen Bild ohne
+        // jede Handhabe.
+        guard isPlaying, !keepChrome, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
         hideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, isPlaying, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
+            guard !Task.isCancelled, isPlaying, !keepChrome, !menuOpen, !scrubbing, !voiceOverEnabled else { return }
             setControlsVisible(false)
         }
     }
@@ -558,7 +608,10 @@ struct PlayerScreen: View {
         variants = []
         activeQuality = Self.qualityAuto
         watchInfo = nil
-        duration = 0
+        // Beim Wechsel bleibt die Dauer stehen: der Regler soll nicht auf
+        // null zusammenfallen und gleich darauf wieder aufspringen. Es ist
+        // dieselbe Folge, nur ein anderer Hoster.
+        if !keepChrome { duration = 0 }
         isSwitching = true
 
         do {
@@ -732,6 +785,7 @@ struct PlayerScreen: View {
             self.error = error.localizedDescription
         }
         isSwitching = false
+        keepChrome = false
     }
 
     /// Nur „https://host" — manche Hoster prüfen Origin zusätzlich zum Referer.
@@ -751,6 +805,9 @@ struct PlayerScreen: View {
     @MainActor
     func retry() async {
         let at = currentPosition()
+        keepChrome = player != nil
+        hideTask?.cancel()
+        setControlsVisible(true)
         await startPlayback(resumeAt: at)
     }
 
@@ -775,6 +832,9 @@ struct PlayerScreen: View {
     @MainActor
     func switchHoster(to hoster: String) async {
         let at = currentPosition()
+        keepChrome = player != nil
+        hideTask?.cancel()
+        setControlsVisible(true)
         save(forceComplete: false)
         await startPlayback(preferredHoster: hoster, preferredLang: source?.lang ?? library.langPref, resumeAt: at)
     }
@@ -782,6 +842,9 @@ struct PlayerScreen: View {
     @MainActor
     func switchLanguage(to lang: String) async {
         let at = currentPosition()
+        keepChrome = player != nil
+        hideTask?.cancel()
+        setControlsVisible(true)
         save(forceComplete: false)
         await startPlayback(preferredLang: lang, resumeAt: at)
     }
