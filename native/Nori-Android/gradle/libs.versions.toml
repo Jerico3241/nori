@@ -1,6 +1,9 @@
 # Eine Stelle für alle Fassungen. Was hier nicht steht, steht nirgends.
 [versions]
-agp = "9.1.0"
+# 9.4.0 ist die aktuelle stabile Fassung (vom Lauf selbst erhoben). 9.1
+# kannte Plattform 37 noch nicht: es installierte sie als `android-37.0`
+# und suchte danach `android-37`.
+agp = "9.4.0"
 kotlin = "2.4.20"
 coroutines = "1.10.2"
 serialization = "1.11.0"
