@@ -87,7 +87,7 @@ fun SearchScreen(
                 is SearchUiState.Ready -> when {
                     current.results.isEmpty() && query.isNotBlank() -> EmptyState(
                         title = "Nichts gefunden",
-                        hint = "Für „$query" gibt es in ${current.scopeLabel} keinen Treffer.",
+                        hint = "Für „$query“ gibt es in ${current.scopeLabel} keinen Treffer.",
                     )
 
                     current.results.isEmpty() -> EmptyState("Der Katalog ist leer.")
