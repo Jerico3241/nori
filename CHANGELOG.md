@@ -5,7 +5,78 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
-Windows **1.8.0**.
+Windows **1.8.0**, LG webOS **1.0.0**.
+
+## [webOS 1.0.0] – 2026-09-07
+
+Erste Fassung von **Nori für LG webOS**. Eine eigenständige TV-App, keine auf
+den Fernseher gezogene Webseite: vollständig mit der Fernbedienung bedienbar,
+auf 1920 × 1080 ausgelegt und auf andere Auflösungen mitskalierend.
+
+**Für iOS, macOS und Windows ändert sich nichts.** Kein Swift wurde angefasst,
+`server/` und `desktop/` bleiben unberührt.
+
+### Hinzugefügt
+
+- **`shared/nori-core`** — der gemeinsame Kern für JavaScript-Clients. Die
+  TypeScript-Entsprechung von `native/NoriCore/`; maßgeblich ist für beide
+  `config/contract.json`: dieselben Feldnamen, dieselbe
+  90-%-Regel, dieselbe Resume-Schwelle, derselbe Schlüssel
+  `provider|episodePath`, dieselbe Hoster-Rangfolge. Eine `library.json` aus
+  der iOS- oder macOS-App liest sich dort ohne Umschreiben. 34 Tests laufen
+  gegen dieselben HTML-Ausschnitte wie `native/Tests/NoriCoreTests`.
+- **`services/nori-api`** — die Provider-Schicht als HTTP-Dienst. Der Grund ist
+  keine Bequemlichkeit: viele Hoster liefern nur mit einer `Referer`-Kopfzeile
+  aus, und die darf ein Browser nicht setzen. Der Dienst holt Katalog, Serie,
+  Folge und Kalender, löst den Hoster auf und reicht den Stream weiter;
+  HLS-Playlists werden dabei umgeschrieben, damit auch die Segmente über ihn
+  laufen. Die Weiterreichung lässt nur durch, was `isSafeRemoteURL` aus dem
+  Kern passieren lässt — dieselbe Prüfung wie in den Apple-Apps.
+- **`apps/webos`** — die TV-Oberfläche. React, TypeScript, Enact Spotlight für
+  die Fernbedienung, hls.js als Rückfall, gebaut mit Vite auf Chrome 79 (die
+  Engine von webOS 6). Startseite mit Hero und Reihen, Entdecken mit Genre- und
+  Sortierfiltern, TV-taugliche Suche, Kalender, Merkliste, Verlauf,
+  Einstellungen, Detailseite mit Staffeln und Folgen, und ein Vollbild-Player.
+- **Fokusgedächtnis.** Wer den siebten Titel einer Reihe öffnet und zurückgeht,
+  steht wieder auf dem siebten. Spotlight kann das je Container, verliert es
+  aber beim Ausbau der Seite — Nori merkt sich deshalb zusätzlich den Schlüssel
+  des zuletzt fokussierten Elements je Route und Bereich.
+- **Zurück-Taste als Stapel.** Der oberste angemeldete Griff gewinnt: im Player
+  erst den Drawer schließen, dann die Bedienung, dann erst den Player
+  verlassen. Auf der Startseite verlässt Zurück die App.
+- **Player** mit ausblendender Bedienung (3–8 s, einstellbar), Seekbar samt
+  Pufferbereich, ±5/10/15/30 s (bei gehaltener Taste schneller), vorheriger und
+  nächster Folge, rechtem Drawer für Sprache, Hoster, Staffel und Folgen,
+  Resume-Frage ab acht Sekunden, Countdown zur nächsten Folge und vollständigem
+  Abbau beim Verlassen.
+- **Hosterwechsel im Betrieb.** Position merken, neuen Hoster auflösen, Stream
+  laden, Position wiederherstellen. Scheitert ein Stream, bietet der Player den
+  nächsten Hoster an, statt den Player zu verlassen.
+- **Cover-Beschaffung wie im Swift-Kern.** Die Katalogseiten beider Quellen
+  sind reine Titellisten; die Adresse des Covers steht nur auf der Detailseite
+  und enthält einen Zufallsanteil. Nori lädt sie bei Bedarf nach, höchstens
+  vier gleichzeitig, und legt sie dauerhaft ab.
+- **Eigenes Symbol und Startbild**, aus dem Nori-Zeichen erzeugt
+  (`apps/webos/tools/make-assets.mjs`) — kein fremdes Material im Paket.
+- **`npm run webos:package`** schnürt das `.ipk` ohne LG-SDK (ar plus tar von
+  Hand). `webos:install`, `webos:launch` und `webos:inspect` benutzen das SDK,
+  wenn es vorhanden ist, und sagen sonst, wie man es bekommt.
+- **`tools/check-webos-package.py`** prüft Quelltext und fertiges Paket auf
+  Namen und Adressen fremder Apps und validiert `appinfo.json` gegen die Liste
+  der Felder, die webOS tatsächlich kennt.
+- **`.github/workflows/build-webos.yml`** baut Kern, Server und App, schnürt
+  das Paket, prüft es und legt es als Artefakt ab. Auf demselben self-hosted
+  Mac wie alle anderen Läufe. Er braucht kein Xcode, nur Node — und ist damit
+  der einzige Lauf des Projekts, der eine Änderung wirklich durchbaut und
+  testet, statt sie nur statisch zu prüfen.
+
+### Bekannte Einschränkungen
+
+- Auf einem echten Fernseher ist der Stand nicht erprobt.
+- Kein Abgleich zwischen Geräten; die Bibliothek liegt im `localStorage` des
+  Fernsehers, im Format von `library.json`.
+- Keine Sprungmarken für Intro, Recap und Ending — Nori hat dafür keine Daten,
+  und erfundene Zeitmarken wären schlechter als keine.
 
 ## [iOS 1.14.5] · [macOS 1.14.2] – 2026-09-06
 

@@ -20,6 +20,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | iOS / iPadOS | **1.14.5** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
+| LG webOS | **1.0.0** | TV-App mit Fernbedienungsnavigation; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -36,6 +37,12 @@ nori/
 │   └── contract.json             # kanonischer Daten-/Provider-Contract
 ├── desktop/                      # Electron-Hülle des Windows-Legacy-Stands
 ├── server/                       # gebautes Nitro/Node-Bundle, kein Quellcode
+├── shared/
+│   └── nori-core/                # gemeinsamer Kern in TypeScript
+├── apps/
+│   └── webos/                    # TV-App für LG webOS
+├── services/
+│   └── nori-api/                 # Provider-Schicht als HTTP-Dienst
 ├── docs/
 ├── tools/
 └── .github/workflows/
@@ -52,6 +59,12 @@ native/NoriCore/Sources/NoriCore/
 Die bestehenden Pfade in `native/Nori-iOS/Nori/` und `native/Nori-macOS/Nori/` sind Git-Symlinks auf diese gemeinsame Quelle. Dadurch bleiben die handgeschriebenen Xcode-Projekte stabil, während iOS und macOS garantiert dieselbe Kernimplementierung bauen.
 
 Die Oberflächen bleiben bewusst plattformspezifisch. iOS nutzt unter anderem Tab-Navigation und den iOS-Player; macOS verwendet Desktop-Navigation, eigene Fenster und Mac-spezifische Bedienmuster.
+
+### Gemeinsamer Kern für JavaScript-Clients
+
+`shared/nori-core/` ist die TypeScript-Entsprechung von `native/NoriCore/`: dieselben Modelle, dieselben Regeln, dieselben Parser und derselbe Hoster-Resolver. Sie kann Swift nicht einbinden, richtet sich aber nach demselben `config/contract.json` und legt dieselbe `library.json`-Form ab. Die webOS-App und der Nori-Server benutzen sie beide; hosterspezifische Extraktion gibt es dadurch nur einmal.
+
+Beide Testreihen prüfen absichtlich dieselben HTML-Ausschnitte — `native/Tests/NoriCoreTests/Fixtures.swift` und `shared/nori-core/test/fixtures.ts`.
 
 ## Funktionen
 
@@ -153,6 +166,106 @@ swift test
 
 Die Tests liegen unter `native/Tests/NoriCoreTests/` und decken unter anderem AniWorld-/Serienstream-Parsing, Kalender, Providerpfade, Hoster-Auflösung, Bibliotheksmigration und Fortschrittsregeln ab.
 
+Der TypeScript-Kern wird gegen dieselben HTML-Ausschnitte geprüft:
+
+```bash
+npm --prefix shared/nori-core test
+python3 tools/check-webos-package.py
+```
+
+## Nori for LG webOS
+
+Eine eigenständige TV-App, vollständig mit der Fernbedienung bedienbar und auf
+1920 × 1080 ausgelegt. Ausführlich: [docs/webos.md](docs/webos.md).
+
+### Voraussetzungen
+
+- Node 20 oder neuer
+- Ein LG-Fernseher mit webOS 6 oder neuer im Entwicklermodus
+- Für Installation und Protokolle das LG-SDK: `npm i -g @webosose/ares-cli`
+
+Zum **Bauen** wird das SDK nicht gebraucht — `npm run webos:package` schnürt das
+`.ipk` selbst.
+
+### Build und Paket
+
+```bash
+cd apps/webos
+npm install
+npm run build
+npm run webos:package     # ergibt tv.nori.app_1.0.0_all.ipk
+```
+
+Vom Repository-Stamm aus: `npm run webos:build` und `npm run webos:package`.
+
+### Nori-Server
+
+Der Fernseher holt Katalog und Stream über einen kleinen Dienst, statt die
+Quellen selbst abzurufen. Der Grund ist nicht Bequemlichkeit: viele Hoster
+liefern nur mit einer `Referer`-Kopfzeile aus, und die darf ein Browser nicht
+setzen.
+
+```bash
+cd services/nori-api
+npm install
+npm run dev               # hört auf 0.0.0.0:8730
+```
+
+Die Adresse wird in der App unter *Einstellungen → Verbindung* eingetragen.
+Alternativ steht dort „Direkt vom Fernseher" — dann benutzt der Client denselben
+Kern selbst, was ohne Einrichtung auskommt, aber vom Verhalten des Geräts und
+des Hosters abhängt.
+
+### Installation
+
+1. LG-Konto anlegen und am Fernseher anmelden.
+2. Im Content Store die App **Developer Mode** installieren, anmelden,
+   *Dev Mode Status* einschalten. Der Fernseher zeigt danach Passphrase und
+   IP-Adresse.
+3. Gerät eintragen:
+
+   ```bash
+   ares-setup-device --add tv --info "{'host':'192.168.1.50','port':'9922','username':'prisoner'}"
+   ares-novacom --device tv --getkey
+   ```
+
+4. Installieren und starten:
+
+   ```bash
+   npm run webos:install tv
+   npm run webos:launch tv
+   ```
+
+5. Verlängern: der Entwicklermodus läuft nach etwa 50 Stunden ab. **Extend Dev
+   Mode Status** in derselben App setzt die Frist zurück.
+
+### Debugging
+
+```bash
+npm run webos:inspect tv                      # Web-Inspector
+node apps/webos/tools/webos-cli.mjs log tv    # Protokoll des Geräts
+```
+
+Alles von Nori trägt das Präfix `[Nori:webOS]`.
+
+### Unterstützte Stände
+
+Gebaut auf Chrome 79 — die Engine von webOS 6. Damit läuft dasselbe Paket auf
+**webOS 6 bis 26**. Auf einem echten Gerät ist der Stand noch nicht erprobt.
+
+### Architektur
+
+```text
+webOS-Client  →  Nori-Server  →  AniWorld / Serienstream
+                      ↓
+               HosterResolver
+                      ↓
+       Weiterreichung mit Referer  →  Hoster
+```
+
+Beide Seiten benutzen `shared/nori-core`. Der Client selbst kennt keinen
+Hoster — er bekommt ein `PlaySource` und eine Adresse, die er laden kann.
+
 ## Windows
 
 Der Windows-Stand ist derzeit **1.8.0** und wird als Legacy-Bereich behandelt:
@@ -165,6 +278,8 @@ Der Windows-Stand ist derzeit **1.8.0** und wird als Legacy-Bereich behandelt:
 ## CI / Releases
 
 Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am gemeinsamen `native/NoriCore/` müssen sowohl den iOS- als auch den macOS-Build auslösen, zusätzlich zu den Swift-Tests.
+
+Der Lauf **Build webOS** liegt auf demselben Runner, braucht dort aber kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
 
 Release-Quellpakete müssen neben dem jeweiligen Plattformordner auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md` enthalten, damit die Symlinks im Xcode-Projekt auflösbar bleiben.
 

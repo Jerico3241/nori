@@ -41,3 +41,8 @@ Nori-Daten/
 Nori-Portable-x64.zip
 Nori.exe
 *.app
+
+# webOS (apps/webos)
+*.ipk
+apps/webos/dist/
+shared/nori-core/dist/

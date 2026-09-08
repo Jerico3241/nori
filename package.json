@@ -5,5 +5,15 @@
   "type": "module",
   "main": "desktop/main.mjs",
   "productName": "Nori",
-  "description": "Nori – Anime- und Serien-App"
+  "description": "Nori – Anime- und Serien-App",
+  "scripts": {
+    "webos:dev": "npm --prefix apps/webos run dev",
+    "webos:build": "npm --prefix apps/webos run build",
+    "webos:package": "npm --prefix apps/webos run webos:package",
+    "webos:install": "npm --prefix apps/webos run webos:install",
+    "webos:launch": "npm --prefix apps/webos run webos:launch",
+    "webos:inspect": "npm --prefix apps/webos run webos:inspect",
+    "api": "npm --prefix services/nori-api run dev",
+    "core:test": "npm --prefix shared/nori-core test"
+  }
 }
