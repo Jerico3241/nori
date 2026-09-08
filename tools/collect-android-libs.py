@@ -23,6 +23,7 @@ also genau das, was der Lader auf dem Gerät auch tun wird.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -53,16 +54,52 @@ SYSTEM = {
 def sdk_roots() -> list[Path]:
     """Wo nach Bibliotheken gesucht wird.
 
-    Das SDK-Bündel richtet sich beim Einrichten ein `ndk-sysroot` ein und hat
-    damit in der Regel auch `libc++_shared.so`. Ist ANDROID_NDK_HOME gesetzt,
-    wird das NDK zusätzlich durchsucht — dann fehlt sie auch dann nicht, wenn
-    das Bündel anders aufgebaut ist als erwartet.
+    Drei Quellen, und die Reihenfolge ist keine Kosmetik:
+
+    1. Das SDK-Bündel. Dort liegt die Swift-Laufzeit.
+    2. Was die `swift-sdk.json` des Bündels als Sysroot nennt. Das ist in der
+       Regel ein **Verweis** auf das NDK — und genau dort liegt
+       `libc++_shared.so`, die im Bündel selbst fehlt.
+    3. `ANDROID_NDK_HOME`, falls gesetzt.
+
+    Punkt 2 ist der, der einmal gefehlt hat: `libc++_shared.so` gehört zum
+    NDK, nicht zu Swift, und ohne sie lädt keine der Swift-Bibliotheken.
     """
-    candidates = [Path.home() / ".swiftpm" / "swift-sdks"]
-    ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
-    if ndk:
-        candidates.append(Path(ndk))
-    return [path for path in candidates if path.is_dir()]
+    roots: list[Path] = []
+
+    def add(path: Path | None) -> None:
+        if path is None:
+            return
+        resolved = path.expanduser()
+        if resolved.is_dir() and resolved not in roots:
+            roots.append(resolved)
+
+    bundles = Path.home() / ".swiftpm" / "swift-sdks"
+    add(bundles)
+
+    # Das Sysroot steht in der Beschreibung des SDK und ist dort relativ
+    # angegeben.
+    if bundles.is_dir():
+        for description in bundles.rglob("swift-sdk.json"):
+            try:
+                data = json.loads(description.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            for target in (data.get("targetTriples") or {}).values():
+                for key in ("sdkRootPath", "swiftResourcesPath", "swiftStaticResourcesPath"):
+                    value = target.get(key)
+                    if isinstance(value, str):
+                        add((description.parent / value).resolve())
+                for key in ("includeSearchPaths", "librarySearchPaths"):
+                    for value in target.get(key) or []:
+                        add((description.parent / value).resolve())
+
+    for variable in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"):
+        value = os.environ.get(variable)
+        if value:
+            add(Path(value))
+
+    return roots
 
 
 def index_libraries(arch: str) -> dict[str, Path]:
@@ -70,13 +107,19 @@ def index_libraries(arch: str) -> dict[str, Path]:
     aliases = ARCH_ALIASES[arch]
     found: dict[str, Path] = {}
     for root in sdk_roots():
-        for path in root.rglob("*.so"):
-            parts = [part.lower() for part in path.parts]
-            if not any(alias in part for alias in aliases for part in parts):
-                continue
-            # Erster Fund gewinnt; die Bündel legen dieselbe Datei teils
-            # mehrfach ab (einmal im Sysroot, einmal daneben).
-            found.setdefault(path.name, path)
+        # `os.walk` mit `followlinks` statt `Path.rglob`: das NDK-Sysroot
+        # hängt als symbolischer Verweis im Bündel, und `rglob` geht daran
+        # vorbei. Genau dort liegt libc++_shared.so.
+        for folder, _, files in os.walk(root, followlinks=True):
+            lowered = folder.lower()
+            for name in files:
+                if not name.endswith(".so"):
+                    continue
+                if not any(alias in lowered for alias in aliases):
+                    continue
+                # Erster Fund gewinnt; die Bündel legen dieselbe Datei teils
+                # mehrfach ab (einmal im Sysroot, einmal daneben).
+                found.setdefault(name, Path(folder) / name)
     return found
 
 
@@ -128,11 +171,13 @@ def collect(build: Path, triple: str, out: Path) -> None:
 
     if missing:
         raise SystemExit(
-            f"{abi}: diese Abhängigkeiten fehlen im SDK und sind keine "
+            f"{abi}: diese Abhängigkeiten fehlen und sind keine "
             f"Android-Systembibliotheken: {', '.join(sorted(set(missing)))}.\n"
-            "Ohne sie startet die App auf dem Gerät nicht. Entweder liegen sie "
-            "woanders im Bündel, oder sie gehören in die Liste SYSTEM in "
-            "diesem Skript."
+            "Ohne sie startet die App auf dem Gerät nicht.\n"
+            "Durchsucht wurde:\n  " + "\n  ".join(str(r) for r in sdk_roots()) + "\n"
+            "libc++_shared.so gehört zum NDK, nicht zu Swift. Fehlt sie, ist "
+            "das Sysroot des SDK nicht eingerichtet (siehe docs/android.md) "
+            "oder ANDROID_NDK_HOME muss gesetzt sein."
         )
 
 

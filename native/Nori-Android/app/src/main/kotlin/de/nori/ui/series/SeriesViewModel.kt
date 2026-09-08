@@ -12,6 +12,7 @@ import de.nori.core.SeasonStats
 import de.nori.core.SeriesDetail
 import de.nori.core.userMessage
 import de.nori.data.Nori
+import de.nori.ui.PlaybackRequest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,6 +67,42 @@ class SeriesViewModel(
     }
 
     fun reload() = load(currentSeason)
+
+    private val _play = MutableStateFlow<PlaybackRequest?>(null)
+    val play: StateFlow<PlaybackRequest?> = _play.asStateFlow()
+
+    /**
+     * Eine Folge starten.
+     *
+     * Die Stelle bestimmt **der Kern**, nicht diese Datei: „unter acht
+     * Sekunden fängt von vorn an" und „eine fast fertige Folge gilt als
+     * gesehen" sind Regeln, keine Anzeigedetails. In Kotlin nachgerechnet
+     * liefen sie früher oder später von `LibraryStore` weg — und dann startet
+     * dieselbe Folge auf iPhone und Telefon an verschiedenen Stellen.
+     */
+    fun startPlay(episode: Episode) {
+        val ready = _state.value as? SeriesUiState.Ready ?: return
+        viewModelScope.launch {
+            val progress = Nori.library.snapshot.value
+                .progressFor(episode.path, provider)
+            val rules = runCatching { NoriCore.progressRules(progress) }.getOrNull()
+            val at = if (Nori.library.snapshot.value.resumeEnabled) rules?.resumeAt ?: 0.0 else 0.0
+
+            _play.value = PlaybackRequest(
+                slug = slug,
+                title = ready.detail.title.ifBlank { titleHint },
+                provider = provider,
+                season = ready.detail.activeSeason,
+                episodes = ready.detail.episodes,
+                start = episode,
+                resumeAtSec = at,
+            )
+        }
+    }
+
+    fun consumePlay() {
+        _play.value = null
+    }
 
     fun toggleFavorite() {
         viewModelScope.launch {

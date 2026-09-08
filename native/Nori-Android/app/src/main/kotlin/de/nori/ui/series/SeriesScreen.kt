@@ -69,7 +69,7 @@ fun SeriesScreen(
     viewModel: SeriesViewModel,
     wide: Boolean,
     onBack: () -> Unit,
-    onPlay: (Episode, resumeAtSec: Double) -> Unit,
+    onPlay: (Episode) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
@@ -101,8 +101,8 @@ fun SeriesScreen(
                             wide = wide,
                             favorite = favorite,
                             onToggleFavorite = viewModel::toggleFavorite,
-                            onPlay = { number, resumeAt ->
-                                viewModel.episodeFor(number)?.let { onPlay(it, resumeAt) }
+                            onPlay = { number ->
+                                viewModel.episodeFor(number)?.let(onPlay)
                             },
                         )
                     }
@@ -146,19 +146,11 @@ fun SeriesScreen(
                     }
 
                     items(detail.episodes, key = { it.key }) { episode ->
-                        val progress = snapshot.progressFor(episode.path, current.provider)
                         EpisodeRow(
                             episode = episode,
                             info = current.episodeInfo[episode.number],
-                            progress = progress,
-                            onClick = {
-                                val resumeAt = if (snapshot.resumeEnabled && !(progress?.complete ?: false)) {
-                                    progress?.positionSec?.takeIf { it >= 8 } ?: 0.0
-                                } else {
-                                    0.0
-                                }
-                                onPlay(episode, resumeAt)
-                            },
+                            progress = snapshot.progressFor(episode.path, current.provider),
+                            onClick = { onPlay(episode) },
                         )
                     }
 
@@ -199,7 +191,7 @@ private fun Header(
     wide: Boolean,
     favorite: Boolean,
     onToggleFavorite: () -> Unit,
-    onPlay: (episodeNumber: Int, resumeAtSec: Double) -> Unit,
+    onPlay: (episodeNumber: Int) -> Unit,
 ) {
     Column {
         Box(Modifier.fillMaxWidth().height(if (wide) 300.dp else 230.dp)) {
@@ -258,7 +250,7 @@ private fun Header(
                 ) {
                     val next = state.next
                     Button(
-                        onClick = { next?.let { onPlay(it.episode, it.resumeAt) } },
+                        onClick = { next?.let { onPlay(it.episode) } },
                         enabled = next != null,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = NoriColors.accent,

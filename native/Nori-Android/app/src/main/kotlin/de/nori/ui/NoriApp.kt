@@ -256,23 +256,22 @@ private fun Graph(
                 key = "series:${provider.wire}:$slug",
                 factory = viewModelFactory { initializer { SeriesViewModel(slug, title, provider) } },
             )
+            // Die Stelle, an der eine Folge beginnt, bestimmt der Kern —
+            // das ViewModel fragt ihn und meldet den fertigen Auftrag.
+            val play by model.play.collectAsStateWithLifecycle()
+            LaunchedEffect(play) {
+                play?.let { request ->
+                    PlaybackRequest.pending = request
+                    model.consumePlay()
+                    navController.navigate("player")
+                }
+            }
+
             SeriesScreen(
                 viewModel = model,
                 wide = wide,
                 onBack = { navController.popBackStack() },
-                onPlay = { episode, resumeAt ->
-                    val ready = model.state.value as? de.nori.ui.series.SeriesUiState.Ready
-                    PlaybackRequest.pending = PlaybackRequest(
-                        slug = slug,
-                        title = ready?.detail?.title ?: title,
-                        provider = provider,
-                        season = ready?.detail?.activeSeason.orEmpty(),
-                        episodes = ready?.detail?.episodes.orEmpty(),
-                        start = episode,
-                        resumeAtSec = resumeAt,
-                    )
-                    navController.navigate("player")
-                },
+                onPlay = model::startPlay,
             )
         }
 

@@ -20,11 +20,11 @@ extension NoriBridge {
             // Cover-Index und Folgen-Index als JSON-Dateien ab, und wo das
             // auf Android ist, weiß nur die App.
             let directory = URL(fileURLWithPath: try args.string("dataDir"), isDirectory: true)
-            NoriStorage.directoryOverride = directory
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            lock.lock()
-            if store == nil { store = LibraryStore(directory: directory) }
-            lock.unlock()
+            // Das Schloss wird in einer **nicht**-asynchronen Funktion
+            // genommen. Ein `NSLock` direkt in einem async-Kontext ist in
+            // Swift 6 ein Fehler und hier schon eine Warnung: die Task könnte
+            // zwischen `lock` und `unlock` den Thread wechseln.
+            prepareStore(at: directory)
             return successRaw("""
             {"schemaVersion":\(LibraryStore.schemaVersion),"hasTMDBKey":\(TMDBKeyStore.current != nil)}
             """)
@@ -251,6 +251,16 @@ extension NoriBridge {
         default:
             throw BridgeError(kind: "bridge", message: "Unbekannter Aufruf '\(op)'")
         }
+    }
+
+    /// Den Store einrichten. Synchron, damit das Schloss nicht über eine
+    /// Unterbrechungsstelle hinweg gehalten wird.
+    private static func prepareStore(at directory: URL) {
+        NoriStorage.directoryOverride = directory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        lock.lock()
+        defer { lock.unlock() }
+        if store == nil { store = LibraryStore(directory: directory) }
     }
 
     /// Zugriff auf den Store unter Schloss. Wirft, wenn `init` fehlt — das ist
