@@ -70,6 +70,11 @@ struct NoriScreen<Content: View>: View {
     }
 }
 
+/// Überschrift eines Abschnitts — Titel mit Akzentbalken darunter.
+///
+/// Der Balken ist nicht Zierde: die Startseite besteht aus einer Reihe
+/// gleichartiger Kachelzeilen, und eine Überschrift allein trennt sie zu
+/// schwach voneinander. Dieselbe Form benutzt die iPhone-Fassung.
 struct NoriSectionHeader: View {
     let title: String
     var trailing: String?
@@ -80,9 +85,14 @@ struct NoriSectionHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.title3.weight(.semibold))
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.title3.weight(.bold))
+                Capsule()
+                    .fill(NoriTheme.accent)
+                    .frame(width: 30, height: 3)
+            }
             if let trailing {
                 Spacer()
                 Text(trailing)
@@ -158,13 +168,22 @@ extension View {
     }
 }
 
+/// Der Druck auf eine Kachel oder einen Knopf.
+///
+/// Auf dem Mac fällt die Verkleinerung dezenter aus als auf dem iPhone: der
+/// Zeiger steht schon auf dem Element, es gibt bereits eine Hover-Rückmeldung,
+/// und ein kräftiges Zusammenziehen wäre daneben zu viel.
 struct NoriPressStyle: ButtonStyle {
     var enabled: Bool = true
+    var scale: CGFloat = 0.98
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(enabled && configuration.isPressed ? 0.75 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        let active = enabled && !reduceMotion && configuration.isPressed
+        return configuration.label
+            .scaleEffect(active ? scale : 1)
+            .opacity(enabled && configuration.isPressed ? 0.78 : 1)
+            .animation(NoriMotion.allowed(NoriMotion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -175,6 +194,27 @@ struct NoriPressStyle: ButtonStyle {
 /// anders als dem Browser. Deshalb dieser kleine Umweg — sichtbar ist er
 /// nicht, das Verhalten ist dasselbe: solange kein Bild da ist, steht der
 /// Rückfall (in aller Regel der Buchstabe).
+/// Merkt sich, welche Adressen in diesem Programmlauf schon einmal geladen
+/// wurden.
+///
+/// Nur dafür da, das Einblenden **nicht** zu wiederholen: eine Kachel, die
+/// beim Zurückscrollen erneut aufblendet, sieht aus, als würde sie neu
+/// geladen. Beim ersten Mal ist die Überblendung richtig, danach steht das
+/// Bild sofort.
+@MainActor
+enum NoriImageMemory {
+    private static var seen: Set<URL> = []
+    /// Ein paar Fenster voll; darüber wird geleert statt gepflegt.
+    private static let capacity = 600
+
+    static func isKnown(_ url: URL) -> Bool { seen.contains(url) }
+
+    static func remember(_ url: URL) {
+        if seen.count >= capacity { seen.removeAll(keepingCapacity: true) }
+        seen.insert(url)
+    }
+}
+
 struct NoriCoverImage<Fallback: View>: View {
     let url: URL
     let referer: String
@@ -182,22 +222,35 @@ struct NoriCoverImage<Fallback: View>: View {
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: NSImage?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
+        ZStack {
+            fallback()
+                .opacity(image == nil ? 1 : 0)
             if let image {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
-            } else {
-                fallback()
             }
         }
+        // Beide Ebenen liegen übereinander und werden ineinander geblendet,
+        // statt dass die eine gegen die andere ausgetauscht wird. Ein Tausch
+        // zeigt für einen Bildaufbau nichts — den weißen Blitz.
+        .clipped()
         // Über die Adresse geschlüsselt: ändert sich das Cover einer Kachel
         // (manuelle Auswahl, TMDB-Treffer trifft ein), läuft die Aufgabe neu.
         .task(id: url) {
             image = nil
+            let known = NoriImageMemory.isKnown(url)
             guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
-            guard !Task.isCancelled else { return }
-            image = NSImage(data: data)
+            guard !Task.isCancelled, let decoded = NSImage(data: data) else { return }
+            NoriImageMemory.remember(url)
+            if !known, !reduceMotion {
+                withAnimation(NoriMotion.micro) { image = decoded }
+            } else {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { image = decoded }
+            }
         }
     }
 }
