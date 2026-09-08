@@ -101,9 +101,13 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.14.2"
+    static let version = "1.15.0"
 
     static let highlights = [
+        "Die Oberfläche folgt einem gemeinsamen Design-System: dieselben Radien, Abstände und Bewegungskurven in jeder Ansicht.",
+        "Liquid Glass auf macOS 26 und neuer — Karussellpfeile und Merken-Knopf. Abschaltbar unter Einstellungen › Allgemein.",
+        "Kacheln blenden beim ersten Laden auf und stehen danach sofort, statt beim Zurückscrollen erneut aufzublenden.",
+        "„Bewegung reduzieren“ schaltet jetzt überall die Bewegung ab, ohne dass eine Funktion verlorengeht.",
         "Neuer Bereich „K-Drama“: die koreanischen Serien aus dem Serienstream-Katalog, in Seitenleiste, Katalog und Kalender.",
         "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
         "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",

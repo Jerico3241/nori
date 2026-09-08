@@ -17,8 +17,8 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.17.2** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.14.2** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| iOS / iPadOS | **1.18.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.15.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
 | LG webOS | **1.0.0** | TV-App mit Fernbedienungsnavigation; auf einem echten Gerät noch nicht erprobt |
 

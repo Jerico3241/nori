@@ -1,4 +1,4 @@
-# Nori macOS 1.14.2
+# Nori macOS 1.15.0
 
 Native macOS build of the Nori SwiftUI client. Changes per release: [../../CHANGELOG.md](../../CHANGELOG.md)
 
