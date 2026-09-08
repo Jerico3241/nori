@@ -61,6 +61,11 @@ NONEXISTENT = {
 }
 
 # Symbole, die neuer sind als das Deployment-Target des jeweiligen Targets.
+#
+# Der Wert nennt die nötige Version. `#available` hilft hier **nicht**: die
+# aufgeführten Symbole sind nicht nur zu neu, sie stehen auch in keinem
+# Zweig, den ein Deployment-Target von macOS 14 je erreicht — oder sie
+# lassen sich schlicht nicht sinnvoll gaten (Stile, Container).
 TOO_NEW_MACOS_14 = {
     r"\.tabViewStyle\(\.sidebarAdaptable\)": "macOS 15",
     r"\.toolbar\(removing:": "macOS 15",
@@ -68,7 +73,24 @@ TOO_NEW_MACOS_14 = {
     r"\.searchFocused\(": "macOS 15",
     r"\.windowResizability\(\.automatic\)": "macOS 15",
     r"\bGlassEffectContainer\b": "macOS 26",
-    r"\.glassEffect\(": "macOS 26",
+}
+
+# Symbole, die neuer sind als das Deployment-Target, sich aber hinter
+# `#available` sauber verwenden lassen — der Zweig läuft dann nur auf einem
+# System, das sie kennt.
+#
+# Ohne Absicherung bleiben sie ein Fehler: ein ungeschütztes `glassEffect`
+# stürzt auf macOS 14 nicht ab, es übersetzt gar nicht erst. Geprüft wird auf
+# Dateiebene, weil das Skript keinen Parser hat: liegt im selben Quelltext
+# eine passende `#available`-Abfrage, gilt die Verwendung als abgesichert.
+GATED_MACOS_14 = {
+    r"\.glassEffect\(": (r"#available\(macOS 26", "macOS 26"),
+    r"\.scrollEdgeEffectStyle\(": (r"#available\(macOS 26", "macOS 26"),
+}
+
+GATED_IOS_17 = {
+    r"\.glassEffect\(": (r"#available\(iOS 26", "iOS 26"),
+    r"\.scrollEdgeEffectStyle\(": (r"#available\(iOS 26", "iOS 26"),
 }
 
 # Frameworks/Typen, die im jeweils anderen Target nicht existieren.
@@ -155,6 +177,18 @@ def check_target(folder: Path, *, is_mac: bool) -> None:
         for pattern, hint in NONEXISTENT.items():
             if re.search(pattern, src):
                 add("ERROR", where, hint)
+
+        gated = GATED_MACOS_14 if is_mac else GATED_IOS_17
+        floor = "macOS 14.0" if is_mac else "iOS 17.0"
+        for pattern, (guard, since) in gated.items():
+            if re.search(pattern, src) and not re.search(guard, src):
+                add(
+                    "ERROR",
+                    where,
+                    f"Braucht {since}, das Target ist auf {floor} festgelegt, und die "
+                    f"Verwendung steht in keinem `{guard.replace(chr(92), '')}…)`-Zweig. "
+                    "Über die Hülle in NoriGlass.swift gehen statt direkt.",
+                )
 
         if is_mac:
             for pattern, since in TOO_NEW_MACOS_14.items():
@@ -308,6 +342,44 @@ def check_no_secrets() -> None:
                         "oder in eine Build-Einstellung, nicht in den Quelltext.",
                     )
                     break
+
+
+def check_glass_runner() -> None:
+    """Liquid Glass braucht ein SDK ab Xcode 26 — auch mit `#available`.
+
+    `#available` ist eine Laufzeitprüfung. Übersetzt wird trotzdem gegen das
+    SDK des Runners, und ein Xcode 16 kennt `glassEffect` überhaupt nicht.
+    Der Fehler lautet dann „has no member" und weist auf nichts hin.
+
+    Die Apple-Workflows laufen auf einem self-hosted Mac, dessen Xcode-Version
+    diese Datei nicht kennen kann. Deshalb wird geprüft, dass sie
+    `tools/require-xcode.sh` mit mindestens 26 aufrufen — das bricht mit
+    klarer Meldung ab, statt den Build zwanzig Minuten später scheitern zu
+    lassen.
+    """
+    glass = re.compile(r"\.glassEffect\(|\.scrollEdgeEffectStyle\(")
+    used: list[str] = []
+    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+        for path in swift_files(folder):
+            if glass.search(strip_comments_and_strings(path.read_text())):
+                used.append(f"{label}/{path.name}")
+    if not used:
+        return
+
+    where_used = ", ".join(sorted(used))
+    for name in ("build-ios.yml", "build-macos.yml", "package-ios-ipa.yml"):
+        workflow = ROOT / ".github/workflows" / name
+        if not workflow.exists():
+            continue
+        required = re.search(r"tools/require-xcode\.sh\s+(\d+)", workflow.read_text())
+        if not required or int(required.group(1)) < 26:
+            add(
+                "ERROR",
+                name,
+                f"Die App benutzt Liquid Glass ({where_used}). Das braucht ein SDK "
+                "ab Xcode 26; der Workflow fordert weniger an. Schritt auf "
+                "`tools/require-xcode.sh 26` setzen.",
+            )
 
 
 def check_ios_runner() -> None:
@@ -562,6 +634,7 @@ def main() -> int:
     check_main_actor_calls(IOS, "iOS")
     check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
+    check_glass_runner()
     check_fill_in_fixed_frame(IOS, "iOS")
     check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()
