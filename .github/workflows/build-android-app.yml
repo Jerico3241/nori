@@ -20,6 +20,14 @@ on:
       - 'native/Nori-Android/**'
       - 'native/NoriCore/**'
       - 'native/Package.swift'
+      # Der Lauf haengt an diesen Skripten — ohne sie hier loest eine
+      # Aenderung am Einsammeln oder an der APK-Pruefung keinen Bau aus, und
+      # die Korrektur bliebe ungeprueft liegen.
+      - 'tools/collect-android-libs.py'
+      - 'tools/check-android-apk.py'
+      - 'tools/android-triples.py'
+      - 'tools/android-sdk.sh'
+      - 'tools/elf.py'
       - '.github/workflows/build-android-app.yml'
 
 concurrency:
