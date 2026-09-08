@@ -8,6 +8,9 @@ import de.nori.core.CatalogProvider
 import de.nori.core.LibraryScope
 import de.nori.core.NoriCore
 import de.nori.core.WatchProgress
+import de.nori.core.normalizeEpisodePath
+import de.nori.core.providerFromPath
+import de.nori.ui.PlaybackRequest
 import de.nori.core.userMessage
 import de.nori.data.Nori
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +34,24 @@ data class HeroItem(
     val genres: List<String>,
 ) {
     val key: String get() = "${provider.wire}|$slug"
+}
+
+/**
+ * Was ein Tipp auf „Weiterschauen" ergibt.
+ *
+ * Der Fortschrittseintrag kennt Folge und Pfad, aber nicht die Folgenliste
+ * der Staffel — und die braucht der Player für „nächste Folge" und Autoplay.
+ * Sie wird deshalb nachgeholt. Klappt das nicht (Quelle nicht erreichbar,
+ * Staffel neu geschnitten), führt der Tipp auf die Detailseite statt ins
+ * Leere.
+ */
+sealed interface ResumeResult {
+    data class Play(val request: PlaybackRequest) : ResumeResult
+    data class OpenSeries(
+        val slug: String,
+        val title: String,
+        val provider: CatalogProvider,
+    ) : ResumeResult
 }
 
 sealed interface HomeUiState {
@@ -90,6 +111,67 @@ class HomeViewModel : ViewModel() {
             load(snapshot.value.currentScope, force = true)
             _refreshing.value = false
         }
+    }
+
+    private val _resume = MutableStateFlow<ResumeResult?>(null)
+    val resume: StateFlow<ResumeResult?> = _resume.asStateFlow()
+
+    private val _resuming = MutableStateFlow(false)
+    val resuming: StateFlow<Boolean> = _resuming.asStateFlow()
+
+    /**
+     * „Weiterschauen" soll die Folge starten, nicht die Detailseite öffnen.
+     *
+     * Dafür fehlen zwei Dinge, die der Fortschrittseintrag nicht hat: die
+     * Folgenliste der Staffel und die genaue Stelle nach den Regeln des Kerns
+     * (unter acht Sekunden wird von vorn begonnen, eine fast fertige Folge
+     * gilt als gesehen). Beides wird hier geholt.
+     */
+    fun startResume(progress: WatchProgress) {
+        if (_resuming.value) return
+        viewModelScope.launch {
+            _resuming.value = true
+            val provider = progress.provider ?: providerFromPath(progress.episodePath)
+            _resume.value = buildResume(progress, provider)
+            _resuming.value = false
+        }
+    }
+
+    fun consumeResume() {
+        _resume.value = null
+    }
+
+    private suspend fun buildResume(
+        progress: WatchProgress,
+        provider: CatalogProvider,
+    ): ResumeResult {
+        val fallback = ResumeResult.OpenSeries(progress.slug, progress.title, provider)
+
+        val detail = runCatching {
+            Nori.catalog.series(provider, progress.slug, progress.season.ifBlank { null })
+        }.getOrNull() ?: return fallback
+
+        val episode = detail.episodes.firstOrNull { it.number == progress.episode }
+            ?: detail.episodes.firstOrNull {
+                normalizeEpisodePath(it.path) == normalizeEpisodePath(progress.episodePath)
+            }
+            ?: return fallback
+
+        // Die Stelle bestimmt der Kern, nicht diese Datei.
+        val rules = runCatching { NoriCore.progressRules(progress) }.getOrNull()
+        val at = if (snapshot.value.resumeEnabled) rules?.resumeAt ?: 0.0 else 0.0
+
+        return ResumeResult.Play(
+            PlaybackRequest(
+                slug = progress.slug,
+                title = detail.title.ifBlank { progress.title },
+                provider = provider,
+                season = detail.activeSeason,
+                episodes = detail.episodes,
+                start = episode,
+                resumeAtSec = at,
+            )
+        )
     }
 
     fun setScope(next: LibraryScope) {

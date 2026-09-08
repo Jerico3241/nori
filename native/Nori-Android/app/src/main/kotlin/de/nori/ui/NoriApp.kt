@@ -19,6 +19,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -36,14 +37,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import de.nori.core.CatalogProvider
-import de.nori.core.WatchProgress
-import de.nori.core.providerFromPath
 import de.nori.data.CoreState
 import de.nori.data.Nori
 import de.nori.ui.components.ErrorState
 import de.nori.ui.components.LoadingState
 import de.nori.ui.home.HomeScreen
 import de.nori.ui.home.HomeViewModel
+import de.nori.ui.home.ResumeResult
 import de.nori.ui.library.LibraryScreen
 import de.nori.ui.library.LibraryViewModel
 import de.nori.ui.player.PlayerScreen
@@ -177,13 +177,33 @@ private fun Graph(
     ) {
         composable(Tab.Home.route) {
             val model: HomeViewModel = viewModel()
+
+            // „Weiterschauen" startet die Folge. Ist die Staffel nicht mehr
+            // ladbar oder die Folge dort nicht mehr enthalten, führt der Tipp
+            // auf die Detailseite statt ins Leere.
+            val resume by model.resume.collectAsStateWithLifecycle()
+            LaunchedEffect(resume) {
+                when (val target = resume) {
+                    null -> Unit
+                    is ResumeResult.Play -> {
+                        PlaybackRequest.pending = target.request
+                        model.consumeResume()
+                        navController.navigate("player")
+                    }
+
+                    is ResumeResult.OpenSeries -> {
+                        model.consumeResume()
+                        navController.navigateToSeries(target.slug, target.title, target.provider)
+                    }
+                }
+            }
+
             HomeScreen(
                 viewModel = model,
                 wide = wide,
                 onOpenSeries = { slug, title, provider ->
                     navController.navigateToSeries(slug, title, provider)
                 },
-                onResume = { progress -> navController.resume(progress) },
             )
         }
 
@@ -353,18 +373,6 @@ private fun NavHostController.navigateToSeries(
     val encodedSlug = java.net.URLEncoder.encode(slug, "UTF-8")
     val encodedTitle = java.net.URLEncoder.encode(title, "UTF-8")
     navigate("series/${provider.wire}/$encodedSlug?title=$encodedTitle")
-}
-
-/**
- * „Weiterschauen" öffnet die Detailseite und nicht direkt den Player.
- *
- * Der Fortschrittseintrag kennt zwar Folge und Pfad, aber nicht die
- * Folgenliste der Staffel — und die braucht der Player für „nächste Folge".
- * Die Detailseite holt sie und weiß von sich aus, wo weitergeht.
- */
-private fun NavHostController.resume(progress: WatchProgress) {
-    val provider = progress.provider ?: providerFromPath(progress.episodePath)
-    navigateToSeries(progress.slug, progress.title, provider)
 }
 
 private fun NavHostController.switchTab(route: String) {

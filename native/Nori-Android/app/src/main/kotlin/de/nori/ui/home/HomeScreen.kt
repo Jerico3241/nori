@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,11 +68,11 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     wide: Boolean,
     onOpenSeries: (slug: String, title: String, provider: CatalogProvider) -> Unit,
-    onResume: (WatchProgress) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val watching by viewModel.continueWatching.collectAsStateWithLifecycle()
     val scope by viewModel.scope.collectAsStateWithLifecycle()
+    val resuming by viewModel.resuming.collectAsStateWithLifecycle()
 
     val cardWidth = if (wide) 168.dp else 132.dp
 
@@ -114,7 +115,17 @@ fun HomeScreen(
             if (watching.isNotEmpty()) {
                 item(key = "continue") {
                     Column {
-                        SectionHeader("Weiterschauen")
+                        // Das Auflösen der Folge dauert eine Netzrunde. Ohne
+                        // Anzeige wirkt der Tipp, als sei nichts passiert.
+                        SectionHeader("Weiterschauen") {
+                            if (resuming) {
+                                CircularProgressIndicator(
+                                    color = NoriColors.accent,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
                         LazyRow(
                             contentPadding = ContentPadding,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -123,7 +134,7 @@ fun HomeScreen(
                                 ContinueCard(
                                     item = item,
                                     width = cardWidth,
-                                    onClick = { onResume(item) },
+                                    onClick = { viewModel.startResume(item) },
                                 )
                             }
                         }
