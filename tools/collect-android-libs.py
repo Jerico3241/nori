@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -123,6 +124,48 @@ def index_libraries(arch: str) -> dict[str, Path]:
     return found
 
 
+def find_strip() -> Path | None:
+    """`llvm-strip` aus dem NDK.
+
+    AGP strippt die Bibliotheken sonst selbst — kann es hier aber nicht, weil
+    kein NDK im Android-SDK liegt, und meldet nur „Unable to strip the
+    following libraries, packaging them as they are". Ohne Strippen tragen
+    allein die Swift-Laufzeit und `libNoriAndroid.so` ihre vollständigen
+    Debugsymbole in die APK: aus rund 60 MB werden knapp 250.
+    """
+    for root in sdk_roots():
+        for folder, _, files in os.walk(root, followlinks=True):
+            if not folder.endswith(("/bin", "\\bin")):
+                continue
+            for name in ("llvm-strip", "llvm-strip.exe"):
+                if name in files:
+                    return Path(folder) / name
+    return None
+
+
+def strip(library: Path, tool: Path | None) -> None:
+    """Debugsymbole entfernen, dynamische Symbole behalten.
+
+    `--strip-unneeded` lässt `.dynsym` unangetastet — genau die Tabelle, über
+    die der Lader `nori_bridge_call` und die JNI-Methode findet, und die
+    `tools/check-android-apk.py` anschließend prüft.
+    """
+    if tool is None:
+        return
+    before = library.stat().st_size
+    result = subprocess.run(
+        [str(tool), "--strip-unneeded", str(library)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"    strippen fehlgeschlagen ({library.name}): {result.stderr.strip()}")
+        return
+    after = library.stat().st_size
+    if before > after:
+        print(f"    {library.name}: {before // 1024} KiB -> {after // 1024} KiB")
+
+
 def collect(build: Path, triple: str, out: Path) -> None:
     arch = triple.split("-", 1)[0]
     if arch not in ABI_BY_ARCH:
@@ -146,7 +189,12 @@ def collect(build: Path, triple: str, out: Path) -> None:
             f"Durchsucht: {', '.join(str(r) for r in sdk_roots()) or '(kein SDK installiert)'}"
         )
 
+    tool = find_strip()
+    if tool is None:
+        print(f"{abi}: kein llvm-strip gefunden — die Bibliotheken bleiben groß.")
+
     shutil.copy2(library, target / library.name)
+    strip(target / library.name, tool)
     print(f"{abi}: {library.name}")
 
     # Rekursiv aufloesen, genau wie der Lader auf dem Geraet.
@@ -165,6 +213,7 @@ def collect(build: Path, triple: str, out: Path) -> None:
             done.add(name)
             continue
         shutil.copy2(source, target / name)
+        strip(target / name, tool)
         done.add(name)
         print(f"{abi}: {name}  <- {source}")
         queue.extend(Elf.load(source).needed())
