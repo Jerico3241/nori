@@ -1,6 +1,9 @@
 plugins {
+    // Kein `kotlin.android` mehr: seit AGP 9 bringt das Android-Plugin die
+    // Kotlin-Unterstützung selbst mit, und es zusätzlich anzuwenden ist ein
+    // Fehler. Die Compiler-Plugins für Compose und Serialisierung bleiben —
+    // das sind eigene Erweiterungen, keine zweite Kotlin-Anbindung.
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }

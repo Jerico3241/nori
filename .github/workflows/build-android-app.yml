@@ -159,6 +159,21 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
 
+      # Google-Maven ist aus der Entwicklungsumgebung nicht erreichbar, vom
+      # Runner aber schon. Statt Fassungen zu raten, stehen sie damit im Log.
+      - name: Verfügbare Fassungen erheben
+        continue-on-error: true
+        run: |
+          for artifact in \
+              "com/android/tools/build/gradle" \
+              "androidx/compose/compose-bom" \
+              "androidx/media3/media3-exoplayer" \
+              "androidx/navigation/navigation-compose"; do
+              echo "== $artifact"
+              curl -fsSL "https://dl.google.com/dl/android/maven2/$artifact/maven-metadata.xml" \
+                  | tr '<' '\n' | grep -o '^version>.*' | sed 's/version>//' | tail -8
+          done
+
       - name: Debug-APK bauen
         working-directory: native/Nori-Android
         run: ./gradlew --no-daemon assembleDebug
