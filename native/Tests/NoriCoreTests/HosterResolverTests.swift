@@ -282,6 +282,25 @@ final class HosterResolverTests: XCTestCase {
         XCTAssertEqual(HosterResolver.pickLang(options, pref: "FR").count, 2)
     }
 
+    func testExplicitSelectionDoesNotOfferHostersFromAnotherLanguage() {
+        let options = [
+            HosterOption(name: "VOE", lang: "DE", langKey: "1", redirectPath: "/redirect/de"),
+            HosterOption(name: "Vidoza", lang: "EN", langKey: "2", redirectPath: "/redirect/en"),
+        ]
+        XCTAssertEqual(HosterResolver.matching(options, language: "de").map(\.name), ["VOE"])
+        XCTAssertTrue(HosterResolver.matching(options, language: "DE", hoster: "Vidoza").isEmpty)
+        XCTAssertTrue(HosterResolver.matching(options, language: "GerSub").isEmpty)
+        XCTAssertTrue(HosterResolver.matching(options, language: "DE", hoster: "Missing").isEmpty)
+    }
+
+    func testExplicitSelectionUsesTheRequestedLanguageAndIgnoresCase() {
+        let options = [
+            HosterOption(name: "VOE", lang: "EN", langKey: "2", redirectPath: "/redirect/en"),
+            HosterOption(name: "VOE", lang: "DE", langKey: "1", redirectPath: "/redirect/de"),
+        ]
+        XCTAssertEqual(HosterResolver.matching(options, language: "de", hoster: "voe").map(\.redirectPath), ["/redirect/de"])
+    }
+
     // MARK: - Registry je Hoster
 
     func testEveryKnownHosterIsRecognised() {

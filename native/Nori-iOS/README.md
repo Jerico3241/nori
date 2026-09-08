@@ -1,4 +1,4 @@
-# Nori für iPhone (SwiftUI) — 1.17.1
+# Nori für iPhone (SwiftUI) — 1.17.2
 
 Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeitet lokal; Merkliste und Fortschritt benötigen keinen Account.
 

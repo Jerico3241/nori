@@ -203,7 +203,8 @@ struct PlayerScreen: View {
 
     private var hosterChoices: [PlayerChoice] {
         guard let info = watchInfo else { return [] }
-        return Array(Set(info.hosters.map(\.name)))
+        let available = HosterResolver.matching(info.hosters, language: source?.lang ?? library.langPref)
+        return Array(Set(available.map(\.name)))
             .sorted { HosterResolver.rank($0) < HosterResolver.rank($1) }
             .map { PlayerChoice(id: $0, label: $0) }
     }
@@ -322,8 +323,19 @@ struct PlayerScreen: View {
             watchInfo = info
             status = "Stream wird geholt…"
 
+            // Bei einer ausdrücklichen Wahl nur passende Angebote versuchen.
+            // Automatischer Start darf weiterhin die gespeicherten Präferenzen nutzen.
+            let candidates: [HosterOption]
+            if let language = preferredLang {
+                candidates = HosterResolver.matching(info.hosters, language: language, hoster: preferredHoster)
+                guard !candidates.isEmpty else {
+                    throw NoriError.hoster("Für diese Auswahl ist kein Stream verfügbar.")
+                }
+            } else {
+                candidates = info.hosters
+            }
             let play = try await HosterResolver.resolveBest(
-                hosters: info.hosters,
+                hosters: candidates,
                 preferredHoster: preferredHoster ?? library.hosterPref,
                 preferredLang: preferredLang ?? library.langPref,
                 episodePath: currentPath,
@@ -476,7 +488,7 @@ struct PlayerScreen: View {
         }
         let current = source?.hoster.lowercased()
         let options = HosterResolver.ordered(
-            HosterResolver.pickLang(info.hosters, pref: source?.lang ?? library.langPref),
+            HosterResolver.matching(info.hosters, language: source?.lang ?? library.langPref),
             preferred: nil
         )
         guard let alternative = options.first(where: { $0.name.lowercased() != current }) else {
@@ -490,7 +502,6 @@ struct PlayerScreen: View {
     func switchHoster(to hoster: String) async {
         let at = currentPosition()
         save(forceComplete: false)
-        library.hosterPref = hoster
         await startPlayback(preferredHoster: hoster, preferredLang: source?.lang ?? library.langPref, resumeAt: at)
     }
 
@@ -498,8 +509,7 @@ struct PlayerScreen: View {
     func switchLanguage(to lang: String) async {
         let at = currentPosition()
         save(forceComplete: false)
-        library.langPref = lang
-        await startPlayback(preferredHoster: source?.hoster ?? library.hosterPref, preferredLang: lang, resumeAt: at)
+        await startPlayback(preferredLang: lang, resumeAt: at)
     }
 
     @MainActor
