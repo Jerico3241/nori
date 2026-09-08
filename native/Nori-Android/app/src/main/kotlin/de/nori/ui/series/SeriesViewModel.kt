@@ -140,7 +140,7 @@ class SeriesViewModel(
         }
     }
 
-    private inline fun update(block: (SeriesUiState.Ready) -> SeriesUiState.Ready) {
+    private fun update(block: (SeriesUiState.Ready) -> SeriesUiState.Ready) {
         val ready = _state.value as? SeriesUiState.Ready ?: return
         _state.value = block(ready)
     }

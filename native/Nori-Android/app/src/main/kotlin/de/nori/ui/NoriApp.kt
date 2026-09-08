@@ -281,19 +281,28 @@ private fun Graph(
                 },
             )
 
-            androidx.compose.runtime.LaunchedEffect(request.start.path) {
+            androidx.compose.runtime.LaunchedEffect(model) {
+                if (model.hasOpened) return@LaunchedEffect
                 onPlaybackStarted()
                 model.open(request.start, request.resumeAtSec)
+            }
+
+            // Greift auch, wenn der Player über die Systemgeste verlassen wird
+            // und nicht über den Knopf — sonst liefe die Wiedergabe weiter und
+            // die Benachrichtigung bliebe stehen.
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                onDispose {
+                    model.saveProgress(force = true)
+                    model.engine.player.stop()
+                    onPlaybackFinished()
+                }
             }
 
             PlayerScreen(
                 viewModel = model,
                 inPictureInPicture = inPictureInPicture,
                 onEnterPictureInPicture = onEnterPictureInPicture,
-                onBack = {
-                    onPlaybackFinished()
-                    navController.popBackStack()
-                },
+                onBack = { navController.popBackStack() },
             )
         }
     }

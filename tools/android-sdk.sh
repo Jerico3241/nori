@@ -24,7 +24,7 @@ JDK_DIR="$TOOLS_HOME/jdk-21"
 # Die Fassungen stehen hier und nicht im Workflow: so ist nachvollziehbar,
 # womit gebaut wurde, ohne durch die Lauf-Historie zu gehen.
 JDK_VERSION="21.0.5+11"
-CMDLINE_TOOLS="13114758"
+CMDLINE_TOOLS="11076708"   # cmdline-tools 12.0
 PLATFORM="android-36"
 BUILD_TOOLS="36.0.0"
 
@@ -59,8 +59,14 @@ export ANDROID_SDK_ROOT="$SDK_DIR"
 if [ ! -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
     echo "Android-Befehlszeilenwerkzeuge werden geholt ..."
     TMP="$(mktemp -d)"
-    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-mac-${CMDLINE_TOOLS}_latest.zip" \
-        -o "$TMP/tools.zip"
+    URL="https://dl.google.com/android/repository/commandlinetools-mac-${CMDLINE_TOOLS}_latest.zip"
+    if ! curl -fsSL "$URL" -o "$TMP/tools.zip"; then
+        echo "Download fehlgeschlagen: $URL" >&2
+        echo "Die Build-Nummer der Command-line-Tools aendert sich mit jeder" >&2
+        echo "Fassung. Aktuelle steht auf https://developer.android.com/studio" >&2
+        echo "unter 'Command line tools only' — dann CMDLINE_TOOLS oben setzen." >&2
+        exit 1
+    fi
     mkdir -p "$SDK_DIR/cmdline-tools"
     unzip -q "$TMP/tools.zip" -d "$TMP"
     rm -rf "$SDK_DIR/cmdline-tools/latest"

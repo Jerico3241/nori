@@ -38,7 +38,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,11 +92,6 @@ fun PlayerScreen(
         if (!controlsVisible || !playback.isPlaying || sheet != null) return@LaunchedEffect
         delay(3_500)
         controlsVisible = false
-    }
-
-    // Beim Verlassen des Bildschirms den Stand festhalten.
-    DisposableEffect(Unit) {
-        onDispose { viewModel.saveProgress(force = true) }
     }
 
     Box(

@@ -76,6 +76,16 @@ class PlayerViewModel(
     val error = engine.error
 
     private var current: Episode? = null
+
+    /**
+     * Wurde schon eine Folge geöffnet?
+     *
+     * Nach einem Autoplay-Wechsel zeigt der Übergabeplatz weiter auf die
+     * ursprüngliche Folge. Ohne diese Marke spränge die Wiedergabe beim
+     * nächsten Aufbau des Bildschirms dorthin zurück — mitten in Folge 5
+     * wieder bei Folge 1.
+     */
+    val hasOpened: Boolean get() = current != null
     private var resolveJob: Job? = null
     private var saveJob: Job? = null
     private var countdownJob: Job? = null
