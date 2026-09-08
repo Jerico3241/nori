@@ -170,9 +170,39 @@ struct NoriSeriesLink<Label: View>: View {
         } label: {
             label()
                 .contentShape(Rectangle())
+                // Zeigerrückmeldung auf dem iPad und mit Magic Keyboard: die
+                // Kachel hebt sich unter dem Zeiger an. Auf dem iPhone ohne
+                // Zeiger passiert nichts — der Modifikator kostet dort nichts.
+                .hoverEffect(.lift)
                 .modifier(NoriZoomSource(id: slug, namespace: noriZoom, enabled: !reduceMotion))
         }
-        .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress && !reduceMotion))
+        .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress))
+        .contextMenu {
+            NoriFavoriteButton(slug: slug, title: titleHint)
+        }
+    }
+}
+
+/// Merken oder vergessen als Menüeintrag.
+///
+/// Eigene Ansicht, damit das Kontextmenü nicht die ganze Kachel an den Store
+/// bindet: `library.isFavorite` in der Kachel selbst zu lesen ließe jede
+/// Kachel bei jeder Änderung der Merkliste neu zeichnen.
+private struct NoriFavoriteButton: View {
+    @Environment(LibraryStore.self) private var library
+    let slug: String
+    let title: String
+
+    var body: some View {
+        let marked = library.isFavorite(slug)
+        Button {
+            library.toggleFavorite(slug, title: title)
+        } label: {
+            Label(
+                marked ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen",
+                systemImage: marked ? "bookmark.slash" : "bookmark"
+            )
+        }
     }
 }
 
@@ -219,13 +249,25 @@ private struct NoriZoomDest: ViewModifier {
     }
 }
 
+/// Der Druck auf eine Kachel oder einen Knopf.
+///
+/// Ein einziger Stil für die ganze App: eine Kachel, die anders drückt als
+/// die daneben, fällt auf, ohne dass sich benennen lässt, woran es liegt.
+/// Zusätzlich zur Verkleinerung eine Spur Deckkraft — auf einem dunklen
+/// Grund ist die Größenänderung allein kaum zu sehen.
 struct NoriPressStyle: ButtonStyle {
     var enabled: Bool = true
+    /// Wie stark. Große Flächen dürfen weniger schrumpfen als kleine,
+    /// sonst wirkt die Bewegung übertrieben.
+    var scale: CGFloat = 0.96
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(enabled && configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+        let active = enabled && !reduceMotion && configuration.isPressed
+        return configuration.label
+            .scaleEffect(active ? scale : 1)
+            .opacity(enabled && configuration.isPressed ? 0.86 : 1)
+            .animation(NoriMotion.allowed(NoriMotion.press, reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -236,28 +278,78 @@ struct NoriPressStyle: ButtonStyle {
 /// anders als dem Browser. Deshalb dieser kleine Umweg — sichtbar ist er
 /// nicht, das Verhalten ist dasselbe: solange kein Bild da ist, steht der
 /// Rückfall (in aller Regel der Buchstabe).
+/// Merkt sich, welche Adressen in diesem Programmlauf schon einmal geladen
+/// wurden.
+///
+/// Nur dafür da, das Einblenden **nicht** zu wiederholen: eine Kachel, die
+/// beim Zurückscrollen erneut aufblendet, sieht aus, als würde sie neu
+/// geladen. Beim ersten Mal ist die Überblendung richtig, danach steht das
+/// Bild sofort.
+@MainActor
+enum NoriImageMemory {
+    private static var seen: Set<URL> = []
+    /// Ein paar Bildschirme; darüber wird geleert statt gepflegt. Im
+    /// schlimmsten Fall blendet ein Cover einmal zu viel auf.
+    private static let capacity = 600
+
+    static func isKnown(_ url: URL) -> Bool { seen.contains(url) }
+
+    static func remember(_ url: URL) {
+        if seen.count >= capacity { seen.removeAll(keepingCapacity: true) }
+        seen.insert(url)
+    }
+}
+
+/// Ein Cover, geladen über `CoverImageLoader` statt über `AsyncImage`.
+///
+/// `AsyncImage` lässt sich keine Kopfzeilen mitgeben. Beide Quellen brauchen
+/// aber User-Agent und Referer, sonst antworten sie auf eine Bildanfrage
+/// anders als dem Browser. Deshalb dieser kleine Umweg — sichtbar ist er
+/// nicht, das Verhalten ist dasselbe: solange kein Bild da ist, steht der
+/// Rückfall (in aller Regel der Buchstabe).
+///
+/// Das Bild blendet auf, wenn es geholt werden musste, und steht sofort,
+/// wenn es schon einmal da war. Die Größe ändert sich dabei nie: der Rahmen
+/// gehört dem Aufrufer, das Bild füllt ihn.
 struct NoriCoverImage<Fallback: View>: View {
     let url: URL
     let referer: String
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: UIImage?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
+        ZStack {
+            fallback()
+                .opacity(image == nil ? 1 : 0)
             if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                fallback()
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
             }
         }
+        // Beide Ebenen liegen übereinander und werden ineinander geblendet,
+        // statt dass die eine gegen die andere ausgetauscht wird. Ein Tausch
+        // zeigt für einen Bildaufbau nichts — den weißen Blitz. Die Kurve
+        // setzt die Aufgabe unten von Fall zu Fall, deshalb steht hier kein
+        // `animation`-Modifikator.
+        .clipped()
         // Über die Adresse geschlüsselt: ändert sich das Cover einer Kachel
         // (TMDB-Treffer trifft ein), läuft die Aufgabe neu.
         .task(id: url) {
             image = nil
+            let known = NoriImageMemory.isKnown(url)
             guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
-            guard !Task.isCancelled else { return }
-            image = UIImage(data: data)
+            guard !Task.isCancelled, let decoded = UIImage(data: data) else { return }
+            NoriImageMemory.remember(url)
+            if !known, !reduceMotion {
+                withAnimation(NoriMotion.micro) { image = decoded }
+            } else {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { image = decoded }
+            }
         }
     }
 }
@@ -268,6 +360,14 @@ struct PosterTile: View {
     var compact: Bool = false
     var coverURL: URL? = nil
     var kind: CatalogProvider? = nil
+    /// Den Titel in das Bild schreiben statt darunter.
+    ///
+    /// Für die Zeilen der Startseite: dort bleiben dadurch alle Kacheln
+    /// gleich hoch — ein zweizeiliger Titel neben einem einzeiligen verschob
+    /// vorher die ganze Reihe — und das Artwork bekommt die volle Fläche.
+    /// In den Rasteransichten steht der Titel weiter darunter, wo er sich
+    /// besser überfliegen lässt.
+    var titleInImage: Bool = false
     @Environment(LibraryStore.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var remote: URL?
@@ -293,6 +393,35 @@ struct PosterTile: View {
                     } else {
                         letter
                     }
+                }
+            }
+            .overlay {
+                if titleInImage {
+                    // Kräftiger als ein halbdurchsichtiges Schwarz über der
+                    // unteren Hälfte: helle Artworks — weißer Hintergrund,
+                    // Schnee, Himmel — verschlucken einen zu zarten Verlauf,
+                    // und der Titel steht dann grau auf hell.
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.42),
+                            .init(color: .black.opacity(0.45), location: 0.74),
+                            .init(color: .black.opacity(0.9), location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if titleInImage {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 9)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))

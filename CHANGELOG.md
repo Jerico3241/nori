@@ -4,8 +4,105 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.14.2**, iOS/iPadOS **1.14.5**,
+unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.18.0**,
 Windows **1.8.0**, LG webOS **1.0.0**.
+
+## [iOS 1.18.0] — 2026-09-09
+
+Redesign der Oberfläche nach dem Vorbild von
+[Shirox](https://github.com/xibrox/Shirox). Gestaltung, Bewegung und Bedienung
+kommen von dort; Architektur, Provider, Datenmodell und Wiedergabelogik
+bleiben unverändert Nori. Was übernommen und was nachgebaut ist, steht in
+`docs/apple-redesign.md`, die Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
+
+### Hinzugefügt
+
+- **Doppeltipp springt zehn Sekunden**, links zurück, rechts vor. Mehrere
+  schnelle Tipper werden zusammengefasst: viermal rechts zeigt „+40 s“ und
+  springt einmal um 40 Sekunden.
+- **Qualitätsauswahl** — aber nur, wenn der Stream tatsächlich mehrere Stufen
+  anbietet. Die Stufen werden aus der HLS-Master-Playlist gelesen und über
+  `preferredPeakBitRate` durchgesetzt. Liefert ein Hoster eine einzelne Spur,
+  erscheint die Auswahl gar nicht.
+- **Nächste Folge** als Knopf in der Bedienleiste, nicht nur am Folgenende.
+- **Bild einpassen oder füllen** — im Querformat bleiben sonst breite schwarze
+  Balken stehen.
+- **Abspielknopf auf der Detailseite**: „Weiter · Folge 7“ beziehungsweise
+  „Folge 1 abspielen“, nach derselben Regel wie „Schau weiter“. Bisher ließ
+  sich eine Serie dort nur über die Folgenliste starten.
+- **Liquid Glass** ab iOS 26 für Player-Bedienung, Bereichspillen und
+  Merken-Knopf, mit klassischem Rückfall darunter und einem Schalter unter
+  Einstellungen › Darstellung.
+- **Zeigerrückmeldung und Kontextmenü** auf den Kacheln — für iPad mit
+  Trackpad.
+- Haptik an wenigen Stellen: Merkliste, Play/Pause, Sprung.
+
+### Geändert
+
+- **Der Kopfbereich läuft von Kante zu Kante** bis unter die Statusleiste, mit
+  Parallaxe beim Blättern, Dehnung beim Herunterziehen, Verlauf in den
+  Hintergrund, Schriftzug, Genres und zwei Knöpfen. Vorher eine 250 Punkte
+  hohe Karte mit Rand.
+- **Kacheln tragen den Titel im Bild** statt darunter. Die Reihen bleiben
+  dadurch gleich hoch — ein zweizeiliger Titel neben einem einzeiligen
+  verschob vorher die ganze Zeile — und das Artwork bekommt die Fläche.
+- **Der Player besteht aus acht Dateien statt einer.** Die Bedienung bleibt
+  aufgebaut und wird ein- und ausgeblendet, statt bei jedem Antippen verworfen
+  zu werden; sie kommt oben und unten herein, die Mitte wächst auf.
+- **Alle Wiedergabeoptionen in einer Glasgruppe** — Hoster, Qualität, Sprache,
+  Untertitel, Geschwindigkeit, nächste Folge. Angezeigt wird nur, was es
+  wirklich gibt.
+- **Der Fortschrittsregler folgt beim Ziehen dem Finger** statt erst beim
+  Loslassen zu springen, und zeigt Puffer und Restzeit.
+- **Das automatische Ausblenden** berücksichtigt jetzt auch offene Menüs und
+  das Ziehen am Regler, nicht mehr nur VoiceOver und Pause.
+- **Ein gemeinsames Bewegungssystem** statt verstreuter Einzelwerte.
+  „Bewegung reduzieren“ schaltet Parallaxe, Dehnung und räumliche Übergänge
+  ab, ohne dass eine Funktion verlorengeht.
+- Die Fehleransicht des Players bietet „Anderen Hoster versuchen“ als
+  Hauptknopf an — bei diesen Quellen ist das der Alltag, nicht die Ausnahme.
+
+### Behoben
+
+- **Das Play/Pause-Symbol sprang beim Puffern hin und her**, und die Bedienung
+  blendete dabei nicht mehr weg. `timeControlStatus == .playing` ist während
+  des Nachladens falsch; gemeint war „läuft, oder will laufen“.
+- **Die Hosterliste flackerte**, solange sie offen war: ein SwiftUI-`Menu`
+  schließt und öffnet sich bei jedem Neuzeichnen des Rumpfs, und der zeichnet
+  viermal pro Sekunde neu. Die Menüs laufen jetzt über UIKit.
+- **Der Hosterwechsel warf die Ansicht auf den Ladebildschirm zurück** — die
+  eben benutzte Auswahl war mitsamt Leiste weg, der Regler sprang auf null.
+  Leisten, Titel und Fortschritt bleiben jetzt stehen.
+- **Kacheln blendeten beim Zurückscrollen erneut auf**, als würden sie neu
+  geladen. Ein Bild blendet jetzt nur beim ersten Mal auf.
+- **Im Querformat füllte der Kopfbereich den ganzen Bildschirm**, und das
+  Kopfbild der Detailseite war höher als das Gerät — die Seite begann
+  unterhalb des sichtbaren Bereichs.
+- Fehlende Standbilder zeigen Nummer und Filmstreifen statt eines leeren
+  dunklen Rechtecks.
+
+## [macOS 1.15.0] — 2026-09-09
+
+Die Mac-Fassung bleibt Desktop-Bauform — Seitenleiste, Hover, Kontextmenüs,
+eigenes Player-Fenster. Übernommen ist, was plattformübergreifend gilt.
+
+### Hinzugefügt
+
+- **Liquid Glass** ab macOS 26 für die Karussellpfeile und den Merken-Knopf,
+  mit klassischem Rückfall darunter und einem Schalter unter Einstellungen ›
+  Allgemein.
+
+### Geändert
+
+- **Ein gemeinsames Bewegungssystem**: dieselben Kurven wie auf dem iPhone,
+  statt drei eigener Dauern. „Bewegung reduzieren“ wird überall ausgewertet.
+- Abschnittsüberschriften mit Akzentbalken, Druckstil mit dezenter
+  Verkleinerung.
+
+### Behoben
+
+- **Kacheln blendeten beim Zurückscrollen erneut auf**, als würden sie neu
+  geladen.
 
 ## [iOS 1.17.2] — 2026-09-08
 

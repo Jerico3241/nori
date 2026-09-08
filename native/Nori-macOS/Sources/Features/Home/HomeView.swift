@@ -208,6 +208,7 @@ struct HeroCarousel: View {
     @State private var tick = 0
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(NoriGlassSetting.key) private var glass = true
 
     /// Die Liste wechselt beim Quellenwechsel die Länge. Ohne Begrenzung
     /// zeigte das Karussell dann eine leere Fläche.
@@ -248,7 +249,7 @@ struct HeroCarousel: View {
         .clipped()
         .overlay(alignment: .leading) { arrow(-1, symbol: "chevron.left") }
         .overlay(alignment: .trailing) { arrow(1, symbol: "chevron.right") }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: safeIndex)
+        .animation(NoriMotion.allowed(NoriMotion.content, reduceMotion: reduceMotion), value: safeIndex)
         .onHover { hovering = $0 }
         // `tick` wird bei jedem Durchlauf erhöht, damit die Aufgabe auch dann
         // neu startet, wenn nicht weitergeblättert wurde. Vorher hing sie an
@@ -272,10 +273,10 @@ struct HeroCarousel: View {
                 Image(systemName: symbol)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
-                    .padding(14)
-                    .background(.black.opacity(0.35), in: Circle())
+                    .frame(width: 46, height: 46)
+                    .noriGlass(Circle(), enabled: glass, off: Color.black.opacity(0.4))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoriPressStyle(scale: 0.94))
             .padding(.horizontal, 12)
             .transition(.opacity)
         }
@@ -392,9 +393,9 @@ struct HeroSlide: View {
                 NoriSeriesLink(slug: item.slug, titleHint: item.title, provider: item.kind) {
                     Label("Jetzt ansehen", systemImage: "play.fill")
                     .font(.headline)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 12)
-                    .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(.horizontal, 24)
+                    .frame(height: NoriControl.hit)
+                    .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .foregroundStyle(NoriTheme.onAccent)
                 }
 
@@ -448,18 +449,25 @@ struct BookmarkButton: View {
     let slug: String
     let title: String
     var large = false
+    @AppStorage(NoriGlassSetting.key) private var glass = true
 
     var body: some View {
         Button {
             library.toggleFavorite(slug, title: title)
         } label: {
-            Image(systemName: library.isFavorite(slug) ? "bookmark.fill" : "bookmark")
+            let marked = library.isFavorite(slug)
+            Image(systemName: marked ? "bookmark.fill" : "bookmark")
                 .font(large ? .body.weight(.semibold) : .caption)
-                .foregroundStyle(library.isFavorite(slug) ? NoriTheme.accent : .white)
-                .padding(large ? 12 : 7)
-                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .foregroundStyle(marked ? NoriTheme.accent : .white)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: large ? 44 : 26, height: large ? 44 : 26)
+                .noriGlass(
+                    RoundedRectangle(cornerRadius: large ? 10 : 6, style: .continuous),
+                    enabled: glass,
+                    off: Color.black.opacity(0.45)
+                )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoriPressStyle(scale: 0.94))
         .help(library.isFavorite(slug) ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen")
     }
 }
@@ -511,7 +519,7 @@ struct PosterCell: View {
                     .padding(8)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .noriAnimation(NoriMotion.hover, value: hovering)
         .onHover { inside in
             hovering = inside
             if inside, details.overview == nil {

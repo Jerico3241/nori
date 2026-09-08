@@ -29,6 +29,7 @@ Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`
 - `AniworldClient.swift`
 - `HosterResolver.swift`
 - `HTML.swift`
+- `HLSPlaylist.swift`
 
 Die gleichnamigen Pfade in den iOS- und macOS-Ordnern sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Die Xcode-Projekte referenzieren weiterhin ihre bekannten Pfade und bauen dadurch dieselben Quellen.
 

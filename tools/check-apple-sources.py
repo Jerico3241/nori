@@ -36,6 +36,11 @@ SHARED_IDENTICAL = [
     # Optional-Ketten, an denen der Typechecker abbrach, und fehlende `try`.
     # Die macOS-Fassung hatte dieselbe Logik bereits aufgelöst.
     "HTML.swift",
+    # Auswertung der HLS-Master-Playlist. Nur der iOS-Player benutzt sie
+    # bisher — die Mac-Fassung spielt mit den Systemreglern —, aber sie
+    # gehört zur Stream-Auswertung und liegt deshalb im gemeinsamen Kern,
+    # wo `swift test` sie erreicht.
+    "HLSPlaylist.swift",
 ]
 
 # Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag
@@ -61,6 +66,11 @@ NONEXISTENT = {
 }
 
 # Symbole, die neuer sind als das Deployment-Target des jeweiligen Targets.
+#
+# Der Wert nennt die nötige Version. `#available` hilft hier **nicht**: die
+# aufgeführten Symbole sind nicht nur zu neu, sie stehen auch in keinem
+# Zweig, den ein Deployment-Target von macOS 14 je erreicht — oder sie
+# lassen sich schlicht nicht sinnvoll gaten (Stile, Container).
 TOO_NEW_MACOS_14 = {
     r"\.tabViewStyle\(\.sidebarAdaptable\)": "macOS 15",
     r"\.toolbar\(removing:": "macOS 15",
@@ -68,7 +78,24 @@ TOO_NEW_MACOS_14 = {
     r"\.searchFocused\(": "macOS 15",
     r"\.windowResizability\(\.automatic\)": "macOS 15",
     r"\bGlassEffectContainer\b": "macOS 26",
-    r"\.glassEffect\(": "macOS 26",
+}
+
+# Symbole, die neuer sind als das Deployment-Target, sich aber hinter
+# `#available` sauber verwenden lassen — der Zweig läuft dann nur auf einem
+# System, das sie kennt.
+#
+# Ohne Absicherung bleiben sie ein Fehler: ein ungeschütztes `glassEffect`
+# stürzt auf macOS 14 nicht ab, es übersetzt gar nicht erst. Geprüft wird auf
+# Dateiebene, weil das Skript keinen Parser hat: liegt im selben Quelltext
+# eine passende `#available`-Abfrage, gilt die Verwendung als abgesichert.
+GATED_MACOS_14 = {
+    r"\.glassEffect\(": (r"#available\(macOS 26", "macOS 26"),
+    r"\.scrollEdgeEffectStyle\(": (r"#available\(macOS 26", "macOS 26"),
+}
+
+GATED_IOS_17 = {
+    r"\.glassEffect\(": (r"#available\(iOS 26", "iOS 26"),
+    r"\.scrollEdgeEffectStyle\(": (r"#available\(iOS 26", "iOS 26"),
 }
 
 # Frameworks/Typen, die im jeweils anderen Target nicht existieren.
@@ -155,6 +182,18 @@ def check_target(folder: Path, *, is_mac: bool) -> None:
         for pattern, hint in NONEXISTENT.items():
             if re.search(pattern, src):
                 add("ERROR", where, hint)
+
+        gated = GATED_MACOS_14 if is_mac else GATED_IOS_17
+        floor = "macOS 14.0" if is_mac else "iOS 17.0"
+        for pattern, (guard, since) in gated.items():
+            if re.search(pattern, src) and not re.search(guard, src):
+                add(
+                    "ERROR",
+                    where,
+                    f"Braucht {since}, das Target ist auf {floor} festgelegt, und die "
+                    f"Verwendung steht in keinem `{guard.replace(chr(92), '')}…)`-Zweig. "
+                    "Über die Hülle in NoriGlass.swift gehen statt direkt.",
+                )
 
         if is_mac:
             for pattern, since in TOO_NEW_MACOS_14.items():
@@ -310,6 +349,44 @@ def check_no_secrets() -> None:
                     break
 
 
+def check_glass_runner() -> None:
+    """Liquid Glass braucht ein SDK ab Xcode 26 — auch mit `#available`.
+
+    `#available` ist eine Laufzeitprüfung. Übersetzt wird trotzdem gegen das
+    SDK des Runners, und ein Xcode 16 kennt `glassEffect` überhaupt nicht.
+    Der Fehler lautet dann „has no member" und weist auf nichts hin.
+
+    Die Apple-Workflows laufen auf einem self-hosted Mac, dessen Xcode-Version
+    diese Datei nicht kennen kann. Deshalb wird geprüft, dass sie
+    `tools/require-xcode.sh` mit mindestens 26 aufrufen — das bricht mit
+    klarer Meldung ab, statt den Build zwanzig Minuten später scheitern zu
+    lassen.
+    """
+    glass = re.compile(r"\.glassEffect\(|\.scrollEdgeEffectStyle\(")
+    used: list[str] = []
+    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+        for path in swift_files(folder):
+            if glass.search(strip_comments_and_strings(path.read_text())):
+                used.append(f"{label}/{path.name}")
+    if not used:
+        return
+
+    where_used = ", ".join(sorted(used))
+    for name in ("build-ios.yml", "build-macos.yml", "package-ios-ipa.yml"):
+        workflow = ROOT / ".github/workflows" / name
+        if not workflow.exists():
+            continue
+        required = re.search(r"tools/require-xcode\.sh\s+(\d+)", workflow.read_text())
+        if not required or int(required.group(1)) < 26:
+            add(
+                "ERROR",
+                name,
+                f"Die App benutzt Liquid Glass ({where_used}). Das braucht ein SDK "
+                "ab Xcode 26; der Workflow fordert weniger an. Schritt auf "
+                "`tools/require-xcode.sh 26` setzen.",
+            )
+
+
 def check_ios_runner() -> None:
     """Jeder iOS-Workflow muss zu dem SDK passen, das die App braucht.
 
@@ -386,7 +463,12 @@ def check_main_actor_calls(folder: Path, label: str) -> None:
     `Task { @MainActor in methode() }`.
 
     Erkannt wird bewusst grob: ein Aufruf einer bekannten `@MainActor`-Methode
-    in einer View-Hilfe, ohne `await` und ohne `Task {` auf derselben Zeile.
+    in einer View-Hilfe, außerhalb jedes `Task {`-Blocks und ohne `await`.
+
+    Der Block wird über die Klammertiefe verfolgt, nicht über die Zeile. Ein
+    `Task { @MainActor in` über mehrere Zeilen — die übliche Bauform in den
+    Rückrufen des Players — galt vorher als Fehler, obwohl genau das die
+    empfohlene Lösung ist.
     """
     for path in swift_files(folder):
         lines = path.read_text().splitlines()
@@ -404,22 +486,44 @@ def check_main_actor_calls(folder: Path, label: str) -> None:
         # (außer `var body`) und der nächsten Deklaration auf gleicher Ebene.
         declaration = re.compile(r"^\s{4}(?:@\w+\s+)*(?:private\s+)?(var|func)\s+(\w+)")
         current: str | None = None
+        # Klammertiefe, ab der wir uns in einem `Task { … }` befinden. Leer
+        # heißt: außerhalb.
+        task_depths: list[int] = []
+        depth = 0
         for index, line in enumerate(lines):
             match = declaration.match(line)
             if match:
                 is_view_helper = "some View" in line and match.group(2) != "body"
                 current = match.group(2) if is_view_helper else None
+                task_depths = []
+                depth = 0
                 continue
-            if current is None or "await" in line or "Task {" in line or "Task{" in line:
-                continue
-            for name in isolated:
-                if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
-                    add(
-                        "ERROR",
-                        f"{label}/{path.name}:{index + 1}",
-                        f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
-                        f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
-                    )
+
+            opens_task = "Task {" in line or "Task{" in line
+            in_task = bool(task_depths)
+            if current is not None and not in_task and not opens_task and "await" not in line:
+                for name in isolated:
+                    if re.search(rf"(?<![\w.]){re.escape(name)}\s*\(", line):
+                        add(
+                            "ERROR",
+                            f"{label}/{path.name}:{index + 1}",
+                            f"{name}() ist @MainActor, wird aber synchron aus '{current}' "
+                            f"aufgerufen. Stattdessen: Task {{ @MainActor in {name}(…) }}.",
+                        )
+
+            # Klammern der Zeile verrechnen; ein `Task {` merkt sich die Tiefe,
+            # auf der sein Block endet.
+            for char in line:
+                if char == "{":
+                    depth += 1
+                    if opens_task and not task_depths:
+                        task_depths.append(depth)
+                        opens_task = False
+                elif char == "}":
+                    if task_depths and depth == task_depths[-1]:
+                        task_depths.pop()
+                    depth -= 1
+            continue
 
 
 def png_info(path: Path) -> tuple[int, int, bool] | None:
@@ -562,6 +666,7 @@ def main() -> int:
     check_main_actor_calls(IOS, "iOS")
     check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
+    check_glass_runner()
     check_fill_in_fixed_frame(IOS, "iOS")
     check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()

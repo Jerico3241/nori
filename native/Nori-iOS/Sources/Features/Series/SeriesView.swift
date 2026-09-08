@@ -19,6 +19,7 @@ struct SeriesView: View {
     @State private var logo: URL?
     @State private var tab: DetailTab = .episodes
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(NoriGlassSetting.key) private var glass = true
 
     /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
     /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
@@ -91,22 +92,43 @@ struct SeriesView: View {
     /// kommt hier nicht mehr vor: es stand frueher als Kachel neben dem
     /// Titel, und beides zusammen war doppelt.
     private func header(_ detail: SeriesDetail) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Color.clear
-                .aspectRatio(16 / 10, contentMode: .fit)
+                .frame(height: headerHeight)
                 .overlay { backdropImage(detail) }
                 .overlay {
+                    // Bis in die Hintergrundfarbe hinein, nicht nach Schwarz:
+                    // das Bild soll in die Seite übergehen, nicht auf ihr
+                    // liegen. Die letzte Stufe ist deckend, damit unter dem
+                    // Schriftzug keine Kante bleibt.
                     LinearGradient(
-                        colors: [.clear, NoriTheme.bg.opacity(0.55), NoriTheme.bg],
-                        startPoint: .center,
+                        stops: [
+                            .init(color: .clear, location: 0.3),
+                            .init(color: NoriTheme.bg.opacity(0.5), location: 0.66),
+                            .init(color: NoriTheme.bg.opacity(0.92), location: 0.88),
+                            .init(color: NoriTheme.bg, location: 1)
+                        ],
+                        startPoint: .top,
                         endPoint: .bottom
                     )
                 }
                 .overlay(alignment: .bottom) { titleArt(detail).padding(.horizontal, 24) }
+                .clipped()
 
             metaLines(detail)
             actionRow(detail)
         }
+    }
+
+    /// Die Höhe des Kopfbildes.
+    ///
+    /// Vorher fest 16:10 der Breite. Im Querformat eines iPhones sind das
+    /// mehr Punkte, als der Bildschirm hoch ist — die Detailseite begann
+    /// dann unterhalb des sichtbaren Bereichs, und man sah nur ein Bild.
+    /// Deshalb zusätzlich an der Höhe gedeckelt.
+    private var headerHeight: CGFloat {
+        let screen = NoriScreenMetrics.size
+        return min(screen.width * 10 / 16, screen.height * 0.62)
     }
 
     @ViewBuilder
@@ -169,23 +191,16 @@ struct SeriesView: View {
         return "\(seasons) · Beendet"
     }
 
-    /// Merkliste und ein Ueberlaufmenue — bewusst ohne Anbieter-Zeile.
+    /// Abspielen, merken, Überlaufmenü — bewusst ohne Anbieter-Zeile.
+    ///
+    /// Der Abspielknopf stand hier lange gar nicht: wiedergeben ließ sich eine
+    /// Serie nur über die Folgenliste weiter unten. Das ist auf einer
+    /// Detailseite die eine Sache, die man erwartet.
     private func actionRow(_ detail: SeriesDetail) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                library.toggleFavorite(slug, title: detail.title)
-            } label: {
-                Label(
-                    library.isFavorite(slug) ? "Gemerkt" : "Merkliste",
-                    systemImage: library.isFavorite(slug) ? "bookmark.fill" : "bookmark"
-                )
-                .font(.callout.weight(.semibold))
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(NoriTheme.elevated))
-                .overlay { Capsule().strokeBorder(NoriTheme.border) }
-            }
-            .buttonStyle(.plain)
+        HStack(spacing: 10) {
+            playButton(detail)
+
+            BookmarkChip(slug: slug, title: detail.title)
 
             Menu {
                 Button("Von vorn abspielen") { playEpisode(first(detail), in: detail, at: 0) }
@@ -204,12 +219,43 @@ struct SeriesView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.callout.weight(.bold))
-                    .frame(width: 46, height: 46)
-                    .background(Circle().fill(NoriTheme.elevated))
-                    .overlay { Circle().strokeBorder(NoriTheme.border) }
+                    .foregroundStyle(NoriTheme.fg)
+                    .frame(width: NoriControl.hit, height: NoriControl.hit)
+                    .noriGlass(Circle(), enabled: glass, off: NoriTheme.elevated)
+                    .overlay { Circle().strokeBorder(.white.opacity(glass ? 0 : 0.18)) }
             }
+            .accessibilityLabel("Weitere Aktionen")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, NoriSpacing.screen)
+    }
+
+    /// „Weiter · Folge 7" oder „Folge 1 abspielen".
+    ///
+    /// Welche Folge, entscheidet `nextPlay` im Kern — dieselbe Regel wie in
+    /// „Schau weiter" auf der Startseite, damit beide Wege in derselben Folge
+    /// landen.
+    @ViewBuilder
+    private func playButton(_ detail: SeriesDetail) -> some View {
+        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes, source: source)
+        let started = target.resumeAt >= 8
+        Button {
+            guard let episode = detail.episodes.first(where: { $0.number == target.episode }) else { return }
+            playEpisode(episode, in: detail, at: library.resumeEnabled ? target.resumeAt : 0)
+        } label: {
+            Label(
+                started ? "Weiter · Folge \(target.episode)" : "Folge \(target.episode) abspielen",
+                systemImage: "play.fill"
+            )
+            .font(.callout.weight(.bold))
+            .foregroundStyle(NoriTheme.bg)
+            .lineLimit(1)
+            .padding(.horizontal, 22)
+            .frame(height: NoriControl.hit)
+            .background(Capsule().fill(NoriTheme.fg))
+        }
+        .buttonStyle(NoriPressStyle(scale: 0.97))
+        .disabled(detail.episodes.isEmpty)
+        .opacity(detail.episodes.isEmpty ? 0.4 : 1)
     }
 
     // MARK: - Details
@@ -288,12 +334,18 @@ struct SeriesView: View {
                     .overlay {
                         if let still = episodeInfo[ep.number]?.stillURL {
                             // TMDB-Bilder brauchen keinen Referer, anders als die Cover der Quellen.
-                            NoriCoverImage(url: still, referer: "") { NoriTheme.elevated }
+                            NoriCoverImage(url: still, referer: "") {
+                                EpisodePlaceholder(number: ep.number)
+                            }
                         } else {
-                            NoriTheme.elevated
+                            EpisodePlaceholder(number: ep.number)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: NoriRadius.small, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: NoriRadius.small, style: .continuous)
+                            .strokeBorder(NoriTheme.border)
+                    }
                 Text("FOLGE \(ep.number)")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(NoriTheme.muted)
@@ -539,21 +591,21 @@ struct EpisodeRow: View {
     /// Beschreibung im Weg, und am Bild ist er die geläufige Form.
     private func thumb(complete: Bool, ratio: Double) -> some View {
         ZStack {
-            NoriTheme.elevated
             if let url = info?.stillURL {
                 // image.tmdb.org braucht keine Kopfzeilen; `NoriCoverImage`
                 // bringt aber den Zwischenspeicher mit, den `AsyncImage` nicht
                 // hat — dieselbe Folge wird beim Blättern nicht neu geladen.
                 NoriCoverImage(url: url, referer: "https://www.themoviedb.org/") {
-                    Color.clear
+                    EpisodePlaceholder(number: episode.number)
                 }
+            } else {
+                EpisodePlaceholder(number: episode.number)
             }
             if complete {
-                Color.black.opacity(info?.stillURL == nil ? 0 : 0.5)
+                Color.black.opacity(0.5)
                 Image(systemName: "checkmark")
                     .font(.headline)
-            } else if info?.stillURL == nil {
-                Text("\(episode.number)").font(.headline)
+                    .foregroundStyle(.white)
             }
         }
         .overlay(alignment: .bottomLeading) {
@@ -586,3 +638,25 @@ struct EpisodeRow: View {
     }
 }
 
+
+/// Was steht, solange es kein Standbild gibt.
+///
+/// TMDB kennt längst nicht jede Folge, und für die darf die Kachel nicht wie
+/// ein Ladefehler aussehen. Ein leeres dunkles Rechteck tut genau das; die
+/// Nummer und ein Filmstreifen sagen, dass hier nichts fehlt.
+struct EpisodePlaceholder: View {
+    let number: Int
+
+    var body: some View {
+        ZStack {
+            NoriTheme.elevated
+            VStack(spacing: 3) {
+                Image(systemName: "film")
+                    .font(.system(size: 15))
+                Text("\(number)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+            }
+            .foregroundStyle(NoriTheme.fg.opacity(0.28))
+        }
+    }
+}

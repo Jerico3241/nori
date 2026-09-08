@@ -1,0 +1,1 @@
+../../NoriCore/Sources/NoriCore/HLSPlaylist.swift

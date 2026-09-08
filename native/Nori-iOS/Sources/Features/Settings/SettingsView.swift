@@ -2,6 +2,19 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
+    /// Der Schalter für das Glas.
+    ///
+    /// Nicht jeder will schwebende, durchscheinende Bedienelemente über dem
+    /// Videobild; ausgeschaltet zeichnet Nori dieselbe Bedienung mit
+    /// getönten Flächen und feinem Rand. Auf Systemen vor iOS 26 gibt es
+    /// kein Glas, dort steht der Schalter deshalb gar nicht erst da.
+    @AppStorage(NoriGlassSetting.key) private var liquidGlass = true
+
+    private var glassNote: String {
+        NoriGlassChip<EmptyView>.systemHasGlass
+            ? "Schwebende Bedienelemente aus Glas — im Player, im Kopfbereich und in den Menüs. Ausgeschaltet zeichnet Nori dieselben Elemente als getönte Flächen."
+            : "Braucht iOS 26 oder neuer. Auf diesem System zeichnet Nori die Bedienelemente als getönte Flächen."
+    }
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.1"
@@ -16,6 +29,14 @@ struct SettingsView: View {
                         PlaybackSettingsView()
                     }
                     .listRowBackground(NoriTheme.surface)
+                }
+                Section("Darstellung") {
+                    Toggle("Liquid Glass", isOn: $liquidGlass)
+                        .listRowBackground(NoriTheme.surface)
+                    Text(glassNote)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                        .listRowBackground(NoriTheme.surface)
                 }
                 Section("Synchronisation") {
                     if let provider = library.syncProvider {
