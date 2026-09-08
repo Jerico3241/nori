@@ -98,13 +98,13 @@ enum NoriBridge {
     /// beschreiben ist genau das Muster, das der Nebenläufigkeitsprüfer
     /// bemängelt. Der Kasten macht die Zuweisung eindeutig, und der Semaphor
     /// ist die Synchronisation — geschrieben wird einmal, gelesen erst danach.
-    private final class Result: @unchecked Sendable {
+    private final class Box: @unchecked Sendable {
         var value = ""
     }
 
     static func callBlocking(_ requestJSON: String) -> String {
         let semaphore = DispatchSemaphore(value: 0)
-        let result = Result()
+        let result = Box()
         Task.detached(priority: .userInitiated) {
             result.value = await handle(requestJSON)
             semaphore.signal()
@@ -223,7 +223,18 @@ extension NoriBridge {
         }
 
         func bool(_ key: String, default fallback: Bool = false) -> Bool {
-            (raw[key] as? Bool) ?? fallback
+            optionalBool(key) ?? fallback
+        }
+
+        /// `nil` heißt „nicht angegeben" — nicht „false".
+        func optionalBool(_ key: String) -> Bool? {
+            if let value = raw[key] as? Bool { return value }
+            return (raw[key] as? NSNumber)?.boolValue
+        }
+
+        func optionalDouble(_ key: String) -> Double? {
+            if let value = raw[key] as? Double { return value }
+            return (raw[key] as? NSNumber)?.doubleValue
         }
 
         func int(_ key: String, default fallback: Int = 0) -> Int {

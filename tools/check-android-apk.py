@@ -22,18 +22,27 @@ Tippfehler dort ist zur Übersetzungszeit unsichtbar.
 
 from __future__ import annotations
 
-import struct
 import sys
 import zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from elf import Elf  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 APK_DIR = ROOT / "native/Nori-Android/app/build/outputs/apk/release"
 
 ABIS = ("arm64-v8a", "x86_64")
 
-# Ohne diese startet die App nicht.
-RUNTIME = ("libswiftCore.so", "libFoundation.so", "libFoundationNetworking.so", "libc++_shared.so")
+# Was Android selbst mitbringt — dieselbe Liste wie in
+# tools/collect-android-libs.py, und aus demselben Grund.
+SYSTEM = {
+    "libc.so", "libm.so", "libdl.so", "libstdc++.so", "liblog.so",
+    "libandroid.so", "libz.so", "libGLESv2.so", "libEGL.so", "libjnigraphics.so",
+    "libOpenSLES.so", "libaaudio.so", "libmediandk.so", "libnativewindow.so",
+    "libvulkan.so", "libcamera2ndk.so", "libneuralnetworks.so", "libicuuc.so",
+    "libicui18n.so",
+}
 
 # Muss zu `de.nori.core.NoriBridge.nativeCall` passen.
 JNI_SYMBOL = "Java_de_nori_core_NoriBridge_nativeCall"
@@ -44,58 +53,6 @@ problems: list[str] = []
 
 def fail(message: str) -> None:
     problems.append(message)
-
-
-def elf_dynamic_symbols(data: bytes) -> set[str]:
-    """Die exportierten Namen einer ELF-Bibliothek.
-
-    Bewusst ohne Fremdbibliothek: `nm` gibt es auf dem Runner nicht
-    zwangsläufig für Android-Binärdateien, und der benötigte Teil des Formats
-    ist überschaubar — Sektionstabelle lesen, `.dynsym` und `.dynstr` finden,
-    Namen einsammeln.
-    """
-    if data[:4] != b"\x7fELF":
-        return set()
-    is_64 = data[4] == 2
-    little = data[5] == 1
-    end = "<" if little else ">"
-
-    if is_64:
-        e_shoff, = struct.unpack_from(end + "Q", data, 0x28)
-        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(end + "HHH", data, 0x3A)
-    else:
-        e_shoff, = struct.unpack_from(end + "I", data, 0x20)
-        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(end + "HHH", data, 0x2E)
-
-    sections = []
-    for index in range(e_shnum):
-        base = e_shoff + index * e_shentsize
-        if is_64:
-            name, sh_type = struct.unpack_from(end + "II", data, base)
-            offset, size = struct.unpack_from(end + "QQ", data, base + 0x18)
-            link, = struct.unpack_from(end + "I", data, base + 0x28)
-            entsize, = struct.unpack_from(end + "Q", data, base + 0x38)
-        else:
-            name, sh_type = struct.unpack_from(end + "II", data, base)
-            offset, size = struct.unpack_from(end + "II", data, base + 0x10)
-            link, = struct.unpack_from(end + "I", data, base + 0x18)
-            entsize, = struct.unpack_from(end + "I", data, base + 0x24)
-        sections.append((name, sh_type, offset, size, link, entsize))
-
-    # SHT_DYNSYM = 11
-    names: set[str] = set()
-    for _, sh_type, offset, size, link, entsize in sections:
-        if sh_type != 11 or entsize == 0 or link >= len(sections):
-            continue
-        _, _, str_offset, str_size, _, _ = sections[link]
-        strtab = data[str_offset:str_offset + str_size]
-        for position in range(offset, offset + size, entsize):
-            st_name, = struct.unpack_from(end + "I", data, position)
-            if st_name == 0 or st_name >= len(strtab):
-                continue
-            terminator = strtab.find(b"\0", st_name)
-            names.add(strtab[st_name:terminator].decode("utf-8", "replace"))
-    return names
 
 
 def main() -> int:
@@ -115,14 +72,19 @@ def main() -> int:
                 fail(f"{library} fehlt in der APK — auf {abi} startet die App nicht.")
                 continue
 
-            for name in RUNTIME:
-                if f"lib/{abi}/{name}" not in entries:
-                    fail(f"lib/{abi}/{name} fehlt — die Swift-Laufzeit ist unvollständig.")
+            present = {
+                name.rsplit("/", 1)[-1]
+                for name in entries
+                if name.startswith(f"lib/{abi}/") and name.endswith(".so")
+            }
 
-            symbols = elf_dynamic_symbols(archive.read(library))
-            if not symbols:
+            try:
+                core = Elf(archive.read(library))
+            except ValueError:
                 fail(f"{library} ließ sich nicht als ELF lesen.")
                 continue
+
+            symbols = core.dynamic_symbols()
             if JNI_SYMBOL not in symbols:
                 fail(
                     f"{abi}: {JNI_SYMBOL} wird nicht exportiert. Der Name muss zu "
@@ -131,7 +93,25 @@ def main() -> int:
             for symbol in C_SYMBOLS:
                 if symbol not in symbols:
                     fail(f"{abi}: {symbol} wird nicht exportiert (@_cdecl in NoriBridge.swift).")
-            print(f"  {abi}: {len(symbols)} exportierte Symbole, Brücke vorhanden")
+
+            # Derselbe Maßstab, den der Lader auf dem Gerät anlegt: jede
+            # Abhängigkeit jeder mitgelieferten Bibliothek muss auffindbar
+            # sein. Eine fehlende reicht, damit die App nicht startet.
+            for name in sorted(present):
+                try:
+                    needed = Elf(archive.read(f"lib/{abi}/{name}")).needed()
+                except ValueError:
+                    fail(f"{abi}/{name} ließ sich nicht als ELF lesen.")
+                    continue
+                for dependency in needed:
+                    if dependency in SYSTEM or dependency in present:
+                        continue
+                    fail(
+                        f"{abi}: {name} braucht {dependency}, das weder in der APK "
+                        "liegt noch eine Android-Systembibliothek ist."
+                    )
+
+            print(f"  {abi}: {len(present)} Bibliotheken, {len(symbols)} Symbole, Abhängigkeiten vollständig")
 
         # R8: die Kotlin-Seite der Brücke muss im DEX überlebt haben.
         dex = b"".join(

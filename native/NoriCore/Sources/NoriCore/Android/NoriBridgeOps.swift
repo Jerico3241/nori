@@ -186,9 +186,9 @@ extension NoriBridge {
             return try success(try withStore { store in
                 if let lang = args.optionalString("langPref") { store.langPref = lang }
                 if let hoster = args.optionalString("hosterPref") { store.hosterPref = hoster }
-                if let resume = args.raw["resumeEnabled"] as? Bool { store.resumeEnabled = resume }
-                if let autoplay = args.raw["autoplayNext"] as? Bool { store.autoplayNext = autoplay }
-                if let speed = args.raw["playbackSpeed"] as? Double { store.playbackSpeed = Float(speed) }
+                if let resume = args.optionalBool("resumeEnabled") { store.resumeEnabled = resume }
+                if let autoplay = args.optionalBool("autoplayNext") { store.autoplayNext = autoplay }
+                if let speed = args.optionalDouble("playbackSpeed") { store.playbackSpeed = Float(speed) }
                 if let raw = args.optionalString("provider"), let value = CatalogProvider(rawValue: raw) {
                     store.provider = value
                 }
