@@ -471,18 +471,24 @@ struct HeroCarousel: View {
 
     /// Wie hoch der Kopfbereich wird.
     ///
-    /// Auf dem iPhone gut die Hälfte des Bildschirms — hoch genug, dass ein
-    /// Breitbild wirkt, niedrig genug, dass die erste Reihe darunter noch
-    /// angeschnitten zu sehen ist und klar wird, dass es weitergeht. Auf dem
-    /// iPad zählt stattdessen die Breite: dort ergibt 16:9 die richtige Form,
-    /// gedeckelt, damit der Kopfbereich auf einem großen Bildschirm nicht das
-    /// ganze Fenster einnimmt.
+    /// Drei Fälle, und der dritte ist der, an dem eine feste Zahl scheitert:
+    ///
+    /// - **iPad und breite Fenster:** die Breite entscheidet, 16:9 ist die
+    ///   richtige Form. Gedeckelt, damit der Kopfbereich auf einem großen
+    ///   Bildschirm nicht das ganze Fenster einnimmt.
+    /// - **iPhone hochkant:** gut die Hälfte des Bildschirms — hoch genug,
+    ///   dass ein Breitbild wirkt, niedrig genug, dass die erste Reihe
+    ///   darunter angeschnitten zu sehen ist und klar wird, dass es
+    ///   weitergeht.
+    /// - **iPhone quer:** hier sind es nur rund 400 Punkte Höhe insgesamt.
+    ///   Ein Kopfbereich nach der Hochkantregel füllte den Bildschirm
+    ///   vollständig aus, und die Startseite sah aus wie ein einzelnes Bild.
     static func height(for size: CGSize?, regular: Bool) -> CGFloat {
         let screen = NoriScreenMetrics.size
         let width = size?.width ?? screen.width
-        if regular {
-            return min(width * 9 / 16, screen.height * 0.6)
-        }
+        let wide = width * 9 / 16
+        if regular { return min(wide, screen.height * 0.6) }
+        if screen.height < 520 { return min(wide, screen.height * 0.76) }
         return min(max(screen.height * 0.54, 380), 560)
     }
 }

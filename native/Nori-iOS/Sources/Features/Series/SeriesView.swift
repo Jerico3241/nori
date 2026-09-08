@@ -94,7 +94,7 @@ struct SeriesView: View {
     private func header(_ detail: SeriesDetail) -> some View {
         VStack(spacing: 14) {
             Color.clear
-                .aspectRatio(16 / 10, contentMode: .fit)
+                .frame(height: headerHeight)
                 .overlay { backdropImage(detail) }
                 .overlay {
                     // Bis in die Hintergrundfarbe hinein, nicht nach Schwarz:
@@ -118,6 +118,17 @@ struct SeriesView: View {
             metaLines(detail)
             actionRow(detail)
         }
+    }
+
+    /// Die Höhe des Kopfbildes.
+    ///
+    /// Vorher fest 16:10 der Breite. Im Querformat eines iPhones sind das
+    /// mehr Punkte, als der Bildschirm hoch ist — die Detailseite begann
+    /// dann unterhalb des sichtbaren Bereichs, und man sah nur ein Bild.
+    /// Deshalb zusätzlich an der Höhe gedeckelt.
+    private var headerHeight: CGFloat {
+        let screen = NoriScreenMetrics.size
+        return min(screen.width * 10 / 16, screen.height * 0.62)
     }
 
     @ViewBuilder
