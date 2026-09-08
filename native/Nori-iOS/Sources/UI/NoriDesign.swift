@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Die gemeinsame Grundlage der Oberfläche: Radien, Abstände, Größen,
 // Bewegungskurven und Haptik.
@@ -40,6 +41,26 @@ enum NoriControl {
     static let transport: CGFloat = 72
     /// Die beiden Sprungtasten daneben.
     static let transportSmall: CGFloat = 56
+}
+
+/// Maße des Bildschirms, ohne `UIScreen.main` im gemeinsamen Code.
+///
+/// `UIScreen.main` ist seit iOS 16 missbilligt und auf einem iPad in
+/// Splitscreen ohnehin die falsche Antwort: es nennt das Gerät, nicht das
+/// Fenster. Gefragt wird deshalb die aktive Szene; nur wenn es die noch nicht
+/// gibt — beim allerersten Aufbau —, steht ein Ersatzmaß bereit, damit
+/// niemand mit null rechnet.
+@MainActor
+enum NoriScreenMetrics {
+    static var size: CGSize {
+        let scenes = UIApplication.shared.connectedScenes
+        let active = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        if let window = (active as? UIWindowScene)?.windows.first(where: \.isKeyWindow)
+            ?? (active as? UIWindowScene)?.windows.first {
+            return window.bounds.size
+        }
+        return CGSize(width: 390, height: 844)
+    }
 }
 
 // MARK: - Bewegung
