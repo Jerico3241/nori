@@ -31,32 +31,63 @@ struct RootView: View {
     @State private var error: String?
     @State private var loading = true
 
+    /// Welcher Tab offen ist.
+    ///
+    /// Steht seit dem Umbau der Startseite unter Beobachtung, statt dem
+    /// `TabView` überlassen zu bleiben: der Kopfbereich der Startseite hat
+    /// einen Suchknopf, und Noris Suche liegt im Katalog. Der Knopf wechselt
+    /// deshalb den Tab, statt auf der Startseite ein zweites Suchfeld
+    /// aufzubauen — zwei Suchen wären zwei Filterregeln, die auseinanderlaufen
+    /// können. Dasselbe gilt für „Kalender" über den neuen Episoden.
+    @State private var tab: Tab = .home
+
+    enum Tab: Hashable {
+        case home, catalog, calendar, watchlist, more
+    }
+
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             NavigationStack {
-                HomeView(catalog: catalog, loading: loading, error: error, reload: load)
+                // Ausdrücklich `allItems` und nicht `catalog`: die Startseite
+                // hat keinen Bereichsumschalter und führt Anime und Serien
+                // gemeinsam. Ein Ausschnitt, den der Betrachter dort nicht
+                // sieht und nicht ändern kann, ließe die Seite ohne
+                // ersichtlichen Grund halb leer wirken.
+                NoriHomeView(
+                    catalog: allItems,
+                    loading: loading,
+                    error: error,
+                    reload: load,
+                    openSearch: { tab = .catalog },
+                    openCalendar: { tab = .calendar }
+                )
             }
             .tabItem { Label("Start", systemImage: "house") }
+            .tag(Tab.home)
 
             NavigationStack {
                 CatalogView(catalog: catalog, loading: loading, error: error, reload: load)
             }
             .tabItem { Label("Katalog", systemImage: "square.grid.2x2") }
+            .tag(Tab.catalog)
 
             NavigationStack {
                 CalendarView(slugs: scopeSlugs)
             }
             .tabItem { Label("Kalender", systemImage: "calendar") }
+            .tag(Tab.calendar)
 
             NavigationStack {
                 WatchlistView(catalog: catalog)
             }
             .tabItem { Label("Merkliste", systemImage: "heart") }
+            .tag(Tab.watchlist)
 
             NavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Mehr", systemImage: "gearshape") }
+            .tag(Tab.more)
         }
         .tint(NoriTheme.accent)
         .task(id: library.scope) { await load() }

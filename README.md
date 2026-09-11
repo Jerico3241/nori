@@ -86,9 +86,15 @@ Bedienung. Technik, Provider und Datenmodell sind unverändert Nori. Was
 übernommen und was nachgebaut ist, steht in `docs/apple-redesign.md`, die
 Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
 
-- Kopfbereich über die volle Breite mit Parallaxe, Dehnung beim Herunterziehen
-  und Verlauf in den Hintergrund
-- Kachelreihen mit Titel im Bild, gleichbleibender Höhe und Druckrückmeldung
+- Startseite mit cinematischem Kopfbereich über rund drei Viertel des
+  Bildschirms: Artwork bis unter die Statusleiste, Schriftzug, Eckdaten,
+  Beschreibung und drei Knöpfe darauf. Kein Bereichsumschalter — Anime und
+  Serien stehen dort gemeinsam.
+- Reihen der Startseite aus echten Signalen: Weiterschauen aus dem eigenen
+  Fortschritt, „Neu & beliebt" aus TMDB-Trend und -Beliebtheit, „Neue
+  Episoden" aus dem Kalender der Provider, „Für dich" aus Verlauf und
+  Merkliste. Was keine Daten hat, wird ausgeblendet statt leer gezeigt.
+- Kachelreihen mit gleichbleibender Höhe und Druckrückmeldung
 - Zoom-Übergang von der Kachel in die Detailseite
 - Detailseite mit Abspielknopf, Kopfbild, Staffeln und Folgen
 - Liquid Glass auf iOS/macOS 26 und neuer, mit klassischem Rückfall darunter

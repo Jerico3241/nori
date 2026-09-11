@@ -368,11 +368,18 @@ struct PosterTile: View {
     /// In den Rasteransichten steht der Titel weiter darunter, wo er sich
     /// besser überfliegen lässt.
     var titleInImage: Bool = false
+    /// Abweichender Eckenradius.
+    ///
+    /// Die Startseite zeichnet ihre Poster etwas runder als die Rasteransichten
+    /// — größere Kacheln vertragen einen größeren Radius, und auf der Vorlage
+    /// ist er sichtbar weicher. Ein eigener Kacheltyp nur dafür hieße, die
+    /// Cover-Auflösung darunter ein zweites Mal zu schreiben.
+    var cornerRadius: CGFloat? = nil
     @Environment(LibraryStore.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var remote: URL?
 
-    private var radius: CGFloat { compact ? 10 : 14 }
+    private var radius: CGFloat { cornerRadius ?? (compact ? 10 : 14) }
     /// Zuletzt der aus dem Slug abgeleitete Coverpfad: ein Katalogeintrag
     /// trägt kein Bild, und ohne TMDB-Treffer blieb hier bisher nur der
     /// Buchstabe. Trifft die Ableitung nicht, antwortet die Quelle mit 404 und

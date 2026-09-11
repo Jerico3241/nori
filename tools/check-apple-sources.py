@@ -41,6 +41,11 @@ SHARED_IDENTICAL = [
     # gehört zur Stream-Auswertung und liegt deshalb im gemeinsamen Kern,
     # wo `swift test` sie erreicht.
     "HLSPlaylist.swift",
+    # Bildadressen und Titelzuordnung von TMDB. Beide Targets brauchen sie,
+    # weil AniworldClient.swift sie benutzt; die Startseite von iOS benutzt
+    # dieselbe Zuordnung, um TMDB-Ranglisten auf Noris Katalog zurückzuführen.
+    "TMDBImages.swift",
+    "TMDBMatcher.swift",
 ]
 
 # Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag
