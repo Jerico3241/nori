@@ -1,0 +1,1 @@
+../Sources/Features/Series/SeriesArtwork.swift
