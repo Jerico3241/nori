@@ -35,7 +35,10 @@ struct HomeHeroView: View {
     let onPlay: () -> Void
 
     @Environment(LibraryStore.self) private var library
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
+    /// „Dynamische Farben" aus „Mehr → Darstellung": ob die Farbe des Artworks
+    /// den Kopfbereich einfärben darf.
+    @AppStorage(NoriLook.dynamicColorsKey) private var dynamicColors = true
 
     @State private var details = CoverDetails(poster: nil, backdrop: nil, overview: nil, rating: nil)
     @State private var logo: URL?
@@ -334,6 +337,13 @@ struct HomeHeroView: View {
     }
 
     private func sampleTone() async {
+        // „Dynamische Farben" aus „Mehr → Darstellung". Aus heißt: die Farbe
+        // wird nicht einmal abgetastet — sonst liefe der Abruf weiter und nur
+        // das Ergebnis bliebe ungenutzt.
+        guard dynamicColors else {
+            tone = nil
+            return
+        }
         guard let artwork else {
             tone = nil
             return

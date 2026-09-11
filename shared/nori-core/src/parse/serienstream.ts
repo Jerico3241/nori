@@ -209,6 +209,16 @@ export function parseCalendar(raw: unknown): AiringEntry[] {
       if (!slug) continue;
       const [hourRaw, minuteRaw] = (row.time ?? "00:00").split(":");
       const airingAt = berlinTime(year, month, day, Number(hourRaw) || 0, Number(minuteRaw) || 0);
+      // Serienstream nennt nie eine echte Uhrzeit: das Feld `time` steht in
+      // **jedem** Datensatz des Kalenders auf „00:00" — nachgezählt an einem
+      // vollständigen Abruf, 136 von 136 Zeilen. Es ist ein Platzhalter, keine
+      // Ausstrahlungszeit.
+      //
+      // „00:00" gilt deshalb als „keine Uhrzeit". Der Preis ist eine echte
+      // Veröffentlichung um Punkt Mitternacht, die ihre Zeit verlöre; der
+      // Gewinn ist, dass nicht der ganze Serienstream-Kalender eine Uhrzeit
+      // behauptet, die niemand genannt hat.
+      const hasTime = typeof row.time === "string" && row.time.includes(":") && row.time !== "00:00";
       const langId = row.language_id;
       let lang: string | null;
       if (langId === 1) lang = "DE";
@@ -231,6 +241,7 @@ export function parseCalendar(raw: unknown): AiringEntry[] {
         languages: lang ? [lang] : [],
         dayKey, dayLabel,
         coverPath: coverPathFromCalendar(poster),
+        hasTime,
       });
     }
   }

@@ -46,6 +46,16 @@ final class LibraryStore {
     var langPref: String = "DE" { didSet { persist() } }
     var hosterPref: String = "VOE" { didSet { persist() } }
     var resumeEnabled: Bool = true { didSet { persist() } }
+    /// Bevorzugte Bildhöhe als Zeichenkette: „auto", „1080", „720", „480".
+    ///
+    /// Eine Höhe und keine Bitrate, weil die Oberfläche Höhen nennt und jede
+    /// Master-Playlist sie mitliefert. „auto" heißt: der Spieler entscheidet.
+    ///
+    /// Erzwingen lässt sich das nur, wo der Hoster überhaupt mehrere Spuren
+    /// anbietet — eine einzelne MP4-Datei hat keine Stufen, und Nori tut dann
+    /// auch nicht so. Die Auswahl ist deshalb ein *Wunsch*: der Spieler nimmt
+    /// die höchste angebotene Stufe, die nicht darüber liegt.
+    var preferredQuality: String = "auto" { didSet { persist() } }
     var autoplayNext: Bool = true { didSet { persist() } }
     var playbackSpeed: Float = 1.0 { didSet { persist() } }
     var provider: CatalogProvider = .aniworld { didSet { persist() } }
@@ -56,6 +66,21 @@ final class LibraryStore {
     /// Wann zuletzt mit einem Fremdstand abgeglichen wurde. Ohne eingerichteten
     /// Anbieter bleibt der Wert leer.
     var syncLastRun: Double?
+
+    /// Was der Abgleich gerade tut.
+    ///
+    /// Nicht abgelegt und deshalb auch nicht in `Bag`: der Zustand gilt für
+    /// diesen Programmlauf. Die Oberfläche braucht ihn, um einen laufenden
+    /// Abgleich von einem fertigen und von einem fehlgeschlagenen zu
+    /// unterscheiden — vorher gab es nur `syncLastRun`, und ein Fehlschlag sah
+    /// damit genauso aus wie „noch nie gelaufen".
+    var syncState: SyncState = .idle
+
+    enum SyncState: Equatable {
+        case idle
+        case running
+        case failed(String)
+    }
 
     /// Wohin die Bibliothek gespiegelt wird — oder `nil`, solange nichts
     /// eingerichtet ist.
@@ -298,29 +323,55 @@ final class LibraryStore {
     }
 
     func clearHistory() { recents = []; persist() }
+
+    /// Einen einzelnen Verlaufseintrag entfernen.
+    ///
+    /// Der Fortschritt bleibt stehen: „aus dem Verlauf nehmen" heißt, den
+    /// Eintrag aus der Liste der zuletzt angesehenen Titel zu streichen, nicht
+    /// zu vergessen, wie weit die Folge lief. Wer das will, löscht den
+    /// Fortschritt — dafür gibt es `clearProgress`.
+    func forgetRecent(slug: String) {
+        let before = recents.count
+        recents.removeAll { $0.slug == slug }
+        guard recents.count != before else { return }
+        persist()
+    }
     func clearProgress() { progress = [:]; persist() }
 
     /// Von Hand angestoßener Abgleich. Ohne eingerichteten Anbieter passiert
     /// nichts — und die Oberfläche bietet den Knopf dann auch nicht an.
     func syncNow() {
-        guard let syncProvider else { return }
+        guard let syncProvider, syncState != .running else { return }
         Task { await runSync(with: syncProvider) }
     }
 
+    /// Holen, zusammenführen, zurückschreiben.
+    ///
+    /// Fehlschläge werden gemeldet statt verschluckt. Vorher stand hier
+    /// durchgehend `try?`: ein Anbieter ohne Netz tat dann scheinbar nichts,
+    /// und `syncLastRun` blieb leer — von „noch nie gelaufen" nicht zu
+    /// unterscheiden. Die Oberfläche kann einen Fehler nur zeigen, wenn er
+    /// irgendwo ankommt.
     private func runSync(with provider: LibrarySyncProvider) async {
-        // Erst holen: ein neuerer Fremdstand gewinnt, danach wird der
-        // zusammengeführte Stand zurückgeschrieben.
-        if let data = try? await provider.load(),
-           let bag = try? JSONDecoder().decode(Bag.self, from: data),
-           let remote = bag.modifiedAt, remote > modifiedAt {
-            apply(bag)
-            modifiedAt = remote
-            writeLocal(makeBag(modifiedAt: remote))
+        syncState = .running
+        do {
+            // Erst holen: ein neuerer Fremdstand gewinnt, danach wird der
+            // zusammengeführte Stand zurückgeschrieben.
+            if let data = try await provider.load(),
+               let bag = try? JSONDecoder().decode(Bag.self, from: data),
+               let remote = bag.modifiedAt, remote > modifiedAt {
+                apply(bag)
+                modifiedAt = remote
+                writeLocal(makeBag(modifiedAt: remote))
+            }
+            let bag = makeBag(modifiedAt: modifiedAt)
+            let data = try JSONEncoder().encode(bag)
+            try await provider.save(data, modifiedAt: modifiedAt)
+            syncLastRun = Date().timeIntervalSince1970 * 1000
+            syncState = .idle
+        } catch {
+            syncState = .failed(error.localizedDescription)
         }
-        let bag = makeBag(modifiedAt: modifiedAt)
-        guard let data = try? JSONEncoder().encode(bag) else { return }
-        try? await provider.save(data, modifiedAt: modifiedAt)
-        syncLastRun = Date().timeIntervalSince1970 * 1000
     }
 
     private func load() {
@@ -338,6 +389,7 @@ final class LibraryStore {
         langPref = bag.langPref ?? "DE"
         hosterPref = bag.hosterPref ?? "VOE"
         resumeEnabled = bag.resumeEnabled ?? true
+        preferredQuality = bag.preferredQuality ?? "auto"
         autoplayNext = bag.autoplayNext ?? true
         playbackSpeed = bag.playbackSpeed ?? 1.0
         if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) { provider = next }
@@ -417,7 +469,7 @@ final class LibraryStore {
     }
 
     private func makeBag(modifiedAt: Double) -> Bag {
-        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt)
+        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, preferredQuality: preferredQuality, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt)
     }
 
     private struct Bag: Codable {
@@ -432,6 +484,7 @@ final class LibraryStore {
         var resumeEnabled: Bool?
         var autoplayNext: Bool?
         var playbackSpeed: Float?
+        var preferredQuality: String?
         var provider: String?
         var scope: String?
         var favoriteSource: [String: String]?

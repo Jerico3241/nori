@@ -3,9 +3,9 @@ import { test } from "node:test";
 
 import type { Episode, WatchProgress } from "../src/models.js";
 import {
-  backfillAddedAt, continueWatching, decodeLibrary, encodeLibrary, findProgress,
-  LIBRARY_SCHEMA_VERSION, migrateProgress, nextEpisode, nextPlay, previousEpisode,
-  rememberRecent, seasonStats, upsertProgress,
+  backfillAddedAt, continueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
+  findProgress, LIBRARY_SCHEMA_VERSION, migrateProgress, nextEpisode, nextPlay,
+  previousEpisode, rememberRecent, seasonStats, upsertProgress,
 } from "../src/library.js";
 
 function item(overrides: Partial<WatchProgress> = {}): WatchProgress {
@@ -134,6 +134,9 @@ test("Bibliothek überlebt einen Umlauf durch encode/decode", () => {
   assert.equal(state.hosterPref, "Vidmoly");
   assert.equal(state.scope, "all");
   assert.equal(state.resumeEnabled, true);
+  // Ein Stand ohne Qualitätsvorgabe bekommt „auto", nicht eine Stufe, die nie
+  // gewählt wurde.
+  assert.equal(state.preferredQuality, "auto");
   const bag = encodeLibrary(state);
   assert.equal(bag.version, LIBRARY_SCHEMA_VERSION);
   const again = decodeLibrary(bag);
@@ -142,6 +145,12 @@ test("Bibliothek überlebt einen Umlauf durch encode/decode", () => {
   // Der abgeleitete Merkzeitpunkt entsteht einmal und ändert sich danach
   // nicht mehr — sonst wanderte „zuletzt hinzugefügt" bei jedem Start.
   assert.deepEqual(again.favoriteAddedAt, state.favoriteAddedAt);
+});
+
+test("Qualitätsvorgabe überlebt einen Umlauf durch encode/decode", () => {
+  const state = emptyLibrary();
+  state.preferredQuality = "720";
+  assert.equal(decodeLibrary(encodeLibrary(state)).preferredQuality, "720");
 });
 
 test("Verlauf hält höchstens 100 Einträge und schiebt den jüngsten nach vorn", () => {

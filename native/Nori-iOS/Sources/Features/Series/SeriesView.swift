@@ -13,6 +13,9 @@ import SwiftUI
 /// in `SeriesHeroView`, `SeriesEpisodeList` und `SeriesEpisodeCard`.
 struct SeriesView: View {
     @Environment(LibraryStore.self) private var library
+    /// „Dynamische Farben" aus „Mehr → Darstellung": ob die Farbe des Artworks
+    /// Kleinigkeiten der Seite einfärben darf.
+    @AppStorage(NoriLook.dynamicColorsKey) private var dynamicColors = true
     let slug: String
     let titleHint: String
     var providerOverride: CatalogProvider? = nil
@@ -291,6 +294,13 @@ struct SeriesView: View {
     /// Seite selbst bleibt dunkel; ein rotes Artwork macht aus Nori keine rote
     /// App.
     private func sampleTone() async {
+        // „Dynamische Farben" aus „Mehr → Darstellung". Aus heißt: gar nicht
+        // abtasten — sonst liefe der Abruf weiter und nur das Ergebnis bliebe
+        // ungenutzt.
+        guard dynamicColors else {
+            tone = nil
+            return
+        }
         guard let url = artwork.url else {
             tone = nil
             return

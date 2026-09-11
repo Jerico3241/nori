@@ -101,7 +101,7 @@ struct RootView: View {
             .tag(Tab.watchlist)
 
             NavigationStack {
-                SettingsView()
+                MoreView()
             }
             .tabItem { Label("Mehr", systemImage: "gearshape") }
             .tag(Tab.more)

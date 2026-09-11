@@ -42,14 +42,14 @@
     "PlaySource": ["kind", "url", "hoster", "lang", "referer"],
     "WatchProgress": ["slug", "title", "season", "episode", "episodePath", "germanTitle", "englishTitle", "positionSec", "durationSec", "updatedAt", "lang", "completed", "provider"],
     "RecentItem": ["slug", "title", "viewedAt", "provider"],
-    "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel", "coverPath", "provider"],
+    "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel", "coverPath", "hasTime", "provider"],
     "CalendarPayload": ["upcoming", "recent", "fetchedAt"]
   },
   "library": {
     "schemaVersion": 5,
     "progressIdentity": "provider + normalized episodePath",
     "scope": "all|aniworld|serienstream|kdrama",
-    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "autoplayNext", "playbackSpeed", "provider", "scope", "favoriteSource", "favoriteAddedAt", "modifiedAt"],
+    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope", "favoriteSource", "favoriteAddedAt", "modifiedAt"],
     "migration": "Ältere Datensätze werden beim Laden normalisiert; Provider und Pfade werden ergänzt und doppelte Fortschrittseinträge anhand updatedAt zusammengeführt. Ab v5 trägt die Merkliste mit favoriteAddedAt einen Merkzeitpunkt je Slug (Millisekunden seit 1970); fehlt er, wird er beim Laden aus der Reihenfolge von favorites abgeleitet — der erste Eintrag gilt als der jüngste, und abgeleitete Werte liegen unterhalb aller bekannten."
   },
   "sync": {
@@ -65,6 +65,7 @@
     "hosterOrder": ["voe", "vidmoly", "vidoza", "lulustream", "speedfiles", "filemoon", "doodstream"],
     "nativePlay": "AVPlayer plays the resolved HTTPS media URL directly with the source referer when required.",
     "provider": "CatalogProvider is persisted explicitly on new catalog, calendar, recent and progress records where applicable.",
+    "calendarTime": "AiringEntry.airingAt always carries a full timestamp so entries can be sorted and bucketed by day. hasTime records whether the source actually named a clock time; when it is false or missing, no time may be shown.",
     "watchState": "unseen = no progress entry with positionSec > 0 or completed; started = at least one entry touched and at least one not complete; seen = every known entry complete. The watchlist progress bar shows the position within the last watched episode, not the share of finished episodes — the total episode count is not available offline."
   }
 }

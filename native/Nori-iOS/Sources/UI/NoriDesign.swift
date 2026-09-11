@@ -94,6 +94,39 @@ enum NoriMotion {
     }
 }
 
+/// Bewegung reduzieren — Apples Systemeinstellung **oder** Noris Schalter.
+///
+/// Ein `DynamicProperty`, das beide Quellen bündelt, damit jede Ansicht nur
+/// eine Zeile braucht:
+///
+/// ```swift
+/// @NoriReduceMotion private var reduceMotion
+/// ```
+///
+/// ## Warum nicht über die Umgebung
+///
+/// Der naheliegende Weg wäre, `accessibilityReduceMotion` an der Wurzel zu
+/// überschreiben. Das geht nicht: der Schlüssel ist nur lesbar, SwiftUI gibt
+/// dafür keinen `WritableKeyPath` her.
+///
+/// Ein **eigener** Umgebungswert wäre möglich, hätte aber einen gefährlichen
+/// Rückfall: sein Vorgabewert müsste `false` sein, und eine Ansicht, die
+/// ausserhalb der Wurzel landet — oder deren Wurzelzeile jemand später
+/// entfernt —, würde damit Apples Systemeinstellung stillschweigend
+/// übergehen. Eine Barrierefreiheitseinstellung, die man durch Vergessen
+/// ausschalten kann, ist die falsche Bauform.
+///
+/// So gelesen ist das unmöglich: `system` kommt immer aus der Umgebung und
+/// wird nur **hinzu**verodert. Noris Schalter kann Bewegung zusätzlich
+/// abschalten, aber niemals wieder einschalten.
+@propertyWrapper
+struct NoriReduceMotion: DynamicProperty {
+    @Environment(\.accessibilityReduceMotion) private var system
+    @AppStorage(NoriLook.reduceMotionKey) private var preference = false
+
+    var wrappedValue: Bool { system || preference }
+}
+
 extension View {
     /// Wie `.animation(_:value:)`, respektiert aber „Bewegung reduzieren".
     ///
@@ -107,7 +140,7 @@ extension View {
 private struct NoriAnimation<V: Equatable>: ViewModifier {
     let animation: Animation
     let value: V
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
 
     func body(content: Content) -> some View {
         content.animation(NoriMotion.allowed(animation, reduceMotion: reduceMotion), value: value)
