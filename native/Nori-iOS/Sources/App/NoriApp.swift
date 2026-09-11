@@ -66,7 +66,15 @@ struct RootView: View {
             .tag(Tab.home)
 
             NavigationStack {
-                CatalogView(catalog: catalog, loading: loading, error: error, reload: load)
+                // Wie die Startseite ausdrücklich `allItems` und nicht
+                // `catalog`: Der neue Katalog hat keinen Bereichsumschalter
+                // mehr, sondern einen Inhaltsfilter „Alle | Anime | Serien".
+                // Ein zusätzlicher Ausschnitt, den der Betrachter dort weder
+                // sieht noch ändern kann, ließe den Katalog ohne
+                // ersichtlichen Grund halb leer wirken. Kalender und
+                // Merkliste schneiden weiterhin nach `LibraryScope` zu und
+                // tragen den Umschalter auch weiterhin.
+                CatalogView(catalog: allItems, loading: loading, error: error, reload: load)
             }
             .tabItem { Label("Katalog", systemImage: "square.grid.2x2") }
             .tag(Tab.catalog)

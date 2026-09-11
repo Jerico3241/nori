@@ -641,6 +641,26 @@ actor CoverIndex {
         return out
     }
 
+    /// Die abgelegten Bewertungen zu vielen Slugs auf einmal, ohne
+    /// nachzuschlagen.
+    ///
+    /// Gegenstück zu `tvIDs(for:)` und aus demselben Grund gebündelt: Der
+    /// Katalog braucht die Bewertungen des gesamten geladenen Bestands, um
+    /// danach sortieren zu können. Einzeln abgefragt wäre das ein Sprung auf
+    /// den Actor je Titel.
+    ///
+    /// Diese Werte fallen bei der Cover-Suche ohnehin an. Für Titel, die auf
+    /// keiner TMDB-Rangliste stehen, sind sie die einzige Bewertung, die es
+    /// gibt — ohne sie bliebe „Top bewertet" auf die wenigen Titel der
+    /// Ranglisten beschränkt.
+    func ratings(for slugs: [String]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for slug in slugs {
+            if let value = ratings[slug] { out[slug] = value }
+        }
+        return out
+    }
+
     /// Hat der Titel ein Breitbild? Nur der Kopfbereich fragt danach.
     func hasBackdrop(_ slug: String) -> Bool { backdrops[slug] != nil }
 

@@ -1,0 +1,1 @@
+../Sources/Features/Catalog/CatalogSections.swift

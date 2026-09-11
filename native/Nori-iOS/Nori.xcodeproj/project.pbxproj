@@ -47,6 +47,15 @@
 		AB77 /* HomeHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC77 /* HomeHeroView.swift */; };
 		AB78 /* HomeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC78 /* HomeCards.swift */; };
 		AB79 /* HomeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC79 /* HomeSections.swift */; };
+		AB80 /* CatalogFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC80 /* CatalogFeed.swift */; };
+		AB81 /* CatalogRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC81 /* CatalogRanking.swift */; };
+		AB82 /* CatalogBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC82 /* CatalogBuilder.swift */; };
+		AB83 /* CatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC83 /* CatalogService.swift */; };
+		AB84 /* CatalogDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84 /* CatalogDesign.swift */; };
+		AB85 /* CatalogHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC85 /* CatalogHeader.swift */; };
+		AB86 /* CatalogGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC86 /* CatalogGrid.swift */; };
+		AB87 /* CatalogSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC87 /* CatalogSections.swift */; };
+		AB88 /* CatalogFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC88 /* CatalogFilterSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -91,6 +100,15 @@
 		AC77 /* HomeHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHeroView.swift; sourceTree = "<group>"; };
 		AC78 /* HomeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCards.swift; sourceTree = "<group>"; };
 		AC79 /* HomeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSections.swift; sourceTree = "<group>"; };
+		AC80 /* CatalogFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogFeed.swift; sourceTree = "<group>"; };
+		AC81 /* CatalogRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogRanking.swift; sourceTree = "<group>"; };
+		AC82 /* CatalogBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBuilder.swift; sourceTree = "<group>"; };
+		AC83 /* CatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogService.swift; sourceTree = "<group>"; };
+		AC84 /* CatalogDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDesign.swift; sourceTree = "<group>"; };
+		AC85 /* CatalogHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogHeader.swift; sourceTree = "<group>"; };
+		AC86 /* CatalogGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogGrid.swift; sourceTree = "<group>"; };
+		AC87 /* CatalogSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogSections.swift; sourceTree = "<group>"; };
+		AC88 /* CatalogFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogFilterSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +142,15 @@
 				AC06 /* AniworldClient.swift */,
 				AC07 /* HosterResolver.swift */,
 				AC09 /* CatalogView.swift */,
+				AC80 /* CatalogFeed.swift */,
+				AC81 /* CatalogRanking.swift */,
+				AC82 /* CatalogBuilder.swift */,
+				AC83 /* CatalogService.swift */,
+				AC84 /* CatalogDesign.swift */,
+				AC85 /* CatalogHeader.swift */,
+				AC86 /* CatalogGrid.swift */,
+				AC87 /* CatalogSections.swift */,
+				AC88 /* CatalogFilterSheet.swift */,
 				AC10 /* SeriesView.swift */,
 				AC60 /* SeriesArtwork.swift */,
 				AC61 /* SeriesHeroView.swift */,
@@ -252,6 +279,15 @@
 				AB06 /* AniworldClient.swift in Sources */,
 				AB07 /* HosterResolver.swift in Sources */,
 				AB09 /* CatalogView.swift in Sources */,
+				AB80 /* CatalogFeed.swift in Sources */,
+				AB81 /* CatalogRanking.swift in Sources */,
+				AB82 /* CatalogBuilder.swift in Sources */,
+				AB83 /* CatalogService.swift in Sources */,
+				AB84 /* CatalogDesign.swift in Sources */,
+				AB85 /* CatalogHeader.swift in Sources */,
+				AB86 /* CatalogGrid.swift in Sources */,
+				AB87 /* CatalogSections.swift in Sources */,
+				AB88 /* CatalogFilterSheet.swift in Sources */,
 				AB10 /* SeriesView.swift in Sources */,
 				AB60 /* SeriesArtwork.swift in Sources */,
 				AB61 /* SeriesHeroView.swift in Sources */,
