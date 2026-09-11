@@ -46,21 +46,27 @@
 		AB77 /* HomeHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC77 /* HomeHeroView.swift */; };
 		AB78 /* HomeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC78 /* HomeCards.swift */; };
 		AB79 /* HomeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC79 /* HomeSections.swift */; };
-		AB80 /* NoriBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC80 /* NoriBackdrop.swift */; };
-		AB82 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC82 /* CalendarService.swift */; };
-		AB83 /* CalendarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC83 /* CalendarChrome.swift */; };
-		AB84 /* CalendarReleaseRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84 /* CalendarReleaseRow.swift */; };
-		AB85 /* CalendarFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC85 /* CalendarFilterSheet.swift */; };
-		AB86 /* NoriSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC86 /* NoriSettings.swift */; };
-		AB87 /* SettingsChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC87 /* SettingsChrome.swift */; };
-		AB88 /* NoriAppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC88 /* NoriAppInfo.swift */; };
-		AB89 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC89 /* MoreView.swift */; };
-		AB90 /* SettingsSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC90 /* SettingsSelectionView.swift */; };
-		AB91 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC91 /* HistoryView.swift */; };
-		AB92 /* CacheSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC92 /* CacheSettingsView.swift */; };
-		AB93 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC93 /* AboutView.swift */; };
-		AB94 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC94 /* DiagnosticsView.swift */; };
-		AB81 /* CalendarRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC81 /* CalendarRules.swift */; };
+		AB80 /* WatchlistModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC80 /* WatchlistModel.swift */; };
+		AB81 /* WatchlistViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC81 /* WatchlistViewModel.swift */; };
+		AB82 /* WatchlistCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC82 /* WatchlistCards.swift */; };
+		AB83 /* WatchlistHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC83 /* WatchlistHeaderView.swift */; };
+		AB84 /* WatchlistSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84 /* WatchlistSummaryView.swift */; };
+		AB85 /* WatchlistFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC85 /* WatchlistFilterSheet.swift */; };
+		AB86 /* NoriBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC86 /* NoriBackdrop.swift */; };
+		AB87 /* CalendarRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC87 /* CalendarRules.swift */; };
+		AB88 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC88 /* CalendarService.swift */; };
+		AB89 /* CalendarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC89 /* CalendarChrome.swift */; };
+		AB90 /* CalendarReleaseRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC90 /* CalendarReleaseRow.swift */; };
+		AB91 /* CalendarFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC91 /* CalendarFilterSheet.swift */; };
+		AB92 /* NoriSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC92 /* NoriSettings.swift */; };
+		AB93 /* SettingsChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC93 /* SettingsChrome.swift */; };
+		AB94 /* NoriAppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC94 /* NoriAppInfo.swift */; };
+		AB95 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC95 /* MoreView.swift */; };
+		AB96 /* SettingsSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC96 /* SettingsSelectionView.swift */; };
+		AB97 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC97 /* HistoryView.swift */; };
+		AB98 /* CacheSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC98 /* CacheSettingsView.swift */; };
+		AB99 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC99 /* AboutView.swift */; };
+		AB100 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC100 /* DiagnosticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -104,21 +110,27 @@
 		AC77 /* HomeHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHeroView.swift; sourceTree = "<group>"; };
 		AC78 /* HomeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCards.swift; sourceTree = "<group>"; };
 		AC79 /* HomeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSections.swift; sourceTree = "<group>"; };
-		AC80 /* NoriBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriBackdrop.swift; sourceTree = "<group>"; };
-		AC82 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
-		AC83 /* CalendarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarChrome.swift; sourceTree = "<group>"; };
-		AC84 /* CalendarReleaseRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReleaseRow.swift; sourceTree = "<group>"; };
-		AC85 /* CalendarFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarFilterSheet.swift; sourceTree = "<group>"; };
-		AC86 /* NoriSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriSettings.swift; sourceTree = "<group>"; };
-		AC87 /* SettingsChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsChrome.swift; sourceTree = "<group>"; };
-		AC88 /* NoriAppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriAppInfo.swift; sourceTree = "<group>"; };
-		AC89 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
-		AC90 /* SettingsSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSelectionView.swift; sourceTree = "<group>"; };
-		AC91 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
-		AC92 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
-		AC93 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
-		AC94 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
-		AC81 /* CalendarRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRules.swift; sourceTree = "<group>"; };
+		AC80 /* WatchlistModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistModel.swift; sourceTree = "<group>"; };
+		AC81 /* WatchlistViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistViewModel.swift; sourceTree = "<group>"; };
+		AC82 /* WatchlistCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistCards.swift; sourceTree = "<group>"; };
+		AC83 /* WatchlistHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistHeaderView.swift; sourceTree = "<group>"; };
+		AC84 /* WatchlistSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSummaryView.swift; sourceTree = "<group>"; };
+		AC85 /* WatchlistFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFilterSheet.swift; sourceTree = "<group>"; };
+		AC86 /* NoriBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriBackdrop.swift; sourceTree = "<group>"; };
+		AC87 /* CalendarRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRules.swift; sourceTree = "<group>"; };
+		AC88 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
+		AC89 /* CalendarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarChrome.swift; sourceTree = "<group>"; };
+		AC90 /* CalendarReleaseRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReleaseRow.swift; sourceTree = "<group>"; };
+		AC91 /* CalendarFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarFilterSheet.swift; sourceTree = "<group>"; };
+		AC92 /* NoriSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriSettings.swift; sourceTree = "<group>"; };
+		AC93 /* SettingsChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsChrome.swift; sourceTree = "<group>"; };
+		AC94 /* NoriAppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriAppInfo.swift; sourceTree = "<group>"; };
+		AC95 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		AC96 /* SettingsSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSelectionView.swift; sourceTree = "<group>"; };
+		AC97 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		AC98 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
+		AC99 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		AC100 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -158,6 +170,12 @@
 				AC62 /* SeriesEpisodeList.swift */,
 				AC63 /* SeriesEpisodeCard.swift */,
 				AC11 /* WatchlistView.swift */,
+				AC80 /* WatchlistModel.swift */,
+				AC81 /* WatchlistViewModel.swift */,
+				AC82 /* WatchlistCards.swift */,
+				AC83 /* WatchlistHeaderView.swift */,
+				AC84 /* WatchlistSummaryView.swift */,
+				AC85 /* WatchlistFilterSheet.swift */,
 				AC12 /* PlayerScreen.swift */,
 				AC15 /* PlayerControls.swift */,
 				AC14 /* CalendarView.swift */,
@@ -181,21 +199,21 @@
 				AC77 /* HomeHeroView.swift */,
 				AC78 /* HomeCards.swift */,
 				AC79 /* HomeSections.swift */,
-				AC80 /* NoriBackdrop.swift */,
-				AC82 /* CalendarService.swift */,
-				AC83 /* CalendarChrome.swift */,
-				AC84 /* CalendarReleaseRow.swift */,
-				AC85 /* CalendarFilterSheet.swift */,
-				AC86 /* NoriSettings.swift */,
-				AC87 /* SettingsChrome.swift */,
-				AC88 /* NoriAppInfo.swift */,
-				AC89 /* MoreView.swift */,
-				AC90 /* SettingsSelectionView.swift */,
-				AC91 /* HistoryView.swift */,
-				AC92 /* CacheSettingsView.swift */,
-				AC93 /* AboutView.swift */,
-				AC94 /* DiagnosticsView.swift */,
-				AC81 /* CalendarRules.swift */,
+				AC86 /* NoriBackdrop.swift */,
+				AC87 /* CalendarRules.swift */,
+				AC88 /* CalendarService.swift */,
+				AC89 /* CalendarChrome.swift */,
+				AC90 /* CalendarReleaseRow.swift */,
+				AC91 /* CalendarFilterSheet.swift */,
+				AC92 /* NoriSettings.swift */,
+				AC93 /* SettingsChrome.swift */,
+				AC94 /* NoriAppInfo.swift */,
+				AC95 /* MoreView.swift */,
+				AC96 /* SettingsSelectionView.swift */,
+				AC97 /* HistoryView.swift */,
+				AC98 /* CacheSettingsView.swift */,
+				AC99 /* AboutView.swift */,
+				AC100 /* DiagnosticsView.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -323,21 +341,27 @@
 				AB77 /* HomeHeroView.swift in Sources */,
 				AB78 /* HomeCards.swift in Sources */,
 				AB79 /* HomeSections.swift in Sources */,
-				AB80 /* NoriBackdrop.swift in Sources */,
-				AB82 /* CalendarService.swift in Sources */,
-				AB83 /* CalendarChrome.swift in Sources */,
-				AB84 /* CalendarReleaseRow.swift in Sources */,
-				AB85 /* CalendarFilterSheet.swift in Sources */,
-				AB86 /* NoriSettings.swift in Sources */,
-				AB87 /* SettingsChrome.swift in Sources */,
-				AB88 /* NoriAppInfo.swift in Sources */,
-				AB89 /* MoreView.swift in Sources */,
-				AB90 /* SettingsSelectionView.swift in Sources */,
-				AB91 /* HistoryView.swift in Sources */,
-				AB92 /* CacheSettingsView.swift in Sources */,
-				AB93 /* AboutView.swift in Sources */,
-				AB94 /* DiagnosticsView.swift in Sources */,
-				AB81 /* CalendarRules.swift in Sources */,
+				AB80 /* WatchlistModel.swift in Sources */,
+				AB81 /* WatchlistViewModel.swift in Sources */,
+				AB82 /* WatchlistCards.swift in Sources */,
+				AB83 /* WatchlistHeaderView.swift in Sources */,
+				AB84 /* WatchlistSummaryView.swift in Sources */,
+				AB85 /* WatchlistFilterSheet.swift in Sources */,
+				AB86 /* NoriBackdrop.swift in Sources */,
+				AB87 /* CalendarRules.swift in Sources */,
+				AB88 /* CalendarService.swift in Sources */,
+				AB89 /* CalendarChrome.swift in Sources */,
+				AB90 /* CalendarReleaseRow.swift in Sources */,
+				AB91 /* CalendarFilterSheet.swift in Sources */,
+				AB92 /* NoriSettings.swift in Sources */,
+				AB93 /* SettingsChrome.swift in Sources */,
+				AB94 /* NoriAppInfo.swift in Sources */,
+				AB95 /* MoreView.swift in Sources */,
+				AB96 /* SettingsSelectionView.swift in Sources */,
+				AB97 /* HistoryView.swift in Sources */,
+				AB98 /* CacheSettingsView.swift in Sources */,
+				AB99 /* AboutView.swift in Sources */,
+				AB100 /* DiagnosticsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

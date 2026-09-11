@@ -3,8 +3,9 @@ import { test } from "node:test";
 
 import type { Episode, WatchProgress } from "../src/models.js";
 import {
-  continueWatching, decodeLibrary, emptyLibrary, encodeLibrary, findProgress, migrateProgress,
-  nextEpisode, nextPlay, previousEpisode, rememberRecent, seasonStats, upsertProgress,
+  backfillAddedAt, continueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
+  findProgress, LIBRARY_SCHEMA_VERSION, migrateProgress, nextEpisode, nextPlay,
+  previousEpisode, rememberRecent, seasonStats, upsertProgress,
 } from "../src/library.js";
 
 function item(overrides: Partial<WatchProgress> = {}): WatchProgress {
@@ -137,10 +138,13 @@ test("Bibliothek überlebt einen Umlauf durch encode/decode", () => {
   // gewählt wurde.
   assert.equal(state.preferredQuality, "auto");
   const bag = encodeLibrary(state);
-  assert.equal(bag.version, 4);
+  assert.equal(bag.version, LIBRARY_SCHEMA_VERSION);
   const again = decodeLibrary(bag);
   assert.deepEqual(again.progress, state.progress);
   assert.deepEqual(again.favorites, state.favorites);
+  // Der abgeleitete Merkzeitpunkt entsteht einmal und ändert sich danach
+  // nicht mehr — sonst wanderte „zuletzt hinzugefügt" bei jedem Start.
+  assert.deepEqual(again.favoriteAddedAt, state.favoriteAddedAt);
 });
 
 test("Qualitätsvorgabe überlebt einen Umlauf durch encode/decode", () => {
@@ -157,4 +161,37 @@ test("Verlauf hält höchstens 100 Einträge und schiebt den jüngsten nach vorn
   assert.equal(recents[0].provider, "serienstream");
   for (let i = 0; i < 120; i += 1) recents = rememberRecent(recents, `s${i}`, "X", "aniworld");
   assert.equal(recents.length, 100);
+});
+
+// Schema v5: Merkzeitpunkt der Merkliste. Dieselben Fälle wie in
+// `WatchlistModelTests.swift` — die beiden Kerne müssen denselben Stand
+// lesen, sonst stünde dieselbe Merkliste auf zwei Geräten anders sortiert da.
+
+test("Schema v5 trägt favoriteAddedAt", () => {
+  assert.equal(LIBRARY_SCHEMA_VERSION, 5);
+  const state = decodeLibrary({
+    version: 5, favorites: ["a"], recents: [], titles: {}, progress: {},
+    favoriteAddedAt: { a: 1234 },
+  });
+  assert.equal(state.favoriteAddedAt.a, 1234);
+  assert.equal(encodeLibrary(state).favoriteAddedAt?.a, 1234);
+});
+
+test("Ein v4-Stand behält seine Reihenfolge als Merkzeitpunkt", () => {
+  const state = decodeLibrary({
+    version: 4, favorites: ["neu", "mittel", "alt"], recents: [], titles: {}, progress: {},
+  });
+  assert.ok(state.favoriteAddedAt.neu > state.favoriteAddedAt.mittel);
+  assert.ok(state.favoriteAddedAt.mittel > state.favoriteAddedAt.alt);
+});
+
+test("Ein abgeleiteter Merkzeitpunkt überholt keinen echten", () => {
+  const out = backfillAddedAt({ mit: 1_000_000 }, ["ohne", "mit"]);
+  assert.equal(out.mit, 1_000_000);
+  assert.ok(out.ohne < 1_000_000);
+});
+
+test("Merkzeitpunkte entfernter Titel werden nicht mitgeschleppt", () => {
+  const out = backfillAddedAt({ weg: 5, bleibt: 9 }, ["bleibt"]);
+  assert.deepEqual(Object.keys(out), ["bleibt"]);
 });
