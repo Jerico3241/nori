@@ -47,6 +47,12 @@
 		AB77 /* HomeHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC77 /* HomeHeroView.swift */; };
 		AB78 /* HomeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC78 /* HomeCards.swift */; };
 		AB79 /* HomeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC79 /* HomeSections.swift */; };
+		AB80 /* WatchlistModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC80 /* WatchlistModel.swift */; };
+		AB81 /* WatchlistViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC81 /* WatchlistViewModel.swift */; };
+		AB82 /* WatchlistCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC82 /* WatchlistCards.swift */; };
+		AB83 /* WatchlistHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC83 /* WatchlistHeaderView.swift */; };
+		AB84 /* WatchlistSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84 /* WatchlistSummaryView.swift */; };
+		AB85 /* WatchlistFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC85 /* WatchlistFilterSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -91,6 +97,12 @@
 		AC77 /* HomeHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHeroView.swift; sourceTree = "<group>"; };
 		AC78 /* HomeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCards.swift; sourceTree = "<group>"; };
 		AC79 /* HomeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSections.swift; sourceTree = "<group>"; };
+		AC80 /* WatchlistModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistModel.swift; sourceTree = "<group>"; };
+		AC81 /* WatchlistViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistViewModel.swift; sourceTree = "<group>"; };
+		AC82 /* WatchlistCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistCards.swift; sourceTree = "<group>"; };
+		AC83 /* WatchlistHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistHeaderView.swift; sourceTree = "<group>"; };
+		AC84 /* WatchlistSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSummaryView.swift; sourceTree = "<group>"; };
+		AC85 /* WatchlistFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFilterSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,6 +142,12 @@
 				AC62 /* SeriesEpisodeList.swift */,
 				AC63 /* SeriesEpisodeCard.swift */,
 				AC11 /* WatchlistView.swift */,
+				AC80 /* WatchlistModel.swift */,
+				AC81 /* WatchlistViewModel.swift */,
+				AC82 /* WatchlistCards.swift */,
+				AC83 /* WatchlistHeaderView.swift */,
+				AC84 /* WatchlistSummaryView.swift */,
+				AC85 /* WatchlistFilterSheet.swift */,
 				AC12 /* PlayerScreen.swift */,
 				AC15 /* PlayerControls.swift */,
 				AC13 /* SettingsView.swift */,
@@ -282,6 +300,12 @@
 				AB77 /* HomeHeroView.swift in Sources */,
 				AB78 /* HomeCards.swift in Sources */,
 				AB79 /* HomeSections.swift in Sources */,
+				AB80 /* WatchlistModel.swift in Sources */,
+				AB81 /* WatchlistViewModel.swift in Sources */,
+				AB82 /* WatchlistCards.swift in Sources */,
+				AB83 /* WatchlistHeaderView.swift in Sources */,
+				AB84 /* WatchlistSummaryView.swift in Sources */,
+				AB85 /* WatchlistFilterSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
