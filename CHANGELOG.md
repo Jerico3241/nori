@@ -4,8 +4,75 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.18.0**,
+unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.19.0**,
 Windows **1.8.0**, LG webOS **1.0.0**.
+
+## [iOS 1.19.0] — 2026-09-11
+
+Die Serien- und Animedetailseite ist neu gebaut, nicht überarbeitet. Vorlage
+ist ein Entwurf, der als HTML vorlag; übernommen sind daraus Aufbau,
+Größenverhältnisse und Anmutung, nicht seine Zahlen und erst recht nicht seine
+Beispieldaten. Daten, Fortschritt, Provider und Wiedergabe bleiben unverändert
+Nori — ersetzt wurde ausschließlich, was man sieht.
+
+### Hinzugefügt
+
+- **Ein Kopfbereich über die volle Breite**, bis unter die Statusleiste und
+  hinter die Navigationsleiste. Darauf stehen Schriftzug, Eckdaten,
+  Beschreibung und die beiden Knöpfe — vorher lag daneben ein kleines Poster
+  und rechts eine Textspalte.
+- **Der Titel als gestalteter Schriftzug**: das freigestellte Logo von TMDB,
+  wo es eines gibt, sonst der Titel in Serifen und groß. Der Rückfall ist der
+  Normalfall, nicht die Ausnahme — die wenigsten Serien haben ein Logo.
+- **Eine Zeile Eckdaten** aus Jahr, Genres, Staffelzahl, Stand und Bewertung.
+  Was fehlt, fällt samt Trenner weg; leere Trennpunkte gibt es nicht.
+- **Die Beschreibung steht sofort da**, vier Zeilen, der Rest hinter „Mehr
+  anzeigen“. Der Knopf erscheint nur, wo es wirklich etwas aufzuklappen gibt.
+- **Folgen als Karten mit 16:9-Standbild**, Nummer und Titel, darunter Datum,
+  Laufzeit und Sprache. Fehlt ein Standbild, steht dort das Artwork der Serie
+  stark abgedunkelt, erst danach Noris eigener Rückfall.
+- **Die Laufzeit einer Folge** — `EpisodeInfo.runtime`. Sie steht in derselben
+  TMDB-Antwort wie Titel und Standbild und kostet keine zusätzliche Anfrage.
+- **Ein Fortschrittsring** an jeder Folge: leer, teilweise gefüllt oder
+  gefüllt mit Haken. Der Haken ist eine Form und nicht nur eine andere Farbe.
+- **Ein Überlaufmenü oben rechts** mit Teilen, „Von vorn abspielen“, „Staffel
+  als gesehen markieren“, dem Verwerfen des Staffelfortschritts sowie Quelle,
+  Freigabe und Alternativtiteln zum Nachlesen.
+- **Ein Schimmer in der Farbe des Artworks** hinter Titel, Fortschrittsring
+  und Fortschrittsstreifen. Abgetastet wird mit `CoverToneSampler`, und die
+  Farbe wird auf eine Helligkeit gezogen, die auf dunklem Grund trägt — sonst
+  wäre ein Ring aus einem düsteren Cover unsichtbar. Die Seite selbst bleibt
+  dunkel.
+
+### Geändert
+
+- **Die Staffel ist ein Auswahlmenü**, daneben die Zahl der Folgen. Vorher
+  eine Liste aus Staffelzeilen, von denen eine ihre Folgen aufklappte — ein
+  Zwischenschritt zwischen „Staffel 2“ und der zweiten Folge darin.
+- **Das Artwork wird nicht mehr blind mittig zugeschnitten.** Ein Breitbild
+  bekommt einen flacheren Streifen als ein Poster, damit von ihm das meiste
+  stehen bleibt, und der Zuschnitt sitzt oberhalb der Mitte, wo Gesichter und
+  Schriftzüge stehen. Darunter füllt dieselbe Aufnahme unscharf weiter, so
+  dass zwischen Bild und Seite keine Kante bleibt.
+- **Die Quelle einer Serie merkt sich, woher sie tatsächlich kam.** Weicht das
+  Laden auf die zweite Seite aus, liefen vorher Bildabruf, Fortschritt und
+  Wiedergabe weiter gegen die Seite, die gar nicht geantwortet hatte.
+- Beim Staffelwechsel bleibt die bisherige Liste stehen und blendet nur ab,
+  statt zu verschwinden — die Seite fällt nicht mehr bei jedem Wechsel kurz in
+  sich zusammen.
+- Der abgelegte Stand der Folgendaten (`episodes.json`) wird einmalig
+  verworfen, damit die Laufzeit auch für bereits geholte Staffeln nachkommt.
+
+### Entfernt
+
+- **Der Umschalter „Details | Folgen“.** Die Details stehen jetzt oben, ein
+  Tipp weniger.
+- **Der Abschnitt „Als Nächstes“.** Welche Folge weitergeht, sagt der
+  Hauptknopf, und dieselbe Folge trägt in der Liste das Abspielzeichen.
+- **Der zweite Merken-Knopf.** Es gibt nur noch den einen unter der
+  Beschreibung; oben stehen ausschließlich Zurück und das Überlaufmenü.
+- `EpisodeRow` und `EpisodePlaceholder` — sie gehörten zur alten Detailseite
+  und werden nirgends sonst benutzt.
 
 ## [iOS 1.18.0] — 2026-09-09
 

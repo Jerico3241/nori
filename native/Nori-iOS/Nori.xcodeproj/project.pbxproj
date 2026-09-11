@@ -34,6 +34,10 @@
 		AB55 /* PlayerMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC55 /* PlayerMenuButton.swift */; };
 		AB56 /* PlayerSeekOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC56 /* PlayerSeekOverlay.swift */; };
 		AB57 /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC57 /* HLSPlaylist.swift */; };
+		AB60 /* SeriesArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC60 /* SeriesArtwork.swift */; };
+		AB61 /* SeriesHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC61 /* SeriesHeroView.swift */; };
+		AB62 /* SeriesEpisodeList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC62 /* SeriesEpisodeList.swift */; };
+		AB63 /* SeriesEpisodeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC63 /* SeriesEpisodeCard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +69,10 @@
 		AC55 /* PlayerMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenuButton.swift; sourceTree = "<group>"; };
 		AC56 /* PlayerSeekOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSeekOverlay.swift; sourceTree = "<group>"; };
 		AC57 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
+		AC60 /* SeriesArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesArtwork.swift; sourceTree = "<group>"; };
+		AC61 /* SeriesHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesHeroView.swift; sourceTree = "<group>"; };
+		AC62 /* SeriesEpisodeList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesEpisodeList.swift; sourceTree = "<group>"; };
+		AC63 /* SeriesEpisodeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesEpisodeCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +108,10 @@
 				AC08 /* HomeView.swift */,
 				AC09 /* CatalogView.swift */,
 				AC10 /* SeriesView.swift */,
+				AC60 /* SeriesArtwork.swift */,
+				AC61 /* SeriesHeroView.swift */,
+				AC62 /* SeriesEpisodeList.swift */,
+				AC63 /* SeriesEpisodeCard.swift */,
 				AC11 /* WatchlistView.swift */,
 				AC12 /* PlayerScreen.swift */,
 				AC15 /* PlayerControls.swift */,
@@ -215,6 +227,10 @@
 				AB08 /* HomeView.swift in Sources */,
 				AB09 /* CatalogView.swift in Sources */,
 				AB10 /* SeriesView.swift in Sources */,
+				AB60 /* SeriesArtwork.swift in Sources */,
+				AB61 /* SeriesHeroView.swift in Sources */,
+				AB62 /* SeriesEpisodeList.swift in Sources */,
+				AB63 /* SeriesEpisodeCard.swift in Sources */,
 				AB11 /* WatchlistView.swift in Sources */,
 				AB12 /* PlayerScreen.swift in Sources */,
 				AB15 /* PlayerControls.swift in Sources */,
@@ -242,7 +258,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -252,7 +268,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.18.0;
+				MARKETING_VERSION = 1.19.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;
@@ -271,7 +287,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -281,7 +297,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.18.0;
+				MARKETING_VERSION = 1.19.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;

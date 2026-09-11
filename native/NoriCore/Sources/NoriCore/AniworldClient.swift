@@ -1106,6 +1106,12 @@ struct EpisodeInfo: Codable, Hashable {
     var overview: String?
     var still: String?
     var airDate: String?
+    /// Laufzeit in Minuten, sofern TMDB sie führt.
+    ///
+    /// Steht in derselben Antwort wie Titel und Standbild — es kostet keine
+    /// zusätzliche Anfrage. Die Detailseite nennt sie in der Zeile unter dem
+    /// Folgentitel; fehlt sie, entfällt der Teil ersatzlos.
+    var runtime: Int? = nil
 
     var stillURL: URL? { still.flatMap(URL.init(string:)) }
 }
@@ -1132,7 +1138,10 @@ actor EpisodeIndex {
     private let storeURL: URL
     private var saveTask: Task<Void, Never>?
     private static let maxSeasons = 600
-    private static let storeVersion = 1
+    // 2: seit `EpisodeInfo.runtime`. Ein älterer Stand dekodiert zwar
+    // weiterhin, trüge die Laufzeit aber nie nach — abgelegte Staffeln werden
+    // nie erneut geholt. Die Erhöhung verwirft ihn einmalig.
+    private static let storeVersion = 2
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -1273,11 +1282,15 @@ actor EpisodeIndex {
                     // 16:9 — genau die Form, in der die Folgenliste es zeigt.
                     still = "https://image.tmdb.org/t/p/w454_and_h254_bestv2\(path)"
                 }
+                // TMDB liefert die Laufzeit teils als 0, wenn sie unbekannt
+                // ist. Null Minuten ist keine Auskunft, sondern eine Lücke.
+                let minutes = (row["runtime"] as? Int).flatMap { $0 > 0 ? $0 : nil }
                 out[n] = EpisodeInfo(
                     title: row["name"] as? String,
                     overview: row["overview"] as? String,
                     still: still,
-                    airDate: row["air_date"] as? String
+                    airDate: row["air_date"] as? String,
+                    runtime: minutes
                 )
             }
             return out

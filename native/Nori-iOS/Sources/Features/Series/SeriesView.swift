@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// Die Detailseite einer Serie.
+///
+/// Aufbau: ein durchgehender senkrechter Lauf aus zwei Teilen. Oben der
+/// Kopfbereich — Artwork über die volle Breite, bis unter die Statusleiste,
+/// und darauf Schriftzug, Eckdaten, Beschreibung und die beiden Knöpfe. Darunter
+/// die Staffelwahl und die vollständige Folgenliste. Dazwischen liegt nichts:
+/// kein Umschalter „Details | Folgen", keine Reihe „Als Nächstes", keine
+/// aufklappbaren Staffeln.
+///
+/// Diese Datei hält nur den Zustand und die Ladewege zusammen. Gezeichnet wird
+/// in `SeriesHeroView`, `SeriesEpisodeList` und `SeriesEpisodeCard`.
 struct SeriesView: View {
     @Environment(LibraryStore.self) private var library
     let slug: String
@@ -10,19 +21,32 @@ struct SeriesView: View {
     @State private var season: String = "1"
     @State private var error: String?
     @State private var loading = true
+    /// Eine andere Staffel wird geholt. Die Liste bleibt stehen und blendet
+    /// ab, statt zu verschwinden.
+    @State private var switchingSeason = false
     @State private var play: PlayTarget?
-    @State private var coverColor = NoriTheme.accent
-    /// Standbilder und Beschreibungen der Folgen, nach Nummer.
+    /// Standbilder, Titel, Laufzeiten und Erstausstrahlung der Folgen, nach
+    /// Nummer.
     @State private var episodeInfo: [Int: EpisodeInfo] = [:]
-    /// Backdrop, Logo und Bewertung aus TMDB. Der Kopfbereich lebt davon.
+    /// Breitbild, Poster, Beschreibung und Bewertung aus TMDB.
     @State private var art = CoverDetails(poster: nil, backdrop: nil, overview: nil, rating: nil)
+    /// Das Cover der Quelle. Nur nötig, wenn TMDB die Serie nicht führt —
+    /// ohne das bliebe der Kopfbereich dann leer.
+    @State private var sourceCover: URL?
     @State private var logo: URL?
-    @State private var tab: DetailTab = .episodes
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(NoriGlassSetting.key) private var glass = true
+    /// Die vorherrschende Farbe des Artworks. Trägt den Schimmer im
+    /// Kopfbereich und den Fortschritt in der Liste.
+    @State private var tone: Color?
+    /// Die Quelle, aus der die Serie tatsächlich kam.
+    ///
+    /// `load` weicht auf die andere Seite aus, wenn die erste nichts hergibt.
+    /// Ohne diesen Merker liefe danach alles andere — Referer der Bilder,
+    /// Schlüssel des Fortschritts, die Quelle im Player — weiter gegen die
+    /// Seite, die gar nicht geantwortet hat.
+    @State private var resolvedProvider: CatalogProvider?
 
     /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
-    /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
+    /// beim ersten Aufbau steht die Staffel schon auf „1“, `detail` aber noch
     /// nicht — ein Schlüssel nur aus der Staffel würde das verpassen.
     private var episodeTaskID: String { "\(slug)|\(season)|\(detail == nil ? 0 : 1)" }
 
@@ -34,426 +58,258 @@ struct SeriesView: View {
         let provider: CatalogProvider
     }
 
-    /// Details oder Folgen — wie in Serien-Apps ueblich.
-    enum DetailTab: String, CaseIterable, Identifiable {
-        case details, episodes
-        var id: String { rawValue }
-        var label: String { self == .details ? "Details" : "Folgen" }
-    }
-
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             NoriTheme.bg.ignoresSafeArea()
 
-            if loading && detail == nil {
-                ProgressView("Serie wird geladen").frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error, detail == nil {
-                ContentUnavailableView("Nicht geladen", systemImage: "wifi.exclamationmark", description: Text(error))
-            } else if let detail {
+            if let detail {
                 content(detail)
+            } else if let error {
+                ContentUnavailableView(
+                    "Nicht geladen",
+                    systemImage: "wifi.exclamationmark",
+                    description: Text(error)
+                )
+            } else if loading {
+                ProgressView("Serie wird geladen")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        // Das Artwork läuft unter der Leiste durch; ein Balken darüber würde
+        // es abschneiden.
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            if let detail {
+                ToolbarItem(placement: .topBarTrailing) { moreMenu(detail) }
+            }
+        }
         .task { await load(season: nil) }
         .task(id: episodeTaskID) { await loadEpisodeInfo() }
         .task(id: detail?.slug) { await loadArt() }
+        .task(id: artwork.url) { await sampleTone() }
         .fullScreenCover(item: $play) { target in
-            PlayerScreen(series: target.series, episode: target.episode, season: season, resumeAt: target.resumeAt, provider: target.provider)
+            PlayerScreen(
+                series: target.series,
+                episode: target.episode,
+                season: season,
+                resumeAt: target.resumeAt,
+                provider: target.provider
+            )
         }
     }
 
     // MARK: - Aufbau
 
     private func content(_ detail: SeriesDetail) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header(detail)
-                Picker("Ansicht", selection: $tab) {
-                    ForEach(DetailTab.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-
-                switch tab {
-                case .details: detailsTab(detail)
-                case .episodes: episodesTab(detail)
-                }
-            }
-            .padding(.bottom, 40)
-        }
-        .ignoresSafeArea(edges: .top)
-    }
-
-    /// Backdrop, darueber der Schriftzug, darunter die Eckdaten.
-    ///
-    /// Das Bild laeuft bis unter die Statusleiste und verlaeuft nach unten in
-    /// den Hintergrund — dieselbe Form, die Serien-Apps benutzen. Das Poster
-    /// kommt hier nicht mehr vor: es stand frueher als Kachel neben dem
-    /// Titel, und beides zusammen war doppelt.
-    private func header(_ detail: SeriesDetail) -> some View {
-        VStack(spacing: 14) {
-            Color.clear
-                .frame(height: headerHeight)
-                .overlay { backdropImage(detail) }
-                .overlay {
-                    // Bis in die Hintergrundfarbe hinein, nicht nach Schwarz:
-                    // das Bild soll in die Seite übergehen, nicht auf ihr
-                    // liegen. Die letzte Stufe ist deckend, damit unter dem
-                    // Schriftzug keine Kante bleibt.
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0.3),
-                            .init(color: NoriTheme.bg.opacity(0.5), location: 0.66),
-                            .init(color: NoriTheme.bg.opacity(0.92), location: 0.88),
-                            .init(color: NoriTheme.bg, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .overlay(alignment: .bottom) { titleArt(detail).padding(.horizontal, 24) }
-                .clipped()
-
-            metaLines(detail)
-            actionRow(detail)
-        }
-    }
-
-    /// Die Höhe des Kopfbildes.
-    ///
-    /// Vorher fest 16:10 der Breite. Im Querformat eines iPhones sind das
-    /// mehr Punkte, als der Bildschirm hoch ist — die Detailseite begann
-    /// dann unterhalb des sichtbaren Bereichs, und man sah nur ein Bild.
-    /// Deshalb zusätzlich an der Höhe gedeckelt.
-    private var headerHeight: CGFloat {
         let screen = NoriScreenMetrics.size
-        return min(screen.width * 10 / 16, screen.height * 0.62)
-    }
 
-    @ViewBuilder
-    private func backdropImage(_ detail: SeriesDetail) -> some View {
-        if let url = art.backdrop ?? AniworldClient.coverURL(detail.coverPath, provider: source) {
-            NoriCoverImage(url: url, referer: source.origin + "/") { NoriTheme.elevated }
-        } else {
-            NoriTheme.elevated
-        }
-    }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                SeriesHeroView(
+                    detail: detail,
+                    artwork: artwork,
+                    tone: tone,
+                    logo: logo,
+                    stars: art.stars,
+                    overview: art.overview,
+                    season: season,
+                    provider: source,
+                    screen: screen,
+                    play: { episode, at in start(episode, in: detail, at: at) }
+                )
 
-    /// Schriftzug aus TMDB, sonst der Titel. Wie auf der Startseite.
-    @ViewBuilder
-    private func titleArt(_ detail: SeriesDetail) -> some View {
-        if let logo {
-            AsyncImage(url: logo) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                EmptyView()
+                SeriesEpisodeList(
+                    detail: detail,
+                    season: season,
+                    provider: source,
+                    episodeInfo: episodeInfo,
+                    artwork: artwork,
+                    tone: tone,
+                    switching: switchingSeason,
+                    width: min(screen.width, SeriesMetrics.content),
+                    select: select,
+                    play: { episode, at in start(episode, in: detail, at: at) }
+                )
+                // Auf dem iPad soll die Liste nicht über die ganze Breite
+                // laufen — eine Folgenkarte von 1000 Punkten ist eine Zeile mit
+                // sehr viel Luft, keine Karte. Der Kopfbereich darüber bleibt
+                // absichtlich voll breit.
+                .frame(maxWidth: SeriesMetrics.content)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: 84)
-            .accessibilityLabel(detail.title)
-        } else {
-            Text(detail.title)
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .minimumScaleFactor(0.7)
-                .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+            // Platz für die Tableiste; ohne ihn steht die letzte Folge
+            // dahinter.
+            .padding(.bottom, 56)
         }
+        .scrollIndicators(.hidden)
+        .ignoresSafeArea(edges: .top)
+        .noriSoftScrollEdges(.top)
     }
 
-    /// Zwei Zeilen Eckdaten, mittig — Jahr und Genres, darunter Staffelzahl,
-    /// Stand und Bewertung.
-    private func metaLines(_ detail: SeriesDetail) -> some View {
-        VStack(spacing: 6) {
-            let first = [detail.yearStart, detail.genres.prefix(3).joined(separator: " · ")]
-                .compactMap { $0?.isEmpty == false ? $0 : nil }
-                .joined(separator: " · ")
-            if !first.isEmpty {
-                Text(first).font(.subheadline).foregroundStyle(NoriTheme.muted)
-            }
-            HStack(spacing: 8) {
-                Text(seasonSummary(detail))
-                if let stars = art.stars {
-                    Text("★ \(String(format: "%.1f", stars))").foregroundStyle(.yellow)
-                }
-            }
-            .font(.subheadline)
-            .foregroundStyle(NoriTheme.muted)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-    }
-
-    private func seasonSummary(_ detail: SeriesDetail) -> String {
-        let count = detail.seasons.count
-        let seasons = count == 1 ? "1 Staffel" : "\(count) Staffeln"
-        guard let end = detail.yearEnd, !end.isEmpty else { return "\(seasons) · Laufend" }
-        return "\(seasons) · Beendet"
-    }
-
-    /// Abspielen, merken, Überlaufmenü — bewusst ohne Anbieter-Zeile.
+    /// Das Überlaufmenü oben rechts — der einzige weitere Knopf im
+    /// Kopfbereich neben „Zurück“.
     ///
-    /// Der Abspielknopf stand hier lange gar nicht: wiedergeben ließ sich eine
-    /// Serie nur über die Folgenliste weiter unten. Das ist auf einer
-    /// Detailseite die eine Sache, die man erwartet.
-    private func actionRow(_ detail: SeriesDetail) -> some View {
-        HStack(spacing: 10) {
-            playButton(detail)
+    /// Nur, was die App auch kann: teilen, von vorn abspielen, den Stand einer
+    /// Staffel setzen oder verwerfen, dazu Quelle, Freigabe und
+    /// Alternativtitel zum Nachlesen.
+    private func moreMenu(_ detail: SeriesDetail) -> some View {
+        Menu {
+            if let url = seriesURL() {
+                ShareLink(item: url) { Label("Teilen", systemImage: "square.and.arrow.up") }
+            }
 
-            BookmarkChip(slug: slug, title: detail.title)
+            Section {
+                Button {
+                    start(first(detail), in: detail, at: 0)
+                } label: {
+                    Label("Von vorn abspielen", systemImage: "backward.end.fill")
+                }
+                .disabled(detail.episodes.isEmpty)
 
-            Menu {
-                Button("Von vorn abspielen") { playEpisode(first(detail), in: detail, at: 0) }
+                Button {
+                    markSeasonWatched(detail)
+                } label: {
+                    Label("Staffel als gesehen markieren", systemImage: "checkmark.circle")
+                }
+                .disabled(detail.episodes.isEmpty)
+
                 if library.hasProgress(slug: slug, season: season, source: source) {
-                    Button("Fortschritt dieser Staffel vergessen", role: .destructive) {
-                        for ep in detail.episodes {
-                            library.upsert(WatchProgress(
-                                slug: slug, title: detail.title, season: season, episode: ep.number,
-                                episodePath: ep.path, germanTitle: ep.germanTitle,
-                                englishTitle: ep.englishTitle, positionSec: 0, durationSec: 0,
-                                updatedAt: Date().timeIntervalSince1970, provider: source
-                            ))
-                        }
+                    Button(role: .destructive) {
+                        forgetSeason(detail)
+                    } label: {
+                        Label("Fortschritt der Staffel vergessen", systemImage: "arrow.counterclockwise")
                     }
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.callout.weight(.bold))
-                    .foregroundStyle(NoriTheme.fg)
-                    .frame(width: NoriControl.hit, height: NoriControl.hit)
-                    .noriGlass(Circle(), enabled: glass, off: NoriTheme.elevated)
-                    .overlay { Circle().strokeBorder(.white.opacity(glass ? 0 : 0.18)) }
             }
-            .accessibilityLabel("Weitere Aktionen")
-        }
-        .padding(.horizontal, NoriSpacing.screen)
-    }
 
-    /// „Weiter · Folge 7" oder „Folge 1 abspielen".
-    ///
-    /// Welche Folge, entscheidet `nextPlay` im Kern — dieselbe Regel wie in
-    /// „Schau weiter" auf der Startseite, damit beide Wege in derselben Folge
-    /// landen.
-    @ViewBuilder
-    private func playButton(_ detail: SeriesDetail) -> some View {
-        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes, source: source)
-        let started = target.resumeAt >= 8
-        Button {
-            guard let episode = detail.episodes.first(where: { $0.number == target.episode }) else { return }
-            playEpisode(episode, in: detail, at: library.resumeEnabled ? target.resumeAt : 0)
-        } label: {
-            Label(
-                started ? "Weiter · Folge \(target.episode)" : "Folge \(target.episode) abspielen",
-                systemImage: "play.fill"
-            )
-            .font(.callout.weight(.bold))
-            .foregroundStyle(NoriTheme.bg)
-            .lineLimit(1)
-            .padding(.horizontal, 22)
-            .frame(height: NoriControl.hit)
-            .background(Capsule().fill(NoriTheme.fg))
-        }
-        .buttonStyle(NoriPressStyle(scale: 0.97))
-        .disabled(detail.episodes.isEmpty)
-        .opacity(detail.episodes.isEmpty ? 0.4 : 1)
-    }
-
-    // MARK: - Details
-
-    @ViewBuilder
-    private func detailsTab(_ detail: SeriesDetail) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if !detail.description.isEmpty {
-                Text(detail.description).font(.subheadline).foregroundStyle(NoriTheme.fg.opacity(0.9))
+            Section("Quelle") {
+                Text(source.label)
+                if let fsk = detail.fsk, !fsk.isEmpty { Text("FSK \(fsk)") }
             }
+
             if !detail.alts.isEmpty {
-                infoLine("Auch bekannt als", detail.alts.prefix(3).joined(separator: " · "))
-            }
-            if let fsk = detail.fsk, !fsk.isEmpty { infoLine("FSK", fsk) }
-            infoLine("Quelle", source.label)
-        }
-        .padding(.horizontal, 20)
-    }
-
-    private func infoLine(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(label).font(.caption).foregroundStyle(NoriTheme.muted).frame(width: 120, alignment: .leading)
-            Text(value).font(.subheadline)
-        }
-    }
-
-    // MARK: - Folgen
-
-    @ViewBuilder
-    private func episodesTab(_ detail: SeriesDetail) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
-            watchNext(detail)
-            seasonList(detail)
-        }
-    }
-
-    /// „Als Naechstes" — waagerechte Karten mit Standbild.
-    ///
-    /// Beginnt bei der Folge, die `nextPlay` bestimmt: der zuletzt
-    /// angefangenen, solange sie nicht zu Ende gesehen ist, sonst der
-    /// naechsten unfertigen. Danach die darauffolgenden.
-    @ViewBuilder
-    private func watchNext(_ detail: SeriesDetail) -> some View {
-        let upcoming = nextEpisodes(detail)
-        if !upcoming.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Als Nächstes").font(.title3.weight(.semibold))
-                    Spacer()
-                    Text(seasonLabel(detail)).font(.subheadline).foregroundStyle(NoriTheme.muted)
-                }
-                .padding(.horizontal, 20)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 14) {
-                        ForEach(upcoming) { ep in
-                            nextCard(ep, in: detail)
-                        }
-                    }
-                    .padding(.horizontal, 20)
+                Section("Auch bekannt als") {
+                    ForEach(detail.alts.prefix(3), id: \.self) { Text($0) }
                 }
             }
-        }
-    }
-
-    private func nextCard(_ ep: Episode, in detail: SeriesDetail) -> some View {
-        Button {
-            let at = library.resumeEnabled
-                ? resumePosition(library.progress(forPath: ep.path, provider: source))
-                : 0
-            playEpisode(ep, in: detail, at: at)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Color.clear
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .overlay {
-                        if let still = episodeInfo[ep.number]?.stillURL {
-                            // TMDB-Bilder brauchen keinen Referer, anders als die Cover der Quellen.
-                            NoriCoverImage(url: still, referer: "") {
-                                EpisodePlaceholder(number: ep.number)
-                            }
-                        } else {
-                            EpisodePlaceholder(number: ep.number)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: NoriRadius.small, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: NoriRadius.small, style: .continuous)
-                            .strokeBorder(NoriTheme.border)
-                    }
-                Text("FOLGE \(ep.number)")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(NoriTheme.muted)
-                Text(episodeTitle(ep))
-                    .font(.subheadline.weight(.medium))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-            }
-            .frame(width: 240, alignment: .leading)
+            Image(systemName: "ellipsis")
         }
-        .buttonStyle(.plain)
+        .accessibilityLabel("Weitere Aktionen")
     }
 
-    /// Die Staffelliste. Die gewaehlte Staffel klappt ihre Folgen darunter auf.
-    private func seasonList(_ detail: SeriesDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Alle Folgen")
-                .font(.title3.weight(.semibold))
-                .padding(.horizontal, 20)
-                .padding(.bottom, 10)
+    // MARK: - Daten
 
-            ForEach(detail.seasons) { ref in
-                seasonRow(ref, in: detail)
-                if ref.id == season {
-                    ForEach(detail.episodes) { ep in
-                        EpisodeRow(series: detail, episode: ep, season: season, info: episodeInfo[ep.number]) { at in
-                            play = PlayTarget(series: detail, episode: ep, resumeAt: at, provider: source)
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                }
-            }
-        }
+    /// Die Quelle dieser Serie — nie der globale Schalter, sofern die Serie
+    /// schon geladen ist.
+    private var source: CatalogProvider {
+        resolvedProvider ?? providerOverride ?? library.provider
     }
 
-    private func seasonRow(_ ref: SeasonRef, in detail: SeriesDetail) -> some View {
-        Button {
-            guard ref.id != season else { return }
-            season = ref.id
-            Task { await load(season: ref.id) }
-        } label: {
-            HStack(spacing: 14) {
-                Text(ref.label).font(.headline)
-                Spacer()
-                Image(systemName: ref.id == season ? "chevron.down" : "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(NoriTheme.muted)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .background(ref.id == season ? NoriTheme.surface : .clear)
-        }
-        .buttonStyle(.plain)
+    /// Das Bild, das Kopfbereich, Farbabtastung und der Rückfall der
+    /// Folgenkacheln benutzen.
+    private var artwork: SeriesArtwork {
+        SeriesArtwork.resolve(details: art, sourceCover: sourceCover, provider: source)
     }
-
-    // MARK: - Hilfen
-
-    /// Die Quelle dieser Serie — nie der globale Schalter.
-    private var source: CatalogProvider { providerOverride ?? library.provider }
 
     private func first(_ detail: SeriesDetail) -> Episode? {
         detail.episodes.min(by: { $0.number < $1.number })
     }
 
-    /// Der Titel einer Folge: TMDB zuerst, dann die Quelle, sonst die Nummer.
-    private func episodeTitle(_ ep: Episode) -> String {
-        if let tmdb = episodeInfo[ep.number]?.title, !tmdb.isEmpty { return tmdb }
-        if !ep.germanTitle.isEmpty { return ep.germanTitle }
-        if !ep.englishTitle.isEmpty { return ep.englishTitle }
-        return "Folge \(ep.number)"
+    private func seriesURL() -> URL? {
+        URL(string: source.origin + source.seriesPath(slug: slug, season: season))
     }
 
-    private func seasonLabel(_ detail: SeriesDetail) -> String {
-        detail.seasons.first(where: { $0.id == season })?.label ?? "Staffel \(season)"
+    private func start(_ episode: Episode?, in detail: SeriesDetail, at position: Double) {
+        guard let episode else { return }
+        play = PlayTarget(series: detail, episode: episode, resumeAt: position, provider: source)
     }
 
-    private func nextEpisodes(_ detail: SeriesDetail, limit: Int = 8) -> [Episode] {
-        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes, source: source)
-        let sorted = detail.episodes.sorted { $0.number < $1.number }
-        guard let index = sorted.firstIndex(where: { $0.number == target.episode }) else {
-            return Array(sorted.prefix(limit))
+    /// Staffel wechseln. Die bisherige Liste bleibt stehen, bis die neue da
+    /// ist — sonst fiele die Seite bei jedem Wechsel kurz in sich zusammen.
+    private func select(_ next: String) {
+        guard next != season else { return }
+        season = next
+        Task { await load(season: next) }
+    }
+
+    private func markSeasonWatched(_ detail: SeriesDetail) {
+        let now = Date().timeIntervalSince1970
+        for episode in detail.episodes {
+            // Die Laufzeit, sofern schon eine bekannt ist: sie stehen zu
+            // lassen ist richtiger, als sie beim Abhaken auf null zu setzen.
+            let known = library.progress(
+                slug: slug, season: season, episode: episode.number, path: episode.path, provider: source
+            )
+            library.upsert(WatchProgress(
+                slug: slug, title: detail.title, season: season, episode: episode.number,
+                episodePath: episode.path, germanTitle: episode.germanTitle,
+                englishTitle: episode.englishTitle,
+                positionSec: known?.durationSec ?? 0, durationSec: known?.durationSec ?? 0,
+                updatedAt: now, lang: known?.lang, completed: true, provider: source
+            ))
         }
-        return Array(sorted[index...].prefix(limit))
     }
 
-    private func playEpisode(_ ep: Episode?, in detail: SeriesDetail, at position: Double) {
-        guard let ep else { return }
-        play = PlayTarget(series: detail, episode: ep, resumeAt: position, provider: source)
+    private func forgetSeason(_ detail: SeriesDetail) {
+        let now = Date().timeIntervalSince1970
+        for episode in detail.episodes {
+            library.upsert(WatchProgress(
+                slug: slug, title: detail.title, season: season, episode: episode.number,
+                episodePath: episode.path, germanTitle: episode.germanTitle,
+                englishTitle: episode.englishTitle, positionSec: 0, durationSec: 0,
+                updatedAt: now, provider: source
+            ))
+        }
     }
 
     private func loadArt() async {
         guard let detail else { return }
         art = await CoverIndex.shared.detailsLoading(slug: slug, title: detail.title, kind: source)
+
+        // Ohne TMDB-Treffer hätte der Kopfbereich weder Breitbild noch Poster
+        // und bliebe leer. Der Coverpfad steht schon auf der Detailseite und
+        // kostet nichts; erst wenn auch der fehlt, wird nachgeschlagen.
+        if art.backdrop == nil, art.poster == nil {
+            if let own = AniworldClient.coverURL(detail.coverPath, provider: source) {
+                sourceCover = own
+            } else {
+                sourceCover = await CoverIndex.shared.fetchSourceCover(slug: slug, provider: source)
+            }
+        }
+
         logo = await CoverIndex.shared.logoLoading(
             slug: slug, title: detail.title, alternates: detail.alts, kind: source
         )
     }
 
+    /// Die vorherrschende Farbe des Artworks abtasten.
+    ///
+    /// Sie färbt nur Kleinigkeiten ein — den Schimmer hinter dem Titel, den
+    /// Fortschrittsring, den Streifen unter einem angefangenen Standbild. Die
+    /// Seite selbst bleibt dunkel; ein rotes Artwork macht aus Nori keine rote
+    /// App.
+    private func sampleTone() async {
+        guard let url = artwork.url else {
+            tone = nil
+            return
+        }
+        let sampled = await CoverToneSampler.sample(url: url)
+        guard !Task.isCancelled else { return }
+        withAnimation(NoriMotion.content) { tone = sampled?.noriReadableAccent() }
+    }
+
     private func loadEpisodeInfo() async {
         guard let detail else { return }
         // Erst das, was schon dasteht: die Liste erscheint mit Bildern, ohne
-        // auf TMDB zu warten. Der Aufruf traegt danach nach.
+        // auf TMDB zu warten. Der Aufruf trägt danach nach.
         episodeInfo = await EpisodeIndex.shared.cached(slug: slug, season: season)
         let loaded = await EpisodeIndex.shared.load(
             slug: slug,
             title: detail.title,
-            // Die Quelle fuehrt Serien oft unter einem eingedeutschten oder
-            // verkuerzten Namen, den TMDB nicht kennt. Die Alternativtitel von
+            // Die Quelle führt Serien oft unter einem eingedeutschten oder
+            // verkürzten Namen, den TMDB nicht kennt. Die Alternativtitel von
             // der Detailseite treffen dann meist.
             alternates: detail.alts,
             season: season,
@@ -463,200 +319,46 @@ struct SeriesView: View {
         episodeInfo = loaded
     }
 
-    func cta(_ kind: String, episode: Int) -> String {
-        switch kind {
-        case "resume": return "Weiter · Folge \(episode)"
-        case "next": return "Weiter · Folge \(episode)"
-        default: return "Abspielen · Folge \(episode)"
-        }
-    }
-
     /// Die Serie laden — **ohne** globalen Zustand anzufassen.
     ///
-    /// Frueher setzte diese Funktion `library.provider` auf die Quelle, aus
-    /// der die Serie kam, und die Merkliste tat dasselbe beim Oeffnen. Das
+    /// Früher setzte diese Funktion `library.provider` auf die Quelle, aus
+    /// der die Serie kam, und die Merkliste tat dasselbe beim Öffnen. Das
     /// stammt aus der Zeit, als der Umschalter ein Moduswechsel war. Seit die
-    /// Bibliothek beide Quellen zusammenfuehrt, ist es schaedlich: `source(of:)`
-    /// faellt fuer Eintraege ohne eigene Quellangabe auf `library.provider`
-    /// zurueck, und die Merkliste teilt danach in „Anime" und „Serien" auf.
-    /// Ein einziges Oeffnen verschob damit fremde Eintraege zwischen den
-    /// Abschnitten. Was ein Titel oeffnet, steht in `providerOverride`
-    /// beziehungsweise am Eintrag selbst — dafuer braucht es keinen globalen
+    /// Bibliothek beide Quellen zusammenführt, ist es schädlich: `source(of:)`
+    /// fällt für Einträge ohne eigene Quellangabe auf `library.provider`
+    /// zurück, und die Merkliste teilt danach in „Anime“ und „Serien“ auf.
+    /// Ein einziges Öffnen verschob damit fremde Einträge zwischen den
+    /// Abschnitten. Was ein Titel öffnet, steht in `providerOverride`
+    /// beziehungsweise am Eintrag selbst — dafür braucht es keinen globalen
     /// Schalter.
     func load(season: String?) async {
         loading = detail == nil
+        switchingSeason = detail != nil
         error = nil
+        defer {
+            loading = false
+            switchingSeason = false
+        }
+
         let first = providerOverride ?? library.provider
         do {
             let loaded = try await AniworldClient.shared.getSeries(provider: first, slug: slug, season: season)
-            detail = loaded
-            self.season = loaded.activeSeason
-            library.remember(slug: slug, title: loaded.title, provider: first)
+            apply(loaded, from: first)
         } catch {
             let other: CatalogProvider = first == .aniworld ? .serienstream : .aniworld
             do {
                 let loaded = try await AniworldClient.shared.getSeries(provider: other, slug: slug, season: season)
-                detail = loaded
-                self.season = loaded.activeSeason
-                library.remember(slug: slug, title: loaded.title, provider: other)
+                apply(loaded, from: other)
             } catch {
                 self.error = error.localizedDescription
             }
         }
-        loading = false
-    }
-}
-
-struct EpisodeRow: View {
-    @Environment(LibraryStore.self) private var library
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let series: SeriesDetail
-    let episode: Episode
-    let season: String
-    /// Bild und Beschreibung aus TMDB. `nil`, solange nichts geladen ist oder
-    /// TMDB die Serie nicht kennt — dann sieht die Zeile aus wie zuvor, nur
-    /// mit einer Kachel im 16:9-Format statt eines Quadrats.
-    var info: EpisodeInfo? = nil
-    let play: (Double) -> Void
-
-    /// „Episode 7" ist kein Titel, sondern die Nummer in Worten. Beide Quellen
-    /// setzen das ein, wo sie keinen echten Titel haben — und daneben steht
-    /// dann noch einmal dasselbe als englischer Titel.
-    private static func isPlaceholder(_ text: String) -> Bool {
-        text.range(
-            of: #"^\s*(episode|folge|ep\.?)\s*\d+\s*$"#,
-            options: [.regularExpression, .caseInsensitive]
-        ) != nil
     }
 
-    /// Der Titel der Quelle, sofern es einer ist; sonst der von TMDB, sonst
-    /// die Nummer.
-    private var shownTitle: String {
-        let own = episode.germanTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !own.isEmpty, !Self.isPlaceholder(own) { return own }
-        if let other = info?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !other.isEmpty, !Self.isPlaceholder(other) {
-            return other
-        }
-        if !own.isEmpty { return own }
-        return "Folge \(episode.number)"
-    }
-
-    /// Der englische Titel, aber nur wenn er etwas hinzufügt: dieselbe
-    /// Zeichenkette zweimal untereinander ist keine Auskunft.
-    private var shownSubtitle: String? {
-        let other = episode.englishTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !other.isEmpty, !Self.isPlaceholder(other) else { return nil }
-        guard other.caseInsensitiveCompare(shownTitle) != .orderedSame else { return nil }
-        return other
-    }
-
-    var body: some View {
-        let item = library.progress(slug: series.slug, season: season, episode: episode.number, path: episode.path)
-        let complete = isEpisodeComplete(item)
-        let ratio = watchRatio(item)
-        Button {
-            play(library.resumeEnabled ? resumePosition(item) : 0)
-        } label: {
-            HStack(alignment: .top, spacing: 12) {
-                thumb(complete: complete, ratio: ratio)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(shownTitle).font(.body.weight(.medium)).lineLimit(2)
-                    if let shownSubtitle {
-                        Text(shownSubtitle).font(.caption).foregroundStyle(NoriTheme.muted).lineLimit(1)
-                    }
-                    if let text = info?.overview, !text.isEmpty {
-                        Text(text)
-                            .font(.caption)
-                            .foregroundStyle(NoriTheme.muted)
-                            .lineLimit(3)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 0)
-                if let item, !complete, item.positionSec >= 8 {
-                    Text("\(Int(ratio * 100))%").font(.caption).foregroundStyle(NoriTheme.muted)
-                }
-            }
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(NoriPressStyle(enabled: !reduceMotion))
-    }
-
-    /// Die Folgenkachel: das Standbild aus TMDB, sonst die Nummer wie bisher.
-    ///
-    /// Der Fortschritt liegt als schmaler Streifen am unteren Rand statt als
-    /// `ProgressView` unter dem Titel — dort stand er zwischen Titel und
-    /// Beschreibung im Weg, und am Bild ist er die geläufige Form.
-    private func thumb(complete: Bool, ratio: Double) -> some View {
-        ZStack {
-            if let url = info?.stillURL {
-                // image.tmdb.org braucht keine Kopfzeilen; `NoriCoverImage`
-                // bringt aber den Zwischenspeicher mit, den `AsyncImage` nicht
-                // hat — dieselbe Folge wird beim Blättern nicht neu geladen.
-                NoriCoverImage(url: url, referer: "https://www.themoviedb.org/") {
-                    EpisodePlaceholder(number: episode.number)
-                }
-            } else {
-                EpisodePlaceholder(number: episode.number)
-            }
-            if complete {
-                Color.black.opacity(0.5)
-                Image(systemName: "checkmark")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            if info?.stillURL != nil, !complete {
-                Text("\(episode.number)")
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.6), in: Capsule())
-                    .padding(5)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if ratio > 0, !complete {
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(NoriTheme.accent)
-                        .frame(width: geo.size.width * min(max(ratio, 0), 1), height: 3)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                }
-                .frame(height: 3)
-            }
-        }
-        .frame(width: 112, height: 63)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(NoriTheme.border)
-        }
-    }
-}
-
-
-/// Was steht, solange es kein Standbild gibt.
-///
-/// TMDB kennt längst nicht jede Folge, und für die darf die Kachel nicht wie
-/// ein Ladefehler aussehen. Ein leeres dunkles Rechteck tut genau das; die
-/// Nummer und ein Filmstreifen sagen, dass hier nichts fehlt.
-struct EpisodePlaceholder: View {
-    let number: Int
-
-    var body: some View {
-        ZStack {
-            NoriTheme.elevated
-            VStack(spacing: 3) {
-                Image(systemName: "film")
-                    .font(.system(size: 15))
-                Text("\(number)")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-            }
-            .foregroundStyle(NoriTheme.fg.opacity(0.28))
-        }
+    private func apply(_ loaded: SeriesDetail, from provider: CatalogProvider) {
+        detail = loaded
+        season = loaded.activeSeason
+        resolvedProvider = provider
+        library.remember(slug: slug, title: loaded.title, provider: provider)
     }
 }
