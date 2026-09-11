@@ -39,6 +39,10 @@ bleiben unverändert Nori. Was übernommen und was nachgebaut ist, steht in
 
 ### Geändert
 
+- **Neues App-Symbol** — Torii, Sonnenuntergang und 「ノリ」 auf nahezu
+  Schwarz. Es löst das serifige „N“ auf allen Plattformen ab; Master ist
+  `assets/branding/nori-app-icon.png`, alle Größen entstehen daraus mit
+  `tools/make-app-icons.py`.
 - **Der Kopfbereich läuft von Kante zu Kante** bis unter die Statusleiste, mit
   Parallaxe beim Blättern, Dehnung beim Herunterziehen, Verlauf in den
   Hintergrund, Schriftzug, Genres und zwei Knöpfen. Vorher eine 250 Punkte
@@ -94,6 +98,8 @@ eigenes Player-Fenster. Übernommen ist, was plattformübergreifend gilt.
 
 ### Geändert
 
+- **Neues App-Symbol**, dasselbe wie auf dem iPhone. Randlos und quadratisch
+  hinterlegt: die abgerundete Form kommt vom System, nicht aus dem Bild.
 - **Ein gemeinsames Bewegungssystem**: dieselben Kurven wie auf dem iPhone,
   statt drei eigener Dauern. „Bewegung reduzieren“ wird überall ausgewertet.
 - Abschnittsüberschriften mit Akzentbalken, Druckstil mit dezenter
