@@ -22,7 +22,7 @@ struct PlayerSeekOverlay: View {
     var onSingleTap: () -> Void
     var onSeek: (Double) -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
 
     /// Wie viele Sekunden die laufende Serie von Doppeltipps ergibt.
     /// Negativ links, positiv rechts, `0` heißt: nichts sichtbar.

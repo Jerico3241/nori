@@ -26,6 +26,14 @@ export interface LibraryBag {
   langPref?: string;
   hosterPref?: string;
   resumeEnabled?: boolean;
+  /**
+   * Bevorzugte Bildhöhe: „auto", „1080", „720", „480".
+   *
+   * Eine Höhe und keine Bitrate, weil die Oberfläche Höhen nennt und jede
+   * HLS-Master-Playlist sie mitliefert. „auto" heisst: der Spieler entscheidet.
+   * Erzwingen lässt sich das nur, wo der Hoster mehrere Spuren anbietet.
+   */
+  preferredQuality?: string;
   autoplayNext?: boolean;
   playbackSpeed?: number;
   provider?: string;
@@ -42,6 +50,7 @@ export interface LibraryState {
   langPref: string;
   hosterPref: string;
   resumeEnabled: boolean;
+  preferredQuality: string;
   autoplayNext: boolean;
   playbackSpeed: number;
   provider: CatalogProvider;
@@ -59,6 +68,7 @@ export function emptyLibrary(): LibraryState {
     langPref: "DE",
     hosterPref: "VOE",
     resumeEnabled: true,
+    preferredQuality: "auto",
     autoplayNext: true,
     playbackSpeed: 1.0,
     provider: "aniworld",
@@ -80,6 +90,7 @@ export function decodeLibrary(raw: unknown): LibraryState {
   state.langPref = bag.langPref ?? "DE";
   state.hosterPref = bag.hosterPref ?? "VOE";
   state.resumeEnabled = bag.resumeEnabled ?? true;
+  state.preferredQuality = bag.preferredQuality ?? "auto";
   state.autoplayNext = bag.autoplayNext ?? true;
   state.playbackSpeed = bag.playbackSpeed ?? 1.0;
   if (bag.provider && (PROVIDER_VALUES as string[]).includes(bag.provider)) {
@@ -114,6 +125,7 @@ export function encodeLibrary(state: LibraryState): LibraryBag {
     langPref: state.langPref,
     hosterPref: state.hosterPref,
     resumeEnabled: state.resumeEnabled,
+    preferredQuality: state.preferredQuality,
     autoplayNext: state.autoplayNext,
     playbackSpeed: state.playbackSpeed,
     provider: state.provider,

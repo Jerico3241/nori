@@ -60,7 +60,24 @@ final class CalendarParsingTests: XCTestCase {
 
     func testAniworldCalendarSortsByAiringTime() throws {
         let payload = try HTML.parseAniworldCalendar(Fixtures.aniworldCalendar, now: morning)
-        XCTAssertEqual(payload.upcoming.map(\.slug), ["one-piece", "frieren"])
+        XCTAssertEqual(payload.upcoming.map(\.slug), ["one-piece", "frieren", "ohne-zeit"])
+    }
+
+    /// Steht keine Uhrzeit im Markup, landet `airingAt` auf Mitternacht —
+    /// sortieren lässt sich damit, anzeigen nicht. `hasTime` hält den
+    /// Unterschied fest, damit der Kalender keine Zeit erfindet.
+    func testAniworldCalendarMarksEntriesWithoutAClockTime() throws {
+        let payload = try HTML.parseAniworldCalendar(Fixtures.aniworldCalendar, now: morning)
+
+        let frieren = try XCTUnwrap(payload.upcoming.first { $0.slug == "frieren" })
+        XCTAssertEqual(frieren.hasTime, true)
+
+        let ohneZeit = try XCTUnwrap(payload.upcoming.first { $0.slug == "ohne-zeit" })
+        XCTAssertEqual(ohneZeit.hasTime, false)
+        XCTAssertEqual(
+            ohneZeit.airingAt,
+            berlinDate(year: 2026, month: 9, day: 15, hour: 0, minute: 0).timeIntervalSince1970 * 1000
+        )
     }
 
     // MARK: - Serienstream
@@ -103,7 +120,21 @@ final class CalendarParsingTests: XCTestCase {
         let data = try XCTUnwrap(Fixtures.serienstreamCalendarJSON.data(using: .utf8))
         let payload = try HTML.parseSerienstreamCalendar(data, now: morning)
         XCTAssertFalse(payload.upcoming.contains { $0.slug == "ignoriert" })
-        XCTAssertEqual(payload.upcoming.count, 2)
+        XCTAssertEqual(payload.upcoming.count, 3)
+    }
+
+    /// Serienstream schreibt in **jede** Kalenderzeile „00:00" — nachgezählt
+    /// an einem vollständigen Abruf. Das ist ein Platzhalter, keine
+    /// Ausstrahlungszeit, und darf deshalb nicht als Uhrzeit durchgehen.
+    func testSerienstreamCalendarTreatsMidnightAsNoClockTime() throws {
+        let data = try XCTUnwrap(Fixtures.serienstreamCalendarJSON.data(using: .utf8))
+        let payload = try HTML.parseSerienstreamCalendar(data, now: morning)
+
+        let dexter = try XCTUnwrap(payload.upcoming.first { $0.slug == "dexter" })
+        XCTAssertEqual(dexter.hasTime, true)
+
+        let ohneZeit = try XCTUnwrap(payload.upcoming.first { $0.slug == "ohne-zeit" })
+        XCTAssertEqual(ohneZeit.hasTime, false)
     }
 
     // MARK: - Einordnung nach Zeit

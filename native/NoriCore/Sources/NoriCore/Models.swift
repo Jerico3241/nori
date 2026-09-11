@@ -304,6 +304,18 @@ struct AiringEntry: Codable, Identifiable, Hashable {
     /// Kalendereinträge ein richtiges Bild, ohne dass die Serie erst geöffnet
     /// werden muss.
     var coverPath: String?
+    /// Ob die Quelle eine Uhrzeit genannt hat.
+    ///
+    /// `airingAt` trägt immer eine volle Zeitangabe, weil daraus sortiert und
+    /// in Tage einsortiert wird. Nennt die Quelle keine Uhrzeit, steht dort
+    /// Mitternacht — und Mitternacht ist keine Auskunft, sondern eine Lücke.
+    /// Ohne dieses Feld lässt sich die Lücke nicht von einer echten
+    /// Veröffentlichung um 00:00 unterscheiden, und der Kalender zeigte eine
+    /// Uhrzeit an, die niemand genannt hat.
+    ///
+    /// Optional, damit ältere abgelegte Stände weiter dekodieren; `nil` wird
+    /// wie „unbekannt" behandelt.
+    var hasTime: Bool? = nil
     /// Woher der Eintrag stammt. Wie bei `CatalogItem` beim Laden gestempelt,
     /// nicht im Parser. Ohne das könnte ein gemeinsamer Kalender nicht sagen,
     /// welche Seite ein Eintrag öffnet.

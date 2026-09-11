@@ -421,6 +421,26 @@ actor CoverImageLoader {
         failed[url] = Date().addingTimeInterval(30)
     }
 
+    /// Wie viele Bytes Bilddaten gerade im Speicher liegen.
+    ///
+    /// Für die Cache-Seite in den Einstellungen: sie soll eine **gemessene**
+    /// Zahl zeigen. Gezählt werden die abgelegten Bilddaten, nicht die
+    /// Schlüssel — die Adressen sind gegen ein Cover vernachlässigbar.
+    func memoryBytes() -> Int64 {
+        cache.values.reduce(into: Int64(0)) { $0 += Int64($1.count) }
+    }
+
+    /// Alles vergessen, was sich neu holen lässt: abgelegte Bilder und
+    /// gemerkte Fehlschläge.
+    ///
+    /// Nur regenerierbares Material. Merkliste, Verlauf und Fortschritt liegen
+    /// in `LibraryStore` und werden hier nicht berührt.
+    func purge() {
+        cache.removeAll(keepingCapacity: false)
+        order.removeAll(keepingCapacity: false)
+        failed.removeAll(keepingCapacity: false)
+    }
+
     /// Wie `load`, aber mit Befund statt nur Ergebnis — für die Cover-Diagnose
     /// in den Einstellungen. Umgeht Zwischenspeicher und gemerkte Fehlschläge,
     /// damit die Messung den aktuellen Zustand zeigt und nicht den von vorhin.
@@ -1066,6 +1086,7 @@ struct CoverCandidate: Identifiable, Hashable {
 /// Pfad — kein Bild, keine Beschreibung. Beides steht bei TMDB, hinter der
 /// Kennung, die die Cover-Suche ohnehin schon ermittelt hat.
 struct EpisodeInfo: Codable, Hashable {
+    /// Der Folgentitel — oder ein Platzhalter. Siehe `namedTitle(for:)`.
     var title: String?
     var overview: String?
     var still: String?
@@ -1078,6 +1099,27 @@ struct EpisodeInfo: Codable, Hashable {
     var runtime: Int? = nil
 
     var stillURL: URL? { still.flatMap(URL.init(string:)) }
+
+    /// Der Folgentitel, sofern es einer ist.
+    ///
+    /// TMDB füllt unbenannte Folgen mit einem Platzhalter aus Wort und Nummer:
+    /// „Folge 11" auf Deutsch, „Episode 11" auf Englisch. Das ist kein Titel,
+    /// sondern dieselbe Nummer noch einmal — im Kalender stand dadurch
+    /// „Staffel 3 · Folge 11 · Folge 11".
+    ///
+    /// Geprüft wird die **Form**, nicht die Übereinstimmung mit einer Nummer:
+    /// eine Folge, die bei der Quelle als 11 und bei TMDB als 12 geführt wird,
+    /// trüge sonst weiterhin „Folge 12" als vermeintlichen Titel.
+    var namedTitle: String? {
+        guard let raw = title?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        let placeholder = raw.range(
+            of: #"^(folge|episode)\s*\d+$"#,
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return placeholder == nil ? raw : nil
+    }
 }
 
 /// Folgenbilder und -beschreibungen, eine Staffel auf einmal.

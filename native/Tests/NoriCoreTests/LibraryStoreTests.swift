@@ -55,6 +55,7 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(store.langPref, "DE")
         XCTAssertEqual(store.hosterPref, "VOE")
         XCTAssertTrue(store.resumeEnabled)
+        XCTAssertEqual(store.preferredQuality, "auto")
         XCTAssertTrue(store.autoplayNext)
         XCTAssertTrue(store.favorites.isEmpty)
         XCTAssertTrue(store.progress.isEmpty)
@@ -100,6 +101,19 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertFalse(store.autoplayNext)
         XCTAssertEqual(store.playbackSpeed, 1.5)
         XCTAssertEqual(store.provider, .serienstream)
+        // Die Qualitätsvorgabe kennt Schema 3 nicht. Sie muss auf „auto"
+        // landen, nicht auf einer Stufe, die nie gewählt wurde.
+        XCTAssertEqual(store.preferredQuality, "auto")
+    }
+
+    /// Die Qualitätsvorgabe muss einen Umlauf durch die Datei überleben —
+    /// sonst steht sie nach dem nächsten Start wieder auf „auto".
+    func testPreferredQualitySurvivesAReload() {
+        let first = LibraryStore(directory: directory)
+        first.preferredQuality = "720"
+
+        let second = LibraryStore(directory: directory)
+        XCTAssertEqual(second.preferredQuality, "720")
     }
 
     func testStoredScopeIsRestored() throws {

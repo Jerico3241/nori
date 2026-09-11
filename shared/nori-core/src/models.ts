@@ -234,6 +234,19 @@ export interface AiringEntry {
   dayKey: string;
   dayLabel: string;
   coverPath?: string | null;
+  /**
+   * Ob die Quelle eine Uhrzeit genannt hat.
+   *
+   * `airingAt` trägt immer eine volle Zeitangabe, weil daraus sortiert und in
+   * Tage einsortiert wird. Nennt die Quelle keine Uhrzeit, steht dort
+   * Mitternacht — und Mitternacht ist keine Auskunft, sondern eine Lücke.
+   * Ohne dieses Feld liesse sich die Lücke nicht von einer echten
+   * Veröffentlichung um 00:00 unterscheiden.
+   *
+   * Optional, damit ältere abgelegte Stände weiter gelesen werden; fehlend
+   * heisst „unbekannt".
+   */
+  hasTime?: boolean | null;
   provider?: CatalogProvider;
 }
 

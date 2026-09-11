@@ -95,6 +95,14 @@ export const aniworldCalendar = `
       <img class="flag" title="Mit Untertitel">
     </a>
   </section>
+  <section class="calendarList">
+    <h3>Dienstag, 15.09.2026</h3>
+    <a href="/anime/stream/ohne-zeit/staffel-1/episode-2">
+      <h3 class="seriesTitle">Ohne Zeit</h3>
+      <small>S1E2</small>
+      <img class="flag" title="Deutsch">
+    </a>
+  </section>
 </body></html>`;
 
 export const serienstreamCatalog = `
@@ -168,6 +176,19 @@ export const serienstreamCalendarJSON = {
       season: 2,
       episode: 3,
       language_id: 2,
+    },
+  ],
+  "2026-09-15": [
+    {
+      url: "/serie/ohne-zeit/staffel-1/episode-5",
+      poster: "/media/images/channel/desktop/ohne-zeit-1a2b3c4d?format=avif",
+      title: "Ohne Zeit",
+      // Serienstream schreibt in jede Zeile „00:00" — ein Platzhalter, keine
+      // Ausstrahlungszeit. Genau diese Form kommt in der Praxis an.
+      time: "00:00",
+      season: 1,
+      episode: 5,
+      language_id: 1,
     },
   ],
   "kein-datum": [{ url: "/serie/ignoriert", title: "Ignoriert", time: "10:00" }],

@@ -117,7 +117,7 @@ struct NoriAnchoredImage<Fallback: View>: View {
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: UIImage?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in

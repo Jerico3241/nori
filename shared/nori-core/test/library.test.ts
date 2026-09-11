@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { Episode, WatchProgress } from "../src/models.js";
 import {
-  continueWatching, decodeLibrary, encodeLibrary, findProgress, migrateProgress,
+  continueWatching, decodeLibrary, emptyLibrary, encodeLibrary, findProgress, migrateProgress,
   nextEpisode, nextPlay, previousEpisode, rememberRecent, seasonStats, upsertProgress,
 } from "../src/library.js";
 
@@ -133,11 +133,20 @@ test("Bibliothek überlebt einen Umlauf durch encode/decode", () => {
   assert.equal(state.hosterPref, "Vidmoly");
   assert.equal(state.scope, "all");
   assert.equal(state.resumeEnabled, true);
+  // Ein Stand ohne Qualitätsvorgabe bekommt „auto", nicht eine Stufe, die nie
+  // gewählt wurde.
+  assert.equal(state.preferredQuality, "auto");
   const bag = encodeLibrary(state);
   assert.equal(bag.version, 4);
   const again = decodeLibrary(bag);
   assert.deepEqual(again.progress, state.progress);
   assert.deepEqual(again.favorites, state.favorites);
+});
+
+test("Qualitätsvorgabe überlebt einen Umlauf durch encode/decode", () => {
+  const state = emptyLibrary();
+  state.preferredQuality = "720";
+  assert.equal(decodeLibrary(encodeLibrary(state)).preferredQuality, "720");
 });
 
 test("Verlauf hält höchstens 100 Einträge und schiebt den jüngsten nach vorn", () => {

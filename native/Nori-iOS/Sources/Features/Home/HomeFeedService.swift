@@ -190,7 +190,7 @@ final class HomeFeedService {
 
     /// Noris eigener Kalender, beide Quellen, nur der bereits gelaufene Teil.
     ///
-    /// `CalendarView.merged` ist dieselbe Funktion, die der Kalender-Tab
+    /// `CalendarService.payload` ist dieselbe Funktion, die der Kalender-Tab
     /// benutzt — inklusive Zwischenspeicher im Client. Die Startseite holt
     /// dadurch nichts zusätzlich, wenn der Tab kurz vorher offen war.
     private static func recentEpisodes(force: Bool) async -> [AiringEntry] {
@@ -198,7 +198,7 @@ final class HomeFeedService {
             // Ausdrücklich `.all`: die Startseite führt Anime und Serien
             // gemeinsam, unabhängig vom Bereich, der in den anderen Tabs
             // eingestellt ist.
-            let payload = try await CalendarView.merged(scope: .all, slugs: nil, force: force)
+            let payload = try await CalendarService.payload(scope: .all, slugs: nil, force: force)
             return payload.recent
         } catch {
             // Ein ausgefallener Kalender blendet die Reihe aus. Er darf die

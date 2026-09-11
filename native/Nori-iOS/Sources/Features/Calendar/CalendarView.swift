@@ -1,114 +1,441 @@
 import SwiftUI
 
+/// Noris Kalender.
+///
+/// Aufbau: ein feststehender Kopfbereich — Titel, Filterknopf, Heute/Woche/
+/// Monat und darunter der Tagesnavigator — und ein scrollender Inhalt.
+/// Der Kopfbereich bleibt stehen, weil seine Bedienelemente zum Kalender
+/// gehören: wer vom unteren Ende einer Monatsliste auf „Heute" will, soll
+/// nicht erst zurückscrollen müssen.
+///
+/// ## Woher die Einträge kommen
+///
+/// Die Verfügbarkeit entscheiden **nur** Noris Provider: AniWorld und
+/// Serienstream sagen, welche Folge wann bei ihnen steht. TMDB trägt
+/// Folgentitel und Standbilder nach (siehe `CalendarReleaseRow`) und bestimmt
+/// nie, ob ein Eintrag erscheint — TMDB kennt Ausstrahlungstermine, nicht
+/// Noris Bestand. Ohne TMDB-Schlüssel sieht der Kalender schlichter aus und
+/// funktioniert unverändert.
+///
+/// ## Was diese Ansicht nicht tut
+///
+/// Sie führt nichts zusammen und sortiert nichts. Dubletten, Tagesschlüssel in
+/// der Zeitzone des Geräts und die Reihenfolge kommen aus `CalendarMerge`,
+/// Filter und Bündelung aus `CalendarSelection`, das Laden aus
+/// `CalendarService`. Die vorherige Kalenderansicht hatte all das zwischen
+/// ihren Zeilen.
 struct CalendarView: View {
     @Environment(LibraryStore.self) private var library
     /// Die zugelassenen Slugs, wenn der Bereich an einem Genre hängt.
     ///
-    /// Ein `AiringEntry` trägt Slug und Quelle, aber keine Genres — ohne
-    /// diesen Umweg zeigte „K-Drama" den vollständigen Serienstream-Kalender.
+    /// Ein `AiringEntry` trägt Slug und Quelle, aber keine Genres — ohne diesen
+    /// Umweg zeigte „K-Drama" den vollständigen Serienstream-Kalender.
     let slugs: Set<String>?
-    @State private var payload: CalendarPayload?
-    @State private var error: String?
-    @State private var loading = true
-    // Der Kalender steht auf Liste: hier zählt, wann etwas kommt, und das
-    // steht in der Zeile. Wer lieber Bilder sieht, schaltet um.
-    @AppStorage("nori.layout.calendar") private var layout: NoriLayout = .list
+
+    @State private var service = CalendarService()
+    @State private var mode: CalendarMode = .today
+    @State private var filter = CalendarFilter()
+    /// Der Tag, den die Liste zeigt. In „Heute" immer heute.
+    @State private var selected = Date()
+    /// Heute, festgehalten beim Erscheinen — damit eine über Mitternacht
+    /// geöffnete App nicht weiter den Vortag hervorhebt.
+    @State private var today = Date()
+    @State private var showFilter = false
+
+    private var calendar: Calendar { Calendar.current }
 
     var body: some View {
-        NoriScreen {
-            Group {
-                if loading && payload == nil {
-                    ProgressView("Kalender wird geladen").frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error, payload == nil {
-                    ContentUnavailableView("Kalender nicht geladen", systemImage: "calendar.badge.exclamationmark", description: Text(error))
-                } else if let payload {
-                    VStack(spacing: 0) {
-                        LayoutBar(layout: $layout)
-                        if layout == .grid {
-                            grid(payload)
-                        } else {
-                            list(payload)
-                        }
-                    }
-                }
+        NoriGradientScreen {
+            VStack(spacing: 14) {
+                CalendarHeaderView(
+                    filtersActive: !filter.isDefault || library.scope != .all,
+                    onFilter: { showFilter = true }
+                )
+                CalendarModeSwitcher(mode: $mode)
+                navigator
+                content
             }
+            .padding(.top, 6)
         }
-        .navigationTitle("Kalender")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ScopeSwitch(scope: Bindable(library).scope)
-            }
+        // Der Kopfbereich bringt Titel und Filter selbst mit; eine zweite
+        // Leiste darüber wäre doppelt.
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showFilter) {
+            CalendarFilterSheet(
+                scope: Bindable(library).scope,
+                filter: $filter,
+                matching: periodReleases.count
+            )
         }
-        .task(id: reloadKey) { await load() }
-        .refreshable { await load(force: true) }
-    }
-
-    private func list(_ payload: CalendarPayload) -> some View {
-        List {
-            ForEach(grouped(payload.upcoming), id: \.label) { group in
-                Section(group.label) {
-                    ForEach(group.rows) { row in
-                        NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider) {
-                            CalendarRow(entry: row)
-                        }
-                        .listRowBackground(NoriTheme.surface)
-                    }
-                }
-            }
-            if !payload.recent.isEmpty {
-                Section("Zuletzt") {
-                    ForEach(payload.recent) { row in
-                        NoriSeriesLink(slug: row.slug, titleHint: row.title, provider: row.provider) {
-                            CalendarRow(entry: row)
-                        }
-                        .listRowBackground(NoriTheme.surface)
-                    }
-                }
-            }
+        .task(id: reloadKey) {
+            today = Date()
+            if mode == .today { selected = today }
+            await service.load(scope: library.scope, slugs: slugs)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-    }
-
-    private func grid(_ payload: CalendarPayload) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                ForEach(grouped(payload.upcoming), id: \.label) { group in
-                    NoriGridHeader(title: group.label)
-                    section(group.rows)
-                }
-                if !payload.recent.isEmpty {
-                    NoriGridHeader(title: "Zuletzt")
-                    section(payload.recent)
-                }
-            }
-            .padding(.vertical, 8)
-            .padding(.bottom, 16)
+        .onChange(of: mode) { _, next in
+            // „Heute" ist ein Tag, kein Zeitraum: der Modus setzt die Auswahl
+            // zurück, sonst zeigte er nach einem Ausflug in den Monat weiter
+            // den dort angetippten Tag unter der Überschrift „Heute".
+            if next == .today { selected = today }
         }
     }
 
-    private func section(_ rows: [AiringEntry]) -> some View {
-        LazyVGrid(columns: NoriLayout.columns, spacing: 18) {
-            ForEach(rows) { row in
-                let source = row.provider ?? library.provider
-                NoriSeriesLink(
-                    slug: row.slug,
-                    titleHint: row.title,
-                    scaleOnPress: true,
-                    provider: row.provider
-                ) {
-                    NoriGridCard(
-                        title: row.title,
-                        slug: row.slug,
-                        subtitle: row.season.isEmpty ? nil : "S\(row.season) · F\(row.episode)",
-                        coverURL: AniworldClient.coverURL(row.coverPath, provider: source),
-                        kind: source
+    // MARK: - Tagesnavigator
+
+    /// Wochenleiste in „Heute" und „Woche", Monatsraster in „Monat".
+    @ViewBuilder
+    private var navigator: some View {
+        switch mode {
+        case .today:
+            CalendarWeekStrip(
+                days: CalendarSelection.week(containing: today, calendar: calendar),
+                selected: selected,
+                today: today,
+                counts: counts,
+                calendar: calendar,
+                onSelect: jump
+            )
+        case .week:
+            VStack(spacing: 10) {
+                CalendarPeriodBar(
+                    label: weekLabel,
+                    onBack: { shiftWeek(-1) },
+                    onForward: { shiftWeek(1) }
+                )
+                CalendarWeekStrip(
+                    days: weekDays,
+                    selected: selected,
+                    today: today,
+                    counts: counts,
+                    calendar: calendar,
+                    onSelect: { selected = $0 }
+                )
+            }
+        case .month:
+            CalendarPeriodBar(
+                label: selected.formatted(.dateTime.month(.wide).year()),
+                onBack: { shiftMonth(-1) },
+                onForward: { shiftMonth(1) }
+            )
+        }
+    }
+
+    // MARK: - Inhalt
+
+    @ViewBuilder
+    private var content: some View {
+        if service.loading, service.releases.isEmpty {
+            ProgressView("Kalender wird geladen")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = service.error, service.releases.isEmpty {
+            ContentUnavailableView(
+                "Kalender nicht geladen",
+                systemImage: "calendar.badge.exclamationmark",
+                description: Text(error)
+            )
+        } else {
+            list
+        }
+    }
+
+    private var list: some View {
+        GeometryReader { proxy in
+            let thumb = proxy.size.width <= 380 ? CalendarMetrics.thumbNarrow : CalendarMetrics.thumb
+            ScrollViewReader { scroll in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        switch mode {
+                        case .today: todaySections(thumb: thumb)
+                        case .week: weekSections(thumb: thumb)
+                        case .month: monthSections(thumb: thumb)
+                        }
+                    }
+                    .padding(.top, 4)
+                    .padding(.bottom, NoriPanel.bottom)
+                }
+                .scrollIndicators(.hidden)
+                .noriSoftScrollEdges(.bottom)
+                .refreshable { await service.load(scope: library.scope, slugs: slugs, force: true) }
+                // Ein Tipper in der Wochenleiste springt zum Abschnitt des
+                // Tages, statt die Liste auszutauschen: in „Woche" stehen alle
+                // sieben Tage untereinander, und „springen" ist genau das, was
+                // die Leiste verspricht.
+                .onChange(of: selected) { _, next in
+                    guard mode == .week else { return }
+                    let key = CalendarRelease.dayKey(for: next, calendar: calendar)
+                    withAnimation(NoriMotion.content) { scroll.scrollTo(key, anchor: .top) }
+                }
+            }
+        }
+    }
+
+    /// Heute, darunter ein Ausblick auf morgen und den Rest der Woche.
+    @ViewBuilder
+    private func todaySections(thumb: CGFloat) -> some View {
+        let rows = CalendarSelection.releases(visible, on: today, calendar: calendar)
+
+        CalendarSummaryCard(
+            headline: "Heute, " + today.formatted(.dateTime.day().month(.wide)),
+            detail: summaryDetail(count: rows.count),
+            count: rows.count
+        )
+
+        if rows.isEmpty {
+            CalendarEmptyState(
+                title: "Heute keine neuen Episoden",
+                detail: emptyDetail
+            )
+        } else {
+            section("Heute", rows: rows, thumb: thumb)
+        }
+
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) {
+            let next = CalendarSelection.releases(visible, on: tomorrow, calendar: calendar)
+            if !next.isEmpty {
+                CalendarSectionHead(title: "Morgen", count: next.count)
+                CalendarDateCard(
+                    title: tomorrow.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                    detail: titleList(next),
+                    action: { jump(to: tomorrow) }
+                )
+            }
+        }
+
+        let rest = restOfWeek
+        if !rest.isEmpty {
+            CalendarSectionHead(title: "Diese Woche", count: rest.count)
+            CalendarDateCard(
+                title: restOfWeekLabel,
+                detail: titleList(rest),
+                action: { mode = .week }
+            )
+        }
+    }
+
+    /// Montag bis Sonntag, Tage ohne Veröffentlichungen werden übersprungen.
+    @ViewBuilder
+    private func weekSections(thumb: CGFloat) -> some View {
+        // Nicht `rows` nennen: so heisst der Zeilenbauer unten, und ein
+        // gleichnamiger Wert verdeckt ihn in diesem Abschnitt.
+        let week = periodReleases
+        let days = CalendarSelection.days(week, calendar: calendar)
+
+        CalendarSummaryCard(
+            headline: weekLabel,
+            detail: summaryDetail(count: week.count),
+            count: week.count
+        )
+
+        if days.isEmpty {
+            CalendarEmptyState(
+                title: "Diese Woche keine neuen Episoden",
+                detail: emptyDetail
+            )
+        } else {
+            ForEach(days) { day in
+                // Der Tagesschlüssel ist das Sprungziel der Wochenleiste.
+                CalendarSectionHead(
+                    title: day.date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)),
+                    count: day.releases.count
+                )
+                .id(day.key)
+                rows(day.releases, thumb: thumb)
+            }
+        }
+    }
+
+    /// Das Raster, darunter der gewählte Tag.
+    @ViewBuilder
+    private func monthSections(thumb: CGFloat) -> some View {
+        CalendarMonthGrid(
+            cells: CalendarSelection.monthGrid(containing: selected, calendar: calendar),
+            selected: selected,
+            today: today,
+            counts: counts,
+            calendar: calendar,
+            onSelect: { selected = $0 }
+        )
+
+        let rows = CalendarSelection.releases(visible, on: selected, calendar: calendar)
+        let isToday = calendar.isDate(selected, inSameDayAs: today)
+
+        CalendarSummaryCard(
+            headline: (isToday ? "Heute, " : "") + selected.formatted(.dateTime.day().month(.wide)),
+            detail: summaryDetail(count: rows.count),
+            count: rows.count
+        )
+
+        if rows.isEmpty {
+            CalendarEmptyState(
+                title: "An diesem Tag keine neuen Episoden",
+                detail: monthEmptyDetail
+            )
+        } else {
+            section(
+                selected.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                rows: rows,
+                thumb: thumb
+            )
+        }
+    }
+
+    // MARK: - Zeilen
+
+    @ViewBuilder
+    private func section(_ title: String, rows list: [CalendarRelease], thumb: CGFloat) -> some View {
+        CalendarSectionHead(title: title, count: list.count)
+        rows(list, thumb: thumb)
+    }
+
+    @ViewBuilder
+    private func rows(_ list: [CalendarRelease], thumb: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            ForEach(list) { release in
+                CalendarReleaseLink(release: release) {
+                    CalendarReleaseRow(
+                        release: release,
+                        marked: library.isFavorite(release.slug),
+                        width: thumb
                     )
                 }
+                if release.id != list.last?.id {
+                    Divider().overlay(NoriTheme.border)
+                }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, CalendarMetrics.screen)
     }
+
+    // MARK: - Auswahl
+
+    /// Alle Veröffentlichungen, die durch den Filter kommen.
+    private var visible: [CalendarRelease] {
+        CalendarSelection.filtered(
+            service.releases,
+            filter: filter,
+            favorites: Set(library.favorites),
+            started: startedSlugs
+        )
+    }
+
+    /// Die Veröffentlichungen des Zeitraums, den der Modus zeigt — Grundlage
+    /// für jede Zahl in der Zusammenfassung.
+    private var periodReleases: [CalendarRelease] {
+        switch mode {
+        case .today:
+            return CalendarSelection.releases(visible, on: today, calendar: calendar)
+        case .week:
+            let keys = Set(weekDays.map { CalendarRelease.dayKey(for: $0, calendar: calendar) })
+            return visible.filter { keys.contains($0.dayKey) }
+        case .month:
+            return CalendarSelection.releases(visible, on: selected, calendar: calendar)
+        }
+    }
+
+    private var counts: [String: Int] { CalendarSelection.counts(visible) }
+
+    /// Serien, von denen schon eine Folge angefangen wurde.
+    ///
+    /// Der Fortschritt ist die einzige belastbare Auskunft darüber, was jemand
+    /// verfolgt. Ob eine Serie bei der Quelle noch **produziert** wird, sagt
+    /// weder AniWorld noch Serienstream — deshalb gibt es dafür keinen Filter.
+    private var startedSlugs: Set<String> {
+        var slugs: Set<String> = []
+        for item in library.progress.values where item.positionSec > 0 || item.completed == true {
+            slugs.insert(item.slug)
+        }
+        return slugs
+    }
+
+    private var weekDays: [Date] {
+        CalendarSelection.week(containing: selected, calendar: calendar)
+    }
+
+    /// Der Rest der Woche nach morgen — für den Ausblick in „Heute".
+    private var restOfWeek: [CalendarRelease] {
+        guard let dayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: today) else { return [] }
+        let week = CalendarSelection.week(containing: today, calendar: calendar)
+        let keys = Set(
+            week
+                .filter { $0 >= calendar.startOfDay(for: dayAfterTomorrow) }
+                .map { CalendarRelease.dayKey(for: $0, calendar: calendar) }
+        )
+        return visible.filter { keys.contains($0.dayKey) }
+    }
+
+    // MARK: - Beschriftungen
+
+    private var weekLabel: String {
+        guard let first = weekDays.first, let last = weekDays.last else { return "Diese Woche" }
+        let from = first.formatted(.dateTime.day().month(.abbreviated))
+        let to = last.formatted(.dateTime.day().month(.abbreviated))
+        return "\(from) – \(to)"
+    }
+
+    private var restOfWeekLabel: String {
+        let days = CalendarSelection.days(restOfWeek, calendar: calendar)
+        guard let first = days.first, let last = days.last else { return "Diese Woche" }
+        if first.key == last.key {
+            return first.date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
+        }
+        return first.date.formatted(.dateTime.day()) + ".–" + last.date.formatted(.dateTime.day().month(.wide))
+    }
+
+    /// Der Erklärtext der Zusammenfassung — er muss zum eingestellten Filter
+    /// passen, sonst verspricht er den ganzen Katalog, während nur die
+    /// Merkliste gezeigt wird.
+    private func summaryDetail(count: Int) -> String {
+        let what = count == 1 ? "eine neue Episode" : "\(count) neue Episoden"
+        switch filter.source {
+        case .catalog:
+            return count == 0
+                ? "Aus dem Katalog von AniWorld und Serienstream."
+                : "\(what.prefix(1).capitalized)\(what.dropFirst()) aus dem Katalog von AniWorld und Serienstream."
+        case .watchlist:
+            return count == 0
+                ? "Aus deiner Merkliste."
+                : "\(what.prefix(1).capitalized)\(what.dropFirst()) aus deiner Merkliste."
+        case .started:
+            return count == 0
+                ? "Aus den Titeln, die du angefangen hast."
+                : "\(what.prefix(1).capitalized)\(what.dropFirst()) aus den Titeln, die du angefangen hast."
+        }
+    }
+
+    /// Sagt im Leerzustand, ob der Filter daran beteiligt ist — sonst sucht
+    /// jemand den Fehler beim Kalender, während „Nur Merkliste" eingestellt ist.
+    private var emptyDetail: String {
+        if filter.isDefault, library.scope == .all {
+            return "Die Quellen kündigen für diesen Zeitraum nichts an."
+        }
+        return "Mit den aktuellen Filtern bleibt nichts übrig. Über den Filterknopf oben lässt sich das ändern."
+    }
+
+    private var monthEmptyDetail: String {
+        if filter.isDefault, library.scope == .all {
+            return "Die Quellen kündigen nur wenige Tage im Voraus an. Die Punkte im Raster zeigen, wo etwas liegt."
+        }
+        return "Mit den aktuellen Filtern bleibt an diesem Tag nichts übrig."
+    }
+
+    /// Die Serien einer Tagesliste als Aufzählung — höchstens drei, danach
+    /// „und N weitere". Eine Karte ist kein Platz für zwanzig Namen.
+    private func titleList(_ releases: [CalendarRelease]) -> String {
+        var names: [String] = []
+        for release in releases where !names.contains(release.title) {
+            names.append(release.title)
+        }
+        guard !names.isEmpty else { return "" }
+        if names.count <= 3 {
+            return "Neue Folgen von " + names.formatted(.list(type: .and, width: .standard)) + "."
+        }
+        let shown = Array(names.prefix(3))
+        let rest = names.count - shown.count
+        return "Neue Folgen von " + shown.formatted(.list(type: .and, width: .standard))
+            + " und \(rest) weiteren Titeln."
+    }
+
+    // MARK: - Navigation im Zeitraum
 
     /// Wechselt mit dem Bereich — und mit dem Katalog, sofern der Bereich
     /// überhaupt nach Genre einschränkt.
@@ -117,107 +444,123 @@ struct CalendarView: View {
         return "\(library.scope.rawValue)|\(slugs?.count ?? -1)"
     }
 
-    func grouped(_ rows: [AiringEntry]) -> [(label: String, rows: [AiringEntry])] {
-        var order: [String] = []
-        var map: [String: [AiringEntry]] = [:]
-        for row in rows {
-            if map[row.dayLabel] == nil { order.append(row.dayLabel) }
-            map[row.dayLabel, default: []].append(row)
+    /// Aus „Heute" auf einen anderen Tag: der Modus wechselt mit, sonst stünde
+    /// der 14. unter der Überschrift „Heute".
+    private func jump(to day: Date) {
+        selected = day
+        if !calendar.isDate(day, inSameDayAs: today) {
+            mode = .week
         }
-        return order.map { (label: $0, rows: map[$0] ?? []) }
     }
 
-    func load(force: Bool = false) async {
-        loading = payload == nil
-        error = nil
-        do {
-            payload = try await Self.merged(
-                scope: library.scope,
-                slugs: slugs,
-                force: force
-            )
-        } catch {
-            self.error = error.localizedDescription
-        }
-        loading = false
+    private func shiftWeek(_ delta: Int) {
+        guard let next = calendar.date(byAdding: .weekOfYear, value: delta, to: selected) else { return }
+        selected = next
     }
 
-    /// Bei „Alle" beide Kalender, sonst nur den der zugehörigen Quelle.
-    ///
-    /// Zusammengeführt wird über `HTML.packCalendar`, damit die Aufteilung in
-    /// „kommend" und „kürzlich" dieselbe Regel benutzt wie bei einer
-    /// einzelnen Quelle. Über die Kennung entdoppeln: dieselbe Folge kann bei
-    /// beiden Seiten am selben Tag laufen.
-    ///
-    /// `slugs` schränkt zusätzlich ein, wenn der Bereich an einem Genre
-    /// hängt. `nil` heißt „nicht einschränken" — nicht „nichts zeigen":
-    /// solange der Katalog noch lädt, ist ein vollständiger Kalender die
-    /// bessere Antwort als ein leerer.
-    static func merged(
-        scope: LibraryScope,
-        slugs: Set<String>? = nil,
-        force: Bool
-    ) async throws -> CalendarPayload {
-        let sources = scope.provider.map { [$0] } ?? CatalogProvider.allCases
-        var all: [AiringEntry] = []
-        var seen: Set<String> = []
-        var failures: [String] = []
-
-        for source in sources {
-            do {
-                let payload = try await AniworldClient.shared.getCalendar(provider: source, force: force)
-                for entry in payload.upcoming + payload.recent where !seen.contains(entry.id) {
-                    if let slugs, !slugs.contains(entry.slug) { continue }
-                    seen.insert(entry.id)
-                    all.append(entry)
-                }
-            } catch {
-                failures.append(error.localizedDescription)
-            }
-        }
-
-        // Nur scheitern, wenn gar nichts kam. Eine ausgefallene Quelle darf
-        // die andere nicht mitreißen.
-        if all.isEmpty, !failures.isEmpty {
-            throw NoriError.parse(failures.joined(separator: " · "))
-        }
-        return HTML.packCalendar(all, now: Date())
+    private func shiftMonth(_ delta: Int) {
+        guard let next = calendar.date(byAdding: .month, value: delta, to: selected) else { return }
+        selected = next
     }
 }
 
-struct CalendarRow: View {
-    @Environment(LibraryStore.self) private var library
-    let entry: AiringEntry
+// MARK: - Tipper auf eine Veröffentlichung
 
-    private var source: CatalogProvider { entry.provider ?? library.scope.provider ?? library.provider }
+/// Öffnet die neue Detailseite der Serie.
+///
+/// Nicht die Folge direkt: eine Folge, die es noch nicht gibt, lässt sich nicht
+/// abspielen, und eine, die es gibt, kann auf der Detailseite mit einem
+/// weiteren Tipper starten — dort steht auch, welche Hoster und Sprachen sie
+/// tatsächlich hat. Die Detailseite ist damit für beide Fälle die richtige
+/// Antwort, ohne dass der Kalender eine zweite Abspielstrecke mitbringt.
+///
+/// Die Quelle wird mitgegeben: seit der Kalender beide Seiten zusammenführt,
+/// ist die Vorgabequelle der Bibliothek regelmäßig die falsche.
+private struct CalendarReleaseLink<Label: View>: View {
+    let release: CalendarRelease
+    @ViewBuilder let label: () -> Label
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Der Kalender liefert bei manchen Einträgen einen Coverpfad mit;
-            // wo nicht, holt die Kachel ihn selbst nach.
-            PosterTile(
-                title: entry.title,
-                slug: entry.slug,
-                compact: true,
-                coverURL: AniworldClient.coverURL(entry.coverPath, provider: source),
-                kind: source
-            )
-            .frame(width: 44)
+        NoriSeriesLink(
+            slug: release.slug,
+            titleHint: release.title,
+            provider: release.primaryProvider,
+            label: label
+        )
+    }
+}
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title).font(.body.weight(.medium)).lineLimit(2)
-                HStack(spacing: 8) {
-                    if !entry.season.isEmpty {
-                        Text("S\(entry.season) · F\(entry.episode)")
-                    }
-                    if !entry.languages.isEmpty {
-                        Text(entry.languages.joined(separator: " · "))
+// MARK: - Ausblickskarte
+
+/// „Freitag, 12. September — Neue Folgen von …", antippbar.
+private struct CalendarDateCard: View {
+    let title: String
+    let detail: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    if !detail.isEmpty {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(NoriTheme.muted)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(NoriTheme.muted)
             }
+            .padding(14)
+            .noriPanel(radius: NoriPanel.cardRadius)
+            .contentShape(RoundedRectangle(cornerRadius: NoriPanel.cardRadius, style: .continuous))
         }
-        .padding(.vertical, 4)
+        .buttonStyle(NoriPressStyle(scale: 0.98))
+        .padding(.horizontal, CalendarMetrics.screen)
+    }
+}
+
+// MARK: - Zeitraumleiste
+
+/// ‹ Zeitraum › — eine Woche oder ein Monat vor und zurück.
+///
+/// Ohne sie wäre „Monat" eine Ansicht, die nur den laufenden Monat kennt. Die
+/// Quellen kündigen zwar nur wenige Tage im Voraus an, aber der gelaufene Teil
+/// reicht zurück, und ein Kalender, in dem man nicht blättern kann, ist keiner.
+struct CalendarPeriodBar: View {
+    let label: String
+    let onBack: () -> Void
+    let onForward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            button("chevron.left", label: "Zurück", action: onBack)
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .contentTransition(.numericText())
+            button("chevron.right", label: "Weiter", action: onForward)
+        }
+        .padding(.horizontal, CalendarMetrics.screen)
+        .noriAnimation(NoriMotion.ui, value: label)
+    }
+
+    private func button(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.footnote.weight(.semibold))
+                .frame(width: NoriControl.hit, height: NoriControl.hit)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(NoriPressStyle())
+        .accessibilityLabel(label)
     }
 }

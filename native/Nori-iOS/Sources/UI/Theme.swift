@@ -159,7 +159,7 @@ struct NoriSeriesLink<Label: View>: View {
     var provider: CatalogProvider? = nil
     var onOpen: (() -> Void)? = nil
     @Namespace private var noriZoom
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
     @ViewBuilder var label: () -> Label
 
     var body: some View {
@@ -260,7 +260,7 @@ struct NoriPressStyle: ButtonStyle {
     /// Wie stark. Große Flächen dürfen weniger schrumpfen als kleine,
     /// sonst wirkt die Bewegung übertrieben.
     var scale: CGFloat = 0.96
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let active = enabled && !reduceMotion && configuration.isPressed
@@ -317,7 +317,7 @@ struct NoriCoverImage<Fallback: View>: View {
     @ViewBuilder let fallback: () -> Fallback
 
     @State private var image: UIImage?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -376,7 +376,7 @@ struct PosterTile: View {
     /// Cover-Auflösung darunter ein zweites Mal zu schreiben.
     var cornerRadius: CGFloat? = nil
     @Environment(LibraryStore.self) private var library
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
     @State private var remote: URL?
 
     private var radius: CGFloat { cornerRadius ?? (compact ? 10 : 14) }

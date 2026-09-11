@@ -259,10 +259,14 @@ export function parseCalendar(html: string, now = Date.now()): AiringEntry[] {
       }
       let hour = 0;
       let minute = 0;
+      // Ob überhaupt eine Uhrzeit dastand. Ohne das wäre eine fehlende Angabe
+      // von einer Ausstrahlung um 00:00 nicht zu unterscheiden.
+      let hasTime = false;
       const t = small.match(/(\d{1,2}):(\d{2})/);
       if (t) {
         hour = Number(t[1]) || 0;
         minute = Number(t[2]) || 0;
+        hasTime = true;
       }
       const airingAt = berlinTime(year, month, day, hour, minute);
       const languages = unique(
@@ -280,13 +284,20 @@ export function parseCalendar(html: string, now = Date.now()): AiringEntry[] {
       if (existing) {
         existing.languages = unique([...existing.languages, ...languages]);
         if (!existing.coverPath) existing.coverPath = cover;
+        // Nennt eine der zusammengeführten Zeilen eine Uhrzeit, gilt sie für
+        // den Eintrag — die Sprachzeilen derselben Folge tragen sie nicht
+        // immer beide.
+        if (hasTime && existing.hasTime !== true) {
+          existing.hasTime = true;
+          existing.airingAt = airingAt;
+        }
         continue;
       }
       merged.set(key, {
         airingAt, episode, season,
         title: title || slug,
         english: null,
-        slug, languages, dayKey, dayLabel, coverPath: cover,
+        slug, languages, dayKey, dayLabel, coverPath: cover, hasTime,
       });
     }
   }

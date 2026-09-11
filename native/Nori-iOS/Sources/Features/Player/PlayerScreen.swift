@@ -72,7 +72,7 @@ struct PlayerScreen: View {
     /// Dasselbe für „Qualität automatisch".
     static let qualityAuto = "__auto__" 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @NoriReduceMotion private var reduceMotion
     @AppStorage(NoriGlassSetting.key) private var glass = true
 
     init(series: SeriesDetail, episode: Episode, season: String, resumeAt: Double, provider: CatalogProvider) {
@@ -472,6 +472,27 @@ struct PlayerScreen: View {
             + variants.map { PlayerChoice(id: $0.label, label: $0.label) }
     }
 
+    /// Die Vorgabe aus „Mehr → Wiedergabe → Videoqualität" anwenden.
+    ///
+    /// Läuft genau einmal je Wiedergabe, sobald die Stufen der Playlist bekannt
+    /// sind. Passt keine — weil „Automatisch" eingestellt ist, weil der Hoster
+    /// nur eine Spur liefert oder weil alle Stufen über der Grenze liegen —,
+    /// bleibt es bei der Automatik. Das ist die ehrlichere Antwort als die
+    /// niedrigste Stufe zu erzwingen: für „höchstens 1080p" hat eine Playlist
+    /// mit ausschliesslich 1440p und 2160p schlicht kein Angebot.
+    ///
+    /// Die Wahl im Player-Menü bleibt davon unberührt und gilt weiter für die
+    /// laufende Folge — `selectQuality` schreibt sie nicht in die Einstellungen
+    /// zurück, sonst wäre eine einmalige Sparmaßnahme unbemerkt zur Vorgabe
+    /// geworden.
+    @MainActor
+    private func applyPreferredQuality(to item: AVPlayerItem) {
+        let preference = NoriQualityOption.from(library.preferredQuality)
+        guard let variant = preference.pick(from: variants) else { return }
+        item.preferredPeakBitRate = Double(variant.bandwidth) * 1.05
+        activeQuality = variant.label
+    }
+
     /// Eine Stufe erzwingen.
     ///
     /// Über `preferredPeakBitRate`, den einzigen dokumentierten Weg, AVPlayer
@@ -772,6 +793,9 @@ struct PlayerScreen: View {
                 let found = await HLSPlaylist.variants(of: url, referer: play.referer)
                 guard generation == playbackGeneration, !Task.isCancelled else { return }
                 variants = found
+                // Erst jetzt lässt sich die Vorgabe aus den Einstellungen
+                // anwenden: vorher war nicht bekannt, welche Stufen es gibt.
+                applyPreferredQuality(to: item)
             }
             statusTask = Task { @MainActor in
                 // AVPlayerItem meldet .failed asynchron, nachdem der erste

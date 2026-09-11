@@ -665,10 +665,15 @@ enum HTML {
                 }
                 var hour = 0
                 var minute = 0
+                // Ob überhaupt eine Uhrzeit dastand. Ohne das wäre eine
+                // fehlende Angabe von einer Ausstrahlung um 00:00 nicht zu
+                // unterscheiden, und der Kalender zeigte eine erfundene Zeit.
+                var hasTime = false
                 if let t = small.range(of: #"(\d{1,2}):(\d{2})"#, options: .regularExpression) {
                     let hm = String(small[t]).split(separator: ":")
                     hour = Int(hm.first.map(String.init) ?? "0") ?? 0
                     minute = Int(hm.last.map(String.init) ?? "0") ?? 0
+                    hasTime = true
                 }
                 let airingAt = berlinDate(year: year, month: month, day: day, hour: hour, minute: minute).timeIntervalSince1970 * 1000
                 let languages = unique(
@@ -690,6 +695,13 @@ enum HTML {
                 if var existing = merged[key] {
                     existing.languages = unique(existing.languages + languages)
                     if existing.coverPath == nil { existing.coverPath = cover }
+                    // Nennt eine der zusammengeführten Zeilen eine Uhrzeit,
+                    // gilt sie für den Eintrag. Die Sprachzeilen derselben
+                    // Folge tragen sie nicht immer beide.
+                    if hasTime, existing.hasTime != true {
+                        existing.hasTime = true
+                        existing.airingAt = airingAt
+                    }
                     merged[key] = existing
                     continue
                 }
@@ -703,7 +715,8 @@ enum HTML {
                     languages: languages,
                     dayKey: dayKey,
                     dayLabel: dayLabel,
-                    coverPath: cover
+                    coverPath: cover,
+                    hasTime: hasTime
                 )
             }
         }
@@ -726,10 +739,23 @@ enum HTML {
                 let poster = (row["poster"] as? String) ?? ""
                 let slug = slugFromHref(url) ?? slugFromPoster(poster) ?? ""
                 guard !slug.isEmpty else { continue }
-                let time = (row["time"] as? String) ?? "00:00"
+                let rawTime = row["time"] as? String
+                let time = rawTime ?? "00:00"
                 let hm = time.split(separator: ":")
                 let hour = Int(hm.first.map(String.init) ?? "0") ?? 0
                 let minute = Int(hm.dropFirst().first.map(String.init) ?? "0") ?? 0
+                // Serienstream nennt nie eine echte Uhrzeit: das Feld `time`
+                // steht in **jedem** Datensatz des Kalenders auf „00:00" —
+                // nachgezählt an einem vollständigen Abruf, 136 von 136
+                // Zeilen. Es ist ein Platzhalter, keine Ausstrahlungszeit.
+                //
+                // „00:00" gilt deshalb als „keine Uhrzeit". Der Preis ist eine
+                // echte Veröffentlichung um Punkt Mitternacht, die ihre Zeit
+                // verlöre; der Gewinn ist, dass nicht der ganze
+                // Serienstream-Kalender eine Uhrzeit behauptet, die niemand
+                // genannt hat. Nennt die Seite eines Tages echte Zeiten,
+                // erscheinen sie ohne weitere Änderung.
+                let hasTime = (rawTime?.contains(":") ?? false) && rawTime != "00:00"
                 let airingAt = berlinDate(year: year, month: month, day: day, hour: hour, minute: minute).timeIntervalSince1970 * 1000
                 let langId = row["language_id"] as? Int
                 let langRaw = (row["language"] as? String) ?? ""
@@ -759,7 +785,8 @@ enum HTML {
                     languages: lang.map { [$0] } ?? [],
                     dayKey: dayKey,
                     dayLabel: dayLabel,
-                    coverPath: coverPathFromCalendar(poster)
+                    coverPath: coverPathFromCalendar(poster),
+                    hasTime: hasTime
                 )
             }
         }

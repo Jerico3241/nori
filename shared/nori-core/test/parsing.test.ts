@@ -54,7 +54,7 @@ test("AniWorld-Folgenseite entfernt Dubletten und behält Sprache je Hoster", ()
 
 test("AniWorld-Kalender verschmilzt gleiche Folgen und liest Zeit in Berliner Zeit", () => {
   const entries = aniworld.parseCalendar(fx.aniworldCalendar);
-  assert.equal(entries.length, 2);
+  assert.equal(entries.length, 3);
   const onePiece = entries.find((e) => e.slug === "one-piece");
   assert.ok(onePiece);
   assert.deepEqual(onePiece.languages, ["DE", "JP"]);
@@ -68,6 +68,16 @@ test("AniWorld-Kalender verschmilzt gleiche Folgen und liest Zeit in Berliner Ze
   assert.deepEqual(frieren?.languages, ["GerSub"]);
   // Ohne Cover im Markup bleibt das Feld leer statt geraten zu werden.
   assert.equal(frieren?.coverPath, null);
+});
+
+test("AniWorld-Kalender hält fest, ob eine Uhrzeit genannt wurde", () => {
+  const entries = aniworld.parseCalendar(fx.aniworldCalendar);
+  assert.equal(entries.find((e) => e.slug === "frieren")?.hasTime, true);
+  // Ohne Uhrzeit im Markup steht `airingAt` auf Mitternacht. Sortieren lässt
+  // sich damit, anzeigen nicht — genau dafür gibt es das Feld.
+  const ohneZeit = entries.find((e) => e.slug === "ohne-zeit");
+  assert.equal(ohneZeit?.hasTime, false);
+  assert.equal(ohneZeit?.airingAt, berlinTime(2026, 9, 15, 0, 0));
 });
 
 test("Serienstream-Katalog lässt das Genre Anime aus", () => {
@@ -102,11 +112,20 @@ test("Serienstream-Folgenseite übernimmt keine fremden Adressen", () => {
 
 test("Serienstream-Kalender überliest Datensätze ohne gültiges Datum", () => {
   const entries = serienstream.parseCalendar(fx.serienstreamCalendarJSON);
-  assert.equal(entries.length, 2);
-  assert.ok(entries.every((e) => e.slug === "dexter"));
-  assert.deepEqual(entries.map((e) => e.languages).flat().sort(), ["DE", "EN"]);
-  assert.equal(entries[0].dayLabel, "Montag, 14. September");
-  assert.equal(entries[0].airingAt, berlinTime(2026, 9, 14, 20, 15));
+  assert.equal(entries.length, 3);
+  assert.ok(!entries.some((e) => e.slug === "ignoriert"));
+  const dexter = entries.filter((e) => e.slug === "dexter");
+  assert.equal(dexter.length, 2);
+  assert.deepEqual(dexter.map((e) => e.languages).flat().sort(), ["DE", "EN"]);
+  assert.equal(dexter[0].dayLabel, "Montag, 14. September");
+  assert.equal(dexter[0].airingAt, berlinTime(2026, 9, 14, 20, 15));
+});
+
+test("Serienstream-Kalender hält fest, ob eine Uhrzeit genannt wurde", () => {
+  const entries = serienstream.parseCalendar(fx.serienstreamCalendarJSON);
+  assert.equal(entries.find((e) => e.slug === "dexter")?.hasTime, true);
+  // Fehlt `time` im Datensatz, gibt es keine Uhrzeit — nicht Mitternacht.
+  assert.equal(entries.find((e) => e.slug === "ohne-zeit")?.hasTime, false);
 });
 
 test("toAniworldPath räumt Adressen auf", () => {
