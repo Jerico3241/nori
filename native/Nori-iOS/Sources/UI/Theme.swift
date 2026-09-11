@@ -172,6 +172,14 @@ struct NoriSeriesLink<Label: View>: View {
     let titleHint: String
     var scaleOnPress: Bool = false
     var provider: CatalogProvider? = nil
+    /// Ob das eingebaute Kontextmenü („Zur Merkliste hinzufügen") mitkommt.
+    ///
+    /// Die Merkliste schaltet es ab: dort heißt der Eintrag „Aus Merkliste
+    /// entfernen" und muss über `removeFavorite` laufen, damit es danach
+    /// etwas zurückzunehmen gibt. Zwei `contextMenu` übereinander wären
+    /// keine Lösung — sichtbar wäre nur eines, und welches, hängt an der
+    /// Reihenfolge der Modifikatoren.
+    var showsDefaultMenu: Bool = true
     var onOpen: (() -> Void)? = nil
     @Namespace private var noriZoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -192,9 +200,7 @@ struct NoriSeriesLink<Label: View>: View {
                 .modifier(NoriZoomSource(id: slug, namespace: noriZoom, enabled: !reduceMotion))
         }
         .modifier(NoriLinkChrome(scaleOnPress: scaleOnPress))
-        .contextMenu {
-            NoriFavoriteButton(slug: slug, title: titleHint)
-        }
+        .modifier(NoriLinkMenu(slug: slug, title: titleHint, enabled: showsDefaultMenu))
     }
 }
 
@@ -217,6 +223,22 @@ private struct NoriFavoriteButton: View {
                 marked ? "Aus Merkliste entfernen" : "Zur Merkliste hinzufügen",
                 systemImage: marked ? "bookmark.slash" : "bookmark"
             )
+        }
+    }
+}
+
+/// Das eingebaute Kontextmenü, abschaltbar.
+private struct NoriLinkMenu: ViewModifier {
+    let slug: String
+    let title: String
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contextMenu { NoriFavoriteButton(slug: slug, title: title) }
+        } else {
+            content
         }
     }
 }

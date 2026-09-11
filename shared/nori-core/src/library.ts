@@ -1,5 +1,5 @@
 // Merkliste, Verlauf, Fortschritt und Einstellungen — die Regeln aus
-// `LibraryStore.swift`, Schema v4.
+// `LibraryStore.swift`, Schema v5.
 //
 // Wichtig: das abgelegte JSON hat **dieselbe Form** wie
 // `~/Library/Application Support/Nori/library.json` der Apple-Apps. Eine dort
@@ -13,7 +13,7 @@ import {
   isEpisodeComplete, normalizeEpisodePath, progressKey, providerFromPath, resumePosition,
 } from "./rules.js";
 
-export const LIBRARY_SCHEMA_VERSION = 4;
+export const LIBRARY_SCHEMA_VERSION = 5;
 
 /** Die Ablageform. Feldnamen wie im Swift-`Bag`. */
 export interface LibraryBag {
@@ -31,6 +31,12 @@ export interface LibraryBag {
   provider?: string;
   scope?: string;
   favoriteSource?: Record<string, string>;
+  /**
+   * Wann ein Titel gemerkt wurde, in Millisekunden seit 1970. Neu in v5;
+   * ältere Dateien tragen das Feld nicht und bekommen es beim Dekodieren aus
+   * der Reihenfolge von `favorites` abgeleitet.
+   */
+  favoriteAddedAt?: Record<string, number>;
 }
 
 export interface LibraryState {
@@ -39,6 +45,7 @@ export interface LibraryState {
   titles: Record<string, string>;
   progress: Record<string, WatchProgress>;
   favoriteSource: Record<string, CatalogProvider>;
+  favoriteAddedAt: Record<string, number>;
   langPref: string;
   hosterPref: string;
   resumeEnabled: boolean;
@@ -56,6 +63,7 @@ export function emptyLibrary(): LibraryState {
     titles: {},
     progress: {},
     favoriteSource: {},
+    favoriteAddedAt: {},
     langPref: "DE",
     hosterPref: "VOE",
     resumeEnabled: true,
@@ -98,9 +106,43 @@ export function decodeLibrary(raw: unknown): LibraryState {
       }
     }
   }
+  state.favoriteAddedAt = backfillAddedAt(
+    isRecord(bag.favoriteAddedAt) ? (bag.favoriteAddedAt as Record<string, number>) : {},
+    state.favorites,
+  );
   state.progress = migrateProgress(isRecord(bag.progress) ? (bag.progress as Record<string, WatchProgress>) : {});
   state.modifiedAt = bag.modifiedAt ?? 0;
   return state;
+}
+
+/**
+ * Fehlende Merkzeitpunkte aus der Reihenfolge ergänzen — dieselbe Regel wie
+ * `LibraryStore.backfillAddedAt` im Swift-Kern.
+ *
+ * Vor v5 gab es das Feld nicht; in `favorites` steht das zuletzt Gemerkte
+ * vorn, und genau das wird hier zu Zeitpunkten. Der Anker liegt unterhalb
+ * aller bekannten Werte, damit ein abgeleiteter keinen echten überholt.
+ * Zeitpunkte zu Slugs, die nicht mehr gemerkt sind, fallen weg.
+ */
+export function backfillAddedAt(
+  stored: Record<string, number>,
+  favorites: string[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const slug of favorites) {
+    const value = stored[slug];
+    if (typeof value === "number" && Number.isFinite(value)) out[slug] = value;
+  }
+  const missing = favorites.filter((slug) => out[slug] === undefined);
+  if (missing.length === 0) return out;
+  const known = Object.values(out);
+  const step = 60_000;
+  let stamp = known.length > 0 ? Math.min(...known) : Date.now();
+  for (const slug of missing) {
+    stamp -= step;
+    out[slug] = stamp;
+  }
+  return out;
 }
 
 export function encodeLibrary(state: LibraryState): LibraryBag {
@@ -119,6 +161,7 @@ export function encodeLibrary(state: LibraryState): LibraryBag {
     provider: state.provider,
     scope: state.scope,
     favoriteSource: state.favoriteSource,
+    favoriteAddedAt: state.favoriteAddedAt,
   };
 }
 

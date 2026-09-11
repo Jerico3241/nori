@@ -86,7 +86,16 @@ struct RootView: View {
             .tag(Tab.calendar)
 
             NavigationStack {
-                WatchlistView(catalog: catalog)
+                // Wie die Startseite bekommt die Merkliste den
+                // **vollständigen** Katalog. Sie hat seit dem Umbau keinen
+                // Bereichsumschalter mehr, und ein Ausschnitt, den der
+                // Betrachter hier weder sieht noch ändern kann, ließe
+                // gemerkte Titel ohne ersichtlichen Grund fehlen. Nach
+                // Medientyp filtert sie selbst — im Filter-Sheet, wo die
+                // Einstellung sichtbar bleibt und der Filterknopf sie
+                // markiert. Der Katalog liefert hier ohnehin nur Genres und
+                // Alternativtitel; was gemerkt ist, steht in `favorites`.
+                WatchlistView(catalog: allItems, openCatalog: { tab = .catalog })
             }
             .tabItem { Label("Merkliste", systemImage: "heart") }
             .tag(Tab.watchlist)

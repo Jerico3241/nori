@@ -22,13 +22,27 @@ protocol LibrarySyncProvider: AnyObject, Sendable {
 
 @Observable
 final class LibraryStore {
-    static let schemaVersion = 4
+    static let schemaVersion = 5
 
     var favorites: [String] = []
     var recents: [RecentItem] = []
     var titles: [String: String] = [:]
     var progress: [String: WatchProgress] = [:]
     var favoriteSource: [String: CatalogProvider] = [:]
+    /// Wann ein Titel gemerkt wurde, als Millisekunden seit 1970.
+    ///
+    /// Neu in Schema v5. Vorher gab es dazu nur die Reihenfolge in
+    /// `favorites` — neu Gemerktes kam nach vorn. Das reicht, solange eine
+    /// Liste genau so angezeigt wird, wie sie gespeichert ist; sobald jemand
+    /// alphabetisch sortiert und danach „zuletzt hinzugefügt" wählt, ist die
+    /// Information nicht mehr rekonstruierbar. Die Merkliste sortiert genau
+    /// danach, also braucht sie einen echten Zeitpunkt und kein Ersatzmaß.
+    ///
+    /// Ältere Stände tragen ihn nicht. Sie bekommen ihn beim Laden aus der
+    /// bestehenden Reihenfolge abgeleitet (siehe `backfillAddedAt`) — der
+    /// erste Eintrag gilt als der jüngste. Das ist keine Erfindung, sondern
+    /// genau die Aussage, die in der Reihenfolge steckt.
+    var favoriteAddedAt: [String: Double] = [:]
     var langPref: String = "DE" { didSet { persist() } }
     var hosterPref: String = "VOE" { didSet { persist() } }
     var resumeEnabled: Bool = true { didSet { persist() } }
@@ -84,18 +98,80 @@ final class LibraryStore {
     func isFavorite(_ slug: String) -> Bool { favorites.contains(slug) }
 
     func toggleFavorite(_ slug: String, title: String? = nil) {
-        if let idx = favorites.firstIndex(of: slug) {
-            favorites.remove(at: idx)
-            favoriteSource.removeValue(forKey: slug)
+        if favorites.contains(slug) {
+            _ = removeFavorite(slug)
         } else {
             favorites.insert(slug, at: 0)
             favoriteSource[slug] = provider
+            favoriteAddedAt[slug] = Date().timeIntervalSince1970 * 1000
             if let title { titles[slug] = title }
+            persist()
         }
-        persist()
     }
 
     func source(of slug: String) -> CatalogProvider { favoriteSource[slug] ?? provider }
+
+    /// Wann der Titel gemerkt wurde. `nil`, wenn er gar nicht gemerkt ist.
+    ///
+    /// Nie `nil` für einen gemerkten Titel: fehlt der Zeitpunkt, wird er beim
+    /// Laden aus der Reihenfolge abgeleitet. Die Merkliste darf sich also
+    /// darauf verlassen, statt nebenher einen zweiten Ersatzwert zu pflegen.
+    func addedAt(_ slug: String) -> Double? {
+        guard favorites.contains(slug) else { return nil }
+        return favoriteAddedAt[slug]
+    }
+
+    /// Was ein entfernter Eintrag hinterlässt — genug, um ihn unverändert
+    /// zurückzulegen.
+    ///
+    /// Für „Rückgängig" in der Merkliste. Über `toggleFavorite` wieder
+    /// hinzugefügt käme der Titel an Position 0 und mit neuem Zeitpunkt
+    /// zurück; er stünde danach woanders als vorher, und das sieht aus wie
+    /// ein zweiter Fehler statt wie eine Rücknahme.
+    ///
+    /// Ausdrücklich **ohne** Fortschritt: Merkliste und Verlauf sind
+    /// getrennt, und deshalb ist beim Entfernen auch nichts davon verloren
+    /// gegangen, das hier zurückgelegt werden müsste.
+    struct FavoriteSnapshot: Hashable {
+        let slug: String
+        let index: Int
+        let title: String?
+        let source: CatalogProvider?
+        let addedAt: Double?
+    }
+
+    /// Aus der Merkliste nehmen. Fortschritt, Verlauf und Titel bleiben.
+    ///
+    /// Der Titel bleibt bewusst in `titles` stehen: er trägt die Namen im
+    /// Verlauf und in „Weiterschauen", die mit der Merkliste nichts zu tun
+    /// haben. Ein entfernter Titel würde dort sonst als Slug erscheinen.
+    @discardableResult
+    func removeFavorite(_ slug: String) -> FavoriteSnapshot? {
+        guard let index = favorites.firstIndex(of: slug) else { return nil }
+        let snapshot = FavoriteSnapshot(
+            slug: slug,
+            index: index,
+            title: titles[slug],
+            source: favoriteSource[slug],
+            addedAt: favoriteAddedAt[slug]
+        )
+        favorites.remove(at: index)
+        favoriteSource.removeValue(forKey: slug)
+        favoriteAddedAt.removeValue(forKey: slug)
+        persist()
+        return snapshot
+    }
+
+    /// Einen entfernten Eintrag zurücklegen — an dieselbe Stelle, mit
+    /// demselben Zeitpunkt.
+    func restoreFavorite(_ snapshot: FavoriteSnapshot) {
+        guard !favorites.contains(snapshot.slug) else { return }
+        favorites.insert(snapshot.slug, at: min(snapshot.index, favorites.count))
+        if let source = snapshot.source { favoriteSource[snapshot.slug] = source }
+        favoriteAddedAt[snapshot.slug] = snapshot.addedAt ?? Date().timeIntervalSince1970 * 1000
+        if let title = snapshot.title { titles[snapshot.slug] = title }
+        persist()
+    }
 
     func remember(slug: String, title: String, provider: CatalogProvider? = nil) {
         titles[slug] = title
@@ -269,8 +345,39 @@ final class LibraryStore {
         // ist der Sinn der gemeinsamen Bibliothek, nicht ein Verlust.
         scope = bag.scope.flatMap(LibraryScope.init(rawValue:)) ?? .all
         favoriteSource = bag.favoriteSource?.compactMapValues { CatalogProvider(rawValue: $0) } ?? [:]
+        favoriteAddedAt = backfillAddedAt(bag.favoriteAddedAt ?? [:], favorites: favorites)
         progress = migrateProgress(bag.progress)
         isLoading = false
+    }
+
+    /// Fehlende Merkzeitpunkte aus der Reihenfolge ergänzen.
+    ///
+    /// Vor Schema v5 gab es das Feld nicht; `favorites` war die einzige
+    /// Auskunft, und darin steht das zuletzt Gemerkte vorn. Genau das wird
+    /// hier zu Zeitpunkten gemacht: der erste Eintrag bekommt den jüngsten.
+    ///
+    /// Der Anker liegt **unterhalb** aller bereits bekannten Zeitpunkte, in
+    /// Ein-Minuten-Schritten rückwärts. Sonst könnte ein abgeleiteter Wert
+    /// einen echten überholen, und ein Titel, der gestern gemerkt wurde,
+    /// stünde vor einem von heute. Ohne echte Werte ist der Anker „jetzt",
+    /// womit ein alter Stand beim ersten Laden genau seine bisherige
+    /// Reihenfolge behält.
+    ///
+    /// Einträge zu Slugs, die nicht mehr gemerkt sind, fallen weg — sonst
+    /// wüchse die Datei mit jedem entfernten Titel weiter.
+    private func backfillAddedAt(_ stored: [String: Double], favorites: [String]) -> [String: Double] {
+        var out = stored.filter { favorites.contains($0.key) }
+        let missing = favorites.filter { out[$0] == nil }
+        guard !missing.isEmpty else { return out }
+        let step: Double = 60_000
+        var stamp = (out.values.min() ?? Date().timeIntervalSince1970 * 1000)
+        // Der jüngste fehlende Eintrag steht vorn in `favorites` und bekommt
+        // deshalb den größten Wert; jeder weitere liegt eine Minute davor.
+        for slug in missing {
+            stamp -= step
+            out[slug] = stamp
+        }
+        return out
     }
 
     private func migrateProgress(_ old: [String: WatchProgress]) -> [String: WatchProgress] {
@@ -310,7 +417,7 @@ final class LibraryStore {
     }
 
     private func makeBag(modifiedAt: Double) -> Bag {
-        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue))
+        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt)
     }
 
     private struct Bag: Codable {
@@ -328,6 +435,9 @@ final class LibraryStore {
         var provider: String?
         var scope: String?
         var favoriteSource: [String: String]?
+        /// Neu in v5. Optional, damit ältere library.json weiter dekodieren;
+        /// fehlt der Eintrag, leitet `backfillAddedAt` ihn aus `favorites` ab.
+        var favoriteAddedAt: [String: Double]?
         // `cloudSyncEnabled` und `cloudLastSync` standen hier, solange iCloud
         // eingebaut war. Ältere library.json tragen die Schlüssel weiter;
         // JSONDecoder überliest, was der Typ nicht kennt.
