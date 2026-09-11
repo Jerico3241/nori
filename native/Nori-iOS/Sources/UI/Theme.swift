@@ -9,6 +9,21 @@ enum NoriTheme {
     static let muted = Color(red: 0.545, green: 0.576, blue: 0.655)
     static let accent = Color(red: 0.843, green: 0.871, blue: 0.918)
     static let border = Color.white.opacity(0.08)
+
+    /// Das Signalblau aus der Katalogvorlage.
+    ///
+    /// `accent` ist ein sehr helles Grau — richtig für aktive Flächen, die
+    /// sich vom dunklen Grund abheben sollen, aber untauglich als **Signal**:
+    /// Ein weißer Punkt am Filterknopf ist auf dieser Oberfläche kein
+    /// Hinweis, sondern ein Staubkorn. Deshalb ein zweiter Ton, und nur für
+    /// die wenigen Stellen, an denen etwas „ist gerade an" sagen muss:
+    /// Filterpunkt, aktive Filter-Tags, „Zurücksetzen".
+    static let highlight = Color(red: 0.471, green: 0.773, blue: 1.0)
+    /// Derselbe Ton als Fläche hinter Text.
+    static let highlightSoft = Color(red: 0.471, green: 0.773, blue: 1.0).opacity(0.18)
+    /// Die Farbe einer Bewertung. Dieselbe, die die Detailseite für ihren
+    /// Stern verwendet.
+    static let star = Color(red: 1.0, green: 0.878, blue: 0.478)
 }
 
 struct NoriScreen<Content: View>: View {

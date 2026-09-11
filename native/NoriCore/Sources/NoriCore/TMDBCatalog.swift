@@ -59,6 +59,13 @@ actor TMDBCatalog {
         case airingRecently
         /// Anime mit Folgen aus den letzten Wochen.
         case animeAiringRecently
+        /// Serien, die TMDB als abgeschlossen oder abgesetzt führt. Die
+        /// einzige Liste, aus der sich „abgeschlossen" überhaupt belegen
+        /// lässt, ohne pro Titel eine Detailseite zu holen — die Zeilen der
+        /// Ranglisten führen `status` nicht mit.
+        case endedPopular
+        /// Dasselbe für Anime.
+        case endedAnime
 
         /// Wie lange die Liste gilt.
         ///
@@ -70,6 +77,9 @@ actor TMDBCatalog {
             case .trendingWeek: return 6 * 3600
             case .airingRecently, .animeAiringRecently: return 12 * 3600
             case .popular, .animePopular: return 3 * 86_400
+            // Ein abgeschlossener Titel wird nicht wieder unabgeschlossen.
+            // Eine Woche ist hier eher zu kurz als zu lang.
+            case .endedPopular, .endedAnime: return 7 * 86_400
             }
         }
 
@@ -79,6 +89,10 @@ actor TMDBCatalog {
             case .trendingWeek: return 2
             case .popular, .animePopular: return 2
             case .airingRecently, .animeAiringRecently: return 2
+            // Mehr Seiten als bei den übrigen Listen: Diese hier ist die
+            // einzige Quelle für den Statusfilter, und jede Seite, die
+            // fehlt, ist ein Titel, dessen Status „unbekannt" bleibt.
+            case .endedPopular, .endedAnime: return 3
             }
         }
     }
@@ -141,6 +155,22 @@ actor TMDBCatalog {
             cached(.popular) + cached(.animePopular),
             cached(.airingRecently) + cached(.animeAiringRecently)
         )
+    }
+
+    /// Die abgelegten Listen abgeschlossener Serien, ohne einen Abruf.
+    ///
+    /// Getrennt von `cachedSignals`, weil nur der Katalog sie braucht: die
+    /// Startseite fragt nicht nach dem Status, und eine Liste, die niemand
+    /// liest, soll auch niemand holen.
+    func cachedEnded() -> [TMDBCandidate] {
+        cached(.endedPopular) + cached(.endedAnime)
+    }
+
+    /// Dieselben Listen, notfalls frisch geholt.
+    func ended(now: Date = Date(), force: Bool = false) async -> [TMDBCandidate] {
+        async let general = load(.endedPopular, now: now, force: force)
+        async let anime = load(.endedAnime, now: now, force: force)
+        return await general + anime
     }
 
     /// Sind die abgelegten Listen noch frisch genug?
@@ -309,6 +339,7 @@ private extension TMDBCatalog.Feed {
         case .trendingWeek: return "trending/tv/week"
         case .popular: return "tv/popular"
         case .animePopular, .airingRecently, .animeAiringRecently: return "discover/tv"
+        case .endedPopular, .endedAnime: return "discover/tv"
         }
     }
 
@@ -348,6 +379,22 @@ private extension TMDBCatalog.Feed {
                 URLQueryItem(name: "with_origin_country", value: "JP"),
                 URLQueryItem(name: "air_date.gte", value: from),
                 URLQueryItem(name: "air_date.lte", value: to),
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+            ]
+        // `with_status` kennt 3 („Ended") und 4 („Canceled"); der senkrechte
+        // Strich ist TMDBs Oder. Für Nori sind beide dasselbe: es kommt
+        // nichts mehr nach.
+        case .endedPopular:
+            return [
+                URLQueryItem(name: "with_status", value: "3|4"),
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                URLQueryItem(name: "vote_count.gte", value: "20"),
+            ]
+        case .endedAnime:
+            return [
+                URLQueryItem(name: "with_status", value: "3|4"),
+                URLQueryItem(name: "with_genres", value: "16"),
+                URLQueryItem(name: "with_origin_country", value: "JP"),
                 URLQueryItem(name: "sort_by", value: "popularity.desc"),
             ]
         }
