@@ -27,6 +27,8 @@
 		AB40 /* NoriDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC40 /* NoriDesign.swift */; };
 		AB41 /* NoriGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC41 /* NoriGlass.swift */; };
 		AB60 /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC60 /* HLSPlaylist.swift */; };
+		AB70 /* TMDBImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC70 /* TMDBImages.swift */; };
+		AB71 /* TMDBMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71 /* TMDBMatcher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +53,8 @@
 		AC40 /* NoriDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriDesign.swift; sourceTree = "<group>"; };
 		AC41 /* NoriGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriGlass.swift; sourceTree = "<group>"; };
 		AC60 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
+		AC70 /* TMDBImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBImages.swift; sourceTree = "<group>"; };
+		AC71 /* TMDBMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBMatcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +98,8 @@
 				AC40 /* NoriDesign.swift */,
 				AC41 /* NoriGlass.swift */,
 				AC60 /* HLSPlaylist.swift */,
+				AC70 /* TMDBImages.swift */,
+				AC71 /* TMDBMatcher.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -202,6 +208,8 @@
 				AB40 /* NoriDesign.swift in Sources */,
 				AB41 /* NoriGlass.swift in Sources */,
 				AB60 /* HLSPlaylist.swift in Sources */,
+				AB70 /* TMDBImages.swift in Sources */,
+				AB71 /* TMDBMatcher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

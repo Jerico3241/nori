@@ -14,7 +14,6 @@
 		AB05 /* HTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC05 /* HTML.swift */; };
 		AB06 /* AniworldClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC06 /* AniworldClient.swift */; };
 		AB07 /* HosterResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC07 /* HosterResolver.swift */; };
-		AB08 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC08 /* HomeView.swift */; };
 		AB09 /* CatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC09 /* CatalogView.swift */; };
 		AB10 /* SeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC10 /* SeriesView.swift */; };
 		AB11 /* WatchlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC11 /* WatchlistView.swift */; };
@@ -38,6 +37,16 @@
 		AB61 /* SeriesHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC61 /* SeriesHeroView.swift */; };
 		AB62 /* SeriesEpisodeList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC62 /* SeriesEpisodeList.swift */; };
 		AB63 /* SeriesEpisodeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC63 /* SeriesEpisodeCard.swift */; };
+		AB70 /* ScopeSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC70 /* ScopeSwitch.swift */; };
+		AB71 /* TMDBImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71 /* TMDBImages.swift */; };
+		AB72 /* TMDBMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC72 /* TMDBMatcher.swift */; };
+		AB73 /* TMDBCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC73 /* TMDBCatalog.swift */; };
+		AB74 /* HomeFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC74 /* HomeFeed.swift */; };
+		AB75 /* HomeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC75 /* HomeFeedService.swift */; };
+		AB76 /* NoriHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC76 /* NoriHomeView.swift */; };
+		AB77 /* HomeHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC77 /* HomeHeroView.swift */; };
+		AB78 /* HomeCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC78 /* HomeCards.swift */; };
+		AB79 /* HomeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC79 /* HomeSections.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,7 +58,6 @@
 		AC05 /* HTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTML.swift; sourceTree = "<group>"; };
 		AC06 /* AniworldClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AniworldClient.swift; sourceTree = "<group>"; };
 		AC07 /* HosterResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HosterResolver.swift; sourceTree = "<group>"; };
-		AC08 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		AC09 /* CatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogView.swift; sourceTree = "<group>"; };
 		AC10 /* SeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesView.swift; sourceTree = "<group>"; };
 		AC11 /* WatchlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistView.swift; sourceTree = "<group>"; };
@@ -73,6 +81,16 @@
 		AC61 /* SeriesHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesHeroView.swift; sourceTree = "<group>"; };
 		AC62 /* SeriesEpisodeList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesEpisodeList.swift; sourceTree = "<group>"; };
 		AC63 /* SeriesEpisodeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesEpisodeCard.swift; sourceTree = "<group>"; };
+		AC70 /* ScopeSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopeSwitch.swift; sourceTree = "<group>"; };
+		AC71 /* TMDBImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBImages.swift; sourceTree = "<group>"; };
+		AC72 /* TMDBMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBMatcher.swift; sourceTree = "<group>"; };
+		AC73 /* TMDBCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBCatalog.swift; sourceTree = "<group>"; };
+		AC74 /* HomeFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeed.swift; sourceTree = "<group>"; };
+		AC75 /* HomeFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedService.swift; sourceTree = "<group>"; };
+		AC76 /* NoriHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriHomeView.swift; sourceTree = "<group>"; };
+		AC77 /* HomeHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHeroView.swift; sourceTree = "<group>"; };
+		AC78 /* HomeCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCards.swift; sourceTree = "<group>"; };
+		AC79 /* HomeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSections.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,7 +123,6 @@
 				AC05 /* HTML.swift */,
 				AC06 /* AniworldClient.swift */,
 				AC07 /* HosterResolver.swift */,
-				AC08 /* HomeView.swift */,
 				AC09 /* CatalogView.swift */,
 				AC10 /* SeriesView.swift */,
 				AC60 /* SeriesArtwork.swift */,
@@ -127,6 +144,16 @@
 				AC55 /* PlayerMenuButton.swift */,
 				AC56 /* PlayerSeekOverlay.swift */,
 				AC57 /* HLSPlaylist.swift */,
+				AC70 /* ScopeSwitch.swift */,
+				AC71 /* TMDBImages.swift */,
+				AC72 /* TMDBMatcher.swift */,
+				AC73 /* TMDBCatalog.swift */,
+				AC74 /* HomeFeed.swift */,
+				AC75 /* HomeFeedService.swift */,
+				AC76 /* NoriHomeView.swift */,
+				AC77 /* HomeHeroView.swift */,
+				AC78 /* HomeCards.swift */,
+				AC79 /* HomeSections.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -224,7 +251,6 @@
 				AB05 /* HTML.swift in Sources */,
 				AB06 /* AniworldClient.swift in Sources */,
 				AB07 /* HosterResolver.swift in Sources */,
-				AB08 /* HomeView.swift in Sources */,
 				AB09 /* CatalogView.swift in Sources */,
 				AB10 /* SeriesView.swift in Sources */,
 				AB60 /* SeriesArtwork.swift in Sources */,
@@ -246,6 +272,16 @@
 				AB55 /* PlayerMenuButton.swift in Sources */,
 				AB56 /* PlayerSeekOverlay.swift in Sources */,
 				AB57 /* HLSPlaylist.swift in Sources */,
+				AB70 /* ScopeSwitch.swift in Sources */,
+				AB71 /* TMDBImages.swift in Sources */,
+				AB72 /* TMDBMatcher.swift in Sources */,
+				AB73 /* TMDBCatalog.swift in Sources */,
+				AB74 /* HomeFeed.swift in Sources */,
+				AB75 /* HomeFeedService.swift in Sources */,
+				AB76 /* NoriHomeView.swift in Sources */,
+				AB77 /* HomeHeroView.swift in Sources */,
+				AB78 /* HomeCards.swift in Sources */,
+				AB79 /* HomeSections.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,7 +304,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.19.0;
+				MARKETING_VERSION = 1.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;
@@ -297,7 +333,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.19.0;
+				MARKETING_VERSION = 1.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;

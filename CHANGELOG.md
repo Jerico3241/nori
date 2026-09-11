@@ -4,8 +4,76 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.19.0**,
+unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
 Windows **1.8.0**, LG webOS **1.0.0**.
+
+## [iOS 1.20.0] — 2026-09-12
+
+Die Startseite ist neu gebaut, nicht überarbeitet. Vorlage ist derselbe Entwurf
+wie bei der Detailseite, diesmal als `nori-home-v2.html`; übernommen sind daraus
+Aufbau, Größenverhältnisse und Anmutung, nicht seine Beispieldaten. Der zweite,
+größere Teil steckt darunter: die Reihen hießen „Beliebte Titel" und „Schau
+weiter", aber nur eine davon stimmte. Sie entstehen jetzt aus echten Signalen
+und sind prüfbar.
+
+### Hinzugefügt
+
+- **Ein cinematischer Kopfbereich** über rund drei Viertel des Bildschirms:
+  Artwork bis unter die Statusleiste, darauf Schriftzug, Eckdaten, Beschreibung
+  und drei Knöpfe. Der gezeigte Titel wechselt täglich und wird aus Trend,
+  Beliebtheit und Aktualität bestimmt — nicht gewürfelt und nicht der erste
+  Eintrag des Alphabets.
+- **„Neu & beliebt" mit echter Bedeutung.** Die Reihenfolge entsteht aus
+  TMDBs Wochentrend, Beliebtheit (logarithmisch gedämpft), Aktualität und
+  Bewertung — Letztere erst ab fünfzig Stimmen, damit 10,0 aus zwei Stimmen
+  nicht vor einer weltweit laufenden Serie steht.
+- **„Neue Episoden"** aus Noris eigenem Kalender, chronologisch, die neueste
+  zuerst. Ausdrücklich nicht nach Beliebtheit sortiert.
+- **„Für dich"** aus Verlauf, Fortschritt und Merkliste, angereichert um
+  TMDBs Empfehlungen zu den meistgesehenen Titeln. Ohne genug Signal heißt die
+  Reihe „Entdecke etwas Neues" und zeigt Bestbewertetes — „Für dich" über einer
+  Beliebtheitsliste wäre eine Behauptung.
+- **Abzeichen auf den Kacheln** — „NEU" und „TOP 10" — ausschließlich aus
+  echten Signalen.
+- **`TMDBCatalog`**: Trend-, Beliebtheits- und Ausstrahlungslisten mit
+  Zwischenspeicher auf der Platte und eigenen Fristen je Liste (Trend sechs
+  Stunden, Dauerliste drei Tage, Empfehlungen eine Woche).
+- **`TMDBMatcher`** und **`TMDBImages`** im gemeinsamen Kern: die Zuordnung
+  Nori ↔ TMDB und die Bildadressen liegen an einer Stelle statt verstreut.
+- **45 neue Tests** für Zuordnung und Rangfolge — Schreibweisen, deutsche und
+  englische Titel, Staffelzusätze, gleichnamige Serien, Sonderzeichen, sowie
+  alter Trendtitel gegen neuen Unbekannten, Bewertung mit wenigen Stimmen und
+  die Frage, ob ein Titel bei Nori überhaupt verfügbar ist.
+- **TMDB-Nachweis** am Fuß der Startseite, wie die Nutzungsbedingungen es
+  verlangen.
+
+### Geändert
+
+- **Die Startseite bekommt den vollständigen Katalog**, nicht den nach Bereich
+  ausgeschnittenen. Sie hat keinen Umschalter, also wäre ein Ausschnitt dort
+  nicht erklärbar. Katalog, Kalender und Merkliste schneiden weiter zu.
+- **Die Rangfolge liegt in `NoriCore`**, nicht in einem SwiftUI-Body. Dadurch
+  läuft sie einmal statt bei jedem Neuzeichnen und lässt sich prüfen.
+- **Die Startseite erscheint sofort**: erst aus Noris Daten und dem
+  TMDB-Zwischenspeicher, dann still ergänzt. Kein Ladeskelett über Sekunden.
+- **Die Titelzuordnung zu TMDB** berücksichtigt jetzt Jahr, Staffelzusätze
+  („Staffel 2", „Final Season", „2nd Season"), Akzente und Sonderzeichen.
+  Beliebtheit bleibt reiner Stichentscheid und kann keinen Treffer erzeugen.
+- **Der Suchknopf** der Startseite öffnet Noris vorhandene Suche im Katalog,
+  statt eine zweite aufzubauen.
+- **Posterbilder in passender Auflösung**: eine 132 Punkte breite Kachel lud
+  bisher ein 780 Pixel breites Poster.
+
+### Entfernt
+
+- **Die bisherige Startseiten-Oberfläche vollständig** — Kopfbereich als
+  blätterbares Karussell, Kachelreihen mit Titel im Bild, Fortschrittskacheln,
+  Genre-Gruppierung im View und die Abstände drumherum.
+- **Die Bereichspillen („Alle | Anime | Serien | K-Drama")** auf der
+  Startseite. Der Umschalter selbst bleibt in Katalog, Kalender und Merkliste
+  und liegt jetzt in `Sources/UI/ScopeSwitch.swift`.
+- **Die Reihe „Beliebte Titel"** — sie zeigte die ersten zwanzig Einträge des
+  alphabetisch sortierten Katalogs.
 
 ## [iOS 1.19.0] — 2026-09-11
 

@@ -619,6 +619,31 @@ actor CoverIndex {
 
     func backdrop(for slug: String) -> URL? { backdrops[slug] }
 
+    /// Die abgelegte TMDB-Kennung, ohne nachzuschlagen.
+    ///
+    /// Für die Startseite: sie bildet das Geschmacksprofil aus den gesehenen
+    /// Serien und braucht dafür deren Kennungen. Ein Nachschlagen wäre hier
+    /// falsch — der Aufbau der Seite darf nicht an einer Suche hängen, und
+    /// eine Serie ohne Kennung fällt einfach aus dem Profil.
+    func tvID(for slug: String) -> Int? { tvIDs[slug] }
+
+    /// Dieselbe Auskunft für viele Slugs auf einmal.
+    ///
+    /// Die Startseite braucht die Kennungen aller angefangenen und gemerkten
+    /// Titel, um daraus Empfehlungen zu holen. Einzeln abgefragt wäre das ein
+    /// Sprung auf den Actor je Titel — bei einem gefüllten Verlauf zwei
+    /// Dutzend Kontextwechsel für eine Handvoll Zahlen.
+    func tvIDs(for slugs: [String]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for slug in slugs {
+            if let id = tvIDs[slug] { out[slug] = id }
+        }
+        return out
+    }
+
+    /// Hat der Titel ein Breitbild? Nur der Kopfbereich fragt danach.
+    func hasBackdrop(_ slug: String) -> Bool { backdrops[slug] != nil }
+
     func logo(for slug: String) -> URL? { logos[slug] }
 
     /// Das Logo, notfalls nachgeschlagen.
@@ -665,7 +690,7 @@ actor CoverIndex {
                 logoMissed.insert(slug)
                 return nil
             }
-            guard let logo = URL(string: "https://image.tmdb.org/t/p/w500\(path)") else { return nil }
+            guard let logo = TMDBImages.url(path, .logo) else { return nil }
             logos[slug] = logo
             scheduleSave()
             return logo
@@ -870,10 +895,11 @@ actor CoverIndex {
 
     /// Den passendsten Treffer aus einer TMDB-Antwort wählen.
     ///
-    /// Lag bisher mitten in `search` und war damit nur für die Cover-Suche zu
-    /// haben. Die Kennungssuche braucht dieselbe Bewertung, darf aber kein
-    /// Poster verlangen: eine Serie ohne Poster hat trotzdem Folgen mit Bild
-    /// und Text.
+    /// Die Bewertung selbst liegt in `TMDBMatcher` — sie lag früher hier,
+    /// mitten im Netzcode, und war damit nur über eine echte HTTP-Antwort
+    /// erreichbar. Als reine Funktion ist sie prüfbar (siehe
+    /// `TMDBMatcherTests`) und wird zugleich von der Startseite mitbenutzt,
+    /// die TMDB-Ranglisten auf Noris Katalog zurückführen muss.
     ///
     /// Gibt `nil` zurück, wenn kein Treffer wirklich am Titel hängt — lieber
     /// nichts als das Falsche.
@@ -882,73 +908,15 @@ actor CoverIndex {
         query: String,
         kind: CatalogProvider,
         requirePoster: Bool
-    ) -> [String: Any]? {
-        var best: (score: Double, bonus: Double, row: [String: Any])?
-        let nq = query.lowercased()
-        for row in results {
-            if requirePoster {
-                guard let path = row["poster_path"] as? String, !path.isEmpty else { continue }
-            }
-            let name = (row["name"] as? String ?? "").lowercased()
-            let orig = (row["original_name"] as? String ?? "").lowercased()
-            // Beliebtheit ist nur Stichentscheid, kein Treffer. Vorher ging
-            // sie voll in die Wertung ein, weshalb eine bekannte, völlig
-            // andere Serie die Schwelle allein durch Popularität riss —
-            // genau so entstanden die falschen Cover.
-            var bonus: Double = 0
-            if name == nq || orig == nq { bonus = 400 }
-            else if name.hasPrefix(nq) || orig.hasPrefix(nq) { bonus = 180 }
-            else if name.contains(nq) || orig.contains(nq) { bonus = 80 }
-            else if nq.contains(name) && name.count >= 4 { bonus = 60 }
-            var score = bonus + min(row["popularity"] as? Double ?? 0, 40)
-            let genres = row["genre_ids"] as? [Int] ?? []
-            let countries = row["origin_country"] as? [String] ?? []
-            if kind == .aniworld {
-                if genres.contains(16) { score += 120 }
-                if countries.contains("JP") { score += 60 }
-            } else {
-                if genres.contains(16) && countries.contains("JP") { score -= 90 }
-                else if countries.contains("JP") { score -= 20 }
-                if countries.contains("US") || countries.contains("GB") || countries.contains("DE") { score += 40 }
-            }
-            if best == nil || score > best!.score {
-                best = (score, bonus, row)
-            }
-        }
-        guard let best, best.bonus >= 80 else { return nil }
-        return best.row
+    ) -> TMDBCandidate? {
+        TMDBMatcher.best(in: results, query: query, kind: kind, requirePoster: requirePoster)
     }
 
     /// Suchbegriffe zu einem Titel, in absteigender Güte.
     ///
-    /// AniWorld und Serienstream führen Serien häufig unter einem eingedeutschten
-    /// oder verkürzten Namen, den TMDB nicht kennt. Die Seite nennt daneben aber
-    /// Alternativtitel — original, englisch, japanisch —, und einer davon trifft
-    /// meist. Dazu kommt der Teil vor einem Doppelpunkt: „Titel: Untertitel"
-    /// steht bei TMDB oft nur als „Titel".
+    /// Liegt in `TMDBMatcher`, weil die Startseite dieselben Begriffe braucht.
     private static func queries(for title: String, alternates: [String]) -> [String] {
-        var out: [String] = []
-        var seen: Set<String> = []
-
-        func add(_ raw: String) {
-            let cleaned = raw
-                .replacingOccurrences(of: #"\s*\(\d{4}\)\s*"#, with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard cleaned.count >= 2 else { return }
-            let key = cleaned.lowercased()
-            guard !seen.contains(key) else { return }
-            seen.insert(key)
-            out.append(cleaned)
-        }
-
-        add(title)
-        for alt in alternates { add(alt) }
-        for candidate in [title] + alternates {
-            if let colon = candidate.firstIndex(of: ":") {
-                add(String(candidate[candidate.startIndex ..< colon]))
-            }
-        }
-        return out
+        TMDBMatcher.queries(for: title, alternates: alternates)
     }
 
     /// Eine einzelne TMDB-Suche, die nur die Kennung zurückgibt.
@@ -972,7 +940,7 @@ actor CoverIndex {
             else { return nil }
             // Ohne Posterzwang: für die Folgendaten zählt die Serie, nicht ihr
             // Titelbild.
-            return Self.bestRow(in: results, query: query, kind: kind, requirePoster: false)?["id"] as? Int
+            return Self.bestRow(in: results, query: query, kind: kind, requirePoster: false)?.id
         } catch {
             return nil
         }
@@ -1005,23 +973,19 @@ actor CoverIndex {
             // Ohne echte Titelübereinstimmung lieber kein Cover als ein
             // falsches — dann greift das Cover der Quelle.
             if let best = Self.bestRow(in: results, query: q, kind: kind, requirePoster: true),
-               let path = best["poster_path"] as? String,
-               let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)") {
+               let poster = TMDBImages.url(best.posterPath, .posterHero) {
                 cache[slug] = poster
-                if let backdropPath = best["backdrop_path"] as? String, !backdropPath.isEmpty,
-                   let wide = URL(string: "https://image.tmdb.org/t/p/w1280\(backdropPath)") {
+                if let wide = TMDBImages.url(best.backdropPath, .backdropHero) {
                     backdrops[slug] = wide
                 }
                 // Auch ohne Text eintragen: der leere Eintrag merkt sich, dass
                 // nachgeschlagen wurde, und verhindert dieselbe Suche bei jedem
                 // Aufbau der Ansicht.
-                overviews[slug] = (best["overview"] as? String) ?? ""
-                if let vote = best["vote_average"] as? Double, vote > 0 {
-                    ratings[slug] = vote
+                overviews[slug] = best.overview ?? ""
+                if best.voteAverage > 0 {
+                    ratings[slug] = best.voteAverage
                 }
-                if let id = best["id"] as? Int {
-                    tvIDs[slug] = id
-                }
+                tvIDs[slug] = best.id
                 scheduleSave()
                 return poster
             }
@@ -1058,8 +1022,8 @@ actor CoverIndex {
             else { return [] }
             var out: [CoverCandidate] = []
             for row in results {
-                guard let path = row["poster_path"] as? String, !path.isEmpty,
-                      let poster = URL(string: "https://image.tmdb.org/t/p/w780\(path)")
+                guard let path = row["poster_path"] as? String,
+                      let poster = TMDBImages.url(path, .posterHero)
                 else { continue }
                 let name = (row["name"] as? String) ?? (row["original_name"] as? String) ?? title
                 let year = (row["first_air_date"] as? String)?.prefix(4)
@@ -1276,12 +1240,9 @@ actor EpisodeIndex {
             var out: [Int: EpisodeInfo] = [:]
             for row in rows {
                 guard let n = row["episode_number"] as? Int else { continue }
-                var still: String?
-                if let path = row["still_path"] as? String, !path.isEmpty {
-                    // Das Zuschnittsformat von TMDB selbst: 454×254, also
-                    // 16:9 — genau die Form, in der die Folgenliste es zeigt.
-                    still = "https://image.tmdb.org/t/p/w454_and_h254_bestv2\(path)"
-                }
+                // Das Zuschnittsformat von TMDB selbst: 454×254, also 16:9 —
+                // genau die Form, in der die Folgenliste es zeigt.
+                let still = TMDBImages.url(row["still_path"] as? String, .still)?.absoluteString
                 // TMDB liefert die Laufzeit teils als 0, wenn sie unbekannt
                 // ist. Null Minuten ist keine Auskunft, sondern eine Lücke.
                 let minutes = (row["runtime"] as? Int).flatMap { $0 > 0 ? $0 : nil }
