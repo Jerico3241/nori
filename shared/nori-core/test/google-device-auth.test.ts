@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  clientIdValidationError, clientSecretValidationError,
+  clientIdValidationError, clientSecretValidationError, deviceQrPayload,
   GoogleAuthError, GoogleDeviceAuthorization, MemoryTokenStore, tokensAreValid,
 } from "../src/google/auth.js";
 
@@ -288,4 +288,213 @@ test("Das Client-Secret darf nicht leer sein und keinen Leerraum enthalten", () 
   assert.equal(clientSecretValidationError("  GOCSPX-abcdef  "), null);
   assert.ok(clientSecretValidationError(""));
   assert.ok(clientSecretValidationError("GOCSPX abcdef"));
+});
+
+// --- RFC 8628: was Google mitschickt ----------------------------------------
+//
+// `verification_uri` heisst das Feld in RFC 8628, `verification_url` in Googles
+// älterer Beschreibung. Google schickt beide; Nori liest beide und erfindet
+// keines.
+
+test("Die Adresse nach RFC 8628 wird gelesen", async () => {
+  const script = new ScriptedFetch([{
+    status: 200,
+    body: {
+      device_code: "dc", user_code: "ABCD-EFGH",
+      verification_uri: "https://www.google.com/device",
+      verification_uri_complete: "https://www.google.com/device?user_code=ABCD-EFGH",
+      expires_in: 1800, interval: 5,
+    },
+  }]);
+
+  const device = await authFor(script).requestDeviceCode();
+
+  assert.equal(device.verificationUrl, "https://www.google.com/device");
+  assert.equal(device.verificationUrlComplete, "https://www.google.com/device?user_code=ABCD-EFGH");
+  // Und die vollständige gewinnt im QR-Code: der Nutzer tippt dann nichts mehr.
+  assert.equal(deviceQrPayload(device), "https://www.google.com/device?user_code=ABCD-EFGH");
+});
+
+test("Ohne vollständige Adresse bleibt sie leer, statt gebaut zu werden", async () => {
+  const script = new ScriptedFetch([{
+    status: 200,
+    body: {
+      device_code: "dc", user_code: "ABCD-EFGH",
+      verification_url: "https://www.google.com/device",
+      expires_in: 1800, interval: 5,
+    },
+  }]);
+
+  const device = await authFor(script).requestDeviceCode();
+
+  assert.equal(device.verificationUrl, "https://www.google.com/device");
+  assert.equal(device.verificationUrlComplete, undefined);
+  // Nichts angehängt. Welchen Parameter Google an `google.com/device` erwartet,
+  // sichert es nirgends zu — ein falscher führt auf eine Fehlerseite.
+  assert.equal(deviceQrPayload(device), "https://www.google.com/device");
+});
+
+/**
+ * Eine Antwort ohne Adresse ist kaputt und wird als solche behandelt.
+ *
+ * Vorher stand hier ein Rückfall auf `https://www.google.com/device`. Der war
+ * geraten: eine Antwort ohne Adresse heisst nicht, dass diese Adresse gilt.
+ */
+test("Eine Antwort ohne Anmeldeadresse wird nicht geraten", async () => {
+  const script = new ScriptedFetch([{
+    status: 200, body: { device_code: "dc", user_code: "ABCD-EFGH", expires_in: 1800 },
+  }]);
+
+  await assert.rejects(() => authFor(script).requestDeviceCode(), (error: GoogleAuthError) => {
+    assert.equal(error.kind, "server");
+    return true;
+  });
+});
+
+test("Unsinnige Zahlen fallen auf Googles Voreinstellungen zurück", async () => {
+  const script = new ScriptedFetch([{
+    status: 200,
+    body: {
+      device_code: "dc", user_code: "ABCD-EFGH",
+      verification_uri: "https://www.google.com/device",
+      expires_in: "bald", interval: null,
+    },
+  }]);
+
+  const device = await authFor(script).requestDeviceCode();
+
+  // `NaN` als Ablaufzeit hiesse: der Code läuft nie ab und die Schleife
+  // niemals aus.
+  assert.equal(device.expiresAt, 1_000_000 + 1_800_000);
+  assert.equal(device.intervalMs, 5_000);
+});
+
+test("Ein falscher Clienttyp fällt schon beim Gerätecode auf", async () => {
+  const script = new ScriptedFetch([{ status: 401, body: { error: "invalid_client" } }]);
+
+  await assert.rejects(() => authFor(script).requestDeviceCode(), (error: GoogleAuthError) => {
+    assert.equal(error.kind, "invalidClient");
+    return true;
+  });
+});
+
+test("Ein verweigerter Bereich wird als solcher benannt", async () => {
+  const script = new ScriptedFetch([{ status: 400, body: { error: "invalid_scope" } }]);
+
+  await assert.rejects(
+    () => authFor(script).pollForTokens(
+      { deviceCode: "dc", userCode: "X", verificationUrl: "u", expiresAt: 9_000_000, intervalMs: 1 },
+      { sleep: async () => {} },
+    ),
+    (error: GoogleAuthError) => { assert.equal(error.kind, "invalidScope"); return true; },
+  );
+});
+
+test("Die Regel der Organisation wird als solche benannt", async () => {
+  const script = new ScriptedFetch([{ status: 403, body: { error: "admin_policy_enforced" } }]);
+
+  await assert.rejects(
+    () => authFor(script).pollForTokens(
+      { deviceCode: "dc", userCode: "X", verificationUrl: "u", expiresAt: 9_000_000, intervalMs: 1 },
+      { sleep: async () => {} },
+    ),
+    (error: GoogleAuthError) => { assert.equal(error.kind, "adminPolicy"); return true; },
+  );
+});
+
+/** Nennt Google beim `slow_down` selbst eine Wartezeit, gilt die. */
+test("slow_down mit eigener Wartezeit gewinnt", async () => {
+  const script = new ScriptedFetch([
+    { status: 403, body: { error: "slow_down", interval: 30 } },
+    { status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
+  ]);
+  const waits: number[] = [];
+
+  await authFor(script).pollForTokens(
+    { deviceCode: "dc", userCode: "X", verificationUrl: "u", expiresAt: 9_000_000, intervalMs: 5_000 },
+    { sleep: async (ms) => { waits.push(ms); } },
+  );
+
+  assert.deepEqual(waits, [5_000, 30_000]);
+});
+
+// --- Doppeltes Fragen -------------------------------------------------------
+
+test("Zwei Schleifen auf denselben Code gibt es nicht", async () => {
+  const script = new ScriptedFetch([
+    { status: 428, body: { error: "authorization_pending" } },
+    { status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
+  ]);
+  const auth = authFor(script);
+  const device = {
+    deviceCode: "dc", userCode: "X", verificationUrl: "u",
+    expiresAt: 9_000_000, intervalMs: 5_000,
+  };
+  // Ein Warten, das erst auf Zuruf weitergeht: so lässt sich die zweite
+  // Schleife starten, während die erste noch steht.
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+
+  const first = auth.pollForTokens(device, { sleep: () => gate });
+  await assert.rejects(
+    () => auth.pollForTokens(device, { sleep: async () => {} }),
+    (error: GoogleAuthError) => { assert.equal(error.kind, "pending"); return true; },
+  );
+
+  release();
+  await first;
+  // Nach dem Ende der ersten läuft eine zweite wieder an.
+  assert.equal(script.calls.length, 2);
+});
+
+/**
+ * Ein Abbruch wirkt sofort und nicht erst beim nächsten Aufwachen.
+ *
+ * Sonst dauert „Abbrechen" bis zu einem ganzen Wartetakt, und wer danach
+ * gleich wieder „Verbinden" drückt, bekommt nichts — die alte Schleife steht
+ * noch und hält ihren Platz.
+ */
+test("Ein Abbruch beendet auch ein laufendes Warten", async () => {
+  const script = new ScriptedFetch([
+    { status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 } },
+  ]);
+  const auth = authFor(script);
+  const controller = new AbortController();
+  const device = {
+    deviceCode: "dc", userCode: "X", verificationUrl: "u",
+    expiresAt: 9_000_000, intervalMs: 5_000,
+  };
+
+  // Ein Warten, das von sich aus nie endet.
+  const pending = auth.pollForTokens(device, {
+    signal: controller.signal,
+    sleep: () => new Promise<void>(() => {}),
+  });
+  controller.abort();
+
+  await assert.rejects(() => pending, (error: GoogleAuthError) => {
+    assert.equal(error.kind, "denied");
+    return true;
+  });
+  assert.equal(script.calls.length, 0);
+  // Und der Platz ist frei: die nächste Schleife läuft durch.
+  const tokens = await auth.pollForTokens(device, { sleep: async () => {} });
+  assert.equal(tokens.accessToken, "at");
+});
+
+test("Widerrufen räumt die Tokens weg, auch wenn Google nicht antwortet", async () => {
+  const script = new ScriptedFetch([]);
+  const store = new MemoryTokenStore({ accessToken: "at", refreshToken: "rt", expiresAt: 9_000_000 });
+  const auth = new GoogleDeviceAuthorization({
+    configuration: config,
+    tokenStore: store,
+    fetchImpl: (() => Promise.reject(new Error("kein Netz"))) as unknown as typeof fetch,
+  });
+
+  await auth.revokeAccess();
+
+  // Der Widerruf ist dem Nutzer wichtig, nicht das Ergebnis dieser Anfrage.
+  assert.equal(store.read(), null);
+  assert.equal(auth.isConnected, false);
+  void script;
 });

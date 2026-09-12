@@ -246,57 +246,87 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
 
 /// Wo die Google-Client-ID herkommt.
 ///
-/// Zwei Quellen, in dieser Reihenfolge: der Schlüsselbund, dann die
-/// Build-Einstellung aus der `Info.plist`. Genau wie beim TMDB-Schlüssel — und
-/// aus demselben Grund.
+/// **Aus dem Build.** Die Build-Einstellung `GOOGLE_CLIENT_ID` landet über die
+/// `Info.plist` als `GoogleClientID` in der App — genau wie `TMDB_API_KEY`.
+/// Sie steht nicht im Quelltext und nicht im Repository; sie gehört zum
+/// Google-Cloud-Projekt des Betreibers.
 ///
-/// Ohne den Schlüsselbund-Weg wäre der Abgleich nur für den einrichtbar, der
-/// Nori selbst übersetzt: eine fertig installierte App hätte keine
-/// Client-ID und böte gar keine Anmeldung an. Das ist kein theoretischer Fall,
-/// sondern der Normalfall.
+/// **Nicht mehr über die Oberfläche.** Frühere Fassungen von Nori liessen die
+/// Client-ID in den Einstellungen eintragen. Das war ein Eingabefeld für einen
+/// Wert, den niemand hat, der die App nur benutzt — und eine Anmeldung, die
+/// erst nach einem Besuch in der Google Cloud Console möglich war. Die
+/// Anmeldung ist jetzt ein Knopf, und die Client-ID ist Sache des Builds.
+///
+/// Fehlt sie, ist das ein **Build-Fehler** und keine Nutzeraufgabe: die
+/// Oberfläche sagt das im Diagnosebereich und bietet kein Feld an, in dem
+/// niemand etwas Sinnvolles eintragen könnte.
+///
+/// **Was von früher übrig ist, wird weiter gelesen.** Wer schon verbunden ist,
+/// hat seine Tokens zu einer von Hand eingetragenen Client-ID bekommen. Würde
+/// die jetzt ignoriert, wäre die Verbindung nach dem Update weg — ohne Grund
+/// und ohne Meldung. Sie hat deshalb weiter Vorrang, und wenn sie mit der aus
+/// dem Build übereinstimmt, wird die Kopie im Gerät beim nächsten Start
+/// stillschweigend aufgeräumt.
 ///
 /// Einen eingebauten Rückfall gibt es hier **nicht**. Beim TMDB-Schlüssel ist
 /// einer vertretbar, weil er nur Bilder holt; eine Google-Client-ID gehört zu
 /// einem bestimmten Cloud-Projekt und einem bestimmten Zustimmungsbildschirm.
-/// Eine fremde einzubauen hieße, den Nutzer beim Anmelden den Namen eines
+/// Eine fremde einzubauen hiesse, den Nutzer beim Anmelden den Namen eines
 /// fremden Projekts sehen zu lassen.
 enum GoogleClientIDStore {
     private static let service = "de.nori.google"
     private static let account = "client_id"
     private static let defaultsKey = "nori.google.clientId"
 
-    /// Die zu verwendende Client-ID oder `nil`, wenn keine hinterlegt ist.
-    static var current: String? {
-        if let stored = readUserProvided(), !stored.isEmpty { return stored }
-        let bundled = Bundle.main.object(forInfoDictionaryKey: "GoogleClientID") as? String
-        // Bei fehlender Build-Einstellung bleibt in der Info.plist der
-        // unaufgelöste Platzhalter stehen — der ist keine Client-ID.
-        if let bundled, !bundled.isEmpty, !bundled.hasPrefix("$(") { return bundled }
-        return nil
+    /// Woher der benutzte Wert stammt. Für die Diagnose, nie für die Logik.
+    enum Origin: Equatable {
+        /// Aus `GOOGLE_CLIENT_ID` — der Normalfall.
+        case build
+        /// Aus einer früheren Fassung, von Hand eingetragen. Wird
+        /// weiterbenutzt, damit eine bestehende Verbindung hält.
+        case migrated
     }
 
-    /// Wurde sie von Hand eingetragen — und lässt sich damit auch entfernen?
-    static var isUserProvided: Bool { readUserProvided()?.isEmpty == false }
+    /// Die Client-ID aus dem Build, oder `nil`.
+    ///
+    /// Bei fehlender Build-Einstellung bleibt in der `Info.plist` der
+    /// unaufgelöste Platzhalter `$(…)` stehen — der ist keine Client-ID.
+    static var fromBuild: String? {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "GoogleClientID") as? String
+        guard let raw, !raw.isEmpty, !raw.hasPrefix("$(") else { return nil }
+        return raw
+    }
 
-    /// Schlüsselbund zuerst, danach die Voreinstellungen.
+    /// Die zu verwendende Client-ID samt Herkunft, oder `nil`.
     ///
-    /// Der zweite Weg ist kein Versehen. Ohne Signierteam bekommt eine
-    /// iOS-App keine `application-identifier`-Berechtigung, und dann lehnt der
-    /// Schlüsselbund **jede** Ablage ab — die Einrichtung endete mit „Der
-    /// Schlüsselbund hat die Ablage abgelehnt", und der Abgleich wäre wieder
-    /// unerreichbar.
+    /// Räumt dabei auf: stimmt der alte Wert im Gerät mit dem aus dem Build
+    /// überein, wird er entfernt. Danach gibt es nur noch eine Quelle, und die
+    /// Diagnose zeigt nicht länger „übernommen" für etwas, das inzwischen aus
+    /// dem Build kommt.
+    static func resolved() -> (clientId: String, origin: Origin)? {
+        let decision = resolve(build: fromBuild, stored: readLegacy())
+        if decision?.cleanUpStored == true { forgetLegacy() }
+        return decision.map { ($0.clientId, $0.origin) }
+    }
+
+    /// Die Entscheidung selbst — ohne Schlüsselbund, ohne `Bundle`.
     ///
-    /// Vertretbar ist das nur, weil eine Client-ID kein Geheimnis ist: sie
-    /// steht in jeder Anmeldeadresse, die Nori öffnet, und lässt sich ohne die
-    /// Zustimmung eines Nutzers zu nichts verwenden.
-    ///
-    /// Für **Tokens** gilt das ausdrücklich nicht. Die liegen in
-    /// `KeychainTokenStore` und bekommen keinen solchen Rückfall; wo der
-    /// Schlüsselbund fehlt, gibt es eben keine gespeicherte Anmeldung.
-    private static func readUserProvided() -> String? {
-        if let stored = readKeychain(), !stored.isEmpty { return stored }
-        let stored = UserDefaults.standard.string(forKey: defaultsKey)
-        return stored?.isEmpty == false ? stored : nil
+    /// Eigene Funktion, damit sie prüfbar ist. Ein Test, der dafür in den
+    /// Schlüsselbund und in die Voreinstellungen des Entwicklers schreiben
+    /// müsste, prüft am Ende die Umgebung und nicht die Regel.
+    static func resolve(
+        build: String?,
+        stored: String?
+    ) -> (clientId: String, origin: Origin, cleanUpStored: Bool)? {
+        if let stored, !stored.isEmpty {
+            // Der Wert im Gerät hat Vorrang: die vorhandenen Tokens sind zu
+            // ihm ausgestellt. Ihn zu übergehen hiesse, eine bestehende
+            // Verbindung ohne Grund zu beenden.
+            if let build, build == stored { return (build, .build, true) }
+            return (stored, .migrated, false)
+        }
+        guard let build, !build.isEmpty else { return nil }
+        return (build, .build, false)
     }
 
     /// Sieht der Wert überhaupt nach einer Google-Client-ID aus?
@@ -304,10 +334,11 @@ enum GoogleClientIDStore {
     /// Die Prüfung ist keine Förmlichkeit: auf iOS wird aus der Client-ID die
     /// Rückleitungsadresse abgeleitet. Steht dort etwas anderes, öffnet sich
     /// das Anmeldefenster und kommt nie zurück — ein Fehler, der aussieht wie
-    /// „Google ist kaputt".
+    /// „Google ist kaputt". Geprüft wird damit jetzt die **Build-Einstellung**,
+    /// und der Befund landet in der Diagnose.
     static func validationError(for raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "Bitte eine Client-ID eintragen." }
+        if trimmed.isEmpty { return "Es ist keine Client-ID hinterlegt." }
         guard trimmed.hasSuffix(".apps.googleusercontent.com") else {
             return "Eine Google-Client-ID endet auf „.apps.googleusercontent.com\"."
         }
@@ -317,38 +348,11 @@ enum GoogleClientIDStore {
         return nil
     }
 
-    @discardableResult
-    static func save(_ raw: String) -> Bool {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return clear() }
-        if saveToKeychain(trimmed) { return true }
-        // Der Schlüsselbund steht nicht zur Verfügung. Siehe
-        // `readUserProvided` — für eine Client-ID ist das tragbar.
-        UserDefaults.standard.set(trimmed, forKey: defaultsKey)
-        return true
-    }
-
-    private static func saveToKeychain(_ value: String) -> Bool {
-        #if canImport(Security)
-        guard let data = value.data(using: .utf8) else { return false }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        if SecItemUpdate(query as CFDictionary, attributes as CFDictionary) == errSecSuccess { return true }
-        var insert = query
-        insert[kSecValueData as String] = data
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
-        #else
-        return false
-        #endif
-    }
-
-    @discardableResult
-    static func clear() -> Bool {
+    /// Den von Hand eingetragenen Wert vergessen.
+    ///
+    /// Danach gilt der aus dem Build. Weil die Tokens zur alten Client-ID
+    /// gehören, trennt der Aufrufer das Gerät gleich mit.
+    static func forgetLegacy() {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
         #if canImport(Security)
         let query: [String: Any] = [
@@ -356,11 +360,20 @@ enum GoogleClientIDStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-        #else
-        return true
+        SecItemDelete(query as CFDictionary)
         #endif
+    }
+
+    /// Der Wert aus einer früheren Fassung: Schlüsselbund, dann
+    /// Voreinstellungen.
+    ///
+    /// Beide Orte, weil beide beschrieben wurden — ohne Signierteam lehnte der
+    /// Schlüsselbund die Ablage ab, und die alte Fassung wich auf die
+    /// Voreinstellungen aus.
+    private static func readLegacy() -> String? {
+        if let stored = readKeychain(), !stored.isEmpty { return stored }
+        let stored = UserDefaults.standard.string(forKey: defaultsKey)
+        return stored?.isEmpty == false ? stored : nil
     }
 
     private static func readKeychain() -> String? {
@@ -383,26 +396,11 @@ enum GoogleClientIDStore {
 }
 
 extension GoogleOAuthConfiguration {
-    /// Die Client-ID aus dem Schlüsselbund oder der `Info.plist`.
+    /// Die zu verwendende Client-ID: aus dem Build, sonst die migrierte.
     static func resolved() -> GoogleOAuthConfiguration? {
-        GoogleClientIDStore.current.map { GoogleOAuthConfiguration(clientId: $0, redirectURI: "") }
-    }
-
-    /// Die Client-ID aus der `Info.plist`.
-    ///
-    /// Wie der TMDB-Schlüssel: nicht im Quelltext, sondern über eine
-    /// Build-Einstellung. Eine Client-ID ist zwar kein Geheimnis — sie steht in
-    /// jeder Anmeldeadresse —, aber sie gehört zum Google-Cloud-Projekt des
-    /// Betreibers und nicht in ein Repository.
-    ///
-    /// Fehlt die Build-Einstellung, bleibt in der `Info.plist` der unaufgelöste
-    /// Platzhalter `$(…)` stehen. Der ist keine Client-ID, und die Oberfläche
-    /// sagt dann „nicht eingerichtet" statt eine Anmeldung anzubieten, die
-    /// sicher scheitert.
-    static func fromBundle(key: String = "GoogleClientID") -> GoogleOAuthConfiguration? {
-        let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String
-        guard let raw, !raw.isEmpty, !raw.hasPrefix("$(") else { return nil }
-        return GoogleOAuthConfiguration(clientId: raw, redirectURI: "")
+        GoogleClientIDStore.resolved().map {
+            GoogleOAuthConfiguration(clientId: $0.clientId, redirectURI: "")
+        }
     }
 
     /// Das umgedrehte Client-Kürzel, wie iOS es als Rückleitungsschema

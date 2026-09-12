@@ -59,6 +59,56 @@
     "maxSnapshotBytes": 2097152,
     "providerInterface": ["name", "load", "save"],
     "snapshotStoreInterface": ["name", "list", "download", "upload"],
+    "statuses": ["disconnected", "authorizing", "idle", "syncing", "offline", "error", "needsReauthorization", "unsupportedRemoteVersion"],
+    "auth": {
+      "scope": "https://www.googleapis.com/auth/drive.appdata — der einzige angefragte Bereich. Kein drive, kein drive.file, kein email, kein profile, kein openid: der Abgleich braucht keine Profildaten, und was Nori nicht anfordert, kann Nori nicht verlieren.",
+      "noProxy": "Jedes Gerät spricht direkt mit Google. Kein eigener Auth-Server, kein OAuth-Proxy, kein Nori-Konto, kein Firebase.",
+      "userInput": "Der Nutzer drückt einen Knopf und bestätigt bei Google. Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind keine Benutzereinstellungen und haben in der normalen Oberfläche nichts zu suchen.",
+      "flows": {
+        "ios": "Authorization Code + PKCE über ASWebAuthenticationSession, Rückleitung über das umgedrehte Client-Kürzel, geteilte Browser-Sitzung (prefersEphemeralWebBrowserSession = false).",
+        "macos": "Authorization Code + PKCE im Systembrowser, Rückleitung auf http://127.0.0.1:<vom System vergebener Port>.",
+        "webos": "Device Authorization Grant nach RFC 8628 — Googles Fluss für Fernseher und Geräte mit eingeschränkter Eingabe.",
+        "android": "Authorization Code + PKCE über Googles empfohlenen Android-Weg. Noch nicht umgesetzt, siehe docs/android.md."
+      },
+      "authorizationParameters": {
+        "access_type": "offline — ohne das gibt Google keinen Auffrischungstoken heraus.",
+        "prompt": "consent — ohne das gibt Google bei einer erneuten Anmeldung keinen Auffrischungstoken heraus.",
+        "code_challenge_method": "S256",
+        "forbidden": ["urn:ietf:wg:oauth:2.0:oob", "eingebettete WebView", "client_secret (Ausnahme: der webOS-Gerätefluss, wo Google ihn verlangt)"]
+      },
+      "deviceFlow": {
+        "verificationUrlFields": ["verification_uri", "verification_url"],
+        "qrCode": "verification_uri_complete, wenn Google eine liefert; sonst genau verification_uri. Niemals eine selbst zusammengesetzte Adresse mit user_code — welchen Parameter Google dort erwartet, sichert es nirgends zu. Gerechnet wird der Code im Gerät, nie bei einem Dienst im Netz.",
+        "polling": "Googles interval wird eingehalten und nicht unterboten. Bei slow_down erhöht sich das Intervall um 5 s, oder auf das von Google genannte, falls größer. Eine zweite Schleife auf denselben Gerätecode gibt es nicht.",
+        "errors": {
+          "authorization_pending": "Normalfall — weiter fragen",
+          "slow_down": "Intervall erhöhen, weiter fragen",
+          "access_denied": "abgelehnt, Schleife beenden",
+          "expired_token": "Code abgelaufen, neuen anbieten",
+          "invalid_grant": "Code abgelaufen, neuen anbieten",
+          "admin_policy_enforced": "die Organisation erlaubt den Zugriff nicht",
+          "invalid_client": "Build falsch eingerichtet",
+          "invalid_scope": "Bereich für diesen Clienttyp nicht erlaubt"
+        }
+      },
+      "tokenStorage": {
+        "apple": "Schlüsselbund, kSecAttrAccessibleAfterFirstUnlock. Kein Rückfall auf UserDefaults.",
+        "webos": "privater App-Speicher, unverschlüsselt — webOS bietet Web-Apps keinen Schlüsselbund. Festgehalten in docs/google-drive-sync.md.",
+        "android": "Android-Keystore bzw. der von Google empfohlene Credential-Store. Noch nicht umgesetzt.",
+        "neverSynced": ["accessToken", "refreshToken", "clientSecret", "deviceCode", "Geräte-Autorisierung"],
+        "neverLogged": ["accessToken", "refreshToken", "authorization code", "clientSecret", "deviceCode", "userCode"]
+      },
+      "clientConfiguration": {
+        "apple": "Build-Einstellung GOOGLE_CLIENT_ID, über die Info.plist als GoogleClientID",
+        "webos": "VITE_NORI_GOOGLE_TV_CLIENT_ID und VITE_NORI_GOOGLE_TV_CLIENT_SECRET",
+        "legacy": "Von Hand eingetragene Werte früherer Fassungen werden weiter gelesen, damit eine bestehende Verbindung hält; stimmen sie mit denen aus dem Build überein, werden sie aufgeräumt. Neu eintragen lässt sich nichts.",
+        "sameProject": "Alle OAuth-Clients gehören zu einem Google-Cloud-Projekt. Der appDataFolder gehört zu Projekt und Konto — vier Projekte hießen vier getrennte versteckte Ordner."
+      },
+      "disconnectVsRevoke": {
+        "disconnectDevice": "Löscht die lokalen Tokens. Verändert keine anderen Geräte, löscht nichts in Drive und nichts in der lokalen Bibliothek.",
+        "revokeAccess": "Zieht die OAuth-Berechtigung bei Google zurück und betrifft damit alle Geräte an diesem Konto. Nur nach ausdrücklicher Rückfrage."
+      }
+    },
     "meta": ["formatVersion", "deviceId", "platform", "appVersion", "generatedAt", "historyClearedAt", "progressClearedAt", "preferences", "favorites", "recentsRemoved"],
     "syncedPreferences": ["langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope"],
     "keys": {

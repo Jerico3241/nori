@@ -310,6 +310,7 @@ struct MoreView: View {
         case .syncing: return .running(name: name)
         case .offline: return .offline(name: name, lastRun: lastRun)
         case .error(let message): return .failed(name: name, message: message)
+        case .needsReauthorization: return .needsReauth(name: name)
         case .unsupportedRemoteVersion: return .needsUpdate(name: name)
         }
     }

@@ -163,6 +163,20 @@ Der TMDB-Schlüssel kann über Schlüsselbund bzw. Build-Einstellung bereitgeste
 
 Die Google-Client-IDs kommen ebenso aus Build-Einstellungen (`GOOGLE_CLIENT_ID` auf Apple, `VITE_NORI_GOOGLE_TV_CLIENT_ID` auf webOS) und nicht aus dem Quelltext.
 
-Eine Ausnahme mit Ansage: Googles OAuth-Fluss für Fernseher verlangt zusätzlich ein `client_secret` (`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`). Der Wert wird **nicht** eingecheckt; warum er trotzdem in der gebauten `.ipk` liegt, steht in `docs/google-drive-sync.md`.
+Eine Ausnahme mit Ansage: Googles OAuth-Fluss für Fernseher verlangt zusätzlich ein `client_secret` (`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`). Der Wert wird **nicht** eingecheckt; warum er trotzdem in der gebauten `.ipk` liegt und warum er dort nicht wirklich geheim bleibt, steht in `docs/google-drive-sync.md`.
+
+## Google-Anmeldung
+
+Für den Nutzer ist die Anmeldung **ein Knopf** — „Mit Google anmelden", einmal bei Google bestätigen, fertig. Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind keine Benutzereinstellungen und gehören **nicht** in die Oberfläche; frühere Eingabefelder dafür sind entfernt. Fehlt die Build-Einstellung, ist das ein Build-Fehler: die Oberfläche sagt das in einem Satz und bietet kein Feld an.
+
+Ein zugeklappter Diagnosebereich (auf webOS am Entwicklerschalter) darf Client-ID, Herkunft und Bereich zeigen — nie ein Secret und nie einen Token.
+
+Was eine ältere Fassung im Gerät hinterlassen hat, wird weiter **gelesen** (Schlüsselbund/`UserDefaults` auf Apple, `localStorage` auf webOS) und hat Vorrang vor dem Build, weil die vorhandenen Tokens dazu gehören. Neu eintragen lässt sich nichts.
+
+Die Flüsse: Authorization Code mit PKCE auf iOS (`ASWebAuthenticationSession`, geteilte Browser-Sitzung) und macOS (Systembrowser + Loopback), Device Authorization Grant nach RFC 8628 auf webOS. Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird ausschließlich `drive.appdata`.
+
+Der QR-Code am Fernseher wird **im Gerät** gerechnet (`shared/nori-core/src/qr.ts`, geprüft gegen eine unabhängige Referenz) und enthält `verification_uri_complete`, wenn Google eine liefert, sonst genau `verification_uri`. Eine Adresse mit angehängtem `user_code` selbst zusammenzusetzen ist untersagt.
+
+Tokens, Autorisierungscodes, Client-Secret, `device_code` und `user_code` gehören in **kein** Protokoll. Verbindlich beschrieben ist das alles in `config/contract.json` unter `sync.auth`.
 
 Keine weiteren Secrets oder Zugangsdaten fest in den Quelltext schreiben.

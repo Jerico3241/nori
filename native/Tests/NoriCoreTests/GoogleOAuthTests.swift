@@ -65,6 +65,19 @@ final class GoogleOAuthTests: XCTestCase {
         XCTAssertEqual(value("redirect_uri"), "http://127.0.0.1:51234")
         XCTAssertNil(value("client_secret"), "Ein Client-Secret hat in einer App nichts zu suchen")
         XCTAssertTrue(url.absoluteString.hasPrefix("https://accounts.google.com/"))
+
+        // `consent` kostet einen Bildschirm und bleibt trotzdem: Google gibt
+        // den Auffrischungstoken nur heraus, wenn die Zustimmung in diesem
+        // Durchlauf erteilt wird. Ohne ihn endete die Verbindung nach einer
+        // Stunde von selbst.
+        XCTAssertEqual(value("prompt"), "consent")
+        // Kein `email`, kein `profile`, kein `openid`: für den Abgleich einer
+        // Merkliste geht Google niemand etwas an.
+        let scope = value("scope") ?? ""
+        for unerwünscht in ["email", "profile", "openid", "drive.file"] {
+            XCTAssertFalse(scope.contains(unerwünscht),
+                           "Nori fragt \(unerwünscht) ab, ohne es zu brauchen")
+        }
     }
 
     /// Der abgeschaltete Weg von 2022 darf nirgends auftauchen.

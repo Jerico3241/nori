@@ -10,6 +10,56 @@ Abgeglichen wird über **Google Drive**, ausschließlich im versteckten
 anlegen muss, steht in **[google-drive-sync.md](google-drive-sync.md)**. Diese
 Datei erklärt, warum es so gebaut ist.
 
+## Warum die Anmeldung nur ein Knopf ist
+
+Ursprünglich stand in den Einstellungen ein Feld für die Google-Client-ID, auf
+dem Fernseher zusätzlich eines für das Client-Secret. Der Gedanke dahinter war
+richtig: wer Nori nicht selbst übersetzt, hat keine Build-Einstellung, und ohne
+diesen Weg gäbe es auf dem iPhone überhaupt keine Möglichkeit, sich anzumelden.
+
+Nur war es keine. Eine Client-ID bekommt man nicht, indem man Nori öffnet — man
+bekommt sie, indem man ein Google-Cloud-Projekt anlegt, die Drive-API
+aktiviert, einen Zustimmungsbildschirm einrichtet und einen OAuth-Client vom
+richtigen Typ erstellt. Das Feld verlangte also nicht eine Eingabe, sondern
+einen Nachmittag. Auf dem Fernseher kam eine Bildschirmtastatur dazu, mit der
+ein 40-stelliges Secret mit der Fernbedienung einzugeben war.
+
+Ein Feld, das niemand ausfüllen kann, ist keine Möglichkeit — es ist eine
+Sackgasse mit Tastatur. Die Werte gehören zum **Build**, weil sie zum Projekt
+des Betreibers gehören und nicht zum Nutzer. Fehlen sie, ist das ein Fehler
+beim Bauen und keine offene Aufgabe für den, der die App installiert hat; Nori
+sagt das in einem Satz und läuft ohne Abgleich weiter.
+
+Was bleibt, ist ein Knopf. Und die Regel dahinter: **die Oberfläche zeigt
+Zustand und Handlungen, nicht Konfiguration.**
+
+## Warum der Fernseher einen QR-Code zeigt
+
+Der Gerätefluss verlangt vom Nutzer zwei Dinge: eine Adresse öffnen und einen
+Code eintippen. Das Erste ist auf einem Fernseher die eigentliche Zumutung —
+`www.google.com/device` mit einer Fernbedienung über eine Bildschirmtastatur,
+Buchstabe für Buchstabe.
+
+RFC 8628 sieht dafür `verification_uri_complete` vor: eine Adresse, in der der
+Code schon steckt, ausdrücklich für Geräte, die einen QR-Code anzeigen können.
+Wer scannt, muss danach nur noch bestätigen.
+
+Zwei Dinge sind dabei bewusst eng gefasst:
+
+- **Der Code entsteht im Gerät.** Ein QR-Dienst im Netz hiesse, die Adresse
+  einer laufenden Anmeldung an einen Dritten zu schicken. Der Encoder liegt
+  deshalb im Kern (`shared/nori-core/src/qr.ts`), ohne Abhängigkeit und ohne
+  einen einzigen Abruf.
+- **Die Adresse wird nie gebaut.** Liefert Google keine vollständige, enthält
+  der QR-Code genau `verification_uri`, und der Gerätecode steht daneben auf dem
+  Bildschirm. Welchen Parameternamen Google an `google.com/device` erwartet,
+  sichert es nirgends zu — ein geratener führt auf eine Fehlerseite statt auf
+  die Zustimmung, und das sähe auf dem Fernseher aus wie „Nori ist kaputt".
+
+Die Adresse und der Code bleiben trotzdem stehen, gross genug zum Ablesen aus
+drei Metern. Ein QR-Code hilft nur dem, der ein Telefon mit Kamera zur Hand
+hat.
+
 ## Warum nicht eine Datei mit einem Zeitstempel
 
 Ursprünglich stand hier: eine `library.json`, ein `modifiedAt`, der neuere
@@ -146,6 +196,28 @@ Eine Korrektur zur früheren Fassung dieser Datei: `drive.appdata` gilt bei
 Google **nicht** als sensibler Bereich. Eine Überprüfung ist dafür nicht nötig,
 und der Testmodus ist keine Einschränkung, sondern nur der bequemste Weg für den
 Eigengebrauch.
+
+## Warum „erneut anmelden" ein Zustand ist und kein Fehler
+
+Ein Auffrischungstoken gilt nicht für immer. Widerrufen, Passwort geändert, zu
+lange nicht benutzt — Google antwortet dann beim Erneuern mit `invalid_grant`.
+Nori räumt den wertlosen Token weg, sonst scheiterte jeder Abgleich weiter am
+selben Punkt.
+
+Was die Oberfläche daraus machte, war lange ein Fehlertext: „Die Verbindung zu
+Google ist abgelaufen. Bitte neu verbinden." Wahr, und trotzdem falsch
+eingeordnet — es ist nichts kaputt, es fehlt eine Anmeldung. Schlimmer war der
+zweite Fall: kommt die abgelaufene Berechtigung aus der Autorisierungsschicht,
+ist sie kein `DriveError`, und der Abgleich landete bei **„offline"**. Die
+Oberfläche wartete dann auf ein Netz, das längst da war.
+
+Deshalb gibt es `needsReauthorization` als eigenen Zustand in beiden Kernen,
+ohne Fehlertext, mit genau einer Handlung daneben:
+
+```text
+Google Drive muss erneut verbunden werden.
+[ Erneut anmelden ]
+```
 
 ## Was von der alten Abstraktion bleibt
 

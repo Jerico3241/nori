@@ -1828,6 +1828,8 @@ button[aria-disabled="true"] {
 :root[data-flex-gap="no"] .player-top > * + * { margin-left: 1.75rem; }
 :root[data-flex-gap="no"] .hero-pages > * + * { margin-left: 0.625rem; }
 :root[data-flex-gap="no"] .field-row > * + * { margin-left: 0.75rem; }
+:root[data-flex-gap="no"] .device-body > * + * { margin-left: 3rem; }
+:root[data-flex-gap="no"] .device-actions > * + * { margin-left: 1.25rem; }
 :root[data-flex-gap="no"] .search-bar > * + * { margin-left: 1rem; }
 /*
  * Nur ausgeklappt: eingeklappt belegen Markenwort und Schriftzug keinen Platz,
@@ -1886,38 +1888,189 @@ button[aria-disabled="true"] {
  * muss auf einem Telefon abgetippt werden. `tabular-nums` hält die Ziffern an
  * ihrem Platz, damit der Code beim Ablesen nicht springt.
  */
-.device-code {
-  margin: 0.5rem 0 1.25rem;
-  padding: 1.75rem 2rem;
-  background: var(--elevated);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
-  text-align: center;
+/*
+ * Google Drive verbinden — der Gerätefluss als eigener Bildschirm.
+ *
+ * Vorher stand das als Absatz mitten in der Einstellungsliste. Auf drei Metern
+ * war das eine Zeile Text zwischen zwanzig anderen: der Nutzer musste die
+ * Adresse ablesen, den Code merken und am Telefon eintippen — und dabei die
+ * Liste weiter im Blick behalten.
+ *
+ * Jetzt bekommt es die ganze Fläche, und das Wichtigste ist der QR-Code.
+ *
+ * Alle Maße hängen an `rem` und damit an der Bildschirmbreite (siehe
+ * `theme.css`): auf 1080p ist 1rem = 16 px, auf einem 4K-Panel rendert webOS
+ * meist dieselben 1920 logischen Pixel, und auf einem schmalen Fenster
+ * skaliert derselbe Aufbau mit statt zu brechen.
+ */
+.device-shade {
+  position: fixed;
+  z-index: 59;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  animation: shade-in 0.18s ease-out both;
 }
 
-.device-code-lead {
-  margin: 0 0 1rem;
+.device-dialog {
+  position: fixed;
+  z-index: 60;
+  top: 50%;
+  left: 50%;
+  width: min(76rem, calc(100% - 2 * var(--safe-x)));
+  max-height: calc(100% - 2 * var(--safe-y));
+  overflow-y: auto;
+  background: rgba(10, 12, 18, 0.98);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  transform: translate(-50%, -50%);
+  scrollbar-width: none;
+  animation: sheet-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.device-dialog::-webkit-scrollbar {
+  width: 0;
+}
+
+.device-panel {
+  padding: 2.75rem 3rem 2.25rem;
+}
+
+.device-panel h2 {
+  margin: 0 0 2rem;
+  font-size: 2.25rem;
+  font-weight: 750;
+}
+
+/*
+ * QR-Code links, Text rechts.
+ *
+ * Nicht übereinander: übereinander wäre der Code entweder klein oder der Text
+ * unterhalb des Bildrands. Zwei Spalten passen auf 1080p ohne Scrollen, und
+ * der Blick geht von links nach rechts — erst der kurze Weg, dann der lange.
+ */
+.device-body {
+  display: flex;
+  align-items: center;
+  gap: 3rem;
+}
+
+/*
+ * Der QR-Code.
+ *
+ * 22rem sind auf 1080p rund 350 px. Das ist die Größe, bei der ein Telefon aus
+ * zwei bis drei Metern noch auslöst; kleiner sieht auf dem Bildschirm ordentlich
+ * aus und funktioniert vom Sofa aus nicht mehr.
+ *
+ * Der weiße Rahmen gehört dazu und ist keine Zierde: ein QR-Code braucht
+ * seinen hellen Grund, und die Oberfläche ist fastschwarz.
+ */
+.device-qr {
+  flex: 0 0 auto;
+  width: 22rem;
+  height: 22rem;
+  padding: 0.75rem;
+  background: #ffffff;
+  border-radius: 0.75rem;
+}
+
+.device-qr .qr {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.device-text {
+  min-width: 0;
+}
+
+.device-lead {
+  margin: 0 0 1.5rem;
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.device-or {
+  margin: 0 0 0.375rem;
   color: var(--muted);
   font-size: 1.125rem;
 }
 
-.device-code-url {
-  margin: 0 0 0.75rem;
-  font-size: 1.75rem;
-  font-weight: 600;
+/*
+ * Die Adresse ohne `https://`.
+ *
+ * Das Schema abzutippen verlangt niemand, und weggelassen bleibt mehr Platz
+ * für das, was tatsächlich eingegeben wird. `break-all` ist der Rückfall für
+ * eine längere Adresse: umbrechen ist hässlich, abgeschnitten ist unbrauchbar.
+ */
+.device-url {
+  margin: 0 0 1.5rem;
+  font-size: 1.875rem;
+  font-weight: 650;
   word-break: break-all;
 }
 
-.device-code-value {
-  margin: 0 0 1rem;
-  font-size: 3.25rem;
-  font-weight: 700;
-  letter-spacing: 0.35rem;
+/*
+ * Der Code selbst — das Größte auf dem Bildschirm.
+ *
+ * Sperrsatz und Tabellenziffern, weil er abgetippt wird: gleich breite Zeichen
+ * lassen sich verlässlich einzeln ablesen, und der Abstand verhindert, dass
+ * „RN" wie „M" aussieht.
+ */
+.device-value {
+  margin: 0;
+  color: var(--highlight);
+  font-size: 4rem;
+  font-weight: 750;
+  letter-spacing: 0.3rem;
   font-variant-numeric: tabular-nums;
+  word-break: break-all;
 }
 
-.device-code-hint {
-  margin: 0 0 1.25rem;
+.device-expired {
+  padding: 0.5rem 0 2.25rem;
+}
+
+.device-hint {
+  margin: 2rem 0 1.75rem;
   color: var(--muted);
-  font-size: 1.0625rem;
+  font-size: 1.25rem;
+}
+
+.device-expired .device-hint {
+  margin: 0.75rem 0 0;
+}
+
+.device-actions {
+  display: flex;
+  gap: 1.25rem;
+}
+
+/*
+ * Zwei Spalten passen nicht mehr.
+ *
+ * Kein Fernseher liefert das, ein Entwicklungsfenster schon. Dann untereinander
+ * und der Code kleiner — lieber gestaucht als über den Rand hinaus.
+ */
+@media (max-width: 60rem) {
+  .device-body {
+    display: block;
+  }
+
+  .device-qr {
+    width: 16rem;
+    height: 16rem;
+    margin: 0 auto 1.75rem;
+  }
+
+  /* Untereinander braucht es keinen linken Rand — auch nicht den Rückfall,
+     den webOS 6 anstelle von `gap` bekommt. */
+  :root[data-flex-gap="no"] .device-body > * + * {
+    margin-left: 0;
+  }
+
+  .device-value {
+    font-size: 3rem;
+  }
 }

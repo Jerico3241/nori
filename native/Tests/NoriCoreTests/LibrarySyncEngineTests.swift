@@ -269,6 +269,41 @@ final class LibrarySyncEngineTests: XCTestCase {
         XCTAssertEqual(remote.files.count, 1)
     }
 
+    // MARK: - K: die Berechtigung gilt nicht mehr
+
+    /// Eine abgelaufene Berechtigung ist ein eigener Zustand und kein Fehler.
+    ///
+    /// Vorher stand hier `.error` mit dem Satz „Die Verbindung zu Google ist
+    /// abgelaufen. Bitte neu verbinden." — ein Fehlertext, aus dem die
+    /// Oberfläche keine Handlung ableiten konnte. Jetzt kann sie „Erneut
+    /// anmelden" anbieten.
+    func testExpiredAuthorizationAsksForANewSignIn() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        remote.listError = GoogleDriveError.notAuthorized
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        await sync.run()
+
+        XCTAssertEqual(sync.status, .needsReauthorization)
+        XCTAssertNil(sync.lastError, "Ein technischer Text, wo eine Handlung gehört")
+        XCTAssertEqual(store.favorites, ["one-piece"], "Die Bibliothek wurde angefasst")
+    }
+
+    /// Und ebenso, wenn Google gar keine dauerhafte Berechtigung erteilt hat.
+    func testAMissingRefreshTokenAsksForANewSignIn() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        remote.listError = GoogleOAuthError.noRefreshToken
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        await sync.run()
+
+        XCTAssertEqual(sync.status, .needsReauthorization)
+        XCTAssertNil(sync.lastError)
+    }
+
     // MARK: - L: kaputter Fremdstand
 
     /// Eine unlesbare Fremddatei nimmt nur sich selbst mit.

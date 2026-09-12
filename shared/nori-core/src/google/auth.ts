@@ -69,25 +69,95 @@ export interface DeviceAuthorization {
   deviceCode: string;
   /** Der kurze Code zum Abtippen, etwa „ABCD-EFGH". */
   userCode: string;
-  /** Die Adresse, die der Nutzer am Telefon öffnet. */
+  /**
+   * Die Adresse, die der Nutzer am Telefon öffnet.
+   *
+   * Kommt aus `verification_uri` (so heisst das Feld in RFC 8628) oder aus
+   * `verification_url` (so heisst es in Googles älterer Beschreibung). Beide
+   * werden gelesen, keines wird geraten.
+   */
   verificationUrl: string;
+  /**
+   * Dieselbe Adresse mit dem Code darin — wenn Google eine mitschickt.
+   *
+   * RFC 8628 nennt das `verification_uri_complete` und sieht es genau für den
+   * Fall vor, dass das Gerät einen QR-Code anzeigen kann: der Nutzer scannt,
+   * und der Code ist schon eingetragen.
+   *
+   * Fehlt das Feld, bleibt es **leer**. Eine solche Adresse selbst
+   * zusammenzusetzen wäre geraten — welchen Parameternamen Google dort
+   * erwartet, sichert es nirgends zu, und ein falscher führt auf eine
+   * Fehlerseite statt auf die Zustimmung.
+   */
+  verificationUrlComplete?: string;
   /** Millisekunden seit 1970, ab wann der Code nicht mehr gilt. */
   expiresAt: number;
   /** Wie oft nachgefragt werden darf. Von Google vorgegeben. */
   intervalMs: number;
 }
 
+/**
+ * Was in den QR-Code kommt.
+ *
+ * Die vollständige Adresse, wenn Google eine liefert — dann muss am Telefon
+ * niemand mehr tippen. Sonst die schlichte Adresse, und der Code steht
+ * daneben auf dem Bildschirm. Nie etwas selbst Gebautes: siehe
+ * `verificationUrlComplete`.
+ */
+export function deviceQrPayload(authorization: DeviceAuthorization): string {
+  const complete = authorization.verificationUrlComplete?.trim();
+  return complete ? complete : authorization.verificationUrl;
+}
+
 export type GoogleAuthErrorKind =
   | "notConfigured"
+  /** Der Nutzer hat abgelehnt — oder am Fernseher abgebrochen. */
   | "denied"
   | "expired"
   | "pending"
   | "adminPolicy"
   | "invalidClient"
+  /** Google hat den angefragten Bereich für diesen Clienttyp nicht erteilt. */
+  | "invalidScope"
   | "noRefreshToken"
+  /** Es gibt keine gültige Berechtigung mehr. Die Oberfläche muss neu anmelden. */
   | "notAuthorized"
   | "transport"
   | "server";
+
+/**
+ * Fehlercodes von Google auf die Arten oben abbilden.
+ *
+ * An einer Stelle, weil derselbe Code an drei Endpunkten auftauchen kann und
+ * sonst dreimal anders behandelt würde. Was hier nicht steht, bleibt
+ * `server` — mit Googles Text, aber ohne Anspruch, ihn zu deuten.
+ */
+function kindFor(code: string): GoogleAuthErrorKind | null {
+  switch (code) {
+    case "authorization_pending": return "pending";
+    case "access_denied": return "denied";
+    case "expired_token":
+    case "invalid_grant": return "expired";
+    case "admin_policy_enforced": return "adminPolicy";
+    case "invalid_client":
+    case "unauthorized_client": return "invalidClient";
+    case "invalid_scope": return "invalidScope";
+    default: return null;
+  }
+}
+
+/**
+ * Eine Zahl aus Googles Antwort, oder der Rückfall.
+ *
+ * Google schickt `expires_in` und `interval` als Zahl; ein Feld, das fehlt
+ * oder Unsinn enthält, würde über `Number()` zu `NaN` — und `NaN` als
+ * Ablaufzeit hiesse: der Code ist nie abgelaufen und die Schleife läuft
+ * ewig.
+ */
+function numberOr(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 export class GoogleAuthError extends Error {
   constructor(readonly kind: GoogleAuthErrorKind, message: string) {
@@ -153,6 +223,40 @@ export class MemoryTokenStore implements GoogleTokenStore {
   write(tokens: GoogleTokens | null): void { this.tokens = tokens; }
 }
 
+/**
+ * Warten — aber nicht über einen Abbruch hinaus.
+ *
+ * Ohne das dauerte ein „Abbrechen" bis zu einem ganzen Wartetakt: die
+ * Schleife schlief, merkte den Abbruch erst beim Aufwachen und gab bis dahin
+ * ihren Platz nicht frei. Auf dem Fernseher sah das so aus: abbrechen,
+ * sofort wieder „Verbinden" drücken — und nichts passiert, weil die alte
+ * Schleife noch stand.
+ *
+ * Der Zeitgeber wird nicht abgeräumt, sondern nur nicht mehr abgewartet. Das
+ * ist Absicht: `sleep` ist austauschbar (die Tests zählen damit die
+ * Wartezeiten), und eine Schnittstelle, die zusätzlich abbrechbar sein muss,
+ * wäre eine Zumutung für jeden Aufrufer.
+ */
+function waitOrAbort(
+  sleep: (ms: number) => Promise<void>,
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    signal.addEventListener("abort", finish);
+    void sleep(ms).then(finish, finish);
+  });
+}
+
 export class GoogleDeviceAuthorization {
   private readonly config: GoogleDeviceConfiguration;
   private readonly store: GoogleTokenStore;
@@ -160,6 +264,8 @@ export class GoogleDeviceAuthorization {
   private readonly now: () => number;
   /** Läuft schon eine Erneuerung, wird deren Ergebnis geteilt. */
   private refreshing: Promise<GoogleTokens> | null = null;
+  /** Läuft schon eine Gerätecode-Schleife? Eine zweite wäre doppeltes Fragen. */
+  private polling = false;
 
   constructor(options: GoogleAuthorizationOptions) {
     this.config = options.configuration;
@@ -204,18 +310,42 @@ export class GoogleDeviceAuthorization {
     const body = await this.post(DEVICE_CODE_ENDPOINT, {
       client_id: this.config.clientId,
       scope: (this.config.scopes ?? [DRIVE_APPDATA_SCOPE]).join(" "),
-    });
+    }, { allowErrorBody: true });
+
+    if (typeof body.error === "string") {
+      // Schon hier sauber unterscheiden. `invalid_client` heisst „falsch
+      // gebaut", nicht „probier es nochmal" — und die Oberfläche soll das eine
+      // nicht wie das andere anzeigen.
+      throw new GoogleAuthError(
+        kindFor(body.error) ?? "server",
+        String(body.error_description ?? body.error),
+      );
+    }
     if (typeof body.device_code !== "string" || typeof body.user_code !== "string") {
       throw new GoogleAuthError("server", "Antwort ohne Gerätecode.");
     }
+
+    // `verification_uri` ist der Name aus RFC 8628, `verification_url` der aus
+    // Googles älterer Beschreibung. Google schickt beide; gelesen werden beide,
+    // und keines wird ersetzt, wenn eines fehlt.
+    const verificationUrl = typeof body.verification_uri === "string"
+      ? body.verification_uri
+      : typeof body.verification_url === "string"
+        ? body.verification_url
+        : null;
+    if (!verificationUrl) throw new GoogleAuthError("server", "Antwort ohne Anmeldeadresse.");
+
     return {
       deviceCode: body.device_code,
       userCode: body.user_code,
-      verificationUrl: (body.verification_url ?? body.verification_uri ?? "https://www.google.com/device") as string,
-      expiresAt: this.now() + Number(body.expires_in ?? 1800) * 1000,
+      verificationUrl,
+      verificationUrlComplete: typeof body.verification_uri_complete === "string"
+        ? body.verification_uri_complete
+        : undefined,
+      expiresAt: this.now() + numberOr(body.expires_in, 1800) * 1000,
       // Googles Vorgabe wird eingehalten, nicht unterboten: wer schneller
       // fragt, bekommt `slow_down` und wartet danach länger als vorher.
-      intervalMs: Number(body.interval ?? 5) * 1000,
+      intervalMs: numberOr(body.interval, 5) * 1000,
     };
   }
 
@@ -229,6 +359,25 @@ export class GoogleDeviceAuthorization {
     authorization: DeviceAuthorization,
     options: { signal?: AbortSignal; sleep?: (ms: number) => Promise<void> } = {},
   ): Promise<GoogleTokens> {
+    // Zwei Schleifen auf denselben Gerätecode wären doppelt so viele Anfragen
+    // wie erlaubt — und Google antwortete beiden mit `slow_down`. Passieren
+    // kann das leicht: ein zweiter Druck auf „Verbinden", während die erste
+    // Schleife schon läuft.
+    if (this.polling) {
+      throw new GoogleAuthError("pending", "Es läuft schon eine Anmeldung.");
+    }
+    this.polling = true;
+    try {
+      return await this.poll(authorization, options);
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async poll(
+    authorization: DeviceAuthorization,
+    options: { signal?: AbortSignal; sleep?: (ms: number) => Promise<void> },
+  ): Promise<GoogleTokens> {
     const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     let interval = authorization.intervalMs;
 
@@ -237,7 +386,7 @@ export class GoogleDeviceAuthorization {
       if (this.now() >= authorization.expiresAt) {
         throw new GoogleAuthError("expired", "Der Code ist abgelaufen. Bitte neu beginnen.");
       }
-      await sleep(interval);
+      await waitOrAbort(sleep, interval, options.signal);
       if (options.signal?.aborted) throw new GoogleAuthError("denied", "Abgebrochen.");
       // Auch nach dem Warten: in der Zwischenzeit kann der Code abgelaufen
       // sein, und dann ist die Anfrage vergebens.
@@ -263,24 +412,27 @@ export class GoogleDeviceAuthorization {
         return tokens;
       }
 
-      switch (body.error) {
-        case "authorization_pending":
-          // Der Normalfall, solange der Nutzer noch tippt.
-          break;
-        case "slow_down":
-          // Googles Bitte, langsamer zu machen. Fünf Sekunden mehr, wie im
-          // Protokoll vorgesehen.
-          interval += 5_000;
-          break;
-        case "access_denied":
+      const code = typeof body.error === "string" ? body.error : "";
+      if (code === "authorization_pending") continue;   // Der Nutzer tippt noch.
+      if (code === "slow_down") {
+        // RFC 8628, Abschnitt 3.5: das Intervall wird erhöht, nicht
+        // beibehalten. Fünf Sekunden mehr — und falls Google selbst eine
+        // längere Wartezeit nennt, gilt die.
+        interval = Math.max(interval + 5_000, numberOr(body.interval, 0) * 1000);
+        continue;
+      }
+
+      switch (kindFor(code)) {
+        case "denied":
           throw new GoogleAuthError("denied", "Der Zugriff wurde abgelehnt.");
-        case "expired_token":
-        case "invalid_grant":
+        case "expired":
           throw new GoogleAuthError("expired", "Der Code ist abgelaufen. Bitte neu beginnen.");
-        case "admin_policy_enforced":
+        case "adminPolicy":
           throw new GoogleAuthError("adminPolicy", "Die Google-Organisation erlaubt diesen Zugriff nicht.");
-        case "invalid_client":
+        case "invalidClient":
           throw new GoogleAuthError("invalidClient", "Die hinterlegten Google-Zugangsdaten stimmen nicht.");
+        case "invalidScope":
+          throw new GoogleAuthError("invalidScope", "Google hat den benötigten Drive-Zugriff nicht erteilt.");
         default:
           throw new GoogleAuthError("server", String(body.error_description ?? body.error ?? "Unbekannter Fehler"));
       }
