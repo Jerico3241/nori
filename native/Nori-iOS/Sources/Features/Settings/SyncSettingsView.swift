@@ -23,6 +23,8 @@ struct SyncSettingsView: View {
     @Environment(GoogleDriveSync.self) private var sync
 
     @State private var showRevokeConfirmation = false
+    @State private var clientDraft = ""
+    @State private var clientNote: String?
 
     var body: some View {
         NoriGradientScreen {
@@ -33,8 +35,9 @@ struct SyncSettingsView: View {
                     if sync.isConfigured {
                         connection
                         if isConnected { advanced }
+                        clientIdSection
                     } else {
-                        notConfiguredNote
+                        setup
                     }
 
                     explanation
@@ -140,17 +143,92 @@ struct SyncSettingsView: View {
         }
     }
 
-    private var notConfiguredNote: some View {
-        SettingsGroup(title: "Google Drive") {
-            Text("""
-            Für diese Nori-Fassung ist keine Google-Client-ID hinterlegt. Der \
-            Abgleich lässt sich damit nicht einrichten — die Bibliothek \
-            funktioniert weiterhin vollständig, nur eben auf diesem Gerät.
-            """)
-            .font(.footnote)
-            .foregroundStyle(NoriTheme.muted)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+    /// Die Einrichtung — das, was ohne hinterlegte Client-ID zu tun ist.
+    ///
+    /// Hier stand vorher nur ein Satz, dass nichts hinterlegt sei. Das war
+    /// zutreffend und trotzdem eine Sackgasse: wer die App fertig installiert
+    /// bekommt, hat keine Build-Einstellung, und damit gab es auf dem iPhone
+    /// schlicht keinen Weg, sich jemals anzumelden.
+    private var setup: some View {
+        SettingsGroup(
+            title: "Einrichten",
+            footnote: """
+            Die Client-ID stammt aus einem eigenen Google-Cloud-Projekt mit \
+            aktivierter Drive-API und einem OAuth-Client vom Typ „iOS\". Die \
+            Schritte stehen in docs/google-drive-sync.md. Sie ist kein \
+            Geheimnis — sie steht in jeder Anmeldeadresse — und wird im \
+            Schlüsselbund dieses Geräts gesichert.
+            """
+        ) {
+            SettingsRowContent(
+                symbol: "key",
+                title: "Google-Client-ID",
+                subtitle: "Endet auf .apps.googleusercontent.com"
+            ) {
+                EmptyView()
+            }
+            // Kein `SecureField` wie beim TMDB-Schlüssel: eine Client-ID ist
+            // öffentlich, und sie zu sehen ist der einzige Weg zu bemerken,
+            // dass beim Einfügen etwas verrutscht ist.
+            TextField("123456-abc.apps.googleusercontent.com", text: $clientDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .font(.footnote)
+                .padding(.horizontal, 15)
+                .padding(.bottom, 12)
+            SettingsDivider()
+            SettingsButtonRow(
+                symbol: "checkmark.circle",
+                tint: .green,
+                title: "Sichern",
+                subtitle: "Danach lässt sich Google Drive verbinden",
+                action: saveClientId
+            ) { EmptyView() }
+            .disabled(clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if let clientNote {
+                SettingsDivider()
+                Text(clientNote)
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// Die hinterlegte Client-ID, wenn es eine gibt.
+    private var clientIdSection: some View {
+        SettingsGroup(title: "Google-Client-ID") {
+            SettingsInfoRow(
+                symbol: "key.fill",
+                tint: .green,
+                title: "Client-ID",
+                subtitle: sync.clientId ?? "—",
+                value: sync.clientIdIsUserProvided ? "eingetragen" : "aus dem Build"
+            )
+            if sync.clientIdIsUserProvided {
+                SettingsDivider()
+                SettingsButtonRow(
+                    symbol: "trash",
+                    tint: .red,
+                    title: "Client-ID entfernen",
+                    subtitle: "Trennt dieses Gerät; die Bibliothek bleibt",
+                    role: .destructive,
+                    action: { Task { await sync.clearClientId() } }
+                ) { EmptyView() }
+            }
+        }
+    }
+
+    private func saveClientId() {
+        if let problem = sync.saveClientId(clientDraft) {
+            clientNote = problem
+        } else {
+            clientDraft = ""
+            clientNote = nil
         }
     }
 

@@ -244,7 +244,150 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
     }
 }
 
+/// Wo die Google-Client-ID herkommt.
+///
+/// Zwei Quellen, in dieser Reihenfolge: der Schlüsselbund, dann die
+/// Build-Einstellung aus der `Info.plist`. Genau wie beim TMDB-Schlüssel — und
+/// aus demselben Grund.
+///
+/// Ohne den Schlüsselbund-Weg wäre der Abgleich nur für den einrichtbar, der
+/// Nori selbst übersetzt: eine fertig installierte App hätte keine
+/// Client-ID und böte gar keine Anmeldung an. Das ist kein theoretischer Fall,
+/// sondern der Normalfall.
+///
+/// Einen eingebauten Rückfall gibt es hier **nicht**. Beim TMDB-Schlüssel ist
+/// einer vertretbar, weil er nur Bilder holt; eine Google-Client-ID gehört zu
+/// einem bestimmten Cloud-Projekt und einem bestimmten Zustimmungsbildschirm.
+/// Eine fremde einzubauen hieße, den Nutzer beim Anmelden den Namen eines
+/// fremden Projekts sehen zu lassen.
+enum GoogleClientIDStore {
+    private static let service = "de.nori.google"
+    private static let account = "client_id"
+    private static let defaultsKey = "nori.google.clientId"
+
+    /// Die zu verwendende Client-ID oder `nil`, wenn keine hinterlegt ist.
+    static var current: String? {
+        if let stored = readUserProvided(), !stored.isEmpty { return stored }
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "GoogleClientID") as? String
+        // Bei fehlender Build-Einstellung bleibt in der Info.plist der
+        // unaufgelöste Platzhalter stehen — der ist keine Client-ID.
+        if let bundled, !bundled.isEmpty, !bundled.hasPrefix("$(") { return bundled }
+        return nil
+    }
+
+    /// Wurde sie von Hand eingetragen — und lässt sich damit auch entfernen?
+    static var isUserProvided: Bool { readUserProvided()?.isEmpty == false }
+
+    /// Schlüsselbund zuerst, danach die Voreinstellungen.
+    ///
+    /// Der zweite Weg ist kein Versehen. Ohne Signierteam bekommt eine
+    /// iOS-App keine `application-identifier`-Berechtigung, und dann lehnt der
+    /// Schlüsselbund **jede** Ablage ab — die Einrichtung endete mit „Der
+    /// Schlüsselbund hat die Ablage abgelehnt", und der Abgleich wäre wieder
+    /// unerreichbar.
+    ///
+    /// Vertretbar ist das nur, weil eine Client-ID kein Geheimnis ist: sie
+    /// steht in jeder Anmeldeadresse, die Nori öffnet, und lässt sich ohne die
+    /// Zustimmung eines Nutzers zu nichts verwenden.
+    ///
+    /// Für **Tokens** gilt das ausdrücklich nicht. Die liegen in
+    /// `KeychainTokenStore` und bekommen keinen solchen Rückfall; wo der
+    /// Schlüsselbund fehlt, gibt es eben keine gespeicherte Anmeldung.
+    private static func readUserProvided() -> String? {
+        if let stored = readKeychain(), !stored.isEmpty { return stored }
+        let stored = UserDefaults.standard.string(forKey: defaultsKey)
+        return stored?.isEmpty == false ? stored : nil
+    }
+
+    /// Sieht der Wert überhaupt nach einer Google-Client-ID aus?
+    ///
+    /// Die Prüfung ist keine Förmlichkeit: auf iOS wird aus der Client-ID die
+    /// Rückleitungsadresse abgeleitet. Steht dort etwas anderes, öffnet sich
+    /// das Anmeldefenster und kommt nie zurück — ein Fehler, der aussieht wie
+    /// „Google ist kaputt".
+    static func validationError(for raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "Bitte eine Client-ID eintragen." }
+        guard trimmed.hasSuffix(".apps.googleusercontent.com") else {
+            return "Eine Google-Client-ID endet auf „.apps.googleusercontent.com\"."
+        }
+        guard trimmed.count > ".apps.googleusercontent.com".count else {
+            return "Die Client-ID ist unvollständig."
+        }
+        return nil
+    }
+
+    @discardableResult
+    static func save(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return clear() }
+        if saveToKeychain(trimmed) { return true }
+        // Der Schlüsselbund steht nicht zur Verfügung. Siehe
+        // `readUserProvided` — für eine Client-ID ist das tragbar.
+        UserDefaults.standard.set(trimmed, forKey: defaultsKey)
+        return true
+    }
+
+    private static func saveToKeychain(_ value: String) -> Bool {
+        #if canImport(Security)
+        guard let data = value.data(using: .utf8) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        if SecItemUpdate(query as CFDictionary, attributes as CFDictionary) == errSecSuccess { return true }
+        var insert = query
+        insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        #else
+        return false
+        #endif
+    }
+
+    @discardableResult
+    static func clear() -> Bool {
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+        #if canImport(Security)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+        #else
+        return true
+        #endif
+    }
+
+    private static func readKeychain() -> String? {
+        #if canImport(Security)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+        #else
+        return nil
+        #endif
+    }
+}
+
 extension GoogleOAuthConfiguration {
+    /// Die Client-ID aus dem Schlüsselbund oder der `Info.plist`.
+    static func resolved() -> GoogleOAuthConfiguration? {
+        GoogleClientIDStore.current.map { GoogleOAuthConfiguration(clientId: $0, redirectURI: "") }
+    }
+
     /// Die Client-ID aus der `Info.plist`.
     ///
     /// Wie der TMDB-Schlüssel: nicht im Quelltext, sondern über eine

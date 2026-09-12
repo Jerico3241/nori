@@ -189,11 +189,38 @@ private struct SyncSettingsTab: View {
     @Environment(GoogleDriveSync.self) private var sync
 
     @State private var showRevokeConfirmation = false
+    @State private var clientDraft = ""
+    @State private var clientNote: String?
 
     var body: some View {
         Form {
             Section {
                 LabeledContent("Zustand", value: statusText)
+
+                if !sync.isConfigured {
+                    // Hier stand vorher nur ein Satz, dass nichts hinterlegt
+                    // sei. Das war zutreffend und trotzdem eine Sackgasse: wer
+                    // die App fertig bekommt, hat keine Build-Einstellung und
+                    // damit keinen Weg, sich jemals anzumelden.
+                    TextField("123456-abc.apps.googleusercontent.com", text: $clientDraft)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button("Client-ID sichern") {
+                            if let problem = sync.saveClientId(clientDraft) {
+                                clientNote = problem
+                            } else {
+                                clientDraft = ""
+                                clientNote = nil
+                            }
+                        }
+                        .disabled(clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let clientNote {
+                            Text(clientNote)
+                                .font(.footnote)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    }
+                }
 
                 if sync.isConfigured {
                     if isConnected {
@@ -223,6 +250,19 @@ private struct SyncSettingsTab: View {
                             if sync.isAuthorizing {
                                 ProgressView().controlSize(.small)
                             }
+                        }
+                    }
+                }
+
+                if let clientId = sync.clientId {
+                    // Kein Geheimnis: die Client-ID steht in jeder
+                    // Anmeldeadresse. Sie zu sehen ist der einzige Weg zu
+                    // bemerken, dass beim Einfügen etwas verrutscht ist.
+                    LabeledContent("Client-ID", value: clientId)
+                        .font(.footnote)
+                    if sync.clientIdIsUserProvided {
+                        Button("Client-ID entfernen", role: .destructive) {
+                            Task { await sync.clearClientId() }
                         }
                     }
                 }
@@ -300,9 +340,14 @@ private struct SyncSettingsTab: View {
     private var footer: String {
         guard sync.isConfigured else {
             return """
-                   Für diese Nori-Fassung ist keine Google-Client-ID hinterlegt. \
-                   Merkliste, Verlauf und Fortschritt liegen ausschließlich auf \
-                   diesem Mac.
+                   Trage eine Google-Client-ID ein, um den Abgleich einzurichten. \
+                   Sie stammt aus einem eigenen Google-Cloud-Projekt mit \
+                   aktivierter Drive-API und einem OAuth-Client vom Typ \
+                   „Desktop-App\"; die Schritte stehen in \
+                   docs/google-drive-sync.md. Sie ist kein Geheimnis und wird im \
+                   Schlüsselbund dieses Macs gesichert. Bis dahin liegen \
+                   Merkliste, Verlauf und Fortschritt ausschließlich auf diesem \
+                   Mac.
                    """
         }
         return """
