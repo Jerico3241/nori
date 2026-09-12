@@ -25,6 +25,14 @@ enum LibrarySyncStatus: Equatable {
     /// lokal und gehen nicht verloren.
     case offline
     case error(String)
+    /// Die Berechtigung bei Google gilt nicht mehr — widerrufen, Passwort
+    /// geändert, zu lange nicht benutzt.
+    ///
+    /// Ein eigener Zustand und ausdrücklich kein Fehler: es ist nichts kaputt,
+    /// es fehlt nur eine Anmeldung. Die Oberfläche kann deshalb „Erneut
+    /// anmelden" anbieten statt einen technischen Text zu zeigen, hinter dem
+    /// niemand eine Handlung erkennt.
+    case needsReauthorization
     /// In der Cloud liegt ein Stand, den diese App-Version noch nicht kennt.
     /// Hochladen wäre Datenverlust; also wird nicht hochgeladen.
     case unsupportedRemoteVersion
@@ -273,6 +281,9 @@ final class LibrarySyncEngine {
             status = .idle
         } catch let error as GoogleDriveError {
             apply(error)
+        } catch GoogleOAuthError.noRefreshToken {
+            status = .needsReauthorization
+            lastError = nil
         } catch {
             // Netzfehler sehen von hier aus alle gleich aus: nichts ist
             // verloren, es wird später erneut versucht.
@@ -366,8 +377,9 @@ final class LibrarySyncEngine {
     private func apply(_ error: GoogleDriveError) {
         switch error {
         case .notAuthorized:
-            status = .error("Die Verbindung zu Google ist abgelaufen. Bitte neu verbinden.")
-            lastError = "notAuthorized"
+            // Kein Fehlertext: es ist nichts kaputt, es fehlt eine Anmeldung.
+            status = .needsReauthorization
+            lastError = nil
         case .forbidden(let reason):
             status = .error("Google hat den Zugriff abgelehnt\(reason.isEmpty ? "" : " (\(reason))").")
             lastError = reason

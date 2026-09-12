@@ -106,24 +106,35 @@ export function SpotArea({ restrict = "self-first", children, ...rest }: SpotAre
  *
  * Deshalb wird wiederholt, bis `document.activeElement` tatsächlich im Bereich
  * liegt — und als letzter Ausweg `focus()` am Element selbst aufgerufen.
+ *
+ * `force` verlangt genau das Element aus `selector`, auch wenn der Fokus schon
+ * irgendwo im Bereich steht. Ohne das tat der Aufruf nichts, sobald irgendein
+ * Knopf des Overlays den Fokus hatte — und genau der Fall tritt auf, wenn sich
+ * der **Inhalt** eines Overlays ändert: läuft der Anmeldecode ab, erscheint
+ * „Neuen Code erzeugen", der Fokus stand aber noch auf „Abbrechen", dem einen
+ * Knopf, der dann nicht weiterhilft.
  */
 export function focusWithin(
   root: HTMLElement | null,
   selector = ".spottable",
   attempts = 20,
+  force = false,
 ): () => void {
   let cancelled = false;
   const tick = (left: number) => {
     if (cancelled || !root) return;
-    if (root.contains(document.activeElement)) return;
     const target = root.querySelector<HTMLElement>(selector)
       ?? root.querySelector<HTMLElement>(".spottable");
+    const arrived = () => (force
+      ? document.activeElement === target
+      : root.contains(document.activeElement));
+    if (arrived()) return;
     if (target) {
       Spotlight.focus(target);
       // Wenn Spotlight nicht angesprungen ist: von Hand. Das ist kein
       // Umgehen — Spotlight liest den Fokus des Dokuments und zieht nach.
-      if (!root.contains(document.activeElement)) target.focus();
-      if (root.contains(document.activeElement)) return;
+      if (!arrived()) target.focus();
+      if (arrived()) return;
     }
     if (left > 0) window.setTimeout(() => tick(left - 1), 50);
   };

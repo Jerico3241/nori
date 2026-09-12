@@ -990,17 +990,19 @@ check(
 
 // --- 20a2. Der Abgleich-Abschnitt ---------------------------------------
 //
-// Der Abgleich über Google Drive ist in der Zusammenführung mit `main` auf den
-// Fernseher gekommen. Was hier geprüft werden **kann**, ist die Naht zur
-// Oberfläche: dass der Abschnitt steht, seinen Zustand benennt, mit der
-// Fernbedienung erreichbar ist und eine falsche Eingabe beanstandet statt sie
-// stillschweigend zu schlucken.
+// Zwei Dinge werden hier geprüft, und die Reihenfolge ist die des Nutzers.
 //
-// Was hier **nicht** geprüft wird: die Anmeldung über den Gerätecode, der
-// Drive-Abruf und das Zusammenführen über zwei echte Geräte. Das hängt an
-// einem echten Google-Konto. Die Zusammenführungsregel selbst liegt im Kern
-// und ist dort gegen `config/sync-fixtures.json` geprüft — in beiden Kernen,
-// mit denselben Fällen.
+// Zuerst: dass die Oberfläche **keine** OAuth-Einstellung mehr anbietet. Früher
+// standen hier zwei Textfelder für Client-ID und Client-Secret, auszufüllen mit
+// einer Fernbedienung über eine Bildschirmtastatur. Das war keine Einrichtung,
+// das war eine Hürde — und wer sie vor sich hatte, bekam keinen Abgleich.
+//
+// Danach der Gerätefluss selbst, mit abgefangenen Google-Endpunkten: QR-Code,
+// Gerätecode, Ablaufzeit, Fokus im Dialog, Zurück-Taste, und dass nach dem
+// Erfolg von selbst weitergeht. Was hier **nicht** geprüft wird, ist eine
+// echte Anmeldung bei Google — die hängt an einem echten Konto. Der Kern ist
+// dafür gegen `config/sync-fixtures.json` und die Antwortcodes des Flusses
+// geprüft, in beiden Kernen mit denselben Fällen.
 section("Abgleich über Google Drive");
 
 await goto(page, "#/einstellungen", 1200);
@@ -1013,7 +1015,7 @@ const syncSection = await page.evaluate(() => {
   box.scrollIntoView({ block: "start" });
   return {
     zustand: Array.from(box.querySelectorAll(".field-note")).map((n) => n.textContent?.trim() ?? ""),
-    felder: Array.from(box.querySelectorAll("input")).map((n) => n.getAttribute("aria-label") ?? ""),
+    felder: Array.from(box.querySelectorAll("input")).length,
     knoepfe: Array.from(box.querySelectorAll(".spottable")).length,
     text: box.textContent ?? "",
   };
@@ -1022,15 +1024,19 @@ const syncSection = await page.evaluate(() => {
 check("Der Abgleich-Abschnitt steht", syncSection !== null,
   syncSection ? `${syncSection.knoepfe} bedienbare Elemente` : "fehlt");
 check(
-  "Ohne Zugangsdaten heißt der Zustand „nicht eingerichtet“",
-  Boolean(syncSection?.zustand.some((text) => text === "nicht eingerichtet")),
-  syncSection?.zustand.join(" | ") ?? "",
+  "Ohne Google-Zugang im Build heißt der Zustand „nicht verfügbar“",
+  (syncSection?.text ?? "").includes("nicht verfügbar"),
+  syncSection?.zustand.join(" | ").slice(0, 140) ?? "",
 );
 check(
-  "Er fragt Client-ID und Secret, statt in eine Sackgasse zu führen",
-  Boolean(syncSection?.felder.includes("Google-Client-ID")
-    && syncSection?.felder.includes("Google-Client-Secret")),
-  syncSection?.felder.join(", ") ?? "",
+  "Es gibt kein Eingabefeld für Client-ID oder Secret",
+  syncSection?.felder === 0,
+  `${syncSection?.felder ?? "?"} Felder`,
+);
+check(
+  "Und keinen Knopf, der Zugangsdaten annimmt",
+  !/Zugangsdaten sichern|client_secret|GOCSPX/.test(syncSection?.text ?? ""),
+  (syncSection?.text ?? "").slice(0, 140),
 );
 check(
   "Er sagt, dass Nori ohne Netz vollständig weiterläuft",
@@ -1038,44 +1044,380 @@ check(
   "",
 );
 
-// Eine falsche Client-ID: die Beanstandung muss sichtbar werden.
-const beanstandung = await page.evaluate(async () => {
+await page.screenshot({ path: join(SHOTS, "22-abgleich-nicht-eingerichtet.png") });
+
+// --- 20a3. Der Gerätefluss mit QR-Code ----------------------------------
+//
+// Eingerichtet wird über den Weg, den auch ein Update einer älteren Fassung
+// nimmt: Zugangsdaten im Speicher des Geräts. Genau dafür liest Nori sie noch
+// — sonst verlöre eine bestehende Verbindung beim Update ihren Sinn — und hier
+// ist es der einzige Weg, die Anmeldung ohne einen in dieses Paket gebauten
+// Google-Zugang durchzuspielen.
+const oauth = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+// **Jede** Konsolenzeile, nicht nur die Fehler: geprüft wird unten auch, dass
+// kein Token im Protokoll landet, und das käme aus einem `console.log`.
+const oauthLog = [];
+oauth.on("console", (msg) => oauthLog.push(msg.text()));
+oauth.on("pageerror", (err) => oauthLog.push(`pageerror: ${err.message}`));
+await oauth.route("https://image.tmdb.org/**", (route) =>
+  route.fulfill({ status: 200, contentType: "image/png", body: PLACEHOLDER }));
+await oauth.route("https://api.themoviedb.org/**", (route) => route.abort("failed"));
+
+/*
+ * Googles Endpunkte, nachgestellt.
+ *
+ * `verification_uri_complete` ist absichtlich dabei: RFC 8628 sieht sie für
+ * Geräte mit Bildschirm vor, und Nori soll sie dem QR-Code vorziehen, statt
+ * eine Adresse mit angehängtem `user_code` selbst zu bauen.
+ */
+const DEVICE_CODE = "NORI-TEST-DEVICE-CODE";
+const USER_CODE = "WDXR-KQPF";
+const VERIFY = "https://www.google.com/device";
+const VERIFY_COMPLETE = `${VERIFY}?user_code=${USER_CODE}`;
+let tokenCalls = 0;
+let grantAccess = false;
+
+await oauth.route("https://oauth2.googleapis.com/device/code", (route) => route.fulfill({
+  status: 200,
+  contentType: "application/json",
+  body: JSON.stringify({
+    device_code: DEVICE_CODE,
+    user_code: USER_CODE,
+    verification_url: VERIFY,
+    verification_uri: VERIFY,
+    verification_uri_complete: VERIFY_COMPLETE,
+    expires_in: 900,
+    interval: 1,
+  }),
+}));
+await oauth.route("https://oauth2.googleapis.com/token", (route) => {
+  tokenCalls += 1;
+  if (!grantAccess) {
+    return route.fulfill({
+      status: 428,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "authorization_pending" }),
+    });
+  }
+  return route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      access_token: "test-access", refresh_token: "test-refresh",
+      expires_in: 3600, scope: "https://www.googleapis.com/auth/drive.appdata",
+    }),
+  });
+});
+// Drive selbst: ein leerer Ordner. Der Abgleich läuft dann durch, ohne dass
+// dieser Test etwas über das Zusammenführen behaupten müsste.
+await oauth.route("https://www.googleapis.com/drive/v3/files**", (route) => route.fulfill({
+  status: 200, contentType: "application/json", body: JSON.stringify({ files: [] }),
+}));
+await oauth.route("https://www.googleapis.com/upload/drive/v3/files**", (route) => route.fulfill({
+  status: 200,
+  contentType: "application/json",
+  body: JSON.stringify({ id: "test-file", modifiedTime: "2026-09-12T12:00:00.000Z", size: "42" }),
+}));
+
+await oauth.addInitScript((base) => {
+  localStorage.setItem("nori.webos.settings", JSON.stringify({
+    transport: "server", serverUrl: base, controlsTimeout: 4, seekStep: 10,
+    autoplayCountdown: 3, tmdbMode: "server", tmdbKey: "", reduceEffects: false, debug: true,
+  }));
+  // Der Migrationsweg: was eine ältere Fassung im Gerät hinterlassen hat.
+  localStorage.setItem("nori.google.clientId", "123456-test.apps.googleusercontent.com");
+  localStorage.setItem("nori.google.clientSecret", "TEST-ONLY-not-a-real-secret");
+}, BASE);
+
+await oauth.goto(`${BASE}/#/einstellungen`, { waitUntil: "domcontentloaded" });
+await oauth.waitForTimeout(3000);
+
+const configured = await oauth.evaluate(() => {
   const box = Array.from(document.querySelectorAll(".settings-section"))
     .find((node) => node.querySelector("h2")?.textContent?.trim() === "Synchronisation");
-  const id = box?.querySelector('input[aria-label="Google-Client-ID"]');
-  const secret = box?.querySelector('input[aria-label="Google-Client-Secret"]');
-  const save = Array.from(box?.querySelectorAll(".spottable") ?? [])
-    .find((node) => node.textContent?.trim() === "Zugangsdaten sichern");
-  if (!id || !secret || !save) return { fehler: "Felder nicht gefunden" };
-
-  const setValue = (node, value) => {
-    const setter = Object.getOwnPropertyDescriptor(
-      Object.getPrototypeOf(node), "value")?.set;
-    setter?.call(node, value);
-    node.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-  setValue(id, "kein-google-client");
-  setValue(secret, "zu-kurz");
-  save.click();
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  box?.scrollIntoView({ block: "start" });
   return {
-    note: Array.from(box.querySelectorAll(".field-note")).map((n) => n.textContent?.trim() ?? ""),
-    gespeichert: localStorage.getItem("nori.google.clientId"),
+    text: box?.textContent ?? "",
+    knopf: Array.from(box?.querySelectorAll(".spottable") ?? [])
+      .map((node) => node.getAttribute("data-focus-key")),
   };
 });
 check(
-  "Eine falsche Client-ID wird beanstandet",
-  Array.isArray(beanstandung.note)
-    && beanstandung.note.some((text) => text.length > 0 && text !== "nicht eingerichtet"),
-  (beanstandung.note ?? [beanstandung.fehler]).filter(Boolean).join(" | ").slice(0, 140),
+  "Zugangsdaten aus einer früheren Fassung werden weiterbenutzt",
+  configured.text.includes("nicht verbunden"),
+  configured.text.slice(0, 120),
 );
 check(
-  "Und nicht trotzdem gespeichert",
-  !beanstandung.gespeichert,
-  String(beanstandung.gespeichert),
+  "Und die Diagnose sagt, woher sie stammen",
+  configured.text.includes("aus einer früheren Fassung übernommen"),
+  configured.text.slice(0, 200),
+);
+check(
+  "Es gibt genau einen Knopf: verbinden",
+  configured.knopf.includes("connect"),
+  configured.knopf.join(", "),
 );
 
-await page.screenshot({ path: join(SHOTS, "22-abgleich-nicht-eingerichtet.png") });
+// Mit der Fernbedienung dorthin und drücken. Kein `click()`: was auf dem
+// Fernseher passiert, entscheidet die Fernbedienung.
+await oauth.evaluate(() => {
+  const node = document.querySelector('[data-focus-key="connect"]');
+  node?.scrollIntoView({ block: "center" });
+  node?.focus();
+});
+const beforeOpen = await focused(oauth);
+check("Der Verbinden-Knopf nimmt den Fokus", beforeOpen?.key === "connect", beforeOpen?.key ?? "-");
+await press(oauth, "ok");
+await oauth.waitForTimeout(900);
+
+const dialog = await oauth.evaluate(() => {
+  const panel = document.querySelector(".device-dialog");
+  if (!panel) return null;
+  const svg = panel.querySelector("svg.qr");
+  const path = svg?.querySelector("path")?.getAttribute("d") ?? "";
+  const box = panel.getBoundingClientRect();
+  const qrBox = svg?.getBoundingClientRect();
+  const active = document.activeElement;
+  return {
+    code: panel.querySelector(".device-value")?.textContent?.trim() ?? "",
+    url: panel.querySelector(".device-url")?.textContent?.trim() ?? "",
+    hint: panel.querySelector(".device-hint")?.textContent?.trim() ?? "",
+    label: svg?.getAttribute("aria-label") ?? "",
+    // Anzahl der dunklen Module: ein leerer oder halb gezeichneter Code fällt
+    // damit auf, ohne dass der Test selbst QR-Codes lesen müsste.
+    module: (path.match(/M/g) ?? []).length,
+    qrSide: Math.round(qrBox?.width ?? 0),
+    innerhalb: box.left >= 0 && box.top >= 0
+      && Math.round(box.right) <= window.innerWidth
+      && Math.round(box.bottom) <= window.innerHeight,
+    fokusImDialog: Boolean(active && panel.contains(active)),
+    fokusKey: active?.getAttribute?.("data-focus-key") ?? "",
+    ueberlauf: document.documentElement.scrollWidth > window.innerWidth,
+    textFarbe: getComputedStyle(panel.querySelector(".device-value")).color,
+  };
+});
+
+check("Der Gerätedialog geht auf", dialog !== null, dialog ? "" : "kein .device-dialog");
+check("Er zeigt den Code von Google", dialog?.code === USER_CODE, dialog?.code ?? "-");
+check(
+  "Und die Adresse, ohne Schema zum Abtippen",
+  dialog?.url === "www.google.com/device",
+  dialog?.url ?? "-",
+);
+check(
+  "Der QR-Code ist gezeichnet",
+  (dialog?.module ?? 0) > 150,
+  `${dialog?.module ?? 0} Module`,
+);
+check(
+  "Er benennt die Adresse, die er enthält",
+  (dialog?.label ?? "").includes("www.google.com/device"),
+  dialog?.label ?? "-",
+);
+check(
+  "Und ist vom Sofa aus groß genug (≥ 300 px auf 1080p)",
+  (dialog?.qrSide ?? 0) >= 300,
+  `${dialog?.qrSide ?? 0} px`,
+);
+check(
+  "Die Restlaufzeit steht dabei",
+  /Der Code gilt noch \d+:\d\d Minuten/.test(dialog?.hint ?? ""),
+  dialog?.hint ?? "-",
+);
+check(
+  "Der Dialog passt ins Bild",
+  dialog?.innerhalb === true && dialog?.ueberlauf === false,
+  `innerhalb=${dialog?.innerhalb} überlauf=${dialog?.ueberlauf}`,
+);
+check(
+  "Der Fokus wandert in den Dialog",
+  dialog?.fokusImDialog === true,
+  dialog?.fokusKey || "kein Fokus im Dialog",
+);
+await oauth.screenshot({ path: join(SHOTS, "22b-abgleich-gerätecode.png") });
+
+// Zurück schließt den Dialog — und nicht die Seite darunter.
+await press(oauth, "back");
+await oauth.waitForTimeout(700);
+const afterBack = await oauth.evaluate(() => ({
+  dialog: Boolean(document.querySelector(".device-dialog")),
+  seite: Boolean(document.querySelector(".page.settings")),
+  fokus: document.activeElement?.getAttribute?.("data-focus-key") ?? "",
+}));
+check("Zurück schließt den Dialog", !afterBack.dialog);
+check("Die Einstellungen bleiben stehen", afterBack.seite);
+check(
+  "Und der Fokus kommt in die Abgleich-Reihe zurück",
+  afterBack.fokus === "connect",
+  afterBack.fokus || "kein Fokus",
+);
+
+// Noch einmal öffnen, diesmal stimmt der Nutzer am Telefon zu.
+grantAccess = true;
+const callsBefore = tokenCalls;
+await oauth.evaluate(() => {
+  const node = document.querySelector('[data-focus-key="connect"]');
+  node?.focus();
+});
+await press(oauth, "ok");
+await oauth.waitForTimeout(4000);
+
+const connected = await oauth.evaluate(() => {
+  const box = Array.from(document.querySelectorAll(".settings-section"))
+    .find((node) => node.querySelector("h2")?.textContent?.trim() === "Synchronisation");
+  return {
+    dialog: Boolean(document.querySelector(".device-dialog")),
+    text: box?.textContent ?? "",
+    knoepfe: Array.from(box?.querySelectorAll(".spottable") ?? [])
+      .map((node) => node.getAttribute("data-focus-key")),
+    hatTokens: Boolean(localStorage.getItem("nori.google.tokens")),
+  };
+});
+check("Nach der Zustimmung schließt der Dialog von selbst", !connected.dialog);
+check("Es wurde tatsächlich gepollt", tokenCalls > callsBefore, `${tokenCalls} Abrufe`);
+check(
+  "Der Abgleich ist danach verbunden",
+  /verbunden|wird abgeglichen/.test(connected.text) && !connected.text.includes("nicht verbunden"),
+  connected.text.slice(0, 120),
+);
+check(
+  "Und bietet Abgleichen, Trennen und Widerrufen an",
+  ["sync-now", "disconnect", "revoke"].every((key) => connected.knoepfe.includes(key)),
+  connected.knoepfe.join(", "),
+);
+check("Die Berechtigung liegt im Speicher des Geräts", connected.hatTokens);
+await oauth.screenshot({ path: join(SHOTS, "22c-abgleich-verbunden.png") });
+
+/*
+ * Kein Token im Protokoll.
+ *
+ * Der Web-Inspector eines Fernsehers ist über das Netz erreichbar. Ein Token in
+ * der Konsole wäre damit kein Schönheitsfehler, sondern ein offener Zugang zum
+ * Drive-Ordner des Nutzers.
+ */
+const leaked = oauthLog.filter((line) =>
+  /test-access|test-refresh|TEST-ONLY-not-a-real-secret|NORI-TEST-DEVICE-CODE/.test(line));
+check("Kein Token und kein Secret im Protokoll", leaked.length === 0, leaked.slice(0, 2).join(" | "));
+
+// Nach einem Neustart der App: wieder verbunden, ohne erneute Anmeldung.
+await oauth.reload({ waitUntil: "domcontentloaded" });
+await oauth.waitForTimeout(3000);
+await goto(oauth, "#/einstellungen", 1500);
+const afterReload = await oauth.evaluate(() => {
+  const box = Array.from(document.querySelectorAll(".settings-section"))
+    .find((node) => node.querySelector("h2")?.textContent?.trim() === "Synchronisation");
+  return {
+    dialog: Boolean(document.querySelector(".device-dialog")),
+    text: box?.textContent ?? "",
+    knoepfe: Array.from(box?.querySelectorAll(".spottable") ?? [])
+      .map((node) => node.getAttribute("data-focus-key")),
+  };
+});
+check("Nach dem Neustart fragt Nori nicht erneut", !afterReload.dialog);
+check(
+  "Die Verbindung steht wieder",
+  afterReload.knoepfe.includes("sync-now"),
+  afterReload.knoepfe.join(", "),
+);
+
+// Und der abgelaufene Code: verständlicher Satz, neuer Code auf einen Druck.
+await oauth.evaluate(() => {
+  localStorage.removeItem("nori.google.tokens");
+});
+grantAccess = false;
+await oauth.unroute("https://oauth2.googleapis.com/device/code");
+await oauth.route("https://oauth2.googleapis.com/device/code", (route) => route.fulfill({
+  status: 200,
+  contentType: "application/json",
+  body: JSON.stringify({
+    device_code: DEVICE_CODE, user_code: USER_CODE,
+    verification_uri: VERIFY, verification_uri_complete: VERIFY_COMPLETE,
+    // Eine Sekunde: der Code ist abgelaufen, bevor der erste Abruf antwortet.
+    expires_in: 1, interval: 1,
+  }),
+}));
+await oauth.reload({ waitUntil: "domcontentloaded" });
+await oauth.waitForTimeout(2500);
+await goto(oauth, "#/einstellungen", 1200);
+await oauth.evaluate(() => {
+  const node = document.querySelector('[data-focus-key="connect"]');
+  node?.scrollIntoView({ block: "center" });
+  node?.focus();
+});
+await press(oauth, "ok");
+await oauth.waitForTimeout(3500);
+
+const expiredView = await oauth.evaluate(() => {
+  const panel = document.querySelector(".device-dialog");
+  return {
+    offen: Boolean(panel),
+    text: panel?.textContent ?? "",
+    knoepfe: Array.from(panel?.querySelectorAll(".spottable") ?? [])
+      .map((node) => node.getAttribute("data-focus-key")),
+    fokus: document.activeElement?.getAttribute?.("data-focus-key") ?? "",
+  };
+});
+check(
+  "Ein abgelaufener Code wird in einem Satz erklärt",
+  expiredView.text.includes("Der Anmeldecode ist abgelaufen."),
+  expiredView.text.slice(0, 120),
+);
+check(
+  "Kein OAuth-Fehlertext dabei",
+  !/expired_token|invalid_grant|authorization_pending/.test(expiredView.text),
+  expiredView.text.slice(0, 120),
+);
+check(
+  "Und ein neuer Code ist einen Druck entfernt",
+  expiredView.knoepfe.includes("device-retry"),
+  expiredView.knoepfe.join(", "),
+);
+check(
+  "Der Fokus steht auf dem Knopf, der weiterhilft",
+  expiredView.fokus === "device-retry",
+  expiredView.fokus || "kein Fokus",
+);
+await oauth.screenshot({ path: join(SHOTS, "22d-abgleich-code-abgelaufen.png") });
+
+await oauth.close();
+
+/*
+ * Und ohne den Entwicklerschalter ist von OAuth gar nichts zu sehen.
+ *
+ * Eine eigene Seite, weil die bisherige mit `debug: true` startet — die
+ * Diagnose war ja gerade das, was geprüft werden sollte. Der Normalfall ist
+ * der andere: Zugangsdaten im Gerät, aber kein Wort davon auf dem Bildschirm.
+ */
+const quietPage = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+await quietPage.route("https://image.tmdb.org/**", (route) =>
+  route.fulfill({ status: 200, contentType: "image/png", body: PLACEHOLDER }));
+await quietPage.route("https://api.themoviedb.org/**", (route) => route.abort("failed"));
+await quietPage.addInitScript((base) => {
+  localStorage.setItem("nori.webos.settings", JSON.stringify({
+    transport: "server", serverUrl: base, controlsTimeout: 4, seekStep: 10,
+    autoplayCountdown: 3, tmdbMode: "server", tmdbKey: "", reduceEffects: false, debug: false,
+  }));
+  localStorage.setItem("nori.google.clientId", "123456-test.apps.googleusercontent.com");
+  localStorage.setItem("nori.google.clientSecret", "TEST-ONLY-not-a-real-secret");
+}, BASE);
+await quietPage.goto(`${BASE}/#/einstellungen`, { waitUntil: "domcontentloaded" });
+await quietPage.waitForTimeout(3000);
+const quiet = await quietPage.evaluate(() => {
+  const box = Array.from(document.querySelectorAll(".settings-section"))
+    .find((node) => node.querySelector("h2")?.textContent?.trim() === "Synchronisation");
+  return box?.textContent ?? "";
+});
+check(
+  "Ohne Entwicklerschalter steht keine Client-ID auf dem Bildschirm",
+  quiet.length > 0 && !/Client-ID|Client-Secret|appdata/.test(quiet),
+  quiet.slice(0, 200),
+);
+check(
+  "Der Knopf zum Anmelden steht trotzdem",
+  quiet.includes("Mit Google Drive verbinden"),
+  quiet.slice(0, 200),
+);
+await quietPage.close();
 
 // --- 20b. Abstände ohne Flex-`gap` (webOS 6) ----------------------------
 //

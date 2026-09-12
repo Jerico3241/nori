@@ -14,6 +14,7 @@ import {
 import {
   LibrarySyncEngine, type LibrarySnapshotStore, type LibrarySyncHost, type RemoteSnapshotRef, type SyncBookkeeping,
 } from "../src/sync-engine.js";
+import { GoogleAuthError } from "../src/google/auth.js";
 
 /** Eine Ablage im Arbeitsspeicher — viele Dateien, je eine pro Gerät. */
 class FakeStore implements LibrarySnapshotStore {
@@ -207,6 +208,41 @@ test("Ohne Netz bleibt die Bibliothek unangetastet", async () => {
   await engine.run();
   assert.equal(engine.status, "idle");
   assert.equal(store.files.size, 1);
+});
+
+// --- K: die Berechtigung gilt nicht mehr ------------------------------------
+//
+// Ein eigener Zustand und kein Fehler. Vorher landete das bei „Fehler" mit
+// einem Satz daneben, oder — schlimmer — bei „offline", weil die abgelaufene
+// Berechtigung aus der Autorisierungsschicht kommt und nicht als `DriveError`.
+// Die Oberfläche wartete dann auf ein Netz, das längst da war.
+
+test("Eine abgelaufene Berechtigung verlangt eine Anmeldung, keinen Fehlertext", async () => {
+  const host = new FakeHost("tv");
+  favorite(host, "one-piece", 1000);
+  const store = new FakeStore();
+  store.listError = new DriveError("notAuthorized", "Nicht mehr autorisiert");
+  const { engine } = engineFor(host, store);
+
+  await engine.run();
+
+  assert.equal(engine.status, "needsReauthorization");
+  assert.equal(engine.lastError, null, "Ein technischer Text, wo eine Handlung gehört");
+  assert.deepEqual(host.state.favorites, ["one-piece"], "Die Bibliothek wurde angefasst");
+});
+
+test("Auch ein Fehler aus der Autorisierung selbst landet dort", async () => {
+  const host = new FakeHost("tv");
+  const store = new FakeStore();
+  // So kommt es aus `GoogleDeviceAuthorization`, bevor überhaupt eine Anfrage
+  // hinausgeht: der Auffrischungstoken gilt nicht mehr.
+  store.listError = new GoogleAuthError("notAuthorized", "Die Verbindung zu Google ist abgelaufen.");
+  const { engine } = engineFor(host, store);
+
+  await engine.run();
+
+  assert.equal(engine.status, "needsReauthorization");
+  assert.equal(engine.lastError, null);
 });
 
 // --- L: kaputter Fremdstand -------------------------------------------------

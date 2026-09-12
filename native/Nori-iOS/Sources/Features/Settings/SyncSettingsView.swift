@@ -2,9 +2,16 @@ import SwiftUI
 
 /// Der Abgleich in den Einstellungen.
 ///
-/// Was hier steht, ist bewusst wenig: Zustand, verbinden, jetzt abgleichen,
-/// trennen. Keine Tokens, keine Dateikennungen, keine Bereiche — wer Nori
-/// benutzt, muss über OAuth nichts wissen.
+/// Was hier steht, ist bewusst wenig: Zustand, anmelden, jetzt abgleichen,
+/// trennen. Keine Client-ID, keine Tokens, keine Dateikennungen, keine
+/// Bereiche — wer Nori benutzt, muss über OAuth nichts wissen und nichts
+/// eintragen.
+///
+/// Das Eingabefeld für die Google-Client-ID, das hier früher stand, ist weg.
+/// Es war ein Feld für einen Wert, den niemand hat, der die App nur benutzt:
+/// eine Anmeldung, die erst nach einem Besuch in der Google Cloud Console
+/// möglich war. Die Client-ID kommt jetzt aus dem Build; fehlt sie, ist das
+/// ein Build-Fehler und steht in der Diagnose.
 ///
 /// Zwei Dinge sind ausdrücklich **nicht** dasselbe und stehen deshalb
 /// auseinander:
@@ -19,12 +26,12 @@ import SwiftUI
 /// Art Fehler, die jemand erst bemerkt, wenn der Fernseher nicht mehr
 /// mitkommt.
 struct SyncSettingsView: View {
-    @Environment(LibraryStore.self) private var library
     @Environment(GoogleDriveSync.self) private var sync
 
     @State private var showRevokeConfirmation = false
-    @State private var clientDraft = ""
-    @State private var clientNote: String?
+    /// Der Diagnosebereich ist standardmässig zu. Er richtet sich an den, der
+    /// Nori baut — nicht an den, der sie benutzt.
+    @State private var showDiagnostics = false
 
     var body: some View {
         NoriGradientScreen {
@@ -35,12 +42,12 @@ struct SyncSettingsView: View {
                     if sync.isConfigured {
                         connection
                         if isConnected { advanced }
-                        clientIdSection
                     } else {
-                        setup
+                        notConfigured
                     }
 
                     explanation
+                    diagnostics
                 }
                 .padding(.top, 6)
                 .padding(.bottom, NoriPanel.bottom)
@@ -61,23 +68,29 @@ struct SyncSettingsView: View {
             Button("Abbrechen", role: .cancel) {}
         } message: {
             Text("""
-            Damit verlieren **alle** Geräte an diesem Google-Konto den Zugriff — \
-            auch Mac und Fernseher. Die Bibliothek auf diesem Gerät bleibt \
-            vollständig erhalten.
+            Dadurch kann Nori auf deinen Geräten nicht mehr auf die \
+            Google-Drive-Synchronisierung zugreifen — auch nicht auf Mac und \
+            Fernseher. Deine lokale Bibliothek bleibt erhalten.
             """)
         }
     }
 
     // MARK: - Verbindung
 
+    /// Die eine Gruppe, die ein normaler Nutzer je braucht.
+    ///
+    /// Drei Zustände, und jeder hat genau eine naheliegende Handlung:
+    /// verbinden, abgleichen, neu anmelden. Mehr steht hier nicht.
     private var connection: some View {
         SettingsGroup(title: "Google Drive") {
-            if isConnected {
+            if sync.needsReauthorization {
+                reauthorize
+            } else if isConnected {
                 SettingsButtonRow(
                     symbol: "arrow.triangle.2.circlepath",
                     tint: .green,
                     title: "Jetzt synchronisieren",
-                    subtitle: "Holen, zusammenführen, zurückschreiben",
+                    subtitle: lastRunText,
                     action: { sync.syncNow() }
                 ) {
                     if sync.status == .syncing {
@@ -98,22 +111,7 @@ struct SyncSettingsView: View {
                     action: { Task { await sync.disconnectDevice() } }
                 ) { EmptyView() }
             } else {
-                SettingsButtonRow(
-                    symbol: "link",
-                    tint: .blue,
-                    title: "Mit Google Drive verbinden",
-                    subtitle: "Merkliste, Verlauf und Fortschritt auf allen Geräten",
-                    action: { Task { await sync.connect() } }
-                ) {
-                    if sync.isAuthorizing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(NoriTheme.muted)
-                    }
-                }
-                .disabled(sync.isAuthorizing)
+                signIn
             }
 
             if let message = sync.authorizationError {
@@ -123,8 +121,52 @@ struct SyncSettingsView: View {
                     .foregroundStyle(NoriTheme.muted)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private var signIn: some View {
+        SettingsButtonRow(
+            symbol: "person.crop.circle.badge.checkmark",
+            tint: .blue,
+            title: "Mit Google anmelden",
+            subtitle: "Merkliste, Verlauf und Fortschritt auf allen Geräten",
+            action: { Task { await sync.connect() } }
+        ) {
+            if sync.isAuthorizing {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NoriTheme.muted)
+            }
+        }
+        .disabled(sync.isAuthorizing)
+    }
+
+    /// Was zu tun ist, wenn Google die Berechtigung nicht mehr anerkennt.
+    ///
+    /// Kein technischer Text. Dass dahinter ein abgelaufener
+    /// Auffrischungstoken steckt, ist für die Handlung ohne Belang: es fehlt
+    /// eine Anmeldung, und die gibt es hier.
+    private var reauthorize: some View {
+        SettingsButtonRow(
+            symbol: "person.badge.key",
+            tint: .orange,
+            title: "Erneut anmelden",
+            subtitle: "Google Drive muss erneut verbunden werden",
+            action: { Task { await sync.connect() } }
+        ) {
+            if sync.isAuthorizing {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NoriTheme.muted)
+            }
+        }
+        .disabled(sync.isAuthorizing)
     }
 
     private var advanced: some View {
@@ -143,92 +185,30 @@ struct SyncSettingsView: View {
         }
     }
 
-    /// Die Einrichtung — das, was ohne hinterlegte Client-ID zu tun ist.
+    /// Was zu sehen ist, wenn dieser Build keine Google-Client-ID mitbringt.
     ///
-    /// Hier stand vorher nur ein Satz, dass nichts hinterlegt sei. Das war
-    /// zutreffend und trotzdem eine Sackgasse: wer die App fertig installiert
-    /// bekommt, hat keine Build-Einstellung, und damit gab es auf dem iPhone
-    /// schlicht keinen Weg, sich jemals anzumelden.
-    private var setup: some View {
-        SettingsGroup(
-            title: "Einrichten",
-            footnote: """
-            Die Client-ID stammt aus einem eigenen Google-Cloud-Projekt mit \
-            aktivierter Drive-API und einem OAuth-Client vom Typ „iOS\". Die \
-            Schritte stehen in docs/google-drive-sync.md. Sie ist kein \
-            Geheimnis — sie steht in jeder Anmeldeadresse — und wird im \
-            Schlüsselbund dieses Geräts gesichert.
-            """
-        ) {
-            SettingsRowContent(
-                symbol: "key",
-                title: "Google-Client-ID",
-                subtitle: "Endet auf .apps.googleusercontent.com"
-            ) {
-                EmptyView()
-            }
-            // Kein `SecureField` wie beim TMDB-Schlüssel: eine Client-ID ist
-            // öffentlich, und sie zu sehen ist der einzige Weg zu bemerken,
-            // dass beim Einfügen etwas verrutscht ist.
-            TextField("123456-abc.apps.googleusercontent.com", text: $clientDraft)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .font(.footnote)
-                .padding(.horizontal, 15)
-                .padding(.bottom, 12)
-            SettingsDivider()
-            SettingsButtonRow(
-                symbol: "checkmark.circle",
-                tint: .green,
-                title: "Sichern",
-                subtitle: "Danach lässt sich Google Drive verbinden",
-                action: saveClientId
-            ) { EmptyView() }
-            .disabled(clientDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            if let clientNote {
-                SettingsDivider()
-                Text(clientNote)
-                    .font(.caption2)
-                    .foregroundStyle(NoriTheme.muted)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    /// Die hinterlegte Client-ID, wenn es eine gibt.
-    private var clientIdSection: some View {
-        SettingsGroup(title: "Google-Client-ID") {
+    /// Ein Satz für den Nutzer, damit er nicht auf eine Anmeldung wartet, die
+    /// es nicht gibt — und kein Eingabefeld, in dem er nichts Sinnvolles
+    /// eintragen könnte. Der Grund steht in der Diagnose.
+    private var notConfigured: some View {
+        SettingsGroup(title: "Google Drive") {
             SettingsInfoRow(
-                symbol: "key.fill",
-                tint: .green,
-                title: "Client-ID",
-                subtitle: sync.clientId ?? "—",
-                value: sync.clientIdIsUserProvided ? "eingetragen" : "aus dem Build"
+                symbol: "icloud.slash",
+                tint: .orange,
+                title: "Nicht verfügbar",
+                subtitle: "Diese Nori-Fassung wurde ohne Google-Abgleich gebaut",
+                value: ""
             )
-            if sync.clientIdIsUserProvided {
-                SettingsDivider()
-                SettingsButtonRow(
-                    symbol: "trash",
-                    tint: .red,
-                    title: "Client-ID entfernen",
-                    subtitle: "Trennt dieses Gerät; die Bibliothek bleibt",
-                    role: .destructive,
-                    action: { Task { await sync.clearClientId() } }
-                ) { EmptyView() }
-            }
-        }
-    }
-
-    private func saveClientId() {
-        if let problem = sync.saveClientId(clientDraft) {
-            clientNote = problem
-        } else {
-            clientDraft = ""
-            clientNote = nil
+            SettingsDivider()
+            Text("""
+            Merkliste, Verlauf und Fortschritt funktionieren vollständig weiter \
+            — sie bleiben auf diesem Gerät.
+            """)
+            .font(.footnote)
+            .foregroundStyle(NoriTheme.muted)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -247,6 +227,10 @@ struct SyncSettingsView: View {
                 gleichzeitig etwas ändern.
                 """)
                 Text("""
+                Nori sieht dabei weder deinen Namen noch deine E-Mail-Adresse: \
+                gefragt wird ausschliesslich nach dem versteckten App-Ordner.
+                """)
+                Text("""
                 Ohne Netz funktioniert Nori vollständig weiter. Änderungen \
                 werden abgeglichen, sobald wieder eine Verbindung da ist.
                 """)
@@ -258,6 +242,78 @@ struct SyncSettingsView: View {
         }
     }
 
+    // MARK: - Diagnose
+
+    /// Der Bereich für den, der Nori baut.
+    ///
+    /// Zugeklappt, unscheinbar und ohne eine einzige Eingabemöglichkeit. Er
+    /// beantwortet genau eine Frage — „welche Client-ID benutzt diese
+    /// Installation und woher kommt sie?" —, und die lässt sich sonst nur
+    /// durch Raten beantworten.
+    @ViewBuilder
+    private var diagnostics: some View {
+        SettingsGroup(title: "Diagnose") {
+            SettingsButtonRow(
+                symbol: showDiagnostics ? "chevron.down" : "chevron.right",
+                tint: .blue,
+                title: "OAuth-Konfiguration",
+                subtitle: "Für die Fehlersuche beim Bauen",
+                action: { showDiagnostics.toggle() }
+            ) { EmptyView() }
+
+            if showDiagnostics {
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "key.fill",
+                    tint: sync.isConfigured ? .green : .red,
+                    title: "Client-ID",
+                    subtitle: sync.client?.clientId ?? "—",
+                    value: originLabel
+                )
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "lock.shield",
+                    tint: .green,
+                    title: "Bereich",
+                    subtitle: GoogleDriveClient.scope,
+                    value: "nur appdata"
+                )
+                if let problem = sync.buildConfigurationProblem {
+                    SettingsDivider()
+                    Text("""
+                    \(problem) Erwartet wird die Build-Einstellung \
+                    GOOGLE_CLIENT_ID; die Schritte stehen in \
+                    docs/google-drive-sync.md.
+                    """)
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if sync.client?.origin == .migrated {
+                    SettingsDivider()
+                    SettingsButtonRow(
+                        symbol: "arrow.uturn.backward",
+                        tint: .orange,
+                        title: "Eingetragene Client-ID verwerfen",
+                        subtitle: "Danach gilt die aus dem Build; trennt dieses Gerät",
+                        role: .destructive,
+                        action: { Task { await sync.forgetMigratedClientId() } }
+                    ) { EmptyView() }
+                }
+            }
+        }
+    }
+
+    private var originLabel: String {
+        switch sync.client?.origin {
+        case .build: return "aus dem Build"
+        case .migrated: return "übernommen"
+        case nil: return "fehlt"
+        }
+    }
+
     // MARK: - Abgeleitetes
 
     private var isConnected: Bool {
@@ -265,6 +321,12 @@ struct SyncSettingsView: View {
         case .disconnected: return false
         default: return true
         }
+    }
+
+    private var lastRunText: String {
+        guard let stamp = sync.lastSuccessfulSync else { return "Noch kein Abgleich gelaufen" }
+        let date = Date(timeIntervalSince1970: stamp / 1000)
+        return "Zuletzt " + date.formatted(.relative(presentation: .named))
     }
 
     private var cardState: SettingsSyncCard.State {
@@ -278,6 +340,7 @@ struct SyncSettingsView: View {
         case .syncing: return .running(name: name)
         case .offline: return .offline(name: name, lastRun: lastRun)
         case .error(let message): return .failed(name: name, message: message)
+        case .needsReauthorization: return .needsReauth(name: name)
         case .unsupportedRemoteVersion: return .needsUpdate(name: name)
         }
     }

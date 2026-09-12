@@ -4,8 +4,102 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.3.1**.
+unterschiedlich schnell bewegen: macOS **1.16.0**, iOS/iPadOS **1.21.0**,
+Windows **1.8.0**, LG webOS **1.4.0**.
+
+## [webOS 1.4.0] · [iOS 1.21.0] · [macOS 1.16.0] — 2026-09-12
+
+Anmelden statt einrichten. Der Abgleich über Google Drive bleibt derselbe — die
+Anmeldung dazu ist jetzt ein Knopf.
+
+### Geändert
+
+- **Die OAuth-Einstellungen sind aus der Oberfläche verschwunden.** Auf allen
+  drei Plattformen standen dort Eingabefelder: iPhone und Mac für die
+  Google-Client-ID, der Fernseher zusätzlich für das Client-Secret — 40 Zeichen,
+  einzugeben mit einer Fernbedienung über eine Bildschirmtastatur. Das war keine
+  Einrichtung, das war eine Hürde, und wer sie vor sich hatte, bekam keinen
+  Abgleich. Die Werte kommen jetzt aus dem Build (`GOOGLE_CLIENT_ID` auf Apple,
+  `VITE_NORI_GOOGLE_TV_CLIENT_ID` und `VITE_NORI_GOOGLE_TV_CLIENT_SECRET` auf
+  webOS). Fehlen sie, ist das ein Build-Fehler und keine Nutzeraufgabe: die
+  Oberfläche sagt es in einem Satz, statt ein Feld anzubieten, in dem niemand
+  etwas Sinnvolles eintragen könnte.
+- **Was eine ältere Fassung im Gerät hinterlassen hat, gilt weiter.** Die Tokens
+  einer bestehenden Verbindung sind zu der von Hand eingetragenen Client-ID
+  ausgestellt; würde sie jetzt übergangen, wäre die Verbindung nach dem Update
+  weg — ohne Grund und ohne Meldung. Sie hat deshalb Vorrang, und wenn sie mit
+  der aus dem Build übereinstimmt, wird die Kopie im Gerät aufgeräumt.
+- **iOS meldet sich in der geteilten Browser-Sitzung an.** Vorher lief die
+  Anmeldung mit `prefersEphemeralWebBrowserSession = true`, also ohne die
+  Cookies aus Safari — auf einem Telefon, das bei Google angemeldet ist, hiess
+  das: Passwort eingeben. Jetzt sieht der Nutzer die Kontoauswahl und bestätigt
+  einmal. Dass die Frage gestellt wird, hängt an `prompt=consent` in der
+  Anmeldeadresse und nicht an der Sitzung; PKCE und `state` bleiben unberührt.
+- **„Google Drive muss erneut verbunden werden" ist ein eigener Zustand.** Eine
+  widerrufene oder abgelaufene Berechtigung stand vorher als Fehlertext da — und
+  wenn sie aus der Autorisierungsschicht kam, sogar als „offline", weil sie kein
+  `DriveError` ist. Die Oberfläche wartete dann auf ein Netz, das längst da war.
+  Jetzt gibt es `needsReauthorization` in beiden Kernen und einen Knopf „Erneut
+  anmelden".
+
+### Hinzugefügt
+
+- **Ein QR-Code für die Anmeldung am Fernseher.** Der Gerätefluss bekommt einen
+  eigenen Bildschirm statt einer Zeile in der Einstellungsliste: links ein
+  QR-Code von 22 rem Kante (328 px auf 1080p), rechts die Adresse ohne Schema
+  und der Gerätecode in 4 rem Schrift, darunter die Restlaufzeit. Läuft der Code
+  ab, steht dort ein Satz und ein Knopf für einen neuen — kein OAuth-Fehlertext.
+  Der Fokus wandert in den Dialog, „Zurück" schliesst ihn und gibt den Fokus
+  zurück.
+- **Ein QR-Encoder im gemeinsamen Kern** (`shared/nori-core/src/qr.ts`):
+  Byte-Modus, Fehlerkorrektur M, Fassungen 1 bis 10, ohne Abhängigkeit und ohne
+  einen einzigen Netzabruf. Ein QR-Dienst im Netz hätte geheissen, die Adresse
+  einer laufenden Anmeldung an einen Dritten zu schicken.
+- **`verification_uri_complete` nach RFC 8628** wird gelesen und für den
+  QR-Code bevorzugt: dann steckt der Code schon in der Adresse und am Telefon
+  ist nichts mehr zu tippen. Fehlt das Feld, enthält der QR-Code genau
+  `verification_uri` — eine Adresse mit angehängtem `user_code` selbst zu bauen
+  wäre geraten, und ein falscher Parameter führt auf eine Fehlerseite.
+- **`config/contract.json` beschreibt die Anmeldung.** Neu unter `sync.auth`:
+  Bereich, Fluss je Plattform, Anmeldeparameter, die Fehlercodes des
+  Geräteflusses, wo Tokens liegen, was nie abgeglichen und nie protokolliert
+  wird, und der Unterschied zwischen „Gerät trennen" und „Zugriff widerrufen".
+
+### Behoben
+
+- **Ein Abbruch der Anmeldung wirkte erst beim nächsten Aufwachen.** Die
+  Abfrageschleife schlief bis zu einem ganzen Wartetakt und gab ihren Platz
+  bis dahin nicht frei; wer abbrach und gleich wieder „Verbinden" drückte,
+  bekam nichts. Das Warten endet jetzt mit dem Abbruch.
+- **`slow_down` beachtet Googles eigene Wartezeit.** Nennt Google im Fehler ein
+  längeres `interval`, gilt das — vorher wurden pauschal fünf Sekunden
+  aufgeschlagen.
+- **Eine Antwort ohne Anmeldeadresse wird nicht mehr geraten.** Vorher fiel Nori
+  auf `https://www.google.com/device` zurück; eine Antwort ohne Adresse heisst
+  aber nicht, dass diese Adresse gilt.
+- **Unsinnige Zahlen von Google enden nicht in `NaN`.** `expires_in: "bald"`
+  hiess vorher: der Code läuft nie ab und die Schleife nie aus.
+- **`invalid_client` und `invalid_scope` fallen schon beim Gerätecode auf** und
+  werden als Build-Fehler benannt statt als allgemeine Störung.
+
+### Geprüft
+
+169 Prüfungen im Fernbedienungslauf (vorher 140), darunter der ganze
+Gerätefluss mit abgefangenen Google-Endpunkten: QR-Code gezeichnet und
+gross genug, Code und Adresse lesbar, Restlaufzeit, Fokus im Dialog, „Zurück",
+automatischer Abschluss nach der Zustimmung, Neustart ohne erneute Anmeldung,
+abgelaufener Code. Dazu 188 Kerntests (vorher 165) und 413 Swift-Tests (vorher
+406).
+
+Der QR-Encoder ist gegen eine **unabhängige** Referenzumsetzung geprüft, Modul
+für Modul über alle Längen von 1 bis 213 Byte; fünf dieser Matrizen liegen als
+Festwerte in `shared/nori-core/test/qr.test.ts`. Zusätzlich habe ich den auf dem
+Bildschirm gerenderten Code aus den Bildschirmfotos mit einem Decoder gelesen —
+bei 1280 × 720, 1920 × 1080 und 3840 × 2160 kommt genau
+`verification_uri_complete` heraus.
+
+Was **nicht** geprüft ist: eine echte Anmeldung bei Google. Die hängt an einem
+echten Konto und an echter Hardware.
 
 ## [webOS 1.3.1] — 2026-09-12
 

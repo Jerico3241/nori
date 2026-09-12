@@ -127,9 +127,21 @@ enum GoogleOAuth {
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: pkce.method),
             URLQueryItem(name: "state", value: state),
-            // Ohne das gibt Google beim zweiten Mal keinen Refresh-Token mehr
-            // heraus, und die Verbindung hielte nur eine Stunde.
+            // Ohne `offline` gibt Google keinen Auffrischungstoken heraus, und
+            // die Verbindung hielte eine Stunde.
             URLQueryItem(name: "access_type", value: "offline"),
+            // `consent` bleibt, obwohl es einen Bildschirm mehr bedeutet:
+            // Google gibt den Auffrischungstoken nur heraus, wenn die
+            // Zustimmung in diesem Durchlauf tatsächlich erteilt wird. Hat der
+            // Nutzer früher schon zugestimmt, überspringt Google den Schritt
+            // sonst — und antwortet ohne `refresh_token`. Genau das prüft
+            // `GoogleAuthorization.signIn` und wirft `noRefreshToken`; eine
+            // Anmeldung, die nach einer Stunde ohne Zutun endet, ist kein
+            // Erfolg.
+            //
+            // Es zwingt niemanden zu einer Passworteingabe: die
+            // Browser-Sitzung ist auf beiden Apple-Plattformen die geteilte,
+            // der Nutzer bleibt bei Google angemeldet und bestätigt einmal.
             URLQueryItem(name: "prompt", value: "consent"),
         ]
         if let loginHint { items.append(URLQueryItem(name: "login_hint", value: loginHint)) }

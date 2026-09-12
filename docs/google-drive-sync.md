@@ -14,13 +14,35 @@ Nori bleibt dabei **local-first**. Die Cloud ist ein Kanal zwischen Geräten und
 nie die Voraussetzung: ohne Netz funktioniert alles weiter, und ein
 fehlgeschlagener Abgleich fasst die lokale Bibliothek nicht an.
 
+## Für den Nutzer ist das ein Knopf
+
+```text
+Einstellungen → Synchronisation → [ Mit Google anmelden ]
+```
+
+Danach:
+
+```text
+Google Drive
+Verbunden
+Letzte Synchronisierung: vor wenigen Sekunden
+[ Jetzt synchronisieren ]
+[ Dieses Gerät trennen ]
+```
+
+Mehr ist nicht zu tun. Client-ID, Client-Secret, Redirect-URI, Access- und
+Refresh-Token sind **keine** Benutzereinstellungen und stehen nicht in der
+Oberfläche. Wer Nori benutzt, muss über OAuth nichts wissen.
+
+Der Rest dieser Datei richtet sich an den, der Nori **baut**.
+
 ---
 
 ## 1. Was der Betreiber anlegen muss
 
-Ohne diese Werte ist der Abgleich nicht einrichtbar — Nori zeigt dann „nicht
-eingerichtet" und läuft ansonsten unverändert. Es sind **vier** OAuth-Clients in
-**einem** Google-Cloud-Projekt.
+Ohne diese Werte gibt es keinen Abgleich — Nori sagt dann „Diese Nori-Fassung
+wurde ohne Google-Abgleich gebaut" und läuft ansonsten unverändert. Es sind
+**vier** OAuth-Clients in **einem** Google-Cloud-Projekt.
 
 | Plattform | Clienttyp in der Cloud Console | Wert, den Nori braucht |
 | --- | --- | --- |
@@ -89,65 +111,53 @@ Wer veröffentlicht, braucht für diesen Bereich keine erweiterte Überprüfung.
 
 Keiner dieser Werte steht im Quelltext, und keiner gehört ins Repository.
 
+Und keiner gehört in die Oberfläche. Das ist die Trennung, um die es in diesem
+Abschnitt geht:
+
+| | Nutzer | Betreiber / Bauender |
+| --- | --- | --- |
+| sieht | „Mit Google anmelden" | `GOOGLE_CLIENT_ID`, `VITE_NORI_GOOGLE_TV_CLIENT_ID`, … |
+| tut | einmal bei Google bestätigen | einmal je Plattform einen OAuth-Client anlegen |
+| muss wissen | nichts über OAuth | Abschnitt 1 dieser Datei |
+
+Frühere Fassungen von Nori haben das vermischt: in den Einstellungen stand ein
+Feld für die Google-Client-ID, auf dem Fernseher zusätzlich eines für das
+Client-Secret. Gedacht war das als Ausweg für eine fertig installierte App —
+tatsächlich war es eine Anmeldung, die erst nach einem Besuch in der Google
+Cloud Console möglich war. Auf dem Fernseher kam eine Bildschirmtastatur dazu,
+mit der ein 40-stelliges Secret einzugeben war. Wer das vor sich hatte, bekam
+keinen Abgleich.
+
+**Die Felder sind weg.** Die Werte kommen aus dem Build.
+
 ### Apple
 
-Zwei Wege, und der erste ist der wichtigere.
-
-**In der App eintragen.** *Mehr → Synchronisation → Einrichten* (macOS:
-*Einstellungen → Synchronisation*). Die Client-ID wird dort eingefügt und
-bleibt auf dem Gerät. Das ist der Weg für jede fertig installierte App — wer
-Nori nicht selbst übersetzt, hat keine Build-Einstellung, und ohne diesen Weg
-gäbe es auf dem iPhone überhaupt keine Möglichkeit, sich anzumelden.
-
-Geprüft wird beim Eintragen, dass die ID auf `.apps.googleusercontent.com`
-endet. Das ist keine Förmlichkeit: auf iOS entsteht aus ihr die
-Rückleitungsadresse, und steht dort etwas anderes, öffnet sich das
-Anmeldefenster und kommt nie zurück.
-
-**Beim Bauen setzen.** Build-Einstellung `GOOGLE_CLIENT_ID`, von der
-`Info.plist` beider Targets als `$(GOOGLE_CLIENT_ID)` übernommen — genau wie
-`TMDB_API_KEY`. Zum Beispiel in einer nicht eingecheckten `Local.xcconfig`
-oder als Umgebungsvariable:
+Build-Einstellung `GOOGLE_CLIENT_ID`, von der `Info.plist` beider Targets als
+`$(GOOGLE_CLIENT_ID)` übernommen — genau wie `TMDB_API_KEY`. Zum Beispiel in
+einer nicht eingecheckten `Local.xcconfig` oder als Umgebungsvariable:
 
 ```bash
 xcodebuild -project native/Nori-iOS/Nori.xcodeproj -scheme Nori \
   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com build
 ```
 
-Die eingetragene ID hat Vorrang vor der aus dem Build. Ist keine von beiden da,
-bleibt in der `Info.plist` der unaufgelöste Platzhalter `$(GOOGLE_CLIENT_ID)`
-stehen; Nori erkennt das und bietet die Einrichtung an, statt eine Anmeldung
-anzubieten, die sicher scheitert.
+Ist sie nicht gesetzt, bleibt in der `Info.plist` der unaufgelöste Platzhalter
+`$(GOOGLE_CLIENT_ID)` stehen. Nori erkennt das und sagt in einem Satz, dass
+diese Fassung ohne Google-Abgleich gebaut wurde — die Bibliothek funktioniert
+vollständig weiter, sie bleibt eben auf dem Gerät. Ein Eingabefeld gibt es dafür
+nicht: es ist ein **Build-Fehler** und keine Nutzeraufgabe.
 
-**Wo sie liegt.** Im Schlüsselbund — und wenn der nicht zur Verfügung steht, in
-den Voreinstellungen der App. Der zweite Weg ist kein Versehen: ohne
-Signierteam bekommt eine iOS-App keine `application-identifier`-Berechtigung,
-und dann lehnt der Schlüsselbund **jede** Ablage ab. Vertretbar ist der
-Rückfall nur, weil eine Client-ID kein Geheimnis ist; für **Tokens** gibt es
-ihn ausdrücklich nicht.
+Der Diagnosebereich unter *Synchronisation* — zugeklappt, ohne Eingabefeld —
+zeigt die benutzte Client-ID, woher sie stammt und den angefragten Bereich. Er
+richtet sich an den, der Nori baut.
 
 Ein URL-Schema muss **nicht** in die `Info.plist`:
 `ASWebAuthenticationSession` fängt die Rückleitung selbst ab.
 
 ### webOS
 
-Ebenfalls zwei Wege, und auch hier ist der erste der wichtigere.
-
-**Am Fernseher eintragen.** *Einstellungen → Synchronisation*. Dort stehen zwei
-Felder: Client-ID und Client-Secret. Wer ein fertiges `.ipk` installiert, hat
-keine Build-Variable — ohne diesen Weg gäbe es auf dem Fernseher keine
-Möglichkeit, sich jemals anzumelden.
-
-Geprüft wird wie auf Apple, dass die Client-ID auf
-`.apps.googleusercontent.com` endet, und beim Secret, dass es nicht leer ist
-und keinen Leerraum enthält (der kommt beim Einfügen aus einer Zwischenablage
-gern mit).
-
-Die Client-ID wird danach angezeigt — sie ist kein Geheimnis, und sie zu sehen
-ist der einzige Weg zu bemerken, dass beim Einfügen etwas verrutscht ist. Das
-Secret wird **nicht** angezeigt.
-
-**Beim Bauen setzen.** Vite-Variablen:
+Vite-Variablen, am besten über eine `apps/webos/.env.local` — die steht in
+`.gitignore`:
 
 ```bash
 VITE_NORI_GOOGLE_TV_CLIENT_ID=1234-xyz.apps.googleusercontent.com \
@@ -155,33 +165,46 @@ VITE_NORI_GOOGLE_TV_CLIENT_SECRET=… \
 npm --prefix apps/webos run build
 ```
 
-Am besten über eine `apps/webos/.env.local` — die steht in `.gitignore`.
+Fehlen sie, sagt die Oberfläche dasselbe wie auf Apple: ohne Google-Abgleich
+gebaut, die Bibliothek läuft weiter. Der Diagnosebereich hängt hier am
+Entwicklerschalter *Diagnoseprotokoll* und zeigt Client-ID, Herkunft, **ob** ein
+Secret vorliegt (nie welches) und den Bereich.
 
-Eingetragene Werte haben Vorrang vor denen aus dem Build, und „Zugangsdaten
-entfernen" räumt beide wieder weg und trennt das Gerät gleich mit: die Tokens
-gehören zu genau diesen Zugangsdaten und wären danach wertlos.
+### Was von früher übrig ist
 
-**Wo sie liegen.** Im privaten Speicher der App — von anderen Apps nicht
-lesbar, aber **nicht verschlüsselt**. Für das Secret gilt damit dasselbe wie
-für die Tokens (Abschnitt 4). Schlimmer als die Lage ohnehin schon ist wird es
-dadurch nicht: ein beim Bauen gesetztes Secret liegt im `.ipk` und damit
-ebenso offen.
+Wer bereits verbunden ist, hat seine Tokens zu einer **von Hand eingetragenen**
+Client-ID bekommen. Würde die jetzt ignoriert, wäre die Verbindung nach dem
+Update weg — ohne Grund und ohne Meldung.
+
+Deshalb liest Nori die alten Ablageorte weiter:
+
+| Plattform | alter Ablageort |
+| --- | --- |
+| Apple | Schlüsselbund `de.nori.google` / `client_id`, sonst `UserDefaults` `nori.google.clientId` |
+| webOS | `localStorage` `nori.google.clientId` und `nori.google.clientSecret` |
+
+Der Wert im Gerät hat **Vorrang** vor dem aus dem Build; die vorhandenen Tokens
+gehören zu ihm. Stimmen beide überein, wird die Kopie im Gerät beim nächsten
+Start stillschweigend aufgeräumt — danach gibt es nur noch eine Quelle. Sind sie
+verschieden, gilt weiter der alte, und die Diagnose sagt „aus einer früheren
+Fassung übernommen".
+
+**Neu eintragen lässt sich nichts.** Im Diagnosebereich steht ein Knopf, der den
+übernommenen Wert verwirft; weil die Tokens zu ihm gehören, trennt er dieses
+Gerät gleich mit. Die Bibliothek bleibt vollständig.
 
 ### Was öffentlich ist und was nicht
 
 | Wert | Öffentlich? | Darf ins Repository? |
 | --- | --- | --- |
 | Client-ID (alle Plattformen) | ja, sie steht in jeder Anmeldeadresse | **nein** — gehört zum Projekt des Betreibers |
-| Client-ID im Gerät (Schlüsselbund oder Voreinstellungen) | ja | wird nicht abgeglichen und nie hochgeladen |
-| Client-Secret (nur webOS) | nein | **nein, unter keinen Umständen** |
+| Client-Secret (nur webOS) | nein, siehe Abschnitt 3 | **nein, unter keinen Umständen** |
 | Access Token, Refresh Token | nein | **nein** |
 | `deviceId` | harmlos, zufällig | steht ohnehin nur in der Bibliothek |
 
 Tokens liegen auf Apple im Schlüsselbund und werden nie protokolliert, nie an
 Analytics geschickt und nie über Drive synchronisiert. Sie sind ausdrücklich
 **kein** Bestandteil von `library.json`.
-
----
 
 ## 3. Das Client-Secret auf webOS
 
@@ -217,25 +240,182 @@ genau den soll es nicht geben.
 
 ## 4. Anmeldewege je Plattform
 
+Für den Nutzer ist es überall dasselbe: ein Knopf, eine Bestätigung bei Google,
+fertig. Technisch sind es drei Flüsse, weil ein Fernseher keinen Browser zum
+Anmelden hat.
+
 | Plattform | Fluss | Rückleitung | Tokenspeicher |
 | --- | --- | --- | --- |
 | iOS / iPadOS | Authorization Code + PKCE über `ASWebAuthenticationSession` | umgedrehtes Client-Kürzel | Schlüsselbund |
-| macOS | Authorization Code + PKCE, Browser + Loopback-Server | `http://127.0.0.1:<freier Port>` | Schlüsselbund |
-| webOS | Device Code (Fernseher/eingeschränkte Eingabe) | entfällt | privater App-Speicher, **unverschlüsselt** |
+| macOS | Authorization Code + PKCE, Systembrowser + Loopback-Server | `http://127.0.0.1:<freier Port>` | Schlüsselbund |
+| webOS | Device Authorization Grant (RFC 8628 / Googles Fluss für Fernseher) | entfällt | privater App-Speicher, **unverschlüsselt** |
 | Android | vorbereitet, siehe Abschnitt 7 | — | — |
 
-**Kein Out-of-Band.** `urn:ietf:wg:oauth:2.0:oob` — der Weg, bei dem der Nutzer
-einen Code aus dem Browser abtippt — hat Google 2022 abgeschaltet und kommt in
-Nori nirgends vor.
+### iPhone und iPad
 
-**Kein eigenes URL-Schema auf macOS.** Google rät für Desktop-Anwendungen
-davon ab: eine andere Anwendung kann dasselbe Schema beanspruchen und damit die
-Antwort abfangen. Der Loopback-Port wird vom System vergeben und ist deshalb
-nicht vorhersehbar.
+```text
+Einstellungen → Synchronisation → „Mit Google anmelden"
+        ↓
+Safari-Blatt mit der Kontoauswahl von Google
+        ↓
+einmal bestätigen
+        ↓
+Google leitet zu Nori zurück, der Abgleich startet von selbst
+```
 
-**Angemeldet wird im echten Browser**, nie in einer eingebetteten WebView. Eine
-App, die das Anmeldeformular selbst zeichnet, sieht dabei jedes Passwort — und
-Google lehnt solche Anmeldungen ab.
+Danach ist bei normalen App-Starts keine Anmeldung mehr nötig: der
+Auffrischungstoken liegt im Schlüsselbund, und Nori holt sich damit ein neues
+Zugriffstoken, wenn das alte abläuft.
+
+**Die Anmeldung läuft in der geteilten Browser-Sitzung.** Bis Version 1.20.0
+stand dort `prefersEphemeralWebBrowserSession = true` — die Anmeldung sah die
+Cookies aus Safari nicht, und der Nutzer musste sein Google-Passwort eingeben,
+auf einem Telefon, das bei Google angemeldet ist. Das ist der Schritt, an dem
+eine Einrichtung abgebrochen wird.
+
+Dass die Zustimmung trotzdem gestellt wird, hängt nicht an der Sitzung, sondern
+an `prompt=consent` in der Anmeldeadresse. Das bleibt, und aus einem harten
+Grund: Google gibt den Auffrischungstoken nur heraus, wenn die Zustimmung in
+diesem Durchlauf tatsächlich erteilt wird. Ohne ihn hielte die Verbindung eine
+Stunde und wäre danach ohne Zutun weg — `GoogleAuthorization.signIn` wirft
+deshalb `noRefreshToken`, statt das als Erfolg zu verbuchen.
+
+Sicherheit kostet die geteilte Sitzung nicht: der Autorisierungscode ist durch
+PKCE gebunden, die Antwort durch `state` geprüft, und angemeldet wird in Safari
+und nicht in einer WebView, die Nori einsehen könnte.
+
+### Mac
+
+```text
+Einstellungen → Synchronisation → „Mit Google anmelden"
+        ↓
+Systembrowser öffnet Google
+        ↓
+Konto wählen, bestätigen
+        ↓
+Browser landet auf 127.0.0.1, Nori ist verbunden
+```
+
+Der Loopback-Port wird vom System vergeben und ist deshalb nicht vorhersehbar.
+**Kein eigenes URL-Schema:** Google rät für Desktop-Anwendungen davon ab, weil
+eine andere Anwendung dasselbe Schema beanspruchen und damit die Antwort
+abfangen kann.
+
+### Fernseher
+
+```text
+Einstellungen → Synchronisation → „Mit Google Drive verbinden"
+        ↓
+┌──────────────────────────────────────────────┐
+│  Google Drive verbinden                      │
+│                                              │
+│  ███████  Scanne den QR-Code mit deinem      │
+│  ██ ▄ ██  Smartphone.                        │
+│  ███████                                     │
+│           Oder öffne am Telefon              │
+│           www.google.com/device              │
+│           und gib diesen Code ein            │
+│           WDXR-KQPF                          │
+│                                              │
+│  Nori wartet auf deine Anmeldung …           │
+│  Der Code gilt noch 14:32 Minuten.           │
+└──────────────────────────────────────────────┘
+        ↓
+Zustimmung am Telefon
+        ↓
+der Fernseher merkt es von selbst, der Dialog schliesst, der Abgleich startet
+```
+
+Am Fernseher ist danach nichts zu bestätigen. Läuft der Code ab, steht dort ein
+Satz — „Der Anmeldecode ist abgelaufen." — und ein Knopf für einen neuen; kein
+OAuth-Fehlertext.
+
+Der Dialog sperrt den Fokus ein, „Zurück" bricht ab und gibt den Fokus an die
+Abgleich-Reihe zurück.
+
+### Was nirgends vorkommt
+
+- **Out-of-Band.** `urn:ietf:wg:oauth:2.0:oob` — der Weg, bei dem der Nutzer
+  einen Code aus dem Browser abtippt — hat Google 2022 abgeschaltet.
+- **Eingebettete WebViews.** Eine App, die das Anmeldeformular selbst zeichnet,
+  sieht dabei jedes Passwort, und Google lehnt solche Anmeldungen ab.
+- **Passwortabfragen in Nori.** Nori sieht nie ein Google-Passwort.
+- **Tokens zum Kopieren.** Kein Feld, in das jemand ein Token einfügt.
+
+### Der QR-Code
+
+Er entsteht **im Gerät** (`shared/nori-core/src/qr.ts`) und nicht bei einem
+Dienst im Netz. Das ist keine Sparsamkeit: die Adresse, die er abbildet, gehört
+zu einer laufenden Anmeldung, und sie an einen Dritten zu schicken wäre genau
+die Art Datenweitergabe, die beim Anmelden nicht passieren darf.
+
+Welche Adresse darin steckt, entscheidet Google:
+
+| Googles Antwort | Inhalt des QR-Codes |
+| --- | --- |
+| `verification_uri_complete` vorhanden | genau dieser Wert — der Code steckt schon darin, am Telefon ist nichts zu tippen |
+| nur `verification_uri` / `verification_url` | genau dieser Wert; der Gerätecode steht daneben auf dem Bildschirm |
+
+**Niemals eine selbst zusammengesetzte Adresse.** Welchen Parameternamen Google
+an `google.com/device` erwartet, sichert es nirgends zu; ein falscher führt auf
+eine Fehlerseite statt auf die Zustimmung. Genauso gibt es keinen Rückfall auf
+eine geratene Adresse, wenn Googles Antwort gar keine enthält — dann ist die
+Antwort kaputt und wird als kaputt behandelt.
+
+Der Encoder kann Byte-Modus, Fehlerkorrektur M und die Fassungen 1 bis 10; das
+reicht für gut zweihundert Zeichen, die längste Adresse dieses Flusses liegt bei
+etwa fünfzig. Geprüft ist er gegen eine **unabhängige** Referenzumsetzung, Modul
+für Modul über alle Längen von 1 bis 213 Byte
+(`shared/nori-core/test/qr.test.ts`).
+
+### Wie oft der Fernseher nachfragt
+
+Googles `interval` wird eingehalten und nicht unterboten. Antwortet Google mit
+`slow_down`, steigt das Intervall um fünf Sekunden — oder auf den Wert, den
+Google selbst nennt, falls der grösser ist. Eine zweite Abfrageschleife auf
+denselben Gerätecode gibt es nicht, und ein Abbruch beendet auch ein laufendes
+Warten: sonst dauerte „Abbrechen" bis zu einem ganzen Wartetakt, und wer danach
+gleich wieder „Verbinden" drückte, bekam nichts.
+
+| Antwort von Google | Was Nori tut |
+| --- | --- |
+| `authorization_pending` | weiter warten — der Normalfall |
+| `slow_down` | Intervall erhöhen, weiter warten |
+| `access_denied` | „Die Anmeldung wurde abgebrochen." |
+| `expired_token`, `invalid_grant` | „Der Anmeldecode ist abgelaufen." + neuer Code |
+| `admin_policy_enforced` | „Die Einstellungen dieses Google-Kontos erlauben den Zugriff nicht." |
+| `invalid_client`, `invalid_scope` | „Der Google-Zugang dieser Nori-Fassung stimmt nicht." — ein Build-Fehler |
+
+### Wenn die Berechtigung nicht mehr gilt
+
+Widerrufen, Passwort geändert, zu lange nicht benutzt: Google antwortet beim
+Erneuern mit `invalid_grant`. Der Auffrischungstoken ist dann wertlos und wird
+weggeräumt — sonst scheiterte jeder Abgleich weiter am selben Punkt.
+
+Die Oberfläche zeigt dafür einen **eigenen Zustand** und keinen Fehler:
+
+```text
+Google Drive muss erneut verbunden werden.
+[ Erneut anmelden ]
+```
+
+Im Kern heisst er `needsReauthorization` (in Swift und in TypeScript). Vorher
+stand dort ein Fehlertext — und wenn die abgelaufene Berechtigung aus der
+Autorisierungsschicht kam, sogar „offline", weil sie kein `DriveError` ist. Die
+Oberfläche wartete dann auf ein Netz, das längst da war.
+
+### Trennen ist nicht Widerrufen
+
+| | „Dieses Gerät trennen" | „Google-Zugriff widerrufen" |
+| --- | --- | --- |
+| lokale Tokens | gelöscht | gelöscht |
+| andere Geräte | gleichen weiter ab | verlieren den Zugriff |
+| Dateien in Drive | bleiben liegen | bleiben liegen |
+| lokale Bibliothek | bleibt vollständig | bleibt vollständig |
+| Rückfrage | nein | **ja** |
+
+Das Zweite hinter einem unscheinbaren „Abmelden" zu verstecken, wäre die Art
+Fehler, die jemand erst bemerkt, wenn der Fernseher nicht mehr mitkommt.
 
 ### Der Tokenspeicher auf webOS
 
@@ -245,12 +425,18 @@ verschlüsselt. Wer Zugriff auf das Dateisystem des Fernsehers hat, kann sie
 lesen.
 
 Das ist eine Einschränkung der Plattform und keine Entscheidung. Sie steht hier,
-damit niemand `localStorage` für einen sicheren Speicher hält. Die
-`GoogleTokenStore`-Schnittstelle ist austauschbar — sobald LG einen
+damit niemand `localStorage` für einen sicheren Speicher hält. Was dazu
+eingehalten wird:
+
+- Tokens werden **nie protokolliert** — auch nicht verkürzt, auch nicht im
+  Fehlerfall. Der Web-Inspector eines Fernsehers ist über das Netz erreichbar.
+- Tokens werden **nie abgeglichen** und stehen nie in `library.json`.
+- Der kurze `user_code` landet ebenfalls nicht im Protokoll: er ist für die
+  Dauer seiner Gültigkeit ein Zugang.
+
+Die `GoogleTokenStore`-Schnittstelle ist austauschbar — sobald LG einen
 unterstützten Credential-Store anbietet, ist das eine Klasse und keine
 Umbauaktion.
-
----
 
 ## 5. Was in der Cloud liegt
 
@@ -330,19 +516,36 @@ Die Android-App gibt es noch nicht. Was es gibt, ist ein Kern, der für Android
 **Was noch fehlt und nur in der Android-App liegen kann:**
 
 1. **Tokenspeicher.** `KeychainTokenStore` gibt ausserhalb von Apple nichts
-   zurück. Android braucht eine eigene Umsetzung von `GoogleTokenStore` über
-   den empfohlenen Credential-/Keystore-Weg.
-2. **Anmeldung.** Eine Umsetzung von `GoogleSignInPresenter` über den aktuellen
-   Authorization-Client von Google Identity Services. Kein Firebase — Drive
-   braucht es nicht.
+   zurück (`#if canImport(Security)`). Android braucht eine eigene Umsetzung von
+   `GoogleTokenStore` über `EncryptedSharedPreferences` mit einem Schlüssel aus
+   dem Android-Keystore.
+2. **Anmeldung.** Eine Umsetzung von `GoogleSignInPresenter` über Googles
+   **Authorization API** (`com.google.android.gms:play-services-auth`,
+   `AuthorizationRequest` mit `requestedScopes = [drive.appdata]` und
+   `requestOfflineAccess(serverClientId)`). Der Credential Manager ist dafür
+   nicht der richtige Baustein: er authentifiziert (wer ist das?), er
+   autorisiert nicht (darf Nori an den App-Ordner?). Kein Firebase — Drive
+   braucht es nicht. Kein eingebetteter Browser.
 3. **Merkposten.** Eine Umsetzung von `SyncBookkeeping` über
    `SharedPreferences`.
-4. **Anbindung.** Aufruf von `GoogleDriveSync` aus der Compose-Oberfläche und
-   an den Lebenszyklus.
+4. **Anbindung.** Aufruf von `GoogleDriveSync` aus der Compose-Oberfläche und an
+   den Lebenszyklus.
+5. **OAuth-Client und Build-Einstellung.** Ein Client vom Typ *Android* mit
+   Paketname und SHA-1 im **selben** Cloud-Projekt, dazu ein Weg, die Client-ID
+   beim Bauen zu setzen (`buildConfigField` aus einer nicht eingecheckten
+   `local.properties`) — dieselbe Trennung wie `GOOGLE_CLIENT_ID` auf Apple.
+   `requestOfflineAccess` braucht zusätzlich die Client-ID des
+   **Web**-Clients desselben Projekts; ohne sie gibt es keinen
+   Auffrischungstoken und die Verbindung hielte eine Stunde.
 
-Das sind vier kleine Klassen; die Arbeit liegt in der Compose-App, nicht im
-Abgleich. **Solange sie fehlen, gibt es auf Android keinen Abgleich** — und
-diese Datei behauptet nichts anderes.
+Das sind vier kleine Klassen und eine Build-Einstellung; die Arbeit liegt in der
+Compose-App, nicht im Abgleich. **Solange sie fehlen, gibt es auf Android keinen
+Abgleich** — und diese Datei behauptet nichts anderes.
+
+Die gewünschte Oberfläche ist dieselbe wie auf den anderen Plattformen: ein
+Knopf „Mit Google anmelden", danach „Jetzt synchronisieren" und „Dieses Gerät
+trennen". Kein Feld für eine Client-ID, keine Tokens, keine technischen
+Einstellungen.
 
 ---
 
@@ -351,10 +554,23 @@ diese Datei behauptet nichts anderes.
 ```bash
 python3 tools/check-apple-sources.py
 cd native && swift test                      # Kern, Migration, Merge, Drive, OAuth
-npm --prefix shared/nori-core test           # dieselben Fälle in TypeScript
+npm --prefix shared/nori-core test           # dieselben Fälle in TypeScript, dazu QR-Code
 npm --prefix apps/webos run build            # tsc --noEmit und Vite
 python3 tools/check-webos-package.py
 ```
+
+Der Gerätefluss lässt sich vollständig durchspielen, ohne ein Google-Konto
+anzufassen — der Fernbedienungslauf fängt Googles Endpunkte ab:
+
+```bash
+npm --prefix apps/webos run mock             # in einem zweiten Fenster
+npm --prefix apps/webos run test:tv
+```
+
+Geprüft werden dabei QR-Code, Gerätecode, Restlaufzeit, Fokus im Dialog, die
+Zurück-Taste, der automatische Abschluss nach der Zustimmung, ein Neustart ohne
+erneute Anmeldung und ein abgelaufener Code. Die Bildschirmfotos landen in
+`apps/webos/test-shots/`.
 
 Die Apple-Targets bauen über `xcodebuild -scheme Nori` beziehungsweise über die
 Läufe `Build iOS` und `Build macOS`.
@@ -416,8 +632,10 @@ gelten für jeden Client, der sie so anfragt.
 | `access_denied` beim Zustimmen | Konto nicht als Testnutzer eingetragen | Im Zustimmungsbildschirm ergänzen. |
 | `invalid_scope` | Der Bereich ist für den Clienttyp nicht erlaubt | Der Gerätefluss erlaubt nur wenige Bereiche; `drive.appdata` gehört dazu. |
 | `invalid_grant` beim Erneuern | Zugriff widerrufen, Passwort geändert, lange nicht benutzt | Neu verbinden. Nori räumt den wertlosen Token selbst weg. |
-| „nicht eingerichtet" | Keine Client-ID hinterlegt | In der App eintragen oder beim Bauen setzen — Abschnitt 2. |
-| „Der Schlüsselbund hat die Ablage abgelehnt" | App ohne Signierteam gebaut | Tritt seit dem Rückfall auf die Voreinstellungen nicht mehr auf; bei Tokens bleibt der Schlüsselbund Voraussetzung. |
+| „ohne Google-Abgleich gebaut" | Keine Client-ID im Build | `GOOGLE_CLIENT_ID` beziehungsweise die Vite-Variablen setzen — Abschnitt 2. Ein Eingabefeld gibt es dafür nicht. |
+| „Google Drive muss erneut verbunden werden" | Berechtigung widerrufen oder abgelaufen | „Erneut anmelden". Nori räumt den wertlosen Token selbst weg. |
+| „Der Anmeldecode ist abgelaufen" | Der Gerätecode gilt nur wenige Minuten | „Neuen Code erzeugen" am Fernseher. |
+| QR-Code wird nicht erkannt | Zu weit weg, oder der Fernseher steht sehr schräg | Die Adresse und der Code stehen daneben — beide sind so gross, dass sie sich abtippen lassen. |
 | „neuerer Stand in der Cloud" | Ein anderes Gerät hat mit neuerem Schema geschrieben | Diese Nori-Fassung aktualisieren. Sie lädt bewusst nicht hoch, um nichts wegzuwerfen. |
 | Abgleich bleibt „offline" | Kein Netz, DNS, oder TLS auf dem Fernseher | Lokal ist alles da; beim nächsten Netz geht es weiter. |
 | Zwei Dateien für ein Gerät | Sollte nicht vorkommen | Nori erkennt seine Datei am `deviceId` in `appProperties` wieder. Überzählige lassen sich gefahrlos löschen. |
@@ -430,3 +648,7 @@ gelten für jeden Client, der sie so anfragt.
 - [OAuth 2.0 für native Anwendungen](https://developers.google.com/identity/protocols/oauth2/native-app)
 - [Drive-API: Bereiche wählen](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 - [Überprüfung sensibler Bereiche](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification)
+- [RFC 8628 — OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628)
+- [RFC 7636 — PKCE](https://www.rfc-editor.org/rfc/rfc7636)
+- [Google Identity für iOS](https://developers.google.com/identity/sign-in/ios/sign-in)
+- [Android: Autorisierung zusätzlicher Bereiche](https://developers.google.com/identity/authorization/android)

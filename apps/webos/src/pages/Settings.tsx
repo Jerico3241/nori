@@ -12,10 +12,12 @@
 // ohne Server arbeitet der Fernseher direkt an den Quellen.
 
 import { LIBRARY_SCHEMA_VERSION, PLAYBACK_SPEEDS, type CatalogProvider } from "@nori/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { QrCode } from "../components/QrCode";
+import { useBackHandler } from "../navigation/back";
 import { restoreFocusSoon } from "../navigation/focusMemory";
-import { SpotArea, SpotButton } from "../navigation/Spot";
+import { focusWithin, SpotArea, SpotButton } from "../navigation/Spot";
 import { pingServer, type ServerInfo } from "../services/gateway";
 import { covers } from "../services/covers";
 import { tmdb, type TmdbMode } from "../services/tmdb";
@@ -64,9 +66,6 @@ export function SettingsPage() {
   const [dataNote, setDataNote] = useState<string | null>(null);
   // Hochgezählt, damit die Diagnosezeile nach dem Leeren neu gelesen wird.
   const [tick, setTick] = useState(0);
-  const [clientIdDraft, setClientIdDraft] = useState("");
-  const [clientSecretDraft, setClientSecretDraft] = useState("");
-  const [credentialsNote, setCredentialsNote] = useState<string | null>(null);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["playback", "connection"]), []);
 
@@ -443,68 +442,35 @@ export function SettingsPage() {
           </p>
         </header>
 
-        <Row label="Zustand">
+        <Row label="Google Drive">
           <span className="field-note">{syncStatusLabel(sync)}</span>
         </Row>
 
         {!sync.isConfigured ? (
-          <>
-            {/*
-              Hier stand vorher nur ein Knopf, der eine Meldung zeigte. Das war
-              eine Sackgasse: wer ein fertiges .ipk installiert, hat keine
-              Build-Variable und kam deshalb nie zu einer Anmeldung.
-            */}
-            <Row
-              label="Google-Client-ID"
-              hint="Aus einem eigenen Google-Cloud-Projekt, OAuth-Client vom Typ „Fernseher und Geräte mit eingeschränkter Eingabe“. Endet auf .apps.googleusercontent.com"
-            >
-              <div className="field-row">
-                <input
-                  className="spottable"
-                  type="text"
-                  value={clientIdDraft}
-                  placeholder="123456-abc.apps.googleusercontent.com"
-                  aria-label="Google-Client-ID"
-                  onChange={(event) => setClientIdDraft(event.target.value)}
-                />
-              </div>
-            </Row>
-            <Row
-              label="Client-Secret"
-              hint="Googles Fluss für Fernseher verlangt es. Es liegt unverschlüsselt im Speicher dieser App."
-            >
-              <div className="field-row">
-                <input
-                  className="spottable"
-                  type="password"
-                  value={clientSecretDraft}
-                  placeholder="GOCSPX-…"
-                  aria-label="Google-Client-Secret"
-                  onChange={(event) => setClientSecretDraft(event.target.value)}
-                />
-                <SpotButton
-                  focusRoute={ROUTE}
-                  focusArea="sync"
-                  focusKey="credentials-save"
-                  onClick={() => {
-                    const problem = sync.saveCredentials(clientIdDraft, clientSecretDraft);
-                    setCredentialsNote(problem);
-                    if (!problem) {
-                      setClientIdDraft("");
-                      setClientSecretDraft("");
-                    }
-                  }}
-                >
-                  Zugangsdaten sichern
-                </SpotButton>
-              </div>
-            </Row>
-            {credentialsNote ? <p className="field-note">{credentialsNote}</p> : null}
-          </>
-        ) : sync.pending ? <DeviceCodePanel /> : (
+          // Kein Eingabefeld. Client-ID und Client-Secret mit einer
+          // Fernbedienung über eine Bildschirmtastatur einzugeben war keine
+          // Einrichtung, sondern eine Hürde — wer das vor sich hatte, bekam
+          // keinen Abgleich. Die Werte kommen aus dem Build; fehlen sie, ist
+          // das ein Build-Fehler und steht in der Diagnose.
+          <p className="field-note">
+            Diese Nori-Fassung wurde ohne Google-Abgleich gebaut. Merkliste, Verlauf und
+            Fortschritt funktionieren vollständig weiter — sie bleiben auf diesem Fernseher.
+          </p>
+        ) : (
           <SpotArea className="filter-row" spotlightId="set-sync">
-            {sync.status === "disconnected" ? (
+            {sync.needsReauthorization ? (
               <SpotButton
+                className="primary"
+                focusRoute={ROUTE}
+                focusArea="sync"
+                focusKey="reconnect"
+                onClick={() => sync.connect()}
+              >
+                Erneut anmelden
+              </SpotButton>
+            ) : sync.status === "disconnected" ? (
+              <SpotButton
+                className="primary"
                 focusRoute={ROUTE}
                 focusArea="sync"
                 focusKey="connect"
@@ -538,8 +504,10 @@ export function SettingsPage() {
                     // Betrifft alle Geräte an diesem Konto, nicht nur den
                     // Fernseher. Deshalb wird vorher gefragt.
                     if (window.confirm(
-                      "Damit verlieren alle Geräte an diesem Google-Konto den Zugriff — "
-                      + "auch iPhone und Mac. Die Bibliothek auf diesem Fernseher bleibt erhalten.",
+                      "Google-Zugriff widerrufen?\n\n"
+                      + "Dadurch kann Nori auf deinen Geräten nicht mehr auf die "
+                      + "Google-Drive-Synchronisierung zugreifen. Deine lokale Bibliothek "
+                      + "bleibt erhalten.",
                     )) sync.revokeAccess();
                   }}
                 >
@@ -550,33 +518,50 @@ export function SettingsPage() {
           </SpotArea>
         )}
 
+        {sync.needsReauthorization ? (
+          <p className="field-note">Google Drive muss erneut verbunden werden.</p>
+        ) : null}
+        {sync.isConfigured && sync.status !== "disconnected" && sync.lastSuccessfulSync ? (
+          <p className="field-note">
+            Letzte Synchronisierung: {relativeTime(sync.lastSuccessfulSync)}
+          </p>
+        ) : null}
         {sync.message ? <p className="field-note">{sync.message}</p> : null}
         {sync.lastWarning ? <p className="field-note">{sync.lastWarning}</p> : null}
-        {sync.isConfigured ? (
+
+        {/*
+          Die Diagnose hängt am Entwicklerschalter weiter oben und ist sonst
+          nicht zu sehen. Sie beantwortet genau eine Frage — „welchen
+          Google-Zugang benutzt dieses Paket?" —, und die lässt sich sonst nur
+          durch Raten beantworten.
+
+          Das Client-Secret steht hier **nicht**, auch nicht verkürzt. Dass es
+          vorhanden ist, reicht als Auskunft.
+        */}
+        {settings.debug ? (
           <>
-            {/* Kein Geheimnis: die Client-ID steht in jeder Anmeldeadresse. Sie
-                zu sehen ist der einzige Weg zu bemerken, dass beim Einfügen
-                etwas verrutscht ist. Das Secret wird nicht angezeigt. */}
-            <p className="field-note">Client-ID: {sync.clientId}</p>
-            {sync.credentialsFromDevice ? (
+            <p className="field-note">
+              Client-ID: {sync.diagnostics.clientId || "—"} ·{" "}
+              {sync.diagnostics.origin === "build" ? "aus dem Build"
+                : sync.diagnostics.origin === "migrated" ? "aus einer früheren Fassung übernommen"
+                : "fehlt"} · Client-Secret:{" "}
+              {sync.diagnostics.hasSecret ? "vorhanden" : "fehlt"} · Bereich: nur
+              drive.appdata
+            </p>
+            {sync.diagnostics.origin === "migrated" ? (
               <SpotArea className="filter-row" spotlightId="set-sync-credentials">
                 <SpotButton
                   focusRoute={ROUTE}
                   focusArea="sync"
                   focusKey="credentials-clear"
-                  onClick={() => sync.clearCredentials()}
+                  onClick={() => sync.forgetMigratedCredentials()}
                 >
-                  Zugangsdaten entfernen
+                  Übernommene Zugangsdaten verwerfen
                 </SpotButton>
               </SpotArea>
             ) : null}
           </>
-        ) : (
-          <p className="field-note">
-            Ohne Zugangsdaten funktioniert die Bibliothek vollständig weiter, nur eben auf
-            diesem Fernseher. Die Schritte stehen in docs/google-drive-sync.md.
-          </p>
-        )}
+        ) : null}
       </section>
 
       <section className="settings-section">
@@ -659,57 +644,170 @@ export function SettingsPage() {
           zusammengeführt statt ersetzt.
         </p>
       </section>
+
+      {/* Über allem: solange eine Anmeldung läuft, ist sie das Einzige, was
+          zählt. Unten und nicht mitten in der Liste, damit der Dialog die
+          ganze Fläche bekommt. */}
+      {sync.pending ? <DeviceSignInDialog /> : null}
     </div>
   );
 }
 
 /**
+ * Die verstrichene Zeit in Worten.
+ *
+ * „vor wenigen Sekunden" und nicht „vor 3 Sekunden": auf einem Fernseher wird
+ * die Zeile nicht jede Sekunde neu gezeichnet, und eine Zahl, die eine Minute
+ * lang stehenbleibt, ist falsch.
+ */
+function relativeTime(stamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - stamp) / 1000));
+  if (seconds < 45) return "vor wenigen Sekunden";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? "vor einer Minute" : `vor ${minutes} Minuten`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "vor einer Stunde" : `vor ${hours} Stunden`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "gestern" : `vor ${days} Tagen`;
+}
+
+/**
  * Der Gerätefluss, so gross, dass man ihn vom Sofa aus lesen kann.
  *
- * Kein Wartekreisel ohne Erklärung: auf dem Fernseher sieht der Nutzer die
- * Adresse, den Code und wie lange er noch gilt. Was er tun soll, steht dabei —
- * sonst wartet er auf etwas, das ohne ihn nie passiert.
+ * Ein eigener Bildschirm und keine Zeile in der Liste. Was hier passiert, ist
+ * eine Handlung mit einem zweiten Gerät und dauert eine Minute; sie zwischen
+ * „Bevorzugter Hoster" und „Verlauf leeren" abzuwickeln, hiesse sie zu
+ * verstecken.
+ *
+ * Drei Dinge stehen darauf, in dieser Reihenfolge:
+ *
+ * 1. **Der QR-Code.** Gross, mit hellem Grund und Rand. Er ist der kurze Weg:
+ *    Kamera drauf, fertig. Enthält Google eine vollständige Adresse
+ *    (`verification_uri_complete` nach RFC 8628), steckt der Code schon darin
+ *    und am Telefon ist nichts mehr zu tippen.
+ * 2. **Die Adresse und der Code**, für den, der kein Telefon mit Kamera dabei
+ *    hat. Beide so gross, dass sie aus drei Metern zu lesen sind.
+ * 3. **Wie lange der Code noch gilt.** Ohne das wartet jemand vor einem
+ *    Bildschirm, auf dem längst nichts mehr passieren kann.
+ *
+ * Kein OAuth-Wort, keine Fehlernummer, kein Wartekreisel ohne Erklärung.
  */
-function DeviceCodePanel() {
+function DeviceSignInDialog() {
   const sync = useSync();
-  const [remaining, setRemaining] = useState(0);
+  const panel = useRef<HTMLDivElement>(null);
 
+  /*
+   * Die Restlaufzeit wird bei jedem Zeichnen gerechnet, nicht gespeichert.
+   *
+   * Gespeichert begann sie bei null — und für ein Bild stand dann „Der
+   * Anmeldecode ist abgelaufen." auf dem Bildschirm, bevor der erste Takt sie
+   * richtigstellte. Der Zeitgeber löst nur das Neuzeichnen aus; gerechnet wird
+   * aus `expiresAt`, und das ist von Anfang an richtig.
+   */
   const expiresAt = sync.pending?.expiresAt ?? 0;
+  const [, redraw] = useState(0);
   useEffect(() => {
     if (!expiresAt) return undefined;
-    const tick = () => setRemaining(Math.max(0, Math.round((expiresAt - Date.now()) / 1000)));
-    tick();
-    const timer = window.setInterval(tick, 1000);
+    const timer = window.setInterval(() => redraw((n) => n + 1), 1000);
     return () => window.clearInterval(timer);
   }, [expiresAt]);
+  const remaining = expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 1000)) : 0;
+
+  // Zurück bricht die Anmeldung ab und schliesst den Dialog — und nicht die
+  // Seite darunter.
+  useBackHandler(() => {
+    sync.cancelConnect();
+    return true;
+  });
+
+  // Der Fokus muss in den Dialog. Ohne das stünde er weiter auf dem Knopf
+  // dahinter: sichtbar wäre der QR-Code, bedient würde die Liste darunter.
+  useEffect(() => focusWithin(panel.current), []);
+
+  // Läuft der Code ab, wandert der Fokus auf „Neuen Code erzeugen". Er bliebe
+  // sonst auf „Abbrechen" stehen — dem einen Knopf, der hier nicht
+  // weiterhilft.
+  const expired = sync.expired || (expiresAt > 0 && expiresAt <= Date.now());
+  useEffect(() => {
+    if (!expired) return undefined;
+    return focusWithin(panel.current, '[data-focus-key="device-retry"]', 20, true);
+  }, [expired]);
+
+  // Und beim Schliessen zurück in die Abgleich-Reihe. Ein Fokus, der nach dem
+  // Schliessen auf `body` liegt, sieht auf dem Fernseher aus wie eine
+  // Fernbedienung ohne Batterien.
+  useEffect(() => () => { restoreFocusSoon(ROUTE, ["sync"]); }, []);
 
   if (!sync.pending) return null;
+
   const minutes = Math.floor(remaining / 60);
   const seconds = String(remaining % 60).padStart(2, "0");
+  const shortUrl = sync.pending.verificationUrl.replace(/^https?:\/\//, "");
 
   return (
-    <div className="device-code">
-      <p className="device-code-lead">
-        Öffne diese Adresse auf deinem Smartphone oder Computer und gib den Code ein:
-      </p>
-      <p className="device-code-url">{sync.pending.verificationUrl}</p>
-      <p className="device-code-value">{sync.pending.userCode}</p>
-      <p className="device-code-hint">
-        {remaining > 0
-          ? `Der Code gilt noch ${minutes}:${seconds} Minuten. Nori wartet auf deine Bestätigung …`
-          : "Der Code ist abgelaufen. Bitte neu beginnen."}
-      </p>
-      <SpotArea className="filter-row" spotlightId="set-sync-pending">
-        <SpotButton
-          focusRoute={ROUTE}
-          focusArea="sync"
-          focusKey="cancel"
-          onClick={() => sync.cancelConnect()}
-        >
-          Abbrechen
-        </SpotButton>
+    <>
+      <div className="device-shade" aria-hidden="true" />
+      <SpotArea
+        className="device-dialog"
+        spotlightId="device-dialog"
+        restrict="self-only"
+        role="dialog"
+        aria-label="Google Drive verbinden"
+      >
+        <div className="device-panel" ref={panel}>
+          <h2>Google Drive verbinden</h2>
+
+          {expired ? (
+            <div className="device-expired">
+              <p className="device-lead">Der Anmeldecode ist abgelaufen.</p>
+              <p className="device-hint">
+                Codes gelten nur wenige Minuten. Ein neuer ist sofort da.
+              </p>
+            </div>
+          ) : (
+            <div className="device-body">
+              <div className="device-qr">
+                {/* Genau die Adresse, die Google geliefert hat. Nie eine
+                    selbst zusammengesetzte — welchen Parameter Google an
+                    google.com/device erwartet, sichert es nirgends zu. */}
+                <QrCode
+                  value={sync.qrPayload ?? sync.pending.verificationUrl}
+                  label={`QR-Code für ${shortUrl}`}
+                />
+              </div>
+              <div className="device-text">
+                <p className="device-lead">Scanne den QR-Code mit deinem Smartphone.</p>
+                <p className="device-or">Oder öffne am Telefon</p>
+                <p className="device-url">{shortUrl}</p>
+                <p className="device-or">und gib diesen Code ein</p>
+                <p className="device-value">{sync.pending.userCode}</p>
+              </div>
+            </div>
+          )}
+
+          {expired ? null : (
+            <p className="device-hint">
+              Nori wartet auf deine Anmeldung … Der Code gilt noch {minutes}:{seconds} Minuten.
+            </p>
+          )}
+
+          <div className="device-actions">
+            {expired ? (
+              <SpotButton
+                className="primary"
+                focusKey="device-retry"
+                onClick={() => sync.connect()}
+              >
+                Neuen Code erzeugen
+              </SpotButton>
+            ) : null}
+            <SpotButton focusKey="device-cancel" onClick={() => sync.cancelConnect()}>
+              Abbrechen
+            </SpotButton>
+          </div>
+        </div>
       </SpotArea>
-    </div>
+    </>
   );
 }
 
