@@ -38,6 +38,11 @@ export function BackProvider({ children, onExhausted }: {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isBack(event)) return;
+      // Im Suchfeld löscht die Rücktaste einer Tastatur ein Zeichen. Als
+      // „Zurück" gelesen, verließ jeder Tippfehler die Seite.
+      const target = document.activeElement;
+      const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+      if (typing && event.key === "Backspace") return;
       event.preventDefault();
       event.stopPropagation();
       for (let i = handlers.current.length - 1; i >= 0; i -= 1) {

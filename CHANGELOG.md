@@ -5,7 +5,82 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.3.1**.
+Windows **1.8.0**, LG webOS **2.0.0**.
+
+## [webOS 2.0.0] — 2026-09-12
+
+Die sichtbare TV-Oberfläche ist neu gebaut, nach `nori-webos-design-v4.html`.
+Übernommen sind nur Daten, Provider, Player-Logik, Bibliothek, Abgleich und
+die TMDB-Schicht. Eine neue Hauptnummer, weil nichts Sichtbare bleibt — und
+weil `1.4.0` bereits als Paket vom Zweig `claude/google-anmeldung-ein-knopf`
+gebaut wurde; ein Fernseher mit diesem Stand muss 2.0.0 als neuer erkennen.
+
+### Geändert
+
+- **Alle Ansichten neu:** Start (Hero, Weiterschauen, Neu & beliebt, Neue
+  Episoden, Für dich, Merkliste), Katalog (Suche, Schnellfilter, Filterdialog,
+  fünf Poster je Zeile), Detailseite (großer Backdrop, Staffelmenü, drei
+  Folgenkarten je Zeile), Kalender (Heute, Woche, Monat), Merkliste (Übersicht,
+  Ungesehen/Angefangen/Gesehen, Bearbeiten), Mehr (große Karten, Unterseiten
+  Verbindung, Abgleich, Daten, Diagnose, Verlauf). Player: gleiche Logik, neue
+  Palette und Fokus.
+- **Seitenleiste:** nur die Wortmarke „Nori" oben links, fünf Einträge auf
+  Bildmitte, feste Breite von 15,5 rem ohne Aufklappen.
+- **Farben:** Grund `#03070d`, Akzent Eisblau `#79c7ff`, Fokus hell mit dunkler
+  Schrift. Der Merkliste-Knopf im Hero ist normal hell auf dunkel und im Fokus
+  dunkel auf hell.
+- **Skalierung:** alle Maße in rem, Wurzelschrift aus Breite und Höhe; 4K
+  zeigt dasselbe Layout doppelt so groß. TMDB-Bildgrößen je gezeichneter Breite
+  (`src/services/images.ts`).
+- **Navigation:** eigene Engine (`src/navigation/engine.ts`) statt Enact
+  Spotlight. Scrollen ohne `scrollIntoView`, mit Rechnung gegen das Ziel
+  laufender Bewegungen, Fokuswachstum, Ring und 3,5 rem Sicherheitsrand. Fokus
+  und Scrollstand je Ansicht gemerkt. `@enact/spotlight` ist keine Abhängigkeit
+  mehr.
+- **Keine CSS-Merkmale, die webOS 6 fehlen:** kein Flex-`gap`, kein
+  `aspect-ratio`, kein `inset`. `tools/check-webos-package.py` prüft die
+  beiden letzten.
+- **Katalog im Bereich „Alle" ohne Dubletten:** zusammengeführt über dieselbe
+  TMDB-Kennung oder denselben Slug mit gleichem Titel.
+- **Kalender:** eine Uhrzeit nur, wenn die Quelle eine nennt (`hasTime`).
+
+### Behoben
+
+- **TMDB konnte für die ganze Sitzung stillstehen.** `ensureLogo` und
+  `ensureSeason` belegten einen der vier Abrufplätze und warteten darin auf
+  `ensureArt`, das selbst einen Platz brauchte. Waren alle vier so belegt,
+  kam kein TMDB-Abruf mehr zurück. Die Zuordnung läuft jetzt vor dem
+  Einreihen.
+- **Ein 404 auf dem Weg zu TMDB galt als „gibt es nicht" — für vierzehn
+  Tage.** Die Suche antwortet nie mit 404; er kam etwa von einem Nori-Server
+  ohne `/api/tmdb`. Gemerkt wird nur noch „TMDB hat geantwortet, nichts
+  passte" (zwölf Stunden). Ablagefassung v4 verwirft die falschen Einträge.
+- **Ein einmal abgelegtes Quellcover verhinderte das TMDB-Poster.** Kacheln
+  fragten TMDB nur, wenn gar kein Bild bekannt war.
+- **Jede Kachel lud die Detailseite der Quelle**, auch wenn TMDB ein Poster
+  hatte. Jetzt TMDB zuerst, die Quelle nur als Rückfall.
+- **Rücktaste im Suchfeld** verließ die Ansicht.
+
+### Geprüft
+
+- `npm --prefix shared/nori-core test`: 165 bestanden.
+- `npm --prefix services/nori-api test`: 13 bestanden.
+- `npm --prefix apps/webos run build`: `tsc --noEmit` und Vite ohne Fehler.
+- Fernbedienungslauf (`test/remote-control.test.mjs`, neu geschrieben) gegen
+  den Mock-Server in Chromium, getrennt bei 1920 × 1080 und 3840 × 2160:
+  235 von 235 Prüfungen bestanden, siehe `docs/webos.md`.
+- Die Bildschirmfotos von Start, Katalog, Detail, Staffelmenü, Kalender
+  (Heute, Monat), Merkliste, Mehr, Player-Drawer und 4K-Start habe ich mir
+  angesehen.
+
+### Nicht geprüft
+
+- **Kein echter Fernseher.** Weder installiert noch gestartet; das `ares`-SDK
+  ist auf dem Bauplatz nicht vorhanden. Magic Remote, Systemtastatur und
+  HLS-Wiedergabe auf dem Gerät sind offen.
+- **Keine echten Quellen und kein echtes TMDB.** Alle Läufe gegen feste Daten
+  (`test/mock-server.mjs`, `test/mock-tmdb.mjs`).
+- **Google Drive** nicht mit einem echten Konto.
 
 ## [webOS 1.3.1] — 2026-09-12
 

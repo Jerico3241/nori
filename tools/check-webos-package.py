@@ -316,6 +316,43 @@ def check_relative_paths() -> None:
         )
 
 
+def check_css_compat() -> None:
+    """Keine CSS-Merkmale, die webOS 6 (Chrome 79) nicht kennt.
+
+    Beide Fälle fallen in einem heutigen Browser nicht auf und brechen auf dem
+    ältesten unterstützten Fernseher still das Layout:
+
+    * `inset` kam mit Chrome 87 — ein Overlay ohne `top/right/bottom/left`
+      liegt dort in der Ecke statt über dem Bild.
+    * `aspect-ratio` kam mit Chrome 88 — eine Bildfläche ohne Höhe fällt auf
+      null zusammen, und jede Karte darunter rutscht nach oben.
+
+    Flex-`gap` (Chrome 84) lässt sich statisch nicht vom Raster-`gap`
+    unterscheiden; das prüft der Fernbedienungslauf im Browser.
+    """
+    styles = APP / "src" / "styles"
+    if not styles.exists():
+        return
+    forbidden = [
+        (re.compile(r"(^|[;{\s])inset\s*:"), "`inset` (erst ab Chrome 87)"),
+        (re.compile(r"aspect-ratio\s*:"), "`aspect-ratio` (erst ab Chrome 88)"),
+    ]
+    for path in sorted(styles.glob("*.css")):
+        text = re.sub(r"/\*.*?\*/", " ", path.read_text(encoding="utf-8"), flags=re.S)
+        for number, line in enumerate(text.splitlines(), 1):
+            for pattern, what in forbidden:
+                if pattern.search(line):
+                    problems.append(f"{path.relative_to(ROOT)}:{number}: {what} — webOS 6 kennt es nicht")
+
+    # Die Navigation ist eigene: ein Rest von Enact Spotlight wäre ein zweites
+    # System, das dieselben Tasten abgreift.
+    for path in sources():
+        if path.suffix not in {".ts", ".tsx"} or APP not in path.parents:
+            continue
+        if "@enact/" in path.read_text(encoding="utf-8", errors="replace"):
+            problems.append(f"{path.relative_to(ROOT)}: importiert Enact — die Navigation liegt in src/navigation/engine.ts")
+
+
 def check_package() -> None:
     """Das fertige Paket noch einmal von außen ansehen."""
     packages = sorted(APP.glob("*.ipk"))
@@ -412,6 +449,7 @@ def main() -> int:
     check_key_matches_apple()
     check_versions()
     check_relative_paths()
+    check_css_compat()
     check_package()
 
     for warning in warnings:

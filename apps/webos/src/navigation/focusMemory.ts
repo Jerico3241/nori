@@ -1,23 +1,29 @@
 // Fokusgedächtnis.
 //
-// Der Punkt, an dem sich eine TV-App entscheidet: Wer auf der Startseite den
-// siebten Titel einer Reihe öffnet und zurückgeht, muss wieder auf dem siebten
-// stehen — nicht am Anfang der Reihe.
+// Wer auf der Startseite in „Neu & beliebt" das vierte Poster öffnet und
+// zurückgeht, muss wieder auf dem vierten Poster stehen — mit derselben
+// Scrollposition, nicht am Anfang der Reihe und nicht im Kopfbereich.
 //
-// Spotlight kann das für Container („enterTo: last-focused"), verliert es aber,
-// sobald der Container ausgehängt wird — und genau das passiert bei jedem
-// Seitenwechsel. Deshalb hält Nori zusätzlich selbst fest, welches Element in
-// welchem Bereich zuletzt den Fokus hatte, und stellt es nach dem Aufbau der
-// Seite wieder her.
+// Eine Ansicht wird beim Seitenwechsel ausgehängt; mit ihr gehen Fokus und
+// Scrollstand verloren. Deshalb hält Nori beides selbst fest: je Route den
+// Schlüssel (`data-focus-key`) des zuletzt fokussierten Elements und den
+// Scrollstand von Seite und Reihen.
 
-import { Spotlight } from "./spotlight";
 import { log } from "../services/log";
+import {
+  FOCUSABLE, applyScrollSnapshot, focusElement, focusables, isUsable, recoverFocus,
+  takeScrollSnapshot, type ScrollSnapshot,
+} from "./engine";
 
-/** Schlüssel: `<Routenschlüssel>::<Bereich>`, Wert: `data-focus-key` des Elements. */
+/** Schlüssel: `<Route>::<Bereich>`, Wert: `data-focus-key` des Elements. */
 const memory = new Map<string, string>();
+/** Route → letzter Bereich, damit nicht jede Seite alle Bereiche aufzählen muss. */
+const lastArea = new Map<string, string>();
+const scrollMemory = new Map<string, ScrollSnapshot>();
 
 export function rememberFocus(route: string, area: string, key: string): void {
   memory.set(`${route}::${area}`, key);
+  lastArea.set(route, area);
 }
 
 export function recallFocus(route: string, area: string): string | null {
@@ -25,127 +31,134 @@ export function recallFocus(route: string, area: string): string | null {
 }
 
 export function forgetRoute(route: string): void {
-  for (const key of Array.from(memory.keys())) {
+  Array.from(memory.keys()).forEach((key) => {
     if (key.startsWith(`${route}::`)) memory.delete(key);
-  }
+  });
+  lastArea.delete(route);
+  scrollMemory.delete(route);
 }
 
-/**
- * Das gemerkte Element einer Seite fokussieren, sonst das erste.
- *
- * Gibt zurück, ob überhaupt etwas fokussiert werden konnte. Der Aufrufer
- * probiert es sonst im nächsten Bild noch einmal — Bilder und Listen kommen
- * asynchron, und ein Fokusversuch auf einen leeren Baum ginge ins Leere.
- */
-export function restoreFocus(route: string, areas: string[]): boolean {
+export function saveScroll(route: string, root: HTMLElement | null): void {
+  if (root) scrollMemory.set(route, takeScrollSnapshot(root));
+}
+
+function cssEscape(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
+}
+
+function screenRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".app-main [data-scroll-y]");
+}
+
+/** Der zuletzt gemerkte Schlüssel einer Route — genau einer. */
+function lastRemembered(route: string): string | null {
+  const area = lastArea.get(route);
+  return area ? recallFocus(route, area) : null;
+}
+
+/** Gemerkte Schlüssel der übrigen Bereiche, in der Reihenfolge der Seite. */
+function otherRemembered(route: string, areas: string[]): string[] {
+  const out: string[] = [];
   for (const area of areas) {
     const key = recallFocus(route, area);
-    if (!key) continue;
-    const selector = `[data-focus-key="${cssEscape(key)}"]`;
-    const node = document.querySelector<HTMLElement>(selector);
-    if (node && isVisible(node)) {
-      log("focus", "wiederhergestellt", route, area, key);
-      return takeFocus(node);
-    }
+    if (key && !out.includes(key)) out.push(key);
   }
-  const first = firstSpottable();
-  if (first) return takeFocus(first);
-  return false;
+  return out;
+}
+
+export interface RestoreOptions {
+  /** Worauf der Fokus beim ersten Öffnen soll, etwa `[data-focus-key="hero-play"]`. */
+  initial?: string;
+  /** Ist der Inhalt vollständig da? Bis dahin wird auf das Gemerkte gewartet. */
+  ready?: boolean;
 }
 
 /**
- * Fokus setzen und **nachprüfen, dass er angekommen ist**.
+ * Den Fokus einer Seite setzen: das Gemerkte, sonst das Vorgesehene, sonst das
+ * erste Element im Inhalt.
  *
- * `Spotlight.focus` nimmt ihn nicht immer an: Ein Container, der im selben
- * Bild neu eingehängt wurde, ist Spotlight noch nicht bekannt, und der Aufruf
- * tut dann schlicht nichts — ohne es zu sagen. Genau das trat auf, als ein
- * Katalogabruf mitten im Betrieb wegfiel: die Reihen wurden neu gezeichnet,
- * der Fokus lag danach auf `body`, und der Fernseher reagierte auf keine
- * Taste mehr.
- *
- * `element.focus()` als Rückfall ist kein Umgehen von Spotlight — es liest den
- * Fokus des Dokuments und zieht nach.
+ * Wiederholt, bis es klappt: Reihen und Bilder kommen asynchron. Solange das
+ * gemerkte Element noch nicht gezeichnet ist, steht der Fokus vorläufig im
+ * Inhalt — nie nirgends —, und der Versuch läuft weiter. Erst wenn der Inhalt
+ * fertig ist, gibt er das Gemerkte auf.
  */
-function takeFocus(node: HTMLElement): boolean {
-  Spotlight.focus(node);
-  if (document.activeElement === node) return true;
-  node.focus();
-  return document.activeElement === node;
-}
-
-/**
- * Das erste sinnvoll fokussierbare Element — Inhalt vor Rahmen.
- *
- * Der Unterschied ist bei jedem Kaltstart zu sehen: Die Seitenleiste steht im
- * Dokument vor dem Inhalt, und ein `querySelector(".spottable")` fand deshalb
- * immer sie. Nori begann also mit fokussierter Seitenleiste — die klappt bei
- * Fokus auf und verdeckte den halben Kopfbereich, bevor überhaupt eine Taste
- * gedrückt war. Auf einem Fernseher ist der erste Bildschirm aber das, was man
- * am längsten ansieht.
- *
- * Deshalb zuerst im Hauptbereich suchen und nur dann im ganzen Dokument. Die
- * Seitenleiste bleibt über „links" erreichbar, sie ist nur nicht mehr der
- * Anfang.
- */
-function firstSpottable(): HTMLElement | null {
-  const roots: ParentNode[] = [];
-  const main = document.querySelector(".app-main");
-  if (main) roots.push(main);
-  roots.push(document);
-  for (const root of roots) {
-    for (const node of Array.from(root.querySelectorAll<HTMLElement>(".spottable"))) {
-      if (isVisible(node)) return node;
-    }
-  }
-  return null;
-}
-
-/**
- * Nach dem Aufbau der Seite wiederholt versuchen, den Fokus zu setzen.
- *
- * Es darf keinen Zustand geben, in dem nichts fokussiert ist — sonst reagiert
- * die Fernbedienung scheinbar gar nicht. Deshalb wird über mehrere Bilder
- * hinweg nachgefasst, statt einmal zu raten.
- */
-export function restoreFocusSoon(route: string, areas: string[], attempts = 12): () => void {
+export function restoreFocusSoon(
+  route: string,
+  areas: string[],
+  options: RestoreOptions = {},
+): () => void {
   let cancelled = false;
-  let left = attempts;
+  let attempts = 0;
+  // Rund viereinhalb Sekunden: so lange darf ein Katalog über das Netz
+  // brauchen, bevor der Fokus sich mit dem Erstbesten zufriedengibt.
+  const maxAttempts = options.ready === true ? 24 : 60;
+
+  const find = (main: HTMLElement | null, key: string): HTMLElement | null => {
+    const node = main?.querySelector<HTMLElement>(`[data-focus-key="${cssEscape(key)}"]`) ?? null;
+    return isUsable(node) ? node : null;
+  };
+
   const tick = () => {
     if (cancelled) return;
-    if (restoreFocus(route, areas)) return;
-    left -= 1;
-    if (left <= 0) return;
-    window.setTimeout(tick, 60);
+    attempts += 1;
+    const main = document.querySelector<HTMLElement>(".app-main");
+    const root = screenRoot();
+    const wanted = lastRemembered(route);
+    const exhausted = attempts >= maxAttempts;
+
+    // Nur der **zuletzt** gemerkte Schlüssel zählt, solange gewartet wird. Ein
+    // älterer aus einem anderen Bereich (der Kopfbereich vom ersten Besuch)
+    // wäre sofort da und würde das gemerkte Poster vier der Reihe darunter
+    // überholen, bevor die Reihe geladen ist.
+    const remembered = wanted ? find(main, wanted) : null;
+    if (remembered) {
+      const snapshot = scrollMemory.get(route);
+      if (root && snapshot) applyScrollSnapshot(root, snapshot);
+      focusElement(remembered, { instant: true });
+      log("focus", "wiederhergestellt", route, wanted);
+      return;
+    }
+
+    const initial = options.initial && main ? main.querySelector<HTMLElement>(options.initial) : null;
+
+    if (!wanted || exhausted) {
+      if (exhausted) {
+        for (const key of otherRemembered(route, areas)) {
+          const node = find(main, key);
+          if (node) {
+            focusElement(node, { instant: true });
+            return;
+          }
+        }
+      }
+      if (isUsable(initial)) {
+        focusElement(initial, { instant: true });
+        return;
+      }
+      if (exhausted && main) {
+        const first = focusables(main)[0];
+        if (first) focusElement(first, { instant: true });
+        return;
+      }
+    } else if (!isUsable(document.activeElement) && main) {
+      // Vorläufig, damit die Fernbedienung nicht tot wirkt — und ausdrücklich
+      // ohne gemerkt zu werden, sonst überschriebe er das Gewünschte.
+      const temporary = isUsable(initial) ? initial : focusables(main)[0];
+      if (temporary) focusElement(temporary, { instant: true, transient: true });
+    }
+    if (!exhausted) window.setTimeout(tick, 75);
   };
+
   window.setTimeout(tick, 0);
   return () => {
     cancelled = true;
   };
 }
 
-/** Nichts fokussiert? Dann irgendetwas Sichtbares fokussieren. */
+/** Nichts fokussiert? Dann das Naheliegende. */
 export function ensureFocus(): void {
-  const current = document.activeElement;
-  if (current instanceof HTMLElement
-    && current !== document.body
-    && document.contains(current)
-    && isVisible(current)) {
-    return;
-  }
-  const target = firstSpottable();
-  if (!target) return;
-  if (takeFocus(target)) log("focus", "Notfokus gesetzt");
-}
-
-function isVisible(node: HTMLElement): boolean {
-  if (node.hasAttribute("disabled")) return false;
-  const rect = node.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return false;
-  const style = window.getComputedStyle(node);
-  return style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0";
-}
-
-/** `CSS.escape` gibt es auf webOS 6 nicht durchgängig. */
-function cssEscape(value: string): string {
-  return value.replace(/["\\]/g, "\\$&");
+  const active = document.activeElement;
+  if (isUsable(active) && active !== document.body && active.matches(FOCUSABLE)) return;
+  if (active instanceof HTMLInputElement && isUsable(active)) return;
+  recoverFocus();
 }

@@ -1,42 +1,33 @@
-// Eine horizontale Reihe.
+// Eine waagerechte Reihe mit Überschrift.
 //
-// Der eigene Container je Reihe ist der Grund, warum der Fokus beim Zurückgehen
-// wieder auf derselben Kachel steht: Spotlight merkt sich das zuletzt
-// fokussierte Kind je Container („enterTo: last-focused"), und Nori merkt sich
-// zusätzlich den Schlüssel, damit es auch einen Neuaufbau der Seite übersteht.
+// Zwei Markierungen, auf die sich die Navigation stützt:
+//
+// - `data-reveal` am Abschnitt: wer in die Reihe wechselt, sieht ihre
+//   Überschrift mit — „Neu & beliebt" verschwindet nicht über dem Bildrand,
+//   während nur noch das Poster darunter steht.
+// - `data-scroll-x` an der Spur: sie wird beim Weiterdrücken genau so weit
+//   bewegt, dass die nächste Karte ganz dasteht, samt Fokusring.
+//
+// `data-rail` statt `id`, damit Tests und Protokoll die Reihe finden.
 
 import type { ReactNode } from "react";
-import { SpotArea } from "../navigation/Spot";
 
-export function Rail({ title, count, note, children, id }: {
-  title: string;
-  count?: number;
-  /**
-   * Eine Zeile, die die Überschrift begründet.
-   *
-   * Nur dort, wo sie etwas erklärt — „Aus deinem Verlauf" unter „Für dich",
-   * „Reihenfolge der Quelle" unter „Neu im Katalog". Eine Reihe, die ihren
-   * Namen von selbst erklärt, bekommt keine.
-   */
-  note?: string;
+export function Rail({ id, title, note, children }: {
   id: string;
+  title: string;
+  /** Eine Zeile, die die Überschrift begründet — nur wo sie etwas erklärt. */
+  note?: string;
   children: ReactNode;
 }) {
   return (
-    /*
-      `data-rail` und nicht `id`: `spotlightId` wandert zu Spotlight, nicht in
-      das `id`-Attribut. Ein Test, der `#rail-continue` sucht, findet deshalb
-      nichts — und das ist ihm einmal passiert.
-    */
-    <section className="rail" data-rail={id} aria-label={title}>
-      <header>
+    <section className="section rail-section" data-reveal="" data-rail={id} aria-label={title}>
+      <div className="section-head">
         <h2>{title}</h2>
-        {typeof count === "number" && count > 0 ? <span className="rail-count">{count}</span> : null}
-        {note ? <span className="rail-note">{note}</span> : null}
-      </header>
-      <SpotArea className="rail-track" spotlightId={`rail-${id}`}>
-        {children}
-      </SpotArea>
+        {note ? <span>{note}</span> : null}
+      </div>
+      <div className="rail" data-scroll-x="" data-scroll-key={`rail-${id}`}>
+        <div className="rail-inner">{children}</div>
+      </div>
     </section>
   );
 }

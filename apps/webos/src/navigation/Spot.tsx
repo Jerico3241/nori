@@ -2,34 +2,20 @@
 //
 // `SpotButton` ist der einzige fokussierbare Grundtyp der App — alles, was die
 // Fernbedienung erreichen kann, ist einer. Das hält den Fokuszustand
-// einheitlich (Ring, Skalierung, Beschriftung) und verhindert die zwei
-// häufigsten TV-Fehler: ein sichtbares Element, das der Fokus nicht erreicht,
-// und ein fokussiertes Element, das man nicht sieht.
+// einheitlich und verhindert die zwei häufigsten TV-Fehler: ein sichtbares
+// Element, das der Fokus nicht erreicht, und ein fokussiertes Element, das man
+// nicht sieht.
+//
+// Die Namen (`spotlightDisabled`, `restrict`) stammen aus der Zeit mit Enact
+// Spotlight und sind geblieben, damit der Player unverändert bleibt. Dahinter
+// steht jetzt `navigation/engine.ts`.
 
-import SpottableHOC from "@enact/spotlight/Spottable";
-import { Spotlight } from "./spotlight";
-import SpotlightContainerDecorator from "@enact/spotlight/SpotlightContainerDecorator";
 import {
-  forwardRef, useCallback, useEffect, useRef,
+  forwardRef, useCallback, useEffect, useLayoutEffect, useRef,
   type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode,
 } from "react";
+import { focusElement, focusables, isTransientFocus, isUsable } from "./engine";
 import { rememberFocus } from "./focusMemory";
-
-type SpottableButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  spotlightDisabled?: boolean;
-  ref?: React.Ref<HTMLButtonElement>;
-};
-
-// Der HOC von Enact reicht `ref` durch, sagt es in seinen Typen aber nicht.
-const SpottableButton = SpottableHOC("button") as unknown as
-  React.ComponentType<SpottableButtonProps>;
-
-const SpotlightDiv = SpotlightContainerDecorator(
-  { enterTo: "last-focused", preserveId: true },
-  "div",
-) as unknown as React.ComponentType<
-  HTMLAttributes<HTMLDivElement> & { spotlightId?: string; spotlightDisabled?: boolean; spotlightRestrict?: string }
->;
 
 export interface SpotButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
@@ -41,71 +27,95 @@ export interface SpotButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   /** Route und Bereich, unter denen der Fokus gemerkt wird. */
   focusRoute?: string;
   focusArea?: string;
-  /** Eindeutig innerhalb des Bereichs — darüber findet ihn `restoreFocus`. */
+  /** Eindeutig innerhalb der Route — darüber findet ihn `restoreFocus`. */
   focusKey?: string;
+  /** Karten wachsen im Fokus stärker; die Scrollrechnung muss das wissen. */
+  card?: boolean;
   children?: ReactNode;
 }
 
-/**
- * Ein fokussierbarer Knopf, der sich beim Fokussieren selbst merkt und sich
- * in den sichtbaren Bereich scrollt.
- */
 export const SpotButton = forwardRef<HTMLButtonElement, SpotButtonProps>(function SpotButton(
-  { focusRoute, focusArea, focusKey, onFocus, className, children, ...rest },
+  { focusRoute, focusArea, focusKey, spotlightDisabled, card, onFocus, className, children, ...rest },
   ref,
 ) {
   const handleFocus = useCallback(
     (event: React.FocusEvent<HTMLButtonElement>) => {
-      if (focusRoute && focusArea && focusKey) rememberFocus(focusRoute, focusArea, focusKey);
-      scrollFocusIntoView(event.currentTarget);
+      if (focusRoute && focusArea && focusKey && !isTransientFocus()) rememberFocus(focusRoute, focusArea, focusKey);
       onFocus?.(event);
     },
     [focusRoute, focusArea, focusKey, onFocus],
   );
 
   return (
-    <SpottableButton
+    <button
       {...rest}
       ref={ref}
       type="button"
+      tabIndex={spotlightDisabled ? -1 : 0}
       data-focus-key={focusKey}
-      className={className}
+      data-focus-card={card ? "" : undefined}
+      data-nav-disabled={spotlightDisabled ? "true" : undefined}
+      className={`spottable${className ? ` ${className}` : ""}`}
       onFocus={handleFocus}
     >
       {children}
-    </SpottableButton>
+    </button>
   );
 });
 
 export interface SpotAreaProps extends HTMLAttributes<HTMLDivElement> {
   spotlightId?: string;
-  /** `self-only` sperrt den Fokus im Bereich ein — für Drawer und Modale. */
+  /** `self-only` sperrt den Fokus im Bereich ein — für Menüs und Dialoge. */
   restrict?: "self-first" | "self-only" | "none";
   children?: ReactNode;
 }
 
-/** Ein Spotlight-Container: merkt sich intern das zuletzt fokussierte Kind. */
-export function SpotArea({ restrict = "self-first", children, ...rest }: SpotAreaProps) {
+/**
+ * Ein Bereich. Mit `restrict="self-only"` ein Overlay, das den Fokus
+ * einsperrt und ihn beim Schließen an das Element zurückgibt, von dem aus es
+ * geöffnet wurde.
+ */
+export function SpotArea({ restrict = "self-first", spotlightId, children, ...rest }: SpotAreaProps) {
+  const trap = restrict === "self-only";
+  const node = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!trap) return undefined;
+    const opener = document.activeElement;
+    const area = node.current;
+    return () => {
+      // Noch **bevor** React das Overlay aus dem Dokument nimmt: diese Aufräumung
+      // läuft, solange das fokussierte Element darin noch steht. Den Fokus jetzt
+      // zurückzugeben heißt, dass er nie verloren geht — sonst hätte die
+      // Rückholung der Navigation im selben Bild das nächstgelegene Element
+      // gewählt statt des Knopfes, der das Overlay geöffnet hat.
+      const openerUsable = opener instanceof HTMLElement && document.contains(opener) && isUsable(opener)
+        && !(area?.contains(opener) ?? false);
+      if (openerUsable && area?.contains(document.activeElement)) {
+        focusElement(opener);
+        return;
+      }
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        const lost = !active || active === document.body || !document.contains(active);
+        if (lost && openerUsable) focusElement(opener);
+      }, 0);
+    };
+  }, [trap]);
+
   return (
-    <SpotlightDiv {...rest} spotlightRestrict={restrict}>
+    <div {...rest} ref={node} data-area={spotlightId} data-focus-trap={trap ? "" : undefined}>
       {children}
-    </SpotlightDiv>
+    </div>
   );
 }
 
 /**
  * Den Fokus in einen Bereich setzen und **nachprüfen, dass er dort ankam**.
  *
- * Das Nachprüfen ist der Punkt. Vorher wurde `Spotlight.focus(target)`
- * einmal aufgerufen und der Versuch als erledigt betrachtet, sobald ein
- * Element gefunden war. Spotlight nimmt den Fokus aber nicht immer an — ein
- * Container, der im selben Bild erst eingehängt wurde, ist ihm noch nicht
- * bekannt, und der Aufruf tut dann schlicht nichts. Auf dem Fernseher stand
- * der Fokus danach weiter auf dem Knopf **hinter** dem Overlay: sichtbar war
- * das Auswahlraster, bedient wurde die Seite darunter.
- *
- * Deshalb wird wiederholt, bis `document.activeElement` tatsächlich im Bereich
- * liegt — und als letzter Ausweg `focus()` am Element selbst aufgerufen.
+ * Wiederholt, bis `document.activeElement` tatsächlich im Bereich liegt: ein
+ * Overlay, das im selben Bild erst eingehängt wird, hat beim ersten Versuch
+ * manchmal noch keine Größe.
  */
 export function focusWithin(
   root: HTMLElement | null,
@@ -116,15 +126,9 @@ export function focusWithin(
   const tick = (left: number) => {
     if (cancelled || !root) return;
     if (root.contains(document.activeElement)) return;
-    const target = root.querySelector<HTMLElement>(selector)
-      ?? root.querySelector<HTMLElement>(".spottable");
-    if (target) {
-      Spotlight.focus(target);
-      // Wenn Spotlight nicht angesprungen ist: von Hand. Das ist kein
-      // Umgehen — Spotlight liest den Fokus des Dokuments und zieht nach.
-      if (!root.contains(document.activeElement)) target.focus();
-      if (root.contains(document.activeElement)) return;
-    }
+    const preferred = root.querySelector<HTMLElement>(selector);
+    const target = isUsable(preferred) ? preferred : focusables(root)[0];
+    if (target && focusElement(target, { instant: true })) return;
     if (left > 0) window.setTimeout(() => tick(left - 1), 50);
   };
   window.setTimeout(() => tick(attempts), 0);
@@ -133,52 +137,12 @@ export function focusWithin(
   };
 }
 
-/**
- * Fokus beim Einhängen in diesen Bereich setzen — für Drawer, Modale und den
- * Player, wo der Fokus nicht dort bleiben darf, wo er vorher war.
- */
+/** Fokus beim Einhängen in diesen Bereich setzen. */
 export function useAutoFocus(active: boolean, selector = ".spottable"): React.RefObject<HTMLDivElement> {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!active) return;
+    if (!active) return undefined;
     return focusWithin(ref.current, selector);
   }, [active, selector]);
   return ref;
-}
-
-/**
- * Das fokussierte Element sichtbar machen — ohne die Seite zu verschieben.
- *
- * `scrollIntoView({ inline: "center" })` klingt richtig und ist es fast nie:
- * es sucht sich den nächsten scrollbaren Vorfahren in der Querachse, und das
- * war bei den Einstellungen die Seite selbst. Ein Knopf am rechten Rand einer
- * Reihe hat dort die ganze Seite zur Seite geschoben — sichtbar blieb nichts.
- *
- * Deshalb hier von Hand: waagerecht wird nur eine Leiste bewegt, die
- * tatsächlich eine ist, und senkrecht bleibt es bei `nearest`.
- */
-function scrollFocusIntoView(node: HTMLElement): void {
-  const track = horizontalTrack(node);
-  if (track) {
-    const nodeBox = node.getBoundingClientRect();
-    const trackBox = track.getBoundingClientRect();
-    const centre = nodeBox.left - trackBox.left + track.scrollLeft - (trackBox.width - nodeBox.width) / 2;
-    const target = Math.max(0, Math.min(centre, track.scrollWidth - track.clientWidth));
-    if (Math.abs(target - track.scrollLeft) > 1) {
-      track.scrollTo({ left: target, behavior: "smooth" });
-    }
-  }
-  node.scrollIntoView({ block: "nearest", inline: "nearest" });
-}
-
-/** Der nächste Vorfahr, der wirklich waagerecht scrollt. */
-function horizontalTrack(node: HTMLElement): HTMLElement | null {
-  let current: HTMLElement | null = node.parentElement;
-  while (current && current !== document.body) {
-    const style = window.getComputedStyle(current);
-    const scrolls = style.overflowX === "auto" || style.overflowX === "scroll";
-    if (scrolls && current.scrollWidth > current.clientWidth + 1) return current;
-    current = current.parentElement;
-  }
-  return null;
 }

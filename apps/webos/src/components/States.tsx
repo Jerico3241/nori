@@ -1,31 +1,34 @@
 // Ladezustand, Fehlerzustand, Leerzustand.
 //
 // Auf einem Fernseher gibt es keinen Ladebalken im Browserrahmen und keine
-// Konsole: was die App nicht selbst zeigt, sieht niemand. Deshalb hat jede
-// Abfrage alle drei Enden.
+// Konsole: was die App nicht selbst zeigt, sieht niemand. Die Platzhalter haben
+// dieselben Maße wie die Karten, die sie ersetzen — beim Eintreffen der Daten
+// springt nichts.
 
 import type { ReactNode } from "react";
 import { SpotButton } from "../navigation/Spot";
 
-export function RailSkeleton({ count = 7 }: { count?: number }) {
+export function RailSkeleton({ count = 6, wide = false }: { count?: number; wide?: boolean }) {
   return (
-    <div className="rail-track" aria-hidden="true">
-      {Array.from({ length: count }, (_, index) => (
-        <div className="media-card skeleton" key={index}>
-          <div className="poster skeleton-block" />
-          <div className="skeleton-line" />
-        </div>
-      ))}
+    <div className="rail" aria-hidden="true">
+      <div className="rail-inner">
+        {Array.from({ length: count }, (_, index) => (
+          <div className={`${wide ? "land-card" : "poster-card"} skeleton`} key={index}>
+            <div className={`card-art ${wide ? "land-art" : "poster-art"}`} />
+            <div className="skeleton-line" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-export function GridSkeleton({ count = 18 }: { count?: number }) {
+export function GridSkeleton({ count = 10, className = "catalog-grid" }: { count?: number; className?: string }) {
   return (
-    <div className="media-grid" aria-hidden="true">
+    <div className={className} aria-hidden="true">
       {Array.from({ length: count }, (_, index) => (
-        <div className="media-card skeleton" key={index}>
-          <div className="poster skeleton-block" />
+        <div className="poster-card skeleton" key={index}>
+          <div className="card-art poster-art" />
           <div className="skeleton-line" />
         </div>
       ))}
@@ -44,22 +47,11 @@ export function ErrorState({ title, message, onRetry, retryFocusKey }: {
       <h2>{title}</h2>
       <p>{message}</p>
       {onRetry ? (
-        <SpotButton className="primary" onClick={onRetry} focusKey={retryFocusKey ?? "retry"}>
+        <SpotButton className="hero-btn primary" onClick={onRetry} focusKey={retryFocusKey ?? "retry"}>
           Erneut versuchen
         </SpotButton>
       ) : null}
     </div>
-  );
-}
-
-export function OfflineState({ onRetry }: { onRetry: () => void }) {
-  return (
-    <ErrorState
-      title="Keine Verbindung"
-      message="Nori konnte keine Verbindung zum Server herstellen. Prüfe die Netzwerkverbindung des Fernsehers und die Serveradresse in den Einstellungen."
-      onRetry={onRetry}
-      retryFocusKey="offline-retry"
-    />
   );
 }
 

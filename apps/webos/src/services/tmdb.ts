@@ -25,7 +25,7 @@
 import {
   DirectTMDBTransport, FetchHttpClient, NoTMDBTransport, ServerTMDBTransport, TMDBClient,
   TMDB_FEEDS, alignEpisodes, alignmentIsUsable, emptySignals, feedMaxAge, pickTmdbSeason,
-  isDefinitive, tmdbImageURL,
+  tmdbImageURL,
   type CatalogProvider, type SeasonMatch, type SourceEpisodeRef, type TMDBCandidate,
   type TMDBEpisodeInfo, type TMDBFeed, type TMDBKeyOrigin, type TMDBSignals, type TMDBStatus,
 } from "@nori/core";
@@ -38,13 +38,17 @@ import { log, warn } from "./log";
  * dann mit einer anderen Regel entstanden und teilweise falsch; sie weiter zu
  * benutzen hieße, den Fehler zu konservieren.
  *
- * v3: Fehlschläge tragen ihre Gültigkeitsdauer mit sich, weil „TMDB kennt
- * das nicht" (404) länger gilt als „gesucht und nichts Passendes gefunden".
+ * v4: Ein 404 auf die **Suche** gilt nicht mehr als „gibt es nicht". TMDBs
+ * Suche antwortet nie mit 404 — ein 404 kam immer vom Weg dorthin, etwa von
+ * einem Nori-Server ohne `/api/tmdb`. v3 merkte ihn als belegten Fehlschlag
+ * für vierzehn Tage, und jede Kachel blieb so lange ohne Bild. Die Nummer
+ * steigt, damit diese Einträge beim ersten Start verschwinden.
+ * v3: Fehlschläge tragen ihre Gültigkeitsdauer mit sich.
  * v2: erste Fassung mit Titelabgleich aus dem Kern, Staffelzuordnung mit
  * Versatzerkennung und Alternativtiteln. v1 waren die Backdrops aus
  * `covers.ts`, die den erstbesten Suchtreffer nahmen — die sind verworfen.
  */
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 
 const TITLES_KEY = `nori.tmdb.titles.v${STORE_VERSION}`;
 const FEEDS_KEY = `nori.tmdb.feeds.v${STORE_VERSION}`;
@@ -55,18 +59,15 @@ const MAX_CONCURRENT = 4;
 /**
  * Wie lange ein Fehlschlag gilt, bevor erneut gesucht wird.
  *
- * Zwei Fristen, weil es zwei verschiedene Auskünfte sind. Bei **404** sagt
- * TMDB, dass es die Kennung nicht führt — das ändert sich praktisch nie, also
- * zwei Wochen. „Gesucht, geantwortet, nichts hat die Titelschwelle erreicht"
- * ist dagegen eine Aussage über den heutigen Datenstand: TMDB wächst, und
- * gerade bei frischen Anime kommt der Eintrag oft Tage später. Ein halber Tag.
+ * Gemerkt wird nur eine Auskunft: „gesucht, TMDB hat geantwortet, nichts hat
+ * die Titelschwelle erreicht". Das ist eine Aussage über den heutigen
+ * Datenstand — TMDB wächst, und gerade bei frischen Anime kommt der Eintrag oft
+ * Tage später. Ein halber Tag.
  *
- * Ratenbegrenzung und abgelehnter Schlüssel gelten überhaupt nicht als
- * Fehlschlag — sie werden nie gemerkt.
+ * Ratenbegrenzung, abgelehnter Schlüssel, Netzfehler und ein 404 vom Weg
+ * dorthin gelten überhaupt nicht als Fehlschlag — sie werden nie gemerkt.
  */
 const MISS_MAX_AGE = 12 * 3_600_000;
-/** Frist für ein belegtes „gibt es dort nicht" (HTTP 404). */
-const DEFINITIVE_MISS_MAX_AGE = 14 * 86_400_000;
 /** Wie lange die Angaben zu einem Titel gelten. */
 const TITLE_MAX_AGE = 21 * 86_400_000;
 /** Wie lange eine Staffel gilt. Folgentitel ändern sich kaum. */
@@ -333,13 +334,11 @@ class TmdbService {
       });
       this.lastStatus = status;
       if (!result) {
-        // Nur einen echten Fehlschlag merken. Bei 401 oder 429 hat TMDB nichts
-        // über den Titel gesagt — das ist kein „gibt es dort nicht".
-        if (status === "ok" || status === "notFound") {
-          this.titles.missing[key] = {
-            at: Date.now(),
-            maxAge: isDefinitive(status) ? DEFINITIVE_MISS_MAX_AGE : MISS_MAX_AGE,
-          };
+        // Nur einen echten Fehlschlag merken: TMDB hat geantwortet, und nichts
+        // passte. Bei 401, 429, einem Netzfehler oder einem 404 vom Server hat
+        // TMDB nichts über den Titel gesagt.
+        if (status === "ok") {
+          this.titles.missing[key] = { at: Date.now(), maxAge: MISS_MAX_AGE };
           this.save(TITLES_KEY, () => this.titles);
         }
         return known ?? null;
@@ -390,9 +389,15 @@ class TmdbService {
     if (known?.logo) return known.logo;
     if (!this.available) return null;
 
+    // Die Zuordnung **vor** dem Einreihen holen, nicht darin. Stand sie im
+    // eingereihten Auftrag, belegte der einen der vier Plätze und wartete auf
+    // einen fünften — waren alle vier so belegt, stand TMDB für den Rest der
+    // Sitzung still. Genau das war „TMDB lädt manchmal gar nicht mehr".
+    const art = known ?? await this.ensureArt(input);
+    if (!art) return null;
+    if (art.logo) return art.logo;
+
     return this.once(`logo:${key}`, () => this.schedule(async () => {
-      const art = known ?? await this.ensureArt(input);
-      if (!art) return null;
       const { url, status } = await this.client.logo(art.tmdbID);
       this.lastStatus = status;
       if (!url) return null;
@@ -447,16 +452,17 @@ class TmdbService {
     const number = Number.parseInt(input.season, 10);
     if (!Number.isFinite(number) || number <= 0) return null;
 
-    return this.once(`season:${key}`, () => this.schedule(async () => {
-      const art = await this.ensureArt({
-        slug: input.slug,
-        title: input.title,
-        alternates: input.alternates,
-        provider: input.provider,
-        expectedSeasons: input.expectedSeasons,
-      });
-      if (!art) return null;
+    // Außerhalb der Warteschlange, aus demselben Grund wie bei `ensureLogo`.
+    const art = await this.ensureArt({
+      slug: input.slug,
+      title: input.title,
+      alternates: input.alternates,
+      provider: input.provider,
+      expectedSeasons: input.expectedSeasons,
+    });
+    if (!art) return known ?? null;
 
+    return this.once(`season:${key}`, () => this.schedule(async () => {
       const { details } = await this.client.series(art.tmdbID);
       if (!details) return known ?? null;
 
@@ -599,6 +605,35 @@ class TmdbService {
     }));
   }
 
+  // MARK: - Diagnose
+
+  /**
+   * Ein echter Abruf, um den Zustand zu belegen.
+   *
+   * Für die Diagnose: „verbunden" soll heißen, dass TMDB gerade geantwortet
+   * hat — nicht, dass ein Schlüssel eingetragen ist.
+   */
+  async probe(): Promise<{ status: TMDBStatus; ms: number }> {
+    if (!this.available) return { status: "noKey", ms: 0 };
+    const started = Date.now();
+    const { status } = await this.client.search("Frieren");
+    this.lastStatus = status;
+    return { status, ms: Date.now() - started };
+  }
+
+  /** Ablagen älterer Fassungen belegen den knappen Speicher — beim Start weg. */
+  dropOldVersions(): void {
+    for (let version = 1; version < STORE_VERSION; version += 1) {
+      for (const prefix of ["titles", "feeds", "seasons", "related"]) {
+        try {
+          localStorage.removeItem(`nori.tmdb.${prefix}.v${version}`);
+        } catch {
+          /* aufgeben */
+        }
+      }
+    }
+  }
+
   // MARK: - Aufräumen
 
   /**
@@ -737,3 +772,4 @@ class TmdbService {
 }
 
 export const tmdb = new TmdbService();
+tmdb.dropOldVersions();

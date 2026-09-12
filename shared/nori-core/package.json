@@ -1,6 +1,6 @@
 {
   "name": "@nori/core",
-  "version": "1.3.1",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Gemeinsamer Nori-Kern für JavaScript-Clients (Modelle, Provider, Parser, Hoster-Resolver, Bibliotheksregeln)",

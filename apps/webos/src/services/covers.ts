@@ -168,30 +168,35 @@ class ArtworkIndex {
   }
 
   /**
-   * Bilder besorgen.
+   * Bilder besorgen: TMDB zuerst, die Quelle nur, wenn TMDB kein Poster hat.
    *
-   * Startet beides: die TMDB-Suche (wenn ein Titel bekannt ist) und das
-   * Nachladen des Quellcovers. Nicht „TMDB und nur wenn das scheitert die
-   * Quelle" — die TMDB-Suche kann Sekunden brauchen, und in der Zeit soll die
-   * Kachel schon das Quellcover zeigen statt eines Buchstabens.
+   * Vorher liefen beide gleichzeitig. Das Quellcover steht aber nur auf der
+   * Detailseite der Quelle — für jede Kachel also eine ganze HTML-Seite, auch
+   * für die neun von zehn, bei denen TMDB ohnehin ein schärferes Poster
+   * liefert. Auf einem Fernseher mit sechzig Kacheln im Katalog waren das
+   * sechzig Seiten, geparst auf einer schwachen CPU.
    *
    * Gibt das beste Poster zurück, das am Ende vorliegt.
    */
   async ensure(request: ArtworkRequest): Promise<string | null> {
     const known = this.cached(request.slug, request.provider);
-    const tmdbTask = request.title
-      ? tmdb.ensureArt({
+    const art = request.title && tmdb.available
+      ? await tmdb.ensureArt({
         slug: request.slug,
         title: request.title,
         alternates: request.alts,
         provider: request.provider,
         expectedYear: request.year ?? null,
       }).catch(() => null)
-      : Promise.resolve(null);
+      : null;
+    if (art?.poster) return art.poster;
+    const source = await this.ensureSourceCover(request.slug, request.provider);
+    return source ?? known;
+  }
 
-    const sourceTask = this.ensureSourceCover(request.slug, request.provider);
-    const [art, source] = await Promise.all([tmdbTask, sourceTask]);
-    return art?.poster ?? source ?? known;
+  /** Ob zu diesem Titel schon eine TMDB-Zuordnung vorliegt. */
+  hasTmdb(slug: string, provider: CatalogProvider): boolean {
+    return tmdb.art(slug, provider) !== null;
   }
 
   /**

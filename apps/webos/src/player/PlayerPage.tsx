@@ -539,10 +539,13 @@ export function PlayerPage() {
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
+    // In der Capture-Phase: der Player entscheidet zuerst, ob eine Pfeiltaste
+    // spult oder den Drawer öffnet. Nur was er nicht verbraucht
+    // (`preventDefault`), bewegt danach den Fokus über die Navigation.
+    window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp);
     };
   }, [chrome, drawer, overlay, seekBy, settings.seekStep, showChrome, togglePlay, exitPlayer]);

@@ -20,7 +20,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | iOS / iPadOS | **1.19.0** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.15.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **1.2.0** | TV-App mit Fernbedienungsnavigation, TMDB über den Nori-Server; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **2.0.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
