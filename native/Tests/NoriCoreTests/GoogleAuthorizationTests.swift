@@ -211,6 +211,53 @@ final class GoogleAuthorizationTests: XCTestCase {
         XCTAssertNil(store.read())
     }
 
+    /// Ein Schlüsselbund, der die Ablage verweigert, meldet das nicht laut.
+    /// Die Anmeldung darf dann nicht als gelungen gelten.
+    func testSignInFailsWhenTheTokensCannotBeStored() async {
+        final class RefusingStore: GoogleTokenStore, @unchecked Sendable {
+            func read() -> GoogleTokens? { nil }
+            func write(_ tokens: GoogleTokens?) {}
+        }
+        let transport = CountingTransport()
+        transport.json = #"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#
+        let auth = GoogleAuthorization(
+            configuration: config, tokenStore: RefusingStore(), presenter: FakePresenter(),
+            transport: transport, clock: { 0 })
+        do {
+            try await auth.signIn()
+            XCTFail("Erwartet: tokenStorageFailed")
+        } catch let error as GoogleOAuthError {
+            XCTAssertEqual(error, .tokenStorageFailed)
+        } catch {
+            XCTFail("Falscher Fehler: \(error)")
+        }
+    }
+
+    /// Der Desktop-Client (macOS) schickt sein Secret beim Tausch mit — die
+    /// Anmeldung selbst bleibt PKCE mit `state`.
+    func testSignInSendsTheClientSecretOnlyWhenConfigured() async throws {
+        final class FormTransport: DriveTransport, @unchecked Sendable {
+            var forms: [String] = []
+            func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+                forms.append(String(decoding: request.httpBody ?? Data(), as: UTF8.self))
+                return (Data(#"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#.utf8),
+                        HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+        }
+        var desktop = config
+        desktop.clientSecret = "nur-ein-testwert"
+        let transport = FormTransport()
+        let auth = GoogleAuthorization(
+            configuration: desktop, tokenStore: MemoryTokenStore(), presenter: FakePresenter(),
+            transport: transport, clock: { 0 })
+
+        try await auth.signIn()
+
+        let form = try XCTUnwrap(transport.forms.first)
+        XCTAssertTrue(form.contains("client_secret=nur-ein-testwert"))
+        XCTAssertTrue(form.contains("code_verifier="))
+    }
+
     func testWithoutAClientIdSignInIsRefused() async {
         let auth = GoogleAuthorization(
             configuration: GoogleOAuthConfiguration(clientId: "", redirectURI: "x"),
@@ -264,7 +311,7 @@ final class GoogleClientIDTests: XCTestCase {
     /// nach einem Besuch in der Google Cloud Console möglich war.
     func testTheClientIdComesFromTheBuild() {
         let decision = GoogleClientIDStore.resolve(
-            build: "123456-abc.apps.googleusercontent.com", stored: nil)
+            build: "123456-abc.apps.googleusercontent.com", stored: nil, hasTokens: false)
         XCTAssertEqual(decision?.clientId, "123456-abc.apps.googleusercontent.com")
         XCTAssertEqual(decision?.origin, .build)
         XCTAssertEqual(decision?.cleanUpStored, false)
@@ -272,8 +319,8 @@ final class GoogleClientIDTests: XCTestCase {
 
     /// Ohne Build-Einstellung gibt es nichts anzubieten — und kein Eingabefeld.
     func testWithoutABuildSettingThereIsNoClientId() {
-        XCTAssertNil(GoogleClientIDStore.resolve(build: nil, stored: nil))
-        XCTAssertNil(GoogleClientIDStore.resolve(build: "", stored: ""))
+        XCTAssertNil(GoogleClientIDStore.resolve(build: nil, stored: nil, hasTokens: false))
+        XCTAssertNil(GoogleClientIDStore.resolve(build: "", stored: "", hasTokens: false))
     }
 
     /// Wer schon verbunden ist, bleibt es.
@@ -284,7 +331,8 @@ final class GoogleClientIDTests: XCTestCase {
     func testAnEnteredClientIdKeepsWorkingAfterTheUpdate() {
         let decision = GoogleClientIDStore.resolve(
             build: "neu-aus-dem-build.apps.googleusercontent.com",
-            stored: "alt-von-hand.apps.googleusercontent.com")
+            stored: "alt-von-hand.apps.googleusercontent.com",
+            hasTokens: true)
         XCTAssertEqual(decision?.clientId, "alt-von-hand.apps.googleusercontent.com")
         XCTAssertEqual(decision?.origin, .migrated)
         XCTAssertEqual(decision?.cleanUpStored, false,
@@ -294,9 +342,39 @@ final class GoogleClientIDTests: XCTestCase {
     /// Und ohne Build-Einstellung gilt er erst recht.
     func testAnEnteredClientIdAlsoWorksWithoutABuildSetting() {
         let decision = GoogleClientIDStore.resolve(
-            build: nil, stored: "alt-von-hand.apps.googleusercontent.com")
+            build: nil, stored: "alt-von-hand.apps.googleusercontent.com", hasTokens: true)
         XCTAssertEqual(decision?.clientId, "alt-von-hand.apps.googleusercontent.com")
         XCTAssertEqual(decision?.origin, .migrated)
+    }
+
+    /// Ohne Tokens hält an einem alten Wert nichts fest.
+    ///
+    /// Wer früher eine Client-ID eingetragen, sich aber nie verbunden hat — oder
+    /// dessen Verbindung inzwischen getrennt ist —, ist in Wahrheit eine neue
+    /// Installation. Dann gilt ausschliesslich der Build, und der alte Wert
+    /// wird aufgeräumt. Sonst bliebe ein Tippfehler von damals für immer die
+    /// benutzte Client-ID.
+    func testAnEnteredClientIdWithoutTokensGivesWayToTheBuild() {
+        let decision = GoogleClientIDStore.resolve(
+            build: "neu-aus-dem-build.apps.googleusercontent.com",
+            stored: "alt-von-hand.apps.googleusercontent.com",
+            hasTokens: false)
+        XCTAssertEqual(decision?.clientId, "neu-aus-dem-build.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.origin, .build)
+        XCTAssertEqual(decision?.cleanUpStored, true)
+    }
+
+    /// Und ohne Tokens und ohne Build gibt es nichts — auch nicht den alten Wert.
+    func testAnEnteredClientIdWithoutTokensAndWithoutABuildIsNotUsed() {
+        XCTAssertNil(GoogleClientIDStore.resolve(
+            build: nil, stored: "alt-von-hand.apps.googleusercontent.com", hasTokens: false))
+    }
+
+    /// Die Projektnummer entscheidet, welchen `appDataFolder` ein Gerät sieht.
+    func testTheProjectNumberIsReadFromTheClientId() {
+        XCTAssertEqual(GoogleClientIDStore.projectNumber(of: "123456-abc.apps.googleusercontent.com"), "123456")
+        XCTAssertNil(GoogleClientIDStore.projectNumber(of: "abc-def.apps.googleusercontent.com"))
+        XCTAssertNil(GoogleClientIDStore.projectNumber(of: "ohne.apps.googleusercontent.com"))
     }
 
     /// Zweimal derselbe Wert: einer reicht, und der aus dem Build ist der
@@ -304,7 +382,8 @@ final class GoogleClientIDTests: XCTestCase {
     func testADuplicateEntryIsTidiedAway() {
         let decision = GoogleClientIDStore.resolve(
             build: "123456-abc.apps.googleusercontent.com",
-            stored: "123456-abc.apps.googleusercontent.com")
+            stored: "123456-abc.apps.googleusercontent.com",
+            hasTokens: true)
         XCTAssertEqual(decision?.origin, .build)
         XCTAssertEqual(decision?.cleanUpStored, true)
     }

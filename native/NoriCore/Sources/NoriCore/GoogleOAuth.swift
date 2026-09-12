@@ -14,14 +14,20 @@ import FoundationNetworking
 // Loopback-Server auf macOS, der Gerätecode auf dem Fernseher — und gehört
 // deshalb in die jeweilige App-Schicht.
 //
-// Kein Client-Secret. Native Apps sind öffentliche Clients: sie werden auf
-// Geräte verteilt und können nichts geheim halten. Google sieht
-// `client_secret` für den Installed-App-Fluss deshalb als optional vor, und
-// PKCE ersetzt, wofür es einmal gedacht war.
+// Das Client-Secret. Native Apps sind öffentliche Clients: sie werden auf
+// Geräte verteilt und können nichts geheim halten. Für den iOS-Client verlangt
+// Google deshalb keines, und PKCE ersetzt, wofür es einmal gedacht war.
 //
-// Ausnahme mit Ansage: Googles Fluss für Fernseher verlangt den Wert doch.
-// Siehe `docs/google-drive-sync.md` — er betrifft nur webOS und liegt nicht in
-// diesem Kern.
+// Der macOS-Client ist aber vom Typ „Desktop-App", und dort verlangt Googles
+// Token-Endpunkt den Wert trotzdem — beim Tausch **und** beim Erneuern.
+// Gemessen, nicht angenommen: ohne ihn antwortet Google mit
+// `invalid_request: client_secret is missing.`, obwohl die Dokumentation den
+// Parameter als optional führt. Er kommt deshalb auf macOS aus einer lokalen
+// Build-Einstellung (`GOOGLE_CLIENT_SECRET`), wird nur mitgeschickt, wenn er
+// gesetzt ist, und steht nie im Repository. Siehe `docs/google-drive-sync.md`.
+//
+// Googles Fluss für Fernseher verlangt ihn ebenfalls; der betrifft nur webOS
+// und liegt nicht in diesem Kern.
 
 struct GoogleOAuthConfiguration: Sendable, Equatable {
     var clientId: String
@@ -34,8 +40,20 @@ struct GoogleOAuthConfiguration: Sendable, Equatable {
     /// Nur, was gebraucht wird. Kein `email`, kein `profile`: für den
     /// Abgleich einer Bibliothek geht Google niemand etwas an.
     var scopes: [String] = [GoogleDriveClient.scope]
+    /// Nur für Clients vom Typ „Desktop-App" (macOS), deren Token-Endpunkt ihn
+    /// verlangt. Auf iOS `nil` — der iOS-Client kennt keinen.
+    ///
+    /// Nie protokollieren, nie anzeigen: die Diagnose sagt höchstens
+    /// „vorhanden".
+    var clientSecret: String? = nil
 
     var isConfigured: Bool { !clientId.isEmpty }
+
+    /// `client_secret` für ein Formular — oder nichts, wenn keines gesetzt ist.
+    fileprivate var secretField: [String: String] {
+        guard let clientSecret, !clientSecret.isEmpty else { return [:] }
+        return ["client_secret": clientSecret]
+    }
 }
 
 /// Was nach einer erfolgreichen Anmeldung übrig bleibt.
@@ -70,6 +88,10 @@ enum GoogleOAuthError: Error, Equatable {
     case stateMismatch
     case denied(String)
     case noRefreshToken
+    /// Die Tokens liessen sich nicht ablegen — typischerweise ein Schlüsselbund,
+    /// der einer unsignierten App die Ablage verweigert. Ohne diesen Fall sähe
+    /// die Anmeldung erfolgreich aus und wäre beim ersten Abgleich wieder weg.
+    case tokenStorageFailed
     case server(String)
     case transport(String)
 }
@@ -180,7 +202,7 @@ enum GoogleOAuth {
             "code_verifier": pkce.verifier,
             "grant_type": "authorization_code",
             "redirect_uri": configuration.redirectURI,
-        ], transport: transport, now: now)
+        ].merging(configuration.secretField) { current, _ in current }, transport: transport, now: now)
     }
 
     static func refresh(
@@ -189,11 +211,13 @@ enum GoogleOAuth {
         transport: DriveTransport = URLSessionDriveTransport(),
         now: Double = Date().timeIntervalSince1970 * 1000
     ) async throws -> GoogleTokens {
+        // Der Desktop-Client braucht das Secret auch hier; ohne es endete jede
+        // Verbindung nach einer Stunde mit `client_secret is missing`.
         var tokens = try await token(form: [
             "client_id": configuration.clientId,
             "refresh_token": refreshToken,
             "grant_type": "refresh_token",
-        ], transport: transport, now: now)
+        ].merging(configuration.secretField) { current, _ in current }, transport: transport, now: now)
         // Beim Erneuern schickt Google keinen neuen Refresh-Token. Wer den
         // alten hier nicht wieder einsetzt, hat nach einer Stunde keine
         // Verbindung mehr und weiß nicht, warum.

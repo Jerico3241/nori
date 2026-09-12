@@ -278,11 +278,52 @@ struct SyncSettingsView: View {
                     subtitle: GoogleDriveClient.scope,
                     value: "nur appdata"
                 )
+                // Ob — nie welche. Tokens stehen hier nicht, auch nicht
+                // verkürzt.
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "key.horizontal",
+                    tint: sync.hasStoredTokens ? .green : .orange,
+                    title: "Anmeldung im Schlüsselbund",
+                    subtitle: "Tokens werden nie angezeigt",
+                    value: sync.hasStoredTokens ? "ja" : "nein"
+                )
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "clock.arrow.circlepath",
+                    tint: .blue,
+                    title: "Letzter Abgleich",
+                    subtitle: lastRunText,
+                    value: ""
+                )
+                if let error = sync.lastError {
+                    SettingsDivider()
+                    SettingsInfoRow(
+                        symbol: "exclamationmark.triangle",
+                        tint: .orange,
+                        title: "Letzter Fehler",
+                        subtitle: error,
+                        value: ""
+                    )
+                }
+                if sync.migratedClientBelongsToAnotherProject {
+                    SettingsDivider()
+                    Text("""
+                    Die übernommene Client-ID gehört zu einem anderen \
+                    Google-Cloud-Projekt als die aus dem Build. Dieses Gerät \
+                    gleicht deshalb in einen anderen versteckten Ordner ab.
+                    """)
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let problem = sync.buildConfigurationProblem {
                     SettingsDivider()
                     Text("""
                     \(problem) Erwartet wird die Build-Einstellung \
-                    GOOGLE_CLIENT_ID; die Schritte stehen in \
+                    \(sync.expectedBuildSettings); die Schritte stehen in \
                     docs/google-drive-sync.md.
                     """)
                     .font(.caption2)
@@ -318,7 +359,10 @@ struct SyncSettingsView: View {
 
     private var isConnected: Bool {
         switch sync.status {
-        case .disconnected: return false
+        // Während der Anmeldung ist noch nichts verbunden — sonst stünden
+        // „Jetzt synchronisieren" und „Trennen" schon da, solange Safari offen
+        // ist.
+        case .disconnected, .authorizing: return false
         default: return true
         }
     }

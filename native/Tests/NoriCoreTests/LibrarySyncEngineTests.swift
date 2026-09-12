@@ -18,10 +18,12 @@ private final class FakeSnapshotStore: LibrarySnapshotStore, @unchecked Sendable
     var downloadError: Error?
     private(set) var uploads = 0
     private(set) var downloads = 0
+    private(set) var lists = 0
     private var clock = 0
     private var nextId = 0
 
     func list() async throws -> [RemoteSnapshotRef] {
+        lists += 1
         if let listError { throw listError }
         return files.map { id, file in
             RemoteSnapshotRef(id: id, deviceId: file.deviceId, modifiedTime: "\(file.modifiedTime)", size: file.data.count)
@@ -450,6 +452,114 @@ final class LibrarySyncEngineTests: XCTestCase {
         await sync.run()
 
         XCTAssertEqual(remote.downloads, nachErstem, "Ein unveränderter Fremdstand wurde erneut geladen")
+    }
+
+    /// Ein Abgleich, der nichts geändert hat, schreibt auch nichts.
+    ///
+    /// Vorher lud jedes Gerät im Vordergrund alle 30 Sekunden seine
+    /// unveränderte Datei hoch. Jeder Upload setzt einen neuen
+    /// Änderungsstempel, und jedes andere Gerät holte die Datei danach erneut —
+    /// für nichts, gegen Googles Kontingent.
+    func testAnUnchangedLibraryIsNotUploadedAgain() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        await sync.run()
+        await sync.run()
+        await sync.run()
+
+        XCTAssertEqual(remote.uploads, 1, "Ein unveränderter Stand wurde erneut hochgeladen")
+        XCTAssertEqual(remote.lists, 3, "Geholt werden muss trotzdem — sonst kämen fremde Änderungen nie an")
+        XCTAssertEqual(sync.status, .idle)
+        XCTAssertNotNil(sync.lastSuccessfulSync)
+
+        // Eine echte Änderung wird selbstverständlich wieder geschrieben.
+        store.toggleFavorite("naruto", title: "Naruto")
+        await sync.run()
+        XCTAssertEqual(remote.uploads, 2)
+    }
+
+    /// Hat ein anderes Gerät etwas geändert, entsteht ein neuer Stand — und der
+    /// wird geschrieben, auch wenn lokal nichts passiert ist.
+    func testAMergedRemoteChangeIsUploaded() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+        await sync.run()
+        XCTAssertEqual(remote.uploads, 1)
+
+        let anderes = makeStore()
+        anderes.toggleFavorite("naruto", title: "Naruto")
+        remote.seed(id: "anderes", deviceId: anderes.deviceId, data: snapshot(anderes.snapshot()))
+        await sync.run()
+
+        XCTAssertEqual(store.favorites, ["naruto"])
+        XCTAssertEqual(remote.uploads, 2, "Der zusammengeführte Stand wurde nicht geschrieben")
+    }
+
+    /// Wurde die eigene Datei zwischendurch anderswo verändert oder gelöscht,
+    /// wird wieder geschrieben — die Abkürzung gilt nur für einen Stand, der
+    /// nachweislich unverändert in der Cloud liegt.
+    func testAnOwnFileChangedElsewhereIsWrittenAgain() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let books = FakeBookkeeping()
+        let sync = engine(store, remote, books)
+        await sync.run()
+
+        let own = books.values["nori.sync.driveFileId"]!
+        remote.files[own] = nil
+        await sync.run()
+
+        // Eine neue Datei statt gar keiner: der Stand liegt wieder in der Cloud.
+        XCTAssertEqual(remote.files.count, 1, "Die gelöschte eigene Datei wurde nicht neu geschrieben")
+        XCTAssertNotEqual(books.values["nori.sync.driveFileId"], own)
+    }
+
+    /// Nach vorn kommen gleicht nicht bei jedem Fensterwechsel ab.
+    func testForegroundIsThrottledUnlessSomethingIsPending() async {
+        final class Clock: @unchecked Sendable {
+            var now: Double = 1_000_000
+        }
+        let clock = Clock()
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = LibrarySyncEngine(store: store, bookkeeping: FakeBookkeeping(), clock: { clock.now })
+        sync.connect(to: remote, startSync: false)
+        await sync.run()
+        XCTAssertEqual(remote.lists, 1)
+
+        clock.now += 5_000
+        sync.syncOnForeground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 1, "Fünf Sekunden nach dem letzten Abgleich wurde erneut gefragt")
+
+        clock.now += LibrarySyncEngine.foregroundPoll * 1000
+        sync.syncOnForeground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 2)
+    }
+
+    /// In den Hintergrund ohne Änderung ist kein Anlass für eine Anfrage.
+    func testBackgroundOnlySyncsPendingChanges() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+        await sync.run()
+
+        sync.syncOnBackground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 1)
+
+        store.toggleFavorite("naruto", title: "Naruto")
+        sync.noteChange()
+        sync.syncOnBackground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 2)
+        XCTAssertEqual(remote.uploads, 2)
     }
 }
 

@@ -136,7 +136,12 @@ final class LoopbackSignInPresenter: GoogleSignInPresenter, @unchecked Sendable 
             let redirect = self.redirect
             self.lock.unlock()
 
-            self.reply(on: connection, body: Self.donePage, close: true)
+            // Die Seite sagt, was passiert ist. Vorher stand dort auch bei
+            // einer Ablehnung „Nori ist verbunden".
+            let failed = path.contains("error=")
+            self.reply(on: connection, body: failed ? Self.failedPage : Self.donePage, close: true)
+            // Zurück zu Nori, statt den Nutzer im Browser stehen zu lassen.
+            DispatchQueue.main.async { NSApplication.shared.activate() }
             guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
                 redirect?.resume(throwing: GoogleOAuthError.transport("Antwort nicht lesbar."))
                 return
@@ -173,8 +178,17 @@ final class LoopbackSignInPresenter: GoogleSignInPresenter, @unchecked Sendable 
     <title>Nori</title>
     <style>body{font:16px -apple-system,system-ui,sans-serif;margin:4rem auto;max-width:32rem;
     text-align:center;color:#222}</style></head>
-    <body><h1>Nori ist verbunden</h1>
-    <p>Du kannst dieses Fenster schließen und zu Nori zurückkehren.</p></body></html>
+    <body><h1>Anmeldung abgeschlossen</h1>
+    <p>Nori richtet den Abgleich jetzt ein. Du kannst dieses Fenster schließen.</p></body></html>
+    """
+
+    private static let failedPage = """
+    <!doctype html><html lang="de"><head><meta charset="utf-8">
+    <title>Nori</title>
+    <style>body{font:16px -apple-system,system-ui,sans-serif;margin:4rem auto;max-width:32rem;
+    text-align:center;color:#222}</style></head>
+    <body><h1>Anmeldung nicht abgeschlossen</h1>
+    <p>Google hat keine Berechtigung erteilt. Du kannst dieses Fenster schließen und es in Nori erneut versuchen.</p></body></html>
     """
 
     private static let ignoredPage = """

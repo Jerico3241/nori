@@ -17,8 +17,8 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.21.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.16.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| iOS / iPadOS | **1.22.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.17.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
 | LG webOS | **2.0.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code; auf einem echten Gerät noch nicht erprobt |
 
@@ -163,7 +163,7 @@ Danach zeigt die Seite den Zustand, „Jetzt synchronisieren" und „Dieses Ger�
 
 Angefordert wird genau ein Bereich: `https://www.googleapis.com/auth/drive.appdata`. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
 
-**Für den, der Nori baut**, sind die OAuth-Client-IDs Build-Einstellungen (`GOOGLE_CLIENT_ID` auf Apple, `VITE_NORI_GOOGLE_TV_CLIENT_ID` und `VITE_NORI_GOOGLE_TV_CLIENT_SECRET` auf webOS). Die Einrichtung steht in **[docs/google-drive-sync.md](docs/google-drive-sync.md)**, die Begründungen in **[docs/synchronisation.md](docs/synchronisation.md)**.
+**Für den, der Nori baut**, sind die OAuth-Werte lokale Build-Einstellungen, je Plattform getrennt und nie eingecheckt: `GOOGLE_CLIENT_ID` in `native/Nori-iOS/Config/Google.local.xcconfig`, `GOOGLE_CLIENT_ID` und `GOOGLE_CLIENT_SECRET` (Desktop-Client) in `native/Nori-macOS/Config/Google.local.xcconfig`, `VITE_NORI_GOOGLE_TV_CLIENT_ID` und `VITE_NORI_GOOGLE_TV_CLIENT_SECRET` in `apps/webos/.env.local`. Geschrieben und geprüft werden sie mit `tools/configure-google-oauth.py` aus den OAuth-JSON-Dateien unter `~/.config/nori/secrets/`. Die Einrichtung steht in **[docs/google-drive-sync.md](docs/google-drive-sync.md)**, die Begründungen in **[docs/synchronisation.md](docs/synchronisation.md)**.
 
 `LibrarySyncProvider` — eine Datei ablegen, eine Datei holen — bleibt als Abstraktion im Core bestehen. Der Mehrgeräte-Abgleich benutzt daneben `LibrarySnapshotStore`; umgesetzt ist davon genau einer, `GoogleDriveSnapshotStore`.
 

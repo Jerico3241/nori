@@ -66,7 +66,7 @@
       "userInput": "Der Nutzer drückt einen Knopf und bestätigt bei Google. Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind keine Benutzereinstellungen und haben in der normalen Oberfläche nichts zu suchen.",
       "flows": {
         "ios": "Authorization Code + PKCE über ASWebAuthenticationSession, Rückleitung über das umgedrehte Client-Kürzel, geteilte Browser-Sitzung (prefersEphemeralWebBrowserSession = false).",
-        "macos": "Authorization Code + PKCE im Systembrowser, Rückleitung auf http://127.0.0.1:<vom System vergebener Port>.",
+        "macos": "Authorization Code + PKCE im Systembrowser, Rückleitung auf http://127.0.0.1:<vom System vergebener Port>. OAuth-Client vom Typ Desktop-App; client_secret aus der lokalen Build-Einstellung GOOGLE_CLIENT_SECRET.",
         "webos": "Device Authorization Grant nach RFC 8628 — Googles Fluss für Fernseher und Geräte mit eingeschränkter Eingabe.",
         "android": "Authorization Code + PKCE über Googles empfohlenen Android-Weg. Noch nicht umgesetzt, siehe docs/android.md."
       },
@@ -74,7 +74,7 @@
         "access_type": "offline — ohne das gibt Google keinen Auffrischungstoken heraus.",
         "prompt": "consent — ohne das gibt Google bei einer erneuten Anmeldung keinen Auffrischungstoken heraus.",
         "code_challenge_method": "S256",
-        "forbidden": ["urn:ietf:wg:oauth:2.0:oob", "eingebettete WebView", "client_secret (Ausnahme: der webOS-Gerätefluss, wo Google ihn verlangt)"]
+        "forbidden": ["urn:ietf:wg:oauth:2.0:oob", "eingebettete WebView", "client_secret (Ausnahmen, beide gemessen: der Desktop-Client von macOS, dessen Token-Endpunkt ihn beim Tausch und beim Erneuern verlangt, und der webOS-Gerätefluss; nie auf iOS, nie im Repository)"]
       },
       "deviceFlow": {
         "verificationUrlFields": ["verification_uri", "verification_url"],

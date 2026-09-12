@@ -47,7 +47,7 @@ wurde ohne Google-Abgleich gebaut" und läuft ansonsten unverändert. Es sind
 | Plattform | Clienttyp in der Cloud Console | Wert, den Nori braucht |
 | --- | --- | --- |
 | iOS / iPadOS | iOS | Client-ID |
-| macOS | Desktop-App | Client-ID |
+| macOS | Desktop-App | Client-ID **und** Client-Secret |
 | webOS | Fernseher und Geräte mit eingeschränkter Eingabe | Client-ID **und** Client-Secret |
 | Android | Android | Client-ID (erst nötig, wenn die App existiert) |
 
@@ -86,11 +86,18 @@ getrennte versteckte Ordner, und die Geräte sähen einander nicht.
      Targets `Nori-iOS` entsprechen. iPhone und iPad teilen sich Bundle-ID und
      damit diesen einen Client.
    - **Desktop-App (macOS):** keine weiteren Angaben. Google vergibt hier auch
-     ein Secret; Nori benutzt es **nicht** (siehe Abschnitt 3).
+     ein Secret, und Nori **braucht** es (siehe Abschnitt 3). Die OAuth-JSON
+     herunterladen und als `~/.config/nori/secrets/google-macos-oauth.json`
+     ablegen — ausserhalb des Repositorys.
    - **Fernseher/eingeschränkte Eingabe (webOS):** liefert Client-ID **und**
-     Client-Secret. Beide werden gebraucht.
+     Client-Secret. Beide werden gebraucht. Die OAuth-JSON als
+     `~/.config/nori/secrets/google-webos-oauth.json` ablegen.
    - **Android:** Paketname und SHA-1-Fingerabdruck des Signaturschlüssels.
      Erst nötig, wenn die Compose-App existiert (siehe Abschnitt 7).
+
+6. **Bereich unter *Google Auth Platform → Data Access* speichern.** Dort muss
+   `drive.appdata` eingetragen **und gespeichert** sein. Siehe Abschnitt 10 zu
+   `invalid_scope` im Gerätefluss.
 
 ### Muss die App überprüft werden?
 
@@ -132,32 +139,74 @@ keinen Abgleich.
 
 ### Apple
 
-Build-Einstellung `GOOGLE_CLIENT_ID`, von der `Info.plist` beider Targets als
-`$(GOOGLE_CLIENT_ID)` übernommen — genau wie `TMDB_API_KEY`. Zum Beispiel in
-einer nicht eingecheckten `Local.xcconfig` oder als Umgebungsvariable:
+Jedes Xcode-Projekt hat **seine eigene** Build-Konfiguration. Eine gemeinsame
+gibt es mit Absicht nicht: sonst erbte eine Plattform die Client-ID der
+anderen, und Google lehnte die Anmeldung mit einer Fehlerseite ab.
+
+| Datei | eingecheckt? | Inhalt |
+| --- | --- | --- |
+| `native/Nori-iOS/Config/Nori.xcconfig` | ja | nur `#include? "Google.local.xcconfig"` |
+| `native/Nori-iOS/Config/Google.local.xcconfig` | **nein** | `GOOGLE_CLIENT_ID` des iOS-Clients |
+| `native/Nori-macOS/Config/Nori.xcconfig` | ja | nur `#include? "Google.local.xcconfig"` |
+| `native/Nori-macOS/Config/Google.local.xcconfig` | **nein** | `GOOGLE_CLIENT_ID` und `GOOGLE_CLIENT_SECRET` des Desktop-Clients |
+
+`Nori.xcconfig` ist in beiden Projekten die Basiskonfiguration des Targets
+(Debug und Release). Die `.local`-Dateien stehen in `.gitignore`; daneben liegt
+je eine `Google.local.xcconfig.example` als Vorlage. Geschrieben werden sie so:
 
 ```bash
-xcodebuild -project native/Nori-iOS/Nori.xcodeproj -scheme Nori \
-  GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com build
+# iOS: der iOS-Client hat kein Secret und keine JSON.
+python3 tools/configure-google-oauth.py --ios --ios-client-id <iOS-Client-ID>
+
+# macOS: aus ~/.config/nori/secrets/google-macos-oauth.json
+python3 tools/configure-google-oauth.py --macos
+
+# prüfen: ignoriert, nicht verfolgt, IDs verschieden, kein Secret in Git
+python3 tools/configure-google-oauth.py --check
 ```
 
-Ist sie nicht gesetzt, bleibt in der `Info.plist` der unaufgelöste Platzhalter
-`$(GOOGLE_CLIENT_ID)` stehen. Nori erkennt das und sagt in einem Satz, dass
-diese Fassung ohne Google-Abgleich gebaut wurde — die Bibliothek funktioniert
-vollständig weiter, sie bleibt eben auf dem Gerät. Ein Eingabefeld gibt es dafür
-nicht: es ist ein **Build-Fehler** und keine Nutzeraufgabe.
+Das Skript gibt Client-IDs aus, Secrets **nie**. Ein Wert auf der Kommandozeile
+(`xcodebuild … GOOGLE_CLIENT_ID=…`) hat weiterhin Vorrang vor der Datei.
+
+Die `Info.plist` übernimmt die Werte als `$(GOOGLE_CLIENT_ID)` und — nur auf
+macOS — `$(GOOGLE_CLIENT_SECRET)`. Die iOS-`Info.plist` hat den Secret-Schlüssel
+gar nicht. Eingecheckt sind dort nur die Platzhalter.
+
+Ist nichts gesetzt, bleibt in der `Info.plist` der unaufgelöste Platzhalter
+stehen. Nori erkennt das und sagt in einem Satz, dass diese Fassung ohne
+Google-Abgleich gebaut wurde — die Bibliothek funktioniert vollständig weiter,
+sie bleibt eben auf dem Gerät. Ein Eingabefeld gibt es dafür nicht: es ist ein
+**Build-Fehler** und keine Nutzeraufgabe. Auf macOS gilt dasselbe, wenn zwar die
+Client-ID, aber kein Secret gesetzt ist.
+
+**Was CI baut.** Die Läufe `Build iOS`, `Build macOS` und `Package iOS IPA`
+checken frisch aus und haben keine `.local`-Datei; ihre Ergebnisse haben
+deshalb keinen Google-Abgleich. Eine installierbare Fassung mit Abgleich
+entsteht lokal — `native/Nori-iOS/IPA-bauen.command` und
+`native/Nori-macOS/Mac-App-bauen.command` bauen im Projektordner und nehmen die
+lokale Datei mit.
 
 Der Diagnosebereich unter *Synchronisation* — zugeklappt, ohne Eingabefeld —
-zeigt die benutzte Client-ID, woher sie stammt und den angefragten Bereich. Er
-richtet sich an den, der Nori baut.
+zeigt die benutzte Client-ID, woher sie stammt, den angefragten Bereich, ob ein
+Client-Secret vorliegt (macOS; nie welches), ob eine Anmeldung im Schlüsselbund
+liegt (nie die Tokens), den letzten Abgleich und den letzten Fehler. Er richtet
+sich an den, der Nori baut.
 
 Ein URL-Schema muss **nicht** in die `Info.plist`:
 `ASWebAuthenticationSession` fängt die Rückleitung selbst ab.
 
 ### webOS
 
-Vite-Variablen, am besten über eine `apps/webos/.env.local` — die steht in
-`.gitignore`:
+Vite-Variablen `VITE_NORI_GOOGLE_TV_CLIENT_ID` und
+`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`, am besten über eine `apps/webos/.env.local`
+— die steht in `.gitignore`. Die Werte kommen aus der OAuth-JSON des
+TV-Clients, standardmässig `~/.config/nori/secrets/google-webos-oauth.json`:
+
+```bash
+python3 tools/configure-google-oauth.py --webos
+```
+
+Oder von Hand:
 
 ```bash
 VITE_NORI_GOOGLE_TV_CLIENT_ID=1234-xyz.apps.googleusercontent.com \
@@ -183,11 +232,26 @@ Deshalb liest Nori die alten Ablageorte weiter:
 | Apple | Schlüsselbund `de.nori.google` / `client_id`, sonst `UserDefaults` `nori.google.clientId` |
 | webOS | `localStorage` `nori.google.clientId` und `nori.google.clientSecret` |
 
-Der Wert im Gerät hat **Vorrang** vor dem aus dem Build; die vorhandenen Tokens
-gehören zu ihm. Stimmen beide überein, wird die Kopie im Gerät beim nächsten
-Start stillschweigend aufgeräumt — danach gibt es nur noch eine Quelle. Sind sie
-verschieden, gilt weiter der alte, und die Diagnose sagt „aus einer früheren
-Fassung übernommen".
+Auf Apple gilt:
+
+| Wert im Gerät | Tokens im Schlüsselbund | benutzt wird | alter Wert |
+| --- | --- | --- | --- |
+| keiner | – | Build | – |
+| gleich dem Build | – | Build | wird aufgeräumt |
+| anders als der Build | **ja** | der alte — die Tokens gehören zu ihm | bleibt |
+| anders als der Build | nein | Build | wird aufgeräumt |
+
+Eine bestehende Verbindung behält also ihre Client-ID; ohne Tokens verbindet den
+alten Wert nichts mehr mit dem Gerät, und es gilt wie bei jeder neuen
+Installation ausschliesslich der Build. Die Diagnose sagt „aus einer früheren
+Fassung übernommen" und warnt, wenn der alte Wert zu einem **anderen
+Cloud-Projekt** gehört — dann gleicht dieses Gerät in einen anderen
+`appDataFolder` ab. Auf macOS bekommt ein übernommener Wert kein Secret: das aus
+dem Build gehört zu genau dessen Client.
+
+Auf webOS gilt vorerst die Regel der Fassung 2.0.0 unverändert: stehen Client-ID
+und Secret im Gerät, haben sie Vorrang; stimmen sie mit dem Build überein,
+werden sie aufgeräumt.
 
 **Neu eintragen lässt sich nichts.** Im Diagnosebereich steht ein Knopf, der den
 übernommenen Wert verwirft; weil die Tokens zu ihm gehören, trennt er dieses
@@ -198,7 +262,8 @@ Gerät gleich mit. Die Bibliothek bleibt vollständig.
 | Wert | Öffentlich? | Darf ins Repository? |
 | --- | --- | --- |
 | Client-ID (alle Plattformen) | ja, sie steht in jeder Anmeldeadresse | **nein** — gehört zum Projekt des Betreibers |
-| Client-Secret (nur webOS) | nein, siehe Abschnitt 3 | **nein, unter keinen Umständen** |
+| Client-Secret (macOS, webOS) | nein, siehe Abschnitt 3 | **nein, unter keinen Umständen** |
+| OAuth-JSON aus der Cloud Console | nein | **nein** — liegt unter `~/.config/nori/secrets/` |
 | Access Token, Refresh Token | nein | **nein** |
 | `deviceId` | harmlos, zufällig | steht ohnehin nur in der Bibliothek |
 
@@ -206,25 +271,45 @@ Tokens liegen auf Apple im Schlüsselbund und werden nie protokolliert, nie an
 Analytics geschickt und nie über Drive synchronisiert. Sie sind ausdrücklich
 **kein** Bestandteil von `library.json`.
 
-## 3. Das Client-Secret auf webOS
+## 3. Das Client-Secret auf macOS und webOS
 
 Die Regel lautet: in einer App liegt kein Client-Secret. Native Apps und
 TV-Apps sind öffentliche Clients — sie werden auf Geräte verteilt und können
 nichts geheim halten.
 
-Für iOS und macOS hält Nori sich daran. Google führt `client_secret` für den
-Installed-App-Fluss ausdrücklich als optional, und PKCE ersetzt, wofür es
-einmal gedacht war.
+**Für iOS hält Nori sich daran.** Der iOS-Client kennt kein Secret, PKCE ersetzt,
+wofür es einmal gedacht war.
 
-**Googles Fluss für Fernseher verlangt den Wert trotzdem.** Beim Abholen des
+**Für macOS verlangt Google den Wert, obwohl die Dokumentation ihn als optional
+führt.** Gemessen am 12. September 2026 gegen `oauth2.googleapis.com/token` mit
+dem Desktop-Client von Nori:
+
+| Anfrage | Antwort |
+| --- | --- |
+| Code-Tausch ohne `client_secret` | `invalid_request` — `client_secret is missing.` |
+| Code-Tausch mit Secret (ungültiger Testcode) | `invalid_grant` — das Secret wurde angenommen |
+| Code-Tausch mit falschem Secret | `invalid_client` — `The provided client secret is invalid.` |
+| Erneuern ohne `client_secret` | `invalid_request` — `client_secret is missing.` |
+| Erneuern mit Secret (ungültiger Testtoken) | `invalid_grant` |
+
+Nori schickt es deshalb auf macOS beim Tausch **und** beim Erneuern mit
+(`GoogleOAuthConfiguration.clientSecret`, gesetzt nur, wenn
+`GoogleDriveSync(requiresClientSecret: true)` — und das steht nur in der
+macOS-App). PKCE und `state` bleiben unverändert; das Secret ersetzt nichts
+davon. Die Anmeldung selbst braucht es nicht.
+
+**Googles Fluss für Fernseher verlangt ihn ebenfalls.** Beim Abholen des
 Gerätecodes nicht, beim Eintauschen gegen ein Token schon: dort führt Google
 `client_secret` als *Required*. Ohne ihn antwortet Google mit `invalid_client`.
 
 Das ist ein echter Widerspruch zwischen der Regel und dem Protokoll, und er
-lässt sich nicht auflösen. Nori geht so damit um:
+lässt sich nicht auflösen. Nori geht auf beiden Plattformen gleich damit um:
 
-1. Der Wert wird **nicht eingecheckt**. Er kommt aus einer Build-Variablen und
-   liegt nur in der gebauten `.ipk`.
+1. Der Wert wird **nicht eingecheckt**. Er kommt aus einer nicht eingecheckten
+   Build-Konfiguration (macOS: `Config/Google.local.xcconfig`, webOS:
+   `.env.local`) und liegt danach nur im gebauten Paket — in der `Info.plist`
+   der Mac-App beziehungsweise in der `.ipk`. Er wird nie protokolliert und nie
+   angezeigt; die Diagnose sagt höchstens „vorhanden".
 2. Er ist für diesen Clienttyp kein vertrauliches Geheimnis im eigentlichen
    Sinn. Google gibt ihn für Geräte-Clients aus, die ihn naturgemäß nicht
    schützen können; die Sicherheit des Flusses hängt an der Zustimmung am
@@ -232,9 +317,11 @@ lässt sich nicht auflösen. Nori geht so damit um:
 3. Er berechtigt zu nichts ohne die ausdrückliche Zustimmung eines Nutzers, und
    er öffnet nur `drive.appdata`.
 
-Wer das nicht tragen will, hat genau eine Alternative: den Abgleich auf webOS
-nicht anzubieten. Ein Proxy, der das Secret hält, wäre ein eigener Server — und
-genau den soll es nicht geben.
+Google selbst beschreibt das für installierte Anwendungen so: das Secret eines
+solchen Clients gilt dort nicht als Geheimnis. Wer das nicht tragen will, hat
+genau eine Alternative: den Abgleich auf diesen Plattformen nicht anzubieten.
+Ein Proxy, der das Secret hält, wäre ein eigener Server — und genau den soll es
+nicht geben.
 
 ---
 
@@ -296,10 +383,38 @@ Konto wählen, bestätigen
 Browser landet auf 127.0.0.1, Nori ist verbunden
 ```
 
-Der Loopback-Port wird vom System vergeben und ist deshalb nicht vorhersehbar.
+Der Loopback-Server hört nur auf der Rückschleife, der Port wird vom System
+vergeben und ist deshalb nicht vorhersehbar. Nach der Rückleitung zeigt der
+Browser eine kurze Seite — „Anmeldung abgeschlossen" oder, bei einer
+Ablehnung, „Anmeldung nicht abgeschlossen" — und Nori holt sich selbst wieder
+nach vorn. Der Tausch schickt das Client-Secret des Desktop-Clients mit
+(Abschnitt 3), die Tokens landen im Schlüsselbund, und der erste Abgleich
+startet von selbst.
+
 **Kein eigenes URL-Schema:** Google rät für Desktop-Anwendungen davon ab, weil
 eine andere Anwendung dasselbe Schema beanspruchen und damit die Antwort
 abfangen kann.
+
+### Wann abgeglichen wird
+
+Auf beiden Apple-Plattformen gleich, entschieden in `LibrarySyncEngine`:
+
+| Auslöser | Was passiert |
+| --- | --- |
+| Anmeldung, App-Start mit gespeicherter Anmeldung | sofort ein vollständiger Abgleich, danach alle 30 Sekunden nachsehen |
+| App kommt nach vorn | abgleichen, wenn lokal etwas offen ist oder der letzte Versuch mindestens 30 Sekunden zurückliegt |
+| App geht weg (iOS: Hintergrund, Mac: anderes Programm) | Zeitgeber aus; abgleichen nur, wenn lokal etwas offen ist |
+| Änderung an Merkliste, Verlauf, Einstellungen | nach 4 Sekunden Ruhe |
+| laufende Wiedergabe | höchstens alle 25 Sekunden |
+| „Jetzt synchronisieren" | sofort |
+
+Ein Abgleich, der nichts geändert hat, **schreibt nichts**: liegt der eigene
+Stand byte-gleich und mit unverändertem Änderungsstempel schon in Drive, entfällt
+der Upload. Vorher schrieb jedes Gerät im Vordergrund alle 30 Sekunden seine
+unveränderte Datei neu, und jedes andere Gerät holte sie danach erneut.
+
+Das Öffnen der Einstellungen löst keinen Abgleich mehr aus, wenn die Verbindung
+schon besteht.
 
 ### Fernseher
 
@@ -630,7 +745,9 @@ gelten für jeden Client, der sie so anfragt.
 | `invalid_client` | Client-ID oder Secret falsch, oder falscher Clienttyp | Für webOS muss es ein Client für *Fernseher und Geräte mit eingeschränkter Eingabe* sein. |
 | `accessNotConfigured` | Drive API im Projekt nicht aktiviert | Schritt 2 oben. |
 | `access_denied` beim Zustimmen | Konto nicht als Testnutzer eingetragen | Im Zustimmungsbildschirm ergänzen. |
-| `invalid_scope` | Der Bereich ist für den Clienttyp nicht erlaubt | Der Gerätefluss erlaubt nur wenige Bereiche; `drive.appdata` gehört dazu. |
+| `invalid_scope` | Der Bereich ist für den Clienttyp nicht erlaubt | Der Gerätefluss erlaubt laut Google nur wenige Bereiche; `drive.appdata` gehört dazu. **Offen, siehe unten.** |
+| `client_secret is missing` (macOS) | Build ohne `GOOGLE_CLIENT_SECRET` | `python3 tools/configure-google-oauth.py --macos`, neu bauen. |
+| „Die Anmeldung ließ sich nicht im Schlüsselbund ablegen" | App ohne gültige Signatur, der Schlüsselbund verweigert die Ablage | Signiert bauen (auf dem iPhone: nach dem Signieren installieren). Tokens bekommen absichtlich keinen Rückfall ausserhalb des Schlüsselbunds. |
 | `invalid_grant` beim Erneuern | Zugriff widerrufen, Passwort geändert, lange nicht benutzt | Neu verbinden. Nori räumt den wertlosen Token selbst weg. |
 | „ohne Google-Abgleich gebaut" | Keine Client-ID im Build | `GOOGLE_CLIENT_ID` beziehungsweise die Vite-Variablen setzen — Abschnitt 2. Ein Eingabefeld gibt es dafür nicht. |
 | „Google Drive muss erneut verbunden werden" | Berechtigung widerrufen oder abgelaufen | „Erneut anmelden". Nori räumt den wertlosen Token selbst weg. |
@@ -639,6 +756,52 @@ gelten für jeden Client, der sie so anfragt.
 | „neuerer Stand in der Cloud" | Ein anderes Gerät hat mit neuerem Schema geschrieben | Diese Nori-Fassung aktualisieren. Sie lädt bewusst nicht hoch, um nichts wegzuwerfen. |
 | Abgleich bleibt „offline" | Kein Netz, DNS, oder TLS auf dem Fernseher | Lokal ist alles da; beim nächsten Netz geht es weiter. |
 | Zwei Dateien für ein Gerät | Sollte nicht vorkommen | Nori erkennt seine Datei am `deviceId` in `appProperties` wieder. Überzählige lassen sich gefahrlos löschen. |
+
+### Offen: `drive.appdata` im Gerätefluss
+
+Googles Dokumentation führt `drive.appdata` ausdrücklich unter den erlaubten
+Bereichen des Geräteflusses. Der Produktions-Endpunkt lehnt ihn für den
+TV-Client von Nori trotzdem ab. Gemessen am 12. September 2026 mit einer rohen
+Anfrage ohne Nori-Code (`POST https://oauth2.googleapis.com/device/code`,
+`Content-Type: application/x-www-form-urlencoded`, nur `client_id` und `scope`):
+
+| gesendeter `scope` | HTTP | Antwort |
+| --- | --- | --- |
+| `https://www.googleapis.com/auth/drive.appdata` | 400 | `invalid_scope` — `Invalid device flow scope: https://www.googleapis.com/auth/drive.appdata` |
+| `https://www.googleapis.com/auth/drive.file` | 200 | Gerätecode |
+| `openid`, `email`, `profile`, `youtube.readonly` | 200 | Gerätecode |
+
+Ausgeschlossen sind dabei: falscher Clienttyp (Desktop- und iOS-Client
+antworten auf dieselbe Anfrage mit `invalid_client: Invalid client type`),
+falsche Client-ID, zusätzliche Bereiche, Leerraum oder Kodierungsfehler, alte
+Werte aus dem `localStorage` und eine eigene Prüfung in Nori — die Meldung
+kommt von Google. Auch nachdem `drive.appdata` unter *Google Auth Platform →
+Data Access* gespeichert war, blieb die Antwort dieselbe — sofort, nach 5 und
+nach 15 Minuten. Ein **zweiter, frisch angelegter** Client vom Typ „TVs and
+Limited Input devices" im selben Projekt verhält sich identisch: `drive.appdata`
+400 `invalid_scope`, `drive.file` und `openid` 200. Ein Fehler am konkreten
+TV-Client ist damit praktisch ausgeschlossen.
+
+Als letzter Isolationstest dasselbe in einem **vollständig neuen
+Google-Cloud-Projekt** — Drive API aktiviert, unter *Data Access* ausschliesslich
+`drive.appdata`, ein neuer Client vom Typ „TVs and Limited Input devices" —,
+gemessen am 12. September 2026 um 22:50 UTC:
+
+| Projekt | Scope | HTTP | Antwort |
+| --- | --- | --- | --- |
+| zweites Testprojekt | `drive.appdata` | 400 | `invalid_scope` — `Invalid device flow scope: https://www.googleapis.com/auth/drive.appdata` |
+| zweites Testprojekt | `drive.file` | 200 | Gerätecode |
+| zweites Testprojekt | `openid` | 200 | Gerätecode |
+
+Damit hängt die Ablehnung weder am Client noch am Projekt `nori-508420`. Sie ist
+eine Einschränkung des Produktions-Endpunkts für Gerätecodes, die der
+Dokumentation widerspricht.
+
+**Warum Google so entscheidet, ist nicht bekannt.** Bis das geklärt oder eine
+andere Architektur für den Fernseher gewählt ist, bleibt webOS beim
+`appDataFolder` und damit ohne funktionierende Anmeldung; auf `drive.file` wird
+nicht umgestellt — dessen Dateien lägen sichtbar in „Meine Ablage", und iOS und
+macOS sähen sie nicht.
 
 ---
 

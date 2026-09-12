@@ -4,8 +4,109 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.16.0**, iOS/iPadOS **1.21.0**,
+unterschiedlich schnell bewegen: macOS **1.17.0**, iOS/iPadOS **1.22.0**,
 Windows **1.8.0**, LG webOS **2.0.0**.
+
+## [iOS 1.22.0] · [macOS 1.17.0] — 2026-09-13
+
+Google Drive auf iPhone, iPad und Mac: eingerichtet statt nur vorbereitet.
+
+### Behoben
+
+- **Die Anmeldung auf dem Mac konnte nie gelingen.** Der macOS-Client ist vom
+  Typ „Desktop-App", und Googles Token-Endpunkt verlangt dafür ein
+  `client_secret` — beim Tausch des Codes **und** beim Erneuern. Nori schickte
+  keines, weil die Dokumentation den Parameter als optional führt; Google
+  antwortete mit `client_secret is missing`. Gemessen am echten Endpunkt, nicht
+  angenommen. Das Secret kommt jetzt aus der Build-Einstellung
+  `GOOGLE_CLIENT_SECRET` in der nicht eingecheckten
+  `native/Nori-macOS/Config/Google.local.xcconfig` und wird nur auf macOS
+  mitgeschickt. Die iOS-App hat den Schlüssel gar nicht.
+- **Eine verweigerte Ablage im Schlüsselbund sah aus wie eine gelungene
+  Anmeldung.** Die Tokens werden jetzt zurückgelesen; fehlen sie, meldet Nori
+  „Die Anmeldung ließ sich nicht im Schlüsselbund ablegen" statt beim ersten
+  Abgleich still auf „Anmeldung nötig" zu fallen.
+- **Nach der Anmeldung lief der Zeitgeber nicht an.** Änderungen der anderen
+  Geräte kamen erst nach dem nächsten Wechsel in den Vordergrund an; auf dem Mac
+  gar nicht, weil der Zeitgeber dort nur beim Start angestossen wurde, als noch
+  keine Verbindung bestand.
+- **Jeder Blick in die Einstellungen löste einen vollständigen Abgleich aus.**
+  `restore()` band die Engine erneut an, auch wenn sie längst verbunden war.
+- **Die Browserseite auf dem Mac sagte „Nori ist verbunden", auch wenn Google
+  abgelehnt hatte.** Sie unterscheidet jetzt, und Nori holt sich nach der
+  Rückleitung selbst nach vorn.
+
+### Geändert
+
+- **Build-Konfiguration je Plattform.** `native/Nori-iOS/Config/Nori.xcconfig`
+  und `native/Nori-macOS/Config/Nori.xcconfig` sind die Basiskonfiguration der
+  Targets und binden je eine nicht eingecheckte `Google.local.xcconfig` ein.
+  Eine gemeinsame Datei gibt es mit Absicht nicht: keine Plattform soll die
+  Client-ID der anderen erben.
+- **Eine übernommene Client-ID gilt nur noch mit Tokens.** Frühere Fassungen
+  liessen die Client-ID von Hand eintragen. Eine bestehende Verbindung behält
+  ihre ID; ohne Tokens verbindet den alten Wert nichts mehr mit dem Gerät, und
+  es gilt ausschliesslich der Build. Gehört ein übernommener Wert zu einem
+  anderen Cloud-Projekt, sagt die Diagnose das.
+- **Ein Abgleich ohne Änderung schreibt nichts.** Vorher lud jedes Gerät im
+  Vordergrund alle 30 Sekunden seine unveränderte Datei hoch; jeder Upload
+  setzte einen neuen Änderungsstempel, und jedes andere Gerät holte die Datei
+  danach erneut.
+- **Vordergrund und Hintergrund sind entprellt.** Nach vorn kommen gleicht nur
+  ab, wenn lokal etwas offen ist oder der letzte Versuch mindestens 30 Sekunden
+  zurückliegt; weggehen nur, wenn etwas offen ist. Der Mac reagiert jetzt
+  überhaupt auf Aktivierung und Deaktivierung.
+- **Die Diagnose zeigt mehr — und weiterhin nichts Geheimes:** ob ein
+  Client-Secret vorliegt (macOS), ob eine Anmeldung im Schlüsselbund liegt,
+  letzter Abgleich, letzter Fehler, die erwarteten Build-Einstellungen.
+
+### Hinzugefügt
+
+- **`tools/configure-google-oauth.py`** schreibt die lokalen Dateien — iOS aus
+  der Client-ID, macOS aus `~/.config/nori/secrets/google-macos-oauth.json`,
+  webOS aus `~/.config/nori/secrets/google-webos-oauth.json` — und prüft mit
+  `--check`, dass sie ignoriert und nicht verfolgt sind, dass die Client-IDs
+  verschieden sind und kein Secret in verfolgten Dateien, im Index oder in neuen
+  Commits steht. Mit `--inspect-ios`, `--inspect-macos` und `--inspect-webos`
+  sieht es in fertige Builds. Secrets gibt es nie aus.
+- **`.gitignore`** erfasst die lokalen `.xcconfig`-Dateien und OAuth-JSON-Dateien.
+
+### Geprüft
+
+Mit einem echten Google-Konto, einem iPhone-17-Pro-Simulator (iOS 1.22.0) und
+der Mac-App (1.17.0), beide gebaut mit ihrer eigenen lokalen Konfiguration:
+
+- **Anmeldung iOS:** `ASWebAuthenticationSession` öffnet Google, nach der
+  Zustimmung kommt Nori zurück, die Tokens liegen im Schlüsselbund, der erste
+  Abgleich legt die eigene Datei im `appDataFolder` an.
+- **Anmeldung macOS:** Systembrowser, Rückleitung auf `127.0.0.1`, Tausch mit
+  Client-Secret, Tokens im Schlüsselbund, erster Abgleich legt die eigene Datei
+  an.
+- **Mac → iPhone:** 21 Verlaufseinträge und 4 Fortschrittsstände vom Mac kamen
+  vollständig auf dem iPhone an.
+- **iPhone → Mac:** ein Merklisteneintrag vom iPhone erschien auf dem Mac.
+- **Löschen:** derselbe Eintrag, auf dem iPhone entfernt, verschwand auf dem Mac
+  — über den Grabstein, nicht über eine Liste.
+- **Neustart:** beide Apps nach dem Beenden neu gestartet — verbunden ohne
+  erneute Anmeldung, und die Löschung lief danach in beide Richtungen durch.
+- **Erneuern:** nach Ablauf der Zugriffstokens (eine Stunde nach der Anmeldung)
+  lief der Abgleich auf beiden Geräten ohne erneute Anmeldung weiter — auf dem
+  Mac mit Client-Secret, die Tokens im Schlüsselbund wurden dabei neu
+  geschrieben.
+- **Bundles:** iOS enthält genau die iOS-Client-ID und kein Secret, macOS genau
+  die macOS-Client-ID und sein Secret nur in der `Info.plist`; keine
+  OAuth-JSON in einem Bundle, keine fremde Client-ID in einem Bundle.
+- **Git:** kein Secret, keine Client-ID und kein Token im Commit; die lokalen
+  Dateien sind ignoriert.
+- 425 Swift-Tests, `tools/check-apple-sources.py`, Builds für iOS (Simulator)
+  und macOS.
+
+### Nicht geändert
+
+- **webOS.** Googles Gerätefluss lehnt `drive.appdata` für den TV-Client derzeit
+  mit `invalid_scope` ab, obwohl die Dokumentation den Bereich erlaubt. Die
+  Messungen stehen in `docs/google-drive-sync.md`, Abschnitt 10. Bis die Ursache
+  geklärt ist, bleibt die webOS-App unverändert beim `appDataFolder`.
 
 ## [webOS 2.0.0] — 2026-09-12
 

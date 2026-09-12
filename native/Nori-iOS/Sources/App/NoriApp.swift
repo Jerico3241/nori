@@ -136,16 +136,15 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                // Beim Zurückkommen sofort sehen, was die anderen Geräte
-                // inzwischen geschrieben haben.
-                sync.syncNow()
-                sync.engine.startPolling()
+                // Beim Zurückkommen sehen, was die anderen Geräte inzwischen
+                // geschrieben haben — sofern der letzte Versuch nicht gerade
+                // eben war. Die Engine entscheidet das an einer Stelle.
+                sync.appDidBecomeActive()
             case .background:
                 // Der letzte verlässliche Moment. Auf ein „App wird beendet"
                 // ist kein Verlass, und genau deshalb wird hier abgeglichen
-                // statt dort.
-                sync.engine.stopPolling()
-                sync.syncNow()
+                // statt dort — aber nur, wenn es etwas zu schreiben gibt.
+                sync.appDidEnterBackground()
             default:
                 sync.engine.stopPolling()
             }

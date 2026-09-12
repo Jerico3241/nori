@@ -24,9 +24,15 @@
          Einstellungen zeigen „nicht eingerichtet" statt eine Anmeldung
          anzubieten, die sicher scheitert. Eine Client-ID ist kein Geheimnis,
          gehört aber zum Google-Cloud-Projekt des Betreibers und nicht ins
-         Repository. Ein Client-Secret gibt es für diesen Fluss nicht; siehe
-         docs/google-drive-sync.md. -->
+         Repository. Gesetzt wird sie in Config/Google.local.xcconfig. -->
     <key>GoogleClientID</key><string>$(GOOGLE_CLIENT_ID)</string>
+    <!-- Nur macOS: der Client ist vom Typ „Desktop-App", und Googles
+         Token-Endpunkt verlangt dafür beim Tausch und beim Erneuern ein
+         client_secret. Aus der Build-Einstellung GOOGLE_CLIENT_SECRET in der
+         nicht eingecheckten Config/Google.local.xcconfig. Hier steht nur der
+         Platzhalter; der echte Wert gehört nie ins Repository. Die iOS-App hat
+         diesen Schlüssel nicht. Siehe docs/google-drive-sync.md. -->
+    <key>GoogleClientSecret</key><string>$(GOOGLE_CLIENT_SECRET)</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>

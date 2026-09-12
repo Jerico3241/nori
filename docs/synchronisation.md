@@ -168,13 +168,28 @@ deshalb noch lange nicht im Sekundentakt.
 | Merkliste, Einstellungen, Verlauf | nach 4 Sekunden Ruhe |
 | laufende Wiedergabe | höchstens alle 25 Sekunden |
 | Pause, Player verlassen, Folge beendet | sofort |
-| App-Start, Rückkehr in den Vordergrund | sofort |
-| Gang in den Hintergrund | sofort |
+| Anmeldung, App-Start mit gespeicherter Anmeldung | sofort |
+| Rückkehr in den Vordergrund | sofort, wenn lokal etwas offen ist oder der letzte Versuch mindestens 30 Sekunden zurückliegt |
+| Gang in den Hintergrund | sofort, wenn lokal etwas offen ist |
 | im Vordergrund | alle 30 Sekunden nachsehen |
 | „Jetzt synchronisieren" | sofort, vollständig — holen, zusammenführen, schreiben |
 
 Der Gang in den Hintergrund ist der letzte verlässliche Moment. Auf ein „App
 wird beendet" ist kein Verlass, und deshalb hängt daran auch nichts.
+
+Auf dem Mac heisst „Vordergrund" das aktive Programm. Ein Mac wechselt
+dutzendfach am Tag zwischen Programmen; ohne die 30-Sekunden-Schwelle wäre jeder
+Klick in ein anderes Fenster eine Anfrage an Google.
+
+**Nachsehen heisst nicht schreiben.** Ein Abgleich holt und führt immer
+zusammen. Hochgeladen wird aber nur, wenn sich der eigene Stand gegenüber dem
+unterscheidet, was dieses Gerät zuletzt selbst geschrieben hat und was
+unverändert in der Cloud liegt. Sonst schriebe jedes Gerät alle 30 Sekunden
+seine Datei neu, und jedes andere holte sie wegen des neuen Änderungsstempels
+erneut ab.
+
+Umgesetzt ist das bisher im Swift-Kern (`LibrarySyncEngine`, iOS und macOS).
+Die TypeScript-Engine der webOS-App ist unverändert.
 
 Die Wiedergabe wartet nie auf Drive: der Spieler schreibt lokal, meldet die
 Änderung und läuft weiter.

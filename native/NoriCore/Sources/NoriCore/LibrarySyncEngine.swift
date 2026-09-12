@@ -115,6 +115,15 @@ final class LibrarySyncEngine {
     private var debounceTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var lastUploadAt: Double = 0
+    /// Wann zuletzt ein Abgleich begonnen hat — erfolgreich oder nicht.
+    private var lastAttemptAt: Double = 0
+    /// Was dieses Gerät zuletzt selbst geschrieben hat.
+    ///
+    /// Damit ein Abgleich, der nichts geändert hat, auch nichts schreibt. Ohne
+    /// das lud jedes Gerät im Vordergrund alle 30 Sekunden seine unveränderte
+    /// Datei hoch — ein Schreibzugriff gegen Googles Kontingent, und jedes
+    /// andere Gerät holte sie danach wegen des neuen Änderungsstempels erneut.
+    private var lastUpload: (fileId: String, payload: Data, modifiedTime: String)?
     /// Was schon einmal heruntergeladen wurde, nach Dateikennung.
     /// Unveränderte Dateien werden nicht erneut geholt.
     private var cache: [String: (modifiedTime: String, data: LibraryData)] = [:]
@@ -151,6 +160,7 @@ final class LibrarySyncEngine {
             bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
             bookkeeping.setSyncValue(accountId, forKey: Self.accountKey)
             cache = [:]
+            lastUpload = nil
         }
         snapshotStore = store
         status = .idle
@@ -168,6 +178,7 @@ final class LibrarySyncEngine {
         stopPolling()
         snapshotStore = nil
         cache = [:]
+        lastUpload = nil
         bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
         status = .disconnected
         lastError = nil
@@ -197,6 +208,29 @@ final class LibrarySyncEngine {
         debounceTask?.cancel()
         debounceTask = nil
         Task { await run() }
+    }
+
+    /// Die App kommt nach vorn.
+    ///
+    /// Sofort abgleichen — aber nicht bei jedem Fensterwechsel. Auf dem Mac
+    /// wird eine App dutzendfach am Tag aktiv; lag der letzte Versuch weniger
+    /// als ein Abfragetakt zurück und ist lokal nichts offen, gibt es nichts
+    /// Neues zu holen, das der Zeitgeber nicht ohnehin gleich holt.
+    func syncOnForeground() {
+        guard snapshotStore != nil else { return }
+        let elapsed = (clock() - lastAttemptAt) / 1000
+        guard hasPendingChanges || lastAttemptAt == 0 || elapsed >= Self.foregroundPoll else { return }
+        syncNow()
+    }
+
+    /// Die App geht in den Hintergrund.
+    ///
+    /// Der letzte verlässliche Moment — aber nur, wenn es etwas zu schreiben
+    /// gibt. Ein Gang in den Hintergrund ohne Änderung ist kein Anlass für
+    /// eine Anfrage.
+    func syncOnBackground() {
+        guard snapshotStore != nil, hasPendingChanges || debounceTask != nil else { return }
+        syncNow()
     }
 
     /// Im Vordergrund regelmäßig nach fremden Änderungen sehen.
@@ -255,6 +289,7 @@ final class LibrarySyncEngine {
         }
 
         status = .syncing
+        lastAttemptAt = clock()
         do {
             let pulled = try await pullAndMerge(from: remote)
             guard let pulled else { return }  // Status ist bereits gesetzt
@@ -263,16 +298,29 @@ final class LibrarySyncEngine {
             // Der eigene Stand wird **nach** dem Anwenden gebildet. Sonst
             // fehlte darin genau das, was gerade zusammengeführt wurde.
             let own = store.snapshot()
-            let payload = try JSONEncoder().encode(own)
+            // Sortierte Schlüssel, damit derselbe Stand dieselben Bytes ergibt
+            // und sich „unverändert" überhaupt feststellen lässt.
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let payload = try encoder.encode(own)
             guard payload.count <= LibrarySyncLimits.maxSnapshotBytes else {
                 throw GoogleDriveError.tooLarge(payload.count)
             }
-            let written = try await upload(payload, to: remote, known: pulled.refs)
-            bookkeeping.setSyncValue(written.id, forKey: Self.fileIdKey)
-            // Der eigene Stand ist damit bekannt. Ohne diesen Eintrag lädt der
-            // nächste Abgleich die gerade selbst geschriebene Datei wieder
-            // herunter — jedes Mal, für nichts.
-            cache[written.id] = (written.modifiedTime, own)
+
+            if let last = lastUpload, last.payload == payload,
+               bookkeeping.syncValue(forKey: Self.fileIdKey) == last.fileId,
+               pulled.refs.contains(where: { $0.id == last.fileId && $0.modifiedTime == last.modifiedTime }) {
+                // Derselbe Stand liegt schon unverändert in der Cloud. Nichts
+                // zu schreiben — geholt und zusammengeführt wurde trotzdem.
+            } else {
+                let written = try await upload(payload, to: remote, known: pulled.refs)
+                bookkeeping.setSyncValue(written.id, forKey: Self.fileIdKey)
+                // Der eigene Stand ist damit bekannt. Ohne diesen Eintrag lädt
+                // der nächste Abgleich die gerade selbst geschriebene Datei
+                // wieder herunter — jedes Mal, für nichts.
+                cache[written.id] = (written.modifiedTime, own)
+                lastUpload = (written.id, payload, written.modifiedTime)
+            }
 
             lastUploadAt = clock()
             lastSuccessfulSync = lastUploadAt

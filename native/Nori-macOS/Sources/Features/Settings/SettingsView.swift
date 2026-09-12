@@ -101,30 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.15.0"
+    static let version = "1.17.0"
 
     static let highlights = [
-        "Die Oberfläche folgt einem gemeinsamen Design-System: dieselben Radien, Abstände und Bewegungskurven in jeder Ansicht.",
-        "Liquid Glass auf macOS 26 und neuer — Karussellpfeile und Merken-Knopf. Abschaltbar unter Einstellungen › Allgemein.",
-        "Kacheln blenden beim ersten Laden auf und stehen danach sofort, statt beim Zurückscrollen erneut aufzublenden.",
-        "„Bewegung reduzieren“ schaltet jetzt überall die Bewegung ab, ohne dass eine Funktion verlorengeht.",
-        "Neuer Bereich „K-Drama“: die koreanischen Serien aus dem Serienstream-Katalog, in Seitenleiste, Katalog und Kalender.",
-        "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
-        "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
-        "Streams starten zuverlässiger: Der Player schickt jetzt Referer und User-Agent mit.",
-        "Cover werden richtig zugeordnet und dauerhaft gespeichert; fehlt ein TMDB-Treffer, greift das Cover der Quelle.",
-        "Cover lassen sich in der Detailansicht von Hand auswählen.",
-        "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter“ und Genre-Zeilen.",
-        "Neuer Bereich „Kategorien“ und „Ähnliche Titel“ auf der Detailseite.",
-        "Wiedergabe läuft in einem eigenen Fenster mit Vollbild und ⌘W.",
-        "TMDB-Schlüssel liegt jetzt im Schlüsselbund statt im Programm — einzutragen unter Einstellungen › Daten.",
-        "Detailseite: der Kopfbereich schneidet den Abspielknopf nicht mehr ab.",
-        "Das Banner zeigt jetzt Empfehlungen statt angefangener Folgen — die stehen darunter in „Schau weiter“.",
-        "Kacheln ohne TMDB-Treffer zeigen jetzt das Cover der Quelle statt eines Buchstabens.",
-        "Anime und Serien stehen in einer gemeinsamen Bibliothek; der Umschalter unten links ist jetzt ein Filter.",
-        "Leere Kacheln: Die Adresse eines Covers trägt einen Zufallsanteil und ließ sich nicht erraten. Nori liest sie jetzt bei Bedarf aus der Detailseite und merkt sie sich dauerhaft.",
-        "Die Folgenliste zeigt Standbild und Beschreibung aus TMDB. Fehlt der deutsche Text, wird die englische Fassung nachgeholt; der Tooltip trägt die vollständige Beschreibung.",
-        "Kalender und Merkliste lassen sich als Raster anzeigen, nicht nur als Liste — umgeschaltet wird in der Fensterleiste, wie im Katalog schon länger.",
+        "Google Drive: Die Anmeldung funktioniert jetzt wirklich. Googles Token-Endpunkt verlangt für den Mac-Client ein Client-Secret; es kommt aus der lokalen Build-Konfiguration und steht nie im Programmcode.",
+        "Nach „Mit Google anmelden“ holt sich Nori selbst wieder nach vorn, und die Browserseite sagt, ob die Anmeldung geklappt hat.",
+        "Der erste Abgleich startet direkt nach der Anmeldung, danach sieht Nori im Vordergrund regelmäßig nach Änderungen der anderen Geräte.",
+        "Ein Abgleich ohne Änderung schreibt nichts mehr nach Google Drive, und ein Wechsel zwischen Programmen löst nicht jedes Mal eine Anfrage aus.",
+        "Die Diagnose unter Einstellungen › Synchronisation zeigt, ob Client-Secret und Anmeldung vorhanden sind — nie die Werte selbst —, dazu letzten Abgleich und letzten Fehler.",
+        "Die OAuth-Eingabefelder sind weg: Anmelden ist ein Knopf (seit 1.16.0).",
     ]
 }
 
@@ -319,10 +304,35 @@ private struct SyncSettingsTab: View {
             LabeledContent("Bereich", value: GoogleDriveClient.scope)
                 .font(.footnote)
                 .textSelection(.enabled)
+            // Ob — nie welches. Secret und Tokens stehen hier nicht, auch
+            // nicht verkürzt.
+            LabeledContent("Client-Secret", value: sync.hasClientSecret ? "vorhanden" : "fehlt")
+                .font(.footnote)
+            LabeledContent("Anmeldung im Schlüsselbund", value: sync.hasStoredTokens ? "ja" : "nein")
+                .font(.footnote)
+            LabeledContent("Letzter Abgleich", value: sync.lastSuccessfulSync.map {
+                Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .standard)
+            } ?? "noch keiner")
+                .font(.footnote)
+            if let error = sync.lastError {
+                LabeledContent("Letzter Fehler", value: error)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+            }
+            if sync.migratedClientBelongsToAnotherProject {
+                Text("""
+                     Die übernommene Client-ID gehört zu einem anderen \
+                     Google-Cloud-Projekt als die aus dem Build. Dieser Mac \
+                     gleicht deshalb in einen anderen versteckten Ordner ab.
+                     """)
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let problem = sync.buildConfigurationProblem {
                 Text("""
-                     \(problem) Erwartet wird die Build-Einstellung \
-                     GOOGLE_CLIENT_ID; die Schritte stehen in \
+                     \(problem) Erwartet werden die Build-Einstellungen \
+                     \(sync.expectedBuildSettings); die Schritte stehen in \
                      docs/google-drive-sync.md.
                      """)
                     .font(.footnote)
@@ -348,8 +358,13 @@ private struct SyncSettingsTab: View {
     }
 
     private var isConnected: Bool {
-        if case .disconnected = sync.status { return false }
-        return sync.isConfigured
+        switch sync.status {
+        // Während der Anmeldung ist noch nichts verbunden. Vorher standen hier
+        // schon „Jetzt synchronisieren" und „Dieses Gerät trennen", solange
+        // der Browser noch offen war.
+        case .disconnected, .authorizing: return false
+        default: return sync.isConfigured
+        }
     }
 
     private var statusText: String {
