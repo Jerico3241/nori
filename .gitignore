@@ -47,6 +47,12 @@ Nori.exe
 apps/webos/dist/
 shared/nori-core/dist/
 
+# Ausgabeordner von `xcodebuild`.
+#
+# Ohne `-derivedDataPath` legt ein Build ihn neben dem Projekt an, nicht in
+# DerivedData. `.build/` weiter oben ist SwiftPM und greift hier nicht.
+native/*/build/
+
 # Modul-Zwischenspeicher, den `xcodebuild` neben dem Projekt anlegt.
 #
 # Er heisst `-Xcc`, liegt *innerhalb* von `.xcodeproj` und wird deshalb von
