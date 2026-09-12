@@ -4,7 +4,7 @@
 // gemeinsamen Nori-Datenmodell und stehen damit auch auf iPhone und Mac;
 // Verbindung und Bild betreffen nur diesen Fernseher.
 
-import { PLAYBACK_SPEEDS, type CatalogProvider } from "@nori/core";
+import { LIBRARY_SCHEMA_VERSION, PLAYBACK_SPEEDS, type CatalogProvider } from "@nori/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { restoreFocusSoon } from "../navigation/focusMemory";
@@ -12,6 +12,7 @@ import { SpotArea, SpotButton } from "../navigation/Spot";
 import { pingServer } from "../services/gateway";
 import { covers } from "../services/covers";
 import { useLibrary } from "../state/library";
+import { syncStatusLabel, useSync } from "../state/sync";
 import { useSettings } from "../state/settings";
 
 const ROUTE = "settings";
@@ -25,6 +26,7 @@ const HOSTERS = ["VOE", "Vidmoly", "Vidoza", "Lulustream", "Speedfiles", "Filemo
 export function SettingsPage() {
   const { settings, update, reset } = useSettings();
   const library = useLibrary();
+  const sync = useSync();
   const [serverDraft, setServerDraft] = useState(settings.serverUrl);
   const [ping, setPing] = useState<string | null>(null);
   const [tmdbDraft, setTmdbDraft] = useState(settings.tmdbKey);
@@ -289,6 +291,78 @@ export function SettingsPage() {
 
       <section className="settings-section">
         <header>
+          <h2>Synchronisation</h2>
+          <p>
+            Merkliste, Verlauf und Fortschritt über Google Drive mit iPhone, iPad und Mac
+            teilen. Ohne Netz funktioniert Nori vollständig weiter.
+          </p>
+        </header>
+
+        <Row label="Zustand">
+          <span className="field-note">{syncStatusLabel(sync)}</span>
+        </Row>
+
+        {sync.pending ? <DeviceCodePanel /> : (
+          <SpotArea className="filter-row" spotlightId="set-sync">
+            {sync.status === "disconnected" || !sync.isConfigured ? (
+              <SpotButton
+                focusRoute={ROUTE}
+                focusArea="sync"
+                focusKey="connect"
+                onClick={() => sync.connect()}
+              >
+                Mit Google Drive verbinden
+              </SpotButton>
+            ) : (
+              <>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="sync-now"
+                  onClick={() => sync.syncNow()}
+                >
+                  Jetzt synchronisieren
+                </SpotButton>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="disconnect"
+                  onClick={() => sync.disconnect()}
+                >
+                  Dieses Gerät trennen
+                </SpotButton>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="revoke"
+                  onClick={() => {
+                    // Betrifft alle Geräte an diesem Konto, nicht nur den
+                    // Fernseher. Deshalb wird vorher gefragt.
+                    if (window.confirm(
+                      "Damit verlieren alle Geräte an diesem Google-Konto den Zugriff — "
+                      + "auch iPhone und Mac. Die Bibliothek auf diesem Fernseher bleibt erhalten.",
+                    )) sync.revokeAccess();
+                  }}
+                >
+                  Google-Zugriff widerrufen
+                </SpotButton>
+              </>
+            )}
+          </SpotArea>
+        )}
+
+        {sync.message ? <p className="field-note">{sync.message}</p> : null}
+        {sync.lastWarning ? <p className="field-note">{sync.lastWarning}</p> : null}
+        {!sync.isConfigured ? (
+          <p className="field-note">
+            Für diese Nori-Fassung sind keine Google-Zugangsdaten hinterlegt. Die Bibliothek
+            funktioniert weiterhin vollständig, nur eben auf diesem Fernseher.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="settings-section">
+        <header>
           <h2>Daten</h2>
           <p>Merkliste, Verlauf und Fortschritt liegen im Format der übrigen Nori-Apps vor.</p>
         </header>
@@ -325,10 +399,60 @@ export function SettingsPage() {
           </SpotButton>
         </SpotArea>
         <p className="field-note">
-          Bibliotheksschema v4 · {library.state.favorites.length} auf der Merkliste ·{" "}
-          {Object.keys(library.state.progress).length} Folgen mit Fortschritt
+          Bibliotheksschema v{LIBRARY_SCHEMA_VERSION} · {library.state.favorites.length} auf der
+          Merkliste · {Object.keys(library.state.progress).length} Folgen mit Fortschritt
         </p>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Der Gerätefluss, so gross, dass man ihn vom Sofa aus lesen kann.
+ *
+ * Kein Wartekreisel ohne Erklärung: auf dem Fernseher sieht der Nutzer die
+ * Adresse, den Code und wie lange er noch gilt. Was er tun soll, steht dabei —
+ * sonst wartet er auf etwas, das ohne ihn nie passiert.
+ */
+function DeviceCodePanel() {
+  const sync = useSync();
+  const [remaining, setRemaining] = useState(0);
+
+  const expiresAt = sync.pending?.expiresAt ?? 0;
+  useEffect(() => {
+    if (!expiresAt) return undefined;
+    const tick = () => setRemaining(Math.max(0, Math.round((expiresAt - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  if (!sync.pending) return null;
+  const minutes = Math.floor(remaining / 60);
+  const seconds = String(remaining % 60).padStart(2, "0");
+
+  return (
+    <div className="device-code">
+      <p className="device-code-lead">
+        Öffne diese Adresse auf deinem Smartphone oder Computer und gib den Code ein:
+      </p>
+      <p className="device-code-url">{sync.pending.verificationUrl}</p>
+      <p className="device-code-value">{sync.pending.userCode}</p>
+      <p className="device-code-hint">
+        {remaining > 0
+          ? `Der Code gilt noch ${minutes}:${seconds} Minuten. Nori wartet auf deine Bestätigung …`
+          : "Der Code ist abgelaufen. Bitte neu beginnen."}
+      </p>
+      <SpotArea className="filter-row" spotlightId="set-sync-pending">
+        <SpotButton
+          focusRoute={ROUTE}
+          focusArea="sync"
+          focusKey="cancel"
+          onClick={() => sync.cancelConnect()}
+        >
+          Abbrechen
+        </SpotButton>
+      </SpotArea>
     </div>
   );
 }
