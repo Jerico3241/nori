@@ -18,3 +18,4 @@ export * from "./hoster/voe.js";
 export * as aniworld from "./parse/aniworld.js";
 export * as serienstream from "./parse/serienstream.js";
 export * from "./parse/common.js";
+export * from "./tmdb/index.js";
