@@ -7,6 +7,55 @@ Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
 Windows **1.8.0**, LG webOS **1.0.0**.
 
+## [Unveröffentlicht]
+
+Noch keine Version geschnitten: die App-Versionen stammen aus
+`MARKETING_VERSION` der Xcode-Projekte und werden beim Release gesetzt.
+
+### Hinzugefügt
+
+- **Abgleich über Google Drive** zwischen iPhone, iPad, Mac und Fernseher.
+  Ausschließlich im versteckten `appDataFolder` (Bereich `drive.appdata`) —
+  die Dateien tauchen in „Meine Ablage" nicht auf, und mehr als diesen einen
+  Bereich fordert Nori nicht an. Einrichtung: `docs/google-drive-sync.md`.
+- **Eine Datei je Gerät** statt einer gemeinsamen. Jedes Gerät schreibt nur
+  seine eigene und liest die der anderen; damit gehen gleichzeitige Änderungen
+  auf zwei Geräten nicht mehr verloren.
+- **Anmeldung je Plattform auf dem dafür vorgesehenen Weg:**
+  `ASWebAuthenticationSession` auf iOS, Browser mit Loopback-Server auf macOS,
+  Gerätecode auf dem Fernseher — dort mit großer Adresse, großem Code und
+  sichtbarem Ablauf statt eines Wartekreisels.
+- **„Dieses Gerät trennen" und „Google-Zugriff widerrufen"** als getrennte
+  Handlungen. Das erste lässt Bibliothek, Drive-Dateien und die anderen Geräte
+  unangetastet; das zweite betrifft alle Geräte an diesem Konto und fragt
+  vorher.
+
+### Geändert
+
+- **Bibliotheksschema v6.** Jede Änderung trägt jetzt ihre eigene Marke: die
+  Merkliste ist ein Zustand mit Grabsteinen statt einer Liste, Löschungen von
+  Verlauf und Fortschritt hinterlassen einen Zeitpunkt, und jede Einstellung
+  hat ihren eigenen Änderungsstempel. Bestehende Stände werden verlustfrei
+  übernommen; die Migration ist getestet.
+- **Der Fortschritt geht nicht mehr bei jeder Sekunde ins Netz.** Lokal wird
+  weiter im Sekundentakt geschrieben, in die Cloud höchstens alle 25 Sekunden —
+  und sofort bei Pause, Verlassen des Players und Wechsel in den Hintergrund.
+
+### Behoben
+
+- **`docs/synchronisation.md` behauptete, `drive.appdata` sei bei Google ein
+  sensibler Bereich** und brauche eine Überprüfung, weshalb nur der Testmodus
+  infrage komme. Das stimmt nicht: der Bereich gilt als nicht sensibel.
+
+### Sicherheit
+
+- Tokens liegen auf Apple im Schlüsselbund, nie in `library.json`, nie im
+  Protokoll und nie in der Cloud. Client-IDs kommen aus Build-Einstellungen.
+- Ein Fehler in OAuth, Drive, Netz, Parsing oder Schema führt unter keinen
+  Umständen dazu, dass lokal etwas gelöscht wird. Ein unlesbarer Fremdstand
+  wird übergangen, ein neuerer Schemastand hält den Upload an, und ohne Netz
+  läuft Nori vollständig weiter.
+
 ## [iOS 1.20.0] — 2026-09-12
 
 Die Startseite ist neu gebaut, nicht überarbeitet. Vorlage ist derselbe Entwurf
