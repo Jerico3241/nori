@@ -59,3 +59,6 @@ native/*/build/
 # keiner der üblichen Xcode-Regeln erfasst. Ein `git add -A` nach einem Build
 # nimmt ihn sonst mit: 1600 Dateien, 22 MB, alle generiert.
 **/*.xcodeproj/-Xcc/
+
+# Screenshots des Fernbedienungslaufs (npm run test:tv)
+apps/webos/shot-*.png
