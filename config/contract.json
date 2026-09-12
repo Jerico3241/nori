@@ -83,6 +83,34 @@
       "immediate": ["Pause", "Player verlassen", "Episode beendet", "Hintergrund", "Merkliste geändert", "manueller Abgleich"]
     }
   },
+  "tmdb": {
+    "note": "Gilt für beide Kerne: native/NoriCore/Sources/NoriCore/TMDB*.swift und shared/nori-core/src/tmdb.ts. Die Testreihen benutzen absichtlich dieselben Fälle.",
+    "imageHost": "https://image.tmdb.org/t/p/",
+    "imageSizes": {
+      "posterThumb": "w185",
+      "posterCard": "w342",
+      "posterHero": "w780",
+      "backdropCard": "w780",
+      "backdropHero": "w1280",
+      "logo": "w500",
+      "still": "w454_and_h254_bestv2"
+    },
+    "episodeImage": "Folgenbilder stehen in still_path, nicht in poster_path — Folgen haben bei TMDB kein Poster.",
+    "titleFloor": 80,
+    "matching": "Der Titel entscheidet, alles andere gewichtet nur. Beliebtheit, Genre und Herkunftsland ziehen einen Treffer vor einen anderen, erzeugen aber keinen. Wer titleFloor nicht erreicht, fällt raus — lieber kein Bild als das einer fremden Serie.",
+    "queryChain": "Suchbegriffe in absteigender Güte: Titel der Quelle, dann Alternativtitel, dann der Teil vor einem Doppelpunkt, zuletzt die um Staffel- und Jahresangaben bereinigte Fassung. Der erste Treffer über titleFloor gewinnt; höchstens vier Begriffe.",
+    "alternateTitles": "Ergibt die Kette nichts, obwohl TMDB Zeilen geliefert hat, werden für bis zu drei Zeilen /tv/{id}/alternative_titles nachgeladen und erneut bewertet. Grund: /search/tv liefert je Zeile nur name und original_name — die Umschrift, unter der AniWorld Anime führt, steht nur in den Alternativtiteln.",
+    "textLanguage": ["de-DE", "en-US"],
+    "textFallback": "Pro Feld, nicht pro Staffel: ein leerer String ist eine Lücke, keine Auskunft. Fehlt irgendetwas, wird die zweite Sprachfassung geholt und füllt nur die Lücken.",
+    "imageLanguage": ["de", "en", "null"],
+    "imageFallback": "include_image_language=de,en,null zuerst; ergibt das nichts, wird ohne Filter gefragt — der Filter kostet messbar Bilder.",
+    "logoOrder": ["de", "en", "null", "andere"],
+    "logoFormat": "SVG fällt heraus, PNG gewinnt. Bei gleicher Sprache entscheidet vote_average, dann vote_count.",
+    "seasonMapping": "Zuerst /tv/{id}/season/{n}. Deckt das weniger als die Hälfte der Quellfolgen ab oder antwortet es mit 404, wird über die Folgentitel zugeordnet: gleicher Versatz bei mindestens drei Titeln und mindestens der Hälfte der benennbaren Quellfolgen, und kein zweiter Versatz mit gleich vielen Belegen. Sonst wird nichts zugeordnet.",
+    "seasonZero": "Staffel 0 und Abschnitte ohne Staffelnummer (\"Filme\") werden nicht zugeordnet — die Zuordnung wäre geraten.",
+    "failureCache": "Nur HTTP 404 darf als \"hat TMDB nicht\" abgelegt werden, und auch das nur 14 Tage. 401, 403, 429, 5xx, Zeitüberschreitung, Netzfehler und unlesbare Antworten dürfen nie gemerkt werden — sonst macht eine Ratenbegrenzung aus \"gerade nicht erreichbar\" ein \"gibt es nicht\".",
+    "logging": "Protokollzeilen tragen nie den API-Schlüssel und nie eine vollständige Anfrageadresse."
+  },
   "rules": {
     "complete": "completed == true OR (durationSec >= 20 AND positionSec >= durationSec * 0.9)",
     "resume": "if complete then 0; if positionSec < 8 then 0; else positionSec",

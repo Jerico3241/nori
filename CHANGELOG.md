@@ -7,7 +7,77 @@ Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
 Windows **1.8.0**, LG webOS **1.0.0**.
 
-## [Unveröffentlicht]
+## [Unveröffentlicht] — TMDB-Metadaten
+
+Fehlende Cover, Backdrops, Logos, Folgenbilder, Folgentitel und -beschreibungen
+hatten nicht **eine** Ursache, sondern sechs voneinander unabhängige. Alle
+wurden gegen die echte TMDB-Schnittstelle nachgewiesen, bevor etwas geändert
+wurde.
+
+### Behoben
+
+- **Die Cover-Suche stellte nur eine einzige Anfrage.** `TMDBMatcher.queries`
+  baut seit jeher eine Kette von Schreibweisen auf — die Cover-Suche benutzte
+  sie nie, nur die Kennungssuche. Gemessen: „Attack on Titan Staffel 2" liefert
+  bei TMDB **null** Zeilen, „attack on titan" vier. Die Kette wird jetzt
+  abgearbeitet, der erste Treffer beendet sie. Für Titel, die schon vorher
+  gefunden wurden, bleibt es bei einer Anfrage.
+- **Alternativtitel erreichten die Cover-Suche gar nicht.** `detailsLoading`
+  nahm keine entgegen; die Detailseite gab sie nur an Kennungs- und Logosuche
+  weiter. Sie werden jetzt durchgereicht.
+- **Anime unter ihrer Umschrift waren nicht auffindbar.** `/search/tv?query=
+  Shingeki no Kyojin` liefert genau eine Zeile — die richtige (#1429) —, deren
+  `name` „Attack on Titan" und deren `original_name` „進撃の巨人" ist. Zu
+  keinem von beiden passt der Suchbegriff, also verwarf Nori den Treffer. Die
+  Umschrift steht nur in `/tv/{id}/alternative_titles`; die werden jetzt
+  nachgeladen, wenn die Kette nichts ergibt. Dasselbe galt für „Sousou no
+  Frieren".
+- **Ein fehlendes Poster kostete sämtliche Metadaten.** Die Cover-Suche verlangte
+  ein Poster und verwarf sonst die ganze Zeile — mitsamt Breitbild,
+  Beschreibung, Bewertung und vor allem der **TMDB-Kennung**, an der Logo und
+  alle Folgendaten hängen. Übernommen wird jetzt, was dasteht.
+- **Folgendaten fehlten, sobald die Quelle anders in Staffeln teilt als TMDB.**
+  Gemessen: Jujutsu Kaisen ist bei TMDB **eine** Staffel mit 59 Folgen, AniWorld
+  führt zwei — `/tv/95479/season/2` antwortet mit HTTP 404. Dasselbe bei
+  Detektiv Conan (eine Staffel, 1213 Folgen) und Frieren. Neu ordnet
+  `TMDBSeasonMap` die Folgen über ihre **Titel** zu und belegt den Versatz;
+  lässt er sich nicht belegen, wird nichts zugeordnet.
+- **Fehlgeschlagene Abrufe wurden wie gültige leere Daten abgelegt.** Jede
+  Antwort ohne Folgen landete im `missed`-Satz, der auf die Platte wandert —
+  auch eine Zeitüberschreitung, ein 429 und ein 401. Eine einzige
+  Ratenbegrenzung schrieb eine Staffel damit dauerhaft ab. Neu unterscheidet
+  `TMDBFailure`; nur HTTP 404 darf gemerkt werden, und auch das nur 14 Tage.
+- **Einzelne Textlücken wurden nie gefüllt.** Die englische Fassung wurde erst
+  geholt, wenn mehr als der **halben** Staffel die deutsche Beschreibung
+  fehlte. Gemessen an Dan Da Dan, Staffel 1: 23 von 24 deutschen Texten
+  vorhanden, der 24. blieb leer, obwohl der englische vorlag. Jetzt entscheidet
+  jede Folge und jedes Feld für sich, und `airDate` und `runtime` werden beim
+  Zusammenführen nicht mehr vergessen.
+- **Der Sprachfilter für Logos hatte keinen Ausweg.** `include_image_language=
+  de,en,null` kostet messbar Bilder — Jujutsu Kaisen 8 gefiltert gegen 30
+  ungefiltert, Naruto 3 gegen 20, Demon Slayer 13 gegen 49. Ergibt der Filter
+  nichts, wird jetzt ohne ihn gefragt. In der Rangfolge steht ein Logo **ohne**
+  Sprachkennzeichen nun vor einem fremdsprachigen statt mit ihm auf einer Stufe.
+- **„The Final Season" wurde zu „the" abgeräumt.** Ein Ausdruck in
+  `stripVariants` griff vor dem, der den Artikel mitnimmt; übrig blieb
+  „attack on titan the". Beide Kerne korrigiert.
+- **webOS nahm den erstbesten TMDB-Treffer.** Die Fernseh-App suchte einmal und
+  nahm `results.find((row) => row.backdrop_path)` — die erste Zeile mit einem
+  Bild, ungeprüft. Sie benutzt jetzt dieselbe Bewertung wie die Apple-Apps, aus
+  `@nori/core`.
+
+### Hinzugefügt
+
+- `shared/nori-core/src/tmdb.ts` — die TMDB-Zuordnung als zweiter Kern, mit
+  denselben Testfällen wie auf der Swift-Seite.
+- Ein `tmdb`-Abschnitt in `config/contract.json`: Bildgrößen, Titelschwelle,
+  Suchkette, Sprachreihenfolgen, Logorangfolge, Staffelzuordnung und die Regel,
+  welche Fehlschläge gemerkt werden dürfen.
+- `NoriLog` — Protokollzeilen zur Fehlersuche, über `NORI_LOG` einzuschalten und
+  standardmäßig aus. Sie tragen nie den API-Schlüssel und nie eine vollständige
+  Anfrageadresse.
+
+## [Unveröffentlicht] — Abgleich über Google Drive
 
 Noch keine Version geschnitten: die App-Versionen stammen aus
 `MARKETING_VERSION` der Xcode-Projekte und werden beim Release gesetzt.

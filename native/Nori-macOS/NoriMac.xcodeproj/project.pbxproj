@@ -28,6 +28,10 @@
 		AB41 /* NoriGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC41 /* NoriGlass.swift */; };
 		AB60 /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC60 /* HLSPlaylist.swift */; };
 		AB70 /* TMDBImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC70 /* TMDBImages.swift */; };
+		ABA3 /* NoriLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA3 /* NoriLog.swift */; };
+		ABA2 /* TMDBSeasonMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA2 /* TMDBSeasonMap.swift */; };
+		ABA1 /* TMDBFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA1 /* TMDBFailure.swift */; };
+		ABA0 /* TMDBArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0 /* TMDBArtwork.swift */; };
 		AB71 /* TMDBMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71 /* TMDBMatcher.swift */; };
 		AB72 /* LibrarySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC72 /* LibrarySync.swift */; };
 		AB73 /* LibrarySyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC73 /* LibrarySyncEngine.swift */; };
@@ -61,6 +65,10 @@
 		AC41 /* NoriGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriGlass.swift; sourceTree = "<group>"; };
 		AC60 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
 		AC70 /* TMDBImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBImages.swift; sourceTree = "<group>"; };
+		ACA3 /* NoriLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriLog.swift; sourceTree = "<group>"; };
+		ACA2 /* TMDBSeasonMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBSeasonMap.swift; sourceTree = "<group>"; };
+		ACA1 /* TMDBFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBFailure.swift; sourceTree = "<group>"; };
+		ACA0 /* TMDBArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBArtwork.swift; sourceTree = "<group>"; };
 		AC71 /* TMDBMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBMatcher.swift; sourceTree = "<group>"; };
 		AC72 /* LibrarySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySync.swift; sourceTree = "<group>"; };
 		AC73 /* LibrarySyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncEngine.swift; sourceTree = "<group>"; };
@@ -120,6 +128,10 @@
 				AC41 /* NoriGlass.swift */,
 				AC60 /* HLSPlaylist.swift */,
 				AC70 /* TMDBImages.swift */,
+				ACA3 /* NoriLog.swift */,
+				ACA2 /* TMDBSeasonMap.swift */,
+				ACA1 /* TMDBFailure.swift */,
+				ACA0 /* TMDBArtwork.swift */,
 				AC71 /* TMDBMatcher.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
@@ -237,6 +249,10 @@
 				AB41 /* NoriGlass.swift in Sources */,
 				AB60 /* HLSPlaylist.swift in Sources */,
 				AB70 /* TMDBImages.swift in Sources */,
+				ABA3 /* NoriLog.swift in Sources */,
+				ABA2 /* TMDBSeasonMap.swift in Sources */,
+				ABA1 /* TMDBFailure.swift in Sources */,
+				ABA0 /* TMDBArtwork.swift in Sources */,
 				AB71 /* TMDBMatcher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

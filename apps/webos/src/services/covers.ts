@@ -11,10 +11,12 @@
 // Nori TMDB gar nicht erst an und zeigt die Cover der Quellen — ein gültiger
 // Zustand, kein Fehler.
 
-import { NoriClient, type CatalogProvider, type NoriGateway } from "@nori/core";
+import { NoriClient, tmdb, type CatalogProvider, type NoriGateway } from "@nori/core";
 import { log, warn } from "./log";
 
-const STORE_KEY = "nori.covers.v1";
+// v2: seit die TMDB-Suche bewertet statt die erste Zeile zu nehmen. Die
+// Breitbilder aus v1 sind teilweise die falschen und werden verworfen.
+const STORE_KEY = "nori.covers.v2";
 const MAX_ENTRIES = 3000;
 const MAX_CONCURRENT = 4;
 
@@ -22,11 +24,19 @@ interface CoverStore {
   source: Record<string, string>;
   backdrop: Record<string, string>;
   missing: Record<string, number>;
+  /** Titel, die TMDB nachweislich nicht führt — mit Zeitstempel. */
+  tmdbMissing: Record<string, number>;
 }
 
 function emptyStore(): CoverStore {
-  return { source: {}, backdrop: {}, missing: {} };
+  return { source: {}, backdrop: {}, missing: {}, tmdbMissing: {} };
 }
+
+/** Wie lange ein „TMDB kennt den Titel nicht" gilt. TMDB wächst. */
+const TMDB_MISS_MAX_AGE = 14 * 24 * 3_600_000;
+
+/** Wie viele Schreibweisen höchstens gesucht werden. */
+const MAX_QUERIES = 4;
 
 function loadStore(): CoverStore {
   try {
@@ -37,6 +47,7 @@ function loadStore(): CoverStore {
       source: parsed.source ?? {},
       backdrop: parsed.backdrop ?? {},
       missing: parsed.missing ?? {},
+      tmdbMissing: parsed.tmdbMissing ?? {},
     };
   } catch {
     return emptyStore();
@@ -125,31 +136,81 @@ class CoverIndex {
     return task;
   }
 
-  /** Backdrop über TMDB, wenn ein Schlüssel eingetragen ist. */
+  /**
+   * Backdrop über TMDB, wenn ein Schlüssel eingetragen ist.
+   *
+   * ## Was hier vorher stand
+   *
+   * Eine einzige Suche mit dem Titel der Quelle, und daraus
+   * `results.find((row) => row.backdrop_path)` — also **die erste Zeile mit
+   * einem Bild**, ohne jede Prüfung, ob sie überhaupt zu der gesuchten Serie
+   * gehört. Der Apple-Kern bewertet seit Langem (`TMDBMatcher`) und lehnt
+   * Treffer ab, die nicht am Titel hängen; der Fernseher tat das nicht.
+   * Dieselbe Serie konnte dadurch auf iPhone und Fernseher verschiedene
+   * Bilder zeigen, und auf dem Fernseher das falsche.
+   *
+   * Jetzt läuft dieselbe Bewertung wie auf Apple, aus `@nori/core`.
+   */
   async ensureBackdrop(slug: string, title: string, provider: CatalogProvider): Promise<string | null> {
     if (!this.tmdbKey) return null;
     const key = this.key(slug, provider);
     const known = this.store.backdrop[key];
     if (known) return known;
-    try {
-      const type = provider === "aniworld" ? "tv" : "tv";
-      const search = new URL(`https://api.themoviedb.org/3/search/${type}`);
-      search.searchParams.set("api_key", this.tmdbKey);
-      search.searchParams.set("query", title);
-      search.searchParams.set("language", "de-DE");
-      const res = await fetch(search.toString());
-      if (!res.ok) return null;
-      const body = (await res.json()) as { results?: { backdrop_path?: string | null }[] };
-      const path = body.results?.find((row) => row.backdrop_path)?.backdrop_path;
-      if (!path) return null;
-      const url = `https://image.tmdb.org/t/p/w1280${path}`;
+    const missedAt = this.store.tmdbMissing[key];
+    if (missedAt && Date.now() - missedAt < TMDB_MISS_MAX_AGE) return null;
+
+    let answered = false;
+    for (const query of tmdb.queries(title).slice(0, MAX_QUERIES)) {
+      const outcome = await this.searchTmdb(query);
+      if (outcome.failure) {
+        // Schlüssel abgelehnt oder Ratenbegrenzung gilt für jede weitere
+        // Anfrage genauso — und darf nie als „gibt es nicht" abgelegt werden.
+        if (outcome.failure === "unauthorized" || outcome.failure === "rateLimited") return null;
+        continue;
+      }
+      answered = true;
+      const candidates = outcome.rows.map(tmdb.candidateFromRow).filter((c): c is tmdb.TmdbCandidate => c !== null);
+      const hit = tmdb.best(candidates, query, provider);
+      if (!hit) continue;
+      const url = tmdb.imageURL(hit.backdropPath, "backdropHero");
+      if (!url) {
+        // Die Serie stimmt, sie hat nur kein Breitbild. Das ist eine
+        // Auskunft, kein Fehlschlag — und kein Grund weiterzusuchen.
+        this.store.tmdbMissing[key] = Date.now();
+        this.save();
+        return null;
+      }
       this.store.backdrop[key] = url;
       this.save();
       this.notify(slug);
       return url;
+    }
+
+    // Nur merken, wenn TMDB überhaupt geantwortet hat.
+    if (answered) {
+      this.store.tmdbMissing[key] = Date.now();
+      this.save();
+    }
+    return null;
+  }
+
+  /** Eine Suche, die zwischen „nichts gefunden" und „nicht geantwortet" trennt. */
+  private async searchTmdb(query: string): Promise<{ rows: tmdb.TmdbRow[]; failure: tmdb.TmdbFailure | null }> {
+    const search = new URL("https://api.themoviedb.org/3/search/tv");
+    search.searchParams.set("api_key", this.tmdbKey);
+    search.searchParams.set("query", query);
+    search.searchParams.set("language", "de-DE");
+    search.searchParams.set("include_adult", "false");
+    try {
+      const res = await fetch(search.toString());
+      const failure = tmdb.failureFromStatus(res.status);
+      if (failure) return { rows: [], failure };
+      const body = (await res.json()) as { results?: tmdb.TmdbRow[] };
+      return { rows: body.results ?? [], failure: null };
     } catch (cause) {
+      // Bewusst ohne die Adresse: sie trägt den Schlüssel.
       warn("data", "TMDB nicht erreichbar", (cause as Error)?.message);
-      return null;
+      return { rows: [], failure: "network" };
     }
   }
 
