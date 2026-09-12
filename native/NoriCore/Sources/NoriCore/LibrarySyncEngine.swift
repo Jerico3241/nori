@@ -105,6 +105,7 @@ final class LibrarySyncEngine {
     private var running = false
     private var pending = false
     private var debounceTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
     private var lastUploadAt: Double = 0
     /// Was schon einmal heruntergeladen wurde, nach Dateikennung.
     /// Unveränderte Dateien werden nicht erneut geholt.
@@ -156,6 +157,7 @@ final class LibrarySyncEngine {
     func disconnect() {
         debounceTask?.cancel()
         debounceTask = nil
+        stopPolling()
         snapshotStore = nil
         cache = [:]
         bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
@@ -187,6 +189,31 @@ final class LibrarySyncEngine {
         debounceTask?.cancel()
         debounceTask = nil
         Task { await run() }
+    }
+
+    /// Im Vordergrund regelmäßig nach fremden Änderungen sehen.
+    ///
+    /// Ein Zeitgeber, nicht zehn über die App verteilte. Die Wartezeit steht in
+    /// `foregroundPoll` und sonst nirgends — wer sie ändern will, ändert sie an
+    /// einer Stelle.
+    ///
+    /// Für Version 1 ausdrücklich kein Drive-Changes-Feed: bei vier kleinen
+    /// Dateien kostet `files.list` weniger als der Aufwand, einen Änderungs-
+    /// zeiger zu führen und richtig zu halten.
+    func startPolling() {
+        guard pollTask == nil, snapshotStore != nil else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(Self.foregroundPoll * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self?.run()
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     private func scheduleSync(after seconds: Double) {

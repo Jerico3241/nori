@@ -326,41 +326,60 @@ struct SettingsProfileCard: View {
 /// deshalb, was ist — und zeigt den Zeitstempel erst, wenn es einen gibt.
 struct SettingsSyncCard: View {
     enum State: Equatable {
+        /// Keine Client-ID hinterlegt — dann gibt es gar nichts anzubieten.
         case notConfigured
+        /// Eingerichtet, aber dieses Gerät ist nicht verbunden.
+        case disconnected(name: String)
+        case authorizing(name: String)
         case idle(name: String, lastRun: Date?)
         case running(name: String)
+        /// Kein Netz. Ein Zustand, kein Fehler: die Änderungen liegen lokal
+        /// und gehen nicht verloren.
+        case offline(name: String, lastRun: Date?)
         case failed(name: String, message: String)
+        /// In der Cloud liegt ein Stand, den diese Fassung nicht kennt.
+        case needsUpdate(name: String)
 
         var title: String {
             switch self {
             case .notConfigured: return "Abgleich"
-            case .idle(let name, _), .running(let name), .failed(let name, _): return name
+            case .disconnected(let name), .authorizing(let name), .idle(let name, _),
+                 .running(let name), .offline(let name, _), .failed(let name, _),
+                 .needsUpdate(let name):
+                return name
             }
         }
 
         var pill: String {
             switch self {
             case .notConfigured: return "Nicht eingerichtet"
+            case .disconnected: return "Nicht verbunden"
+            case .authorizing: return "Verbinden …"
             case .idle(_, let lastRun): return lastRun == nil ? "Bereit" : "Synchronisiert"
             case .running: return "Läuft"
+            case .offline: return "Offline"
             case .failed: return "Fehler"
+            case .needsUpdate: return "Update nötig"
             }
         }
 
         var symbol: String {
             switch self {
-            case .notConfigured: return "icloud.slash"
+            case .notConfigured, .disconnected: return "icloud.slash"
+            case .authorizing: return "person.badge.key"
             case .idle(_, let lastRun): return lastRun == nil ? "icloud" : "checkmark.icloud"
             case .running: return "arrow.triangle.2.circlepath"
+            case .offline: return "bolt.horizontal.icloud"
             case .failed: return "exclamationmark.icloud"
+            case .needsUpdate: return "arrow.up.circle"
             }
         }
 
         var tint: SettingsTint {
             switch self {
-            case .notConfigured: return .blue
+            case .notConfigured, .disconnected, .authorizing, .running: return .blue
             case .idle(_, let lastRun): return lastRun == nil ? .blue : .green
-            case .running: return .blue
+            case .offline, .needsUpdate: return .orange
             case .failed: return .red
             }
         }
@@ -369,13 +388,24 @@ struct SettingsSyncCard: View {
             switch self {
             case .notConfigured:
                 return "Merkliste, Verlauf und Fortschritt liegen nur auf diesem Gerät."
+            case .disconnected:
+                return "Verbinde Google Drive, um Merkliste, Verlauf und Fortschritt zu teilen."
+            case .authorizing:
+                return "Warten auf die Bestätigung bei Google …"
             case .idle(_, let lastRun):
                 guard let lastRun else { return "Noch kein Abgleich gelaufen." }
                 return "Zuletzt " + lastRun.formatted(.relative(presentation: .named)) + "."
             case .running:
                 return "Wird abgeglichen …"
+            case .offline(_, let lastRun):
+                // Kein Alarm: lokal ist alles da, und beim nächsten Netz geht
+                // es weiter.
+                guard let lastRun else { return "Ohne Netz — wird später abgeglichen." }
+                return "Ohne Netz. Zuletzt " + lastRun.formatted(.relative(presentation: .named)) + "."
             case .failed(_, let message):
                 return message
+            case .needsUpdate:
+                return "In der Cloud liegt ein neuerer Stand. Bitte Nori aktualisieren."
             }
         }
     }
