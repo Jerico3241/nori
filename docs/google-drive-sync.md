@@ -304,7 +304,7 @@ abfangen kann.
 ### Fernseher
 
 ```text
-Einstellungen → Synchronisation → „Mit Google Drive verbinden"
+Mehr → Synchronisierung → „Mit Google Drive verbinden"
         ↓
 ┌──────────────────────────────────────────────┐
 │  Google Drive verbinden                      │

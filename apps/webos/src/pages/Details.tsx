@@ -1,46 +1,45 @@
 // Die Detailseite einer Serie.
 //
-// ## Aufbau
+//     Seitenkopf   Quelle · Zurück
+//     Hero         Breitbild, Schriftzug oder Titel, Jahr · Genres · Staffeln ·
+//                  Bewertung, Beschreibung, Fortschritt, Aktionen
+//     Staffel      Knopf, der ein Auswahlmenü öffnet · Folgenzahl · gesehen
+//     Folgen       drei 16:9-Karten je Zeile
+//     Ähnliche     nur Titel, die Nori tatsächlich anbietet
 //
-//     Kopfbereich   Breitbild über die volle Breite, Schriftzug oder Titel,
-//                   Jahr · Bewertung · Genres, Beschreibung, Fortschritt,
-//                   Abspielen/Fortsetzen und Merkliste
-//     Staffelwahl   Reiter oder Auswahlraster, siehe SeasonPicker
-//     Folgen        16:9-Kacheln mit Standbild, Beschreibung, Laufzeit
-//     Ähnliche      nur Titel, die Nori tatsächlich anbietet
+// Staffel und Folgenraster stehen in **einem** Abschnitt (`data-reveal`): wer
+// auf die erste Folge wechselt, sieht die Staffelzeile darüber mit.
 //
-// Der Kopfbereich ist bewusst groß (36 rem). Der vorherige Stand zeigte ein
-// 30 rem hohes Bild und schob eine Posterkachel mit −12 rem darüber; auf dem
-// Fernseher las sich das als Bruch mitten im Bild, und vom Breitbild blieb ein
-// Streifen. Jetzt trägt das Breitbild die Fläche, und der Text steht darin —
-// wie auf iPhone und Mac.
-//
-// Keine Download-Knöpfe: Nori lädt nichts herunter. Ein Knopf, der das
-// anbietet, wäre ein Versprechen, das die App nicht hält.
+// Keine Download-Knöpfe: Nori lädt nichts herunter.
 
 import {
-  PROVIDERS, type CatalogProvider, type HomeCandidate, type SeriesDetail,
+  HomeCatalogIndex, PROVIDERS, homeTitleFrom, progressPercent, resumePosition,
+  type CatalogProvider, type HomeCandidate, type SeriesDetail,
 } from "@nori/core";
-import { HomeCatalogIndex, homeTitleFrom, progressPercent, resumePosition } from "@nori/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { EpisodeCard } from "../components/EpisodeCard";
+import { Hero } from "../components/Hero";
 import { Icon } from "../components/Icon";
-import { MediaCard } from "../components/MediaCard";
-import { PosterImage } from "../components/PosterImage";
+import { titleMeta } from "../components/meta";
+import { Dialog, Menu } from "../components/Overlay";
+import { PosterCard } from "../components/PosterCard";
 import { Rail } from "../components/Rail";
-import { Rating } from "../components/Rating";
-import { SeasonPicker } from "../components/SeasonPicker";
-import { ErrorState, GridSkeleton } from "../components/States";
-import { restoreFocusSoon } from "../navigation/focusMemory";
-import { SpotArea, SpotButton } from "../navigation/Spot";
+import { ratingText } from "../components/Rating";
+import { Screen } from "../components/Screen";
+import { ErrorState } from "../components/States";
+import { useAsync } from "../hooks/useAsync";
+import { usePersistentState } from "../hooks/usePersistentState";
+import { recallFocus, restoreFocusSoon } from "../navigation/focusMemory";
+import { SpotButton } from "../navigation/Spot";
 import { covers } from "../services/covers";
 import { log } from "../services/log";
 import { tmdb, type SeasonArt } from "../services/tmdb";
-import { useAsync } from "../hooks/useAsync";
 import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
+
+const EPISODE_PAGE = 30;
 
 function isProvider(value: string | undefined): value is CatalogProvider {
   return value === "aniworld" || value === "serienstream";
@@ -57,48 +56,56 @@ export function DetailsPage() {
   const slug = decodeURIComponent(params.slug ?? "");
   const route = `details:${provider}:${slug}`;
 
-  // Eine Staffel in der Adresse: der Player springt so zurück in die Staffel,
-  // aus der er kam.
-  const [season, setSeason] = useState<string | null>(search.get("season"));
-  const [art, setArt] = useState(() => covers.details(slug, provider));
+  // Die Staffel übersteht den Weg in den Player und zurück — sonst stünde der
+  // Fokus nach „Zurück" auf Folge 3 der falschen Staffel.
+  const [storedSeason, setSeason] = usePersistentState<string | null>(`${route}.season`, null);
+  const season = search.get("season") ?? storedSeason;
+  const [, setArtVersion] = useState(0);
   const [seasonArt, setSeasonArt] = useState<SeasonArt | null>(null);
   const [similar, setSimilar] = useState<HomeCandidate[]>([]);
+  const [seasonMenu, setSeasonMenu] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [limit, setLimit] = useState(() => {
+    const remembered = recallFocus(route, "episodes");
+    const number = remembered ? Number(remembered.replace("episode-", "")) : 0;
+    return Math.max(EPISODE_PAGE, Number.isFinite(number) ? number + 12 : 0);
+  });
 
   const base = useAsync<SeriesDetail>(() => series(provider, slug), [provider, slug]);
-
-  // Die Folgen einer anderen Staffel kommen von einer eigenen Seite. Der Kopf
-  // bleibt dabei stehen — es wird nur die Liste ausgetauscht.
+  const wantsOther = Boolean(season) && Boolean(base.data) && season !== base.data?.activeSeason;
   const seasonData = useAsync<SeriesDetail>(
     () => series(provider, slug, season),
     [provider, slug, season],
-    { enabled: Boolean(season) && season !== base.data?.activeSeason },
+    { enabled: wantsOther },
+  );
+  // Nur Daten der gewünschten Staffel gelten. Während eine andere lädt, stehen
+  // Platzhalter da — nicht die Folgen der vorherigen unter neuem Namen.
+  const detail = wantsOther
+    ? (seasonData.data?.activeSeason === season ? seasonData.data : null)
+    : base.data;
+  const activeSeason = season ?? base.data?.activeSeason ?? "1";
+  const episodes = useMemo(
+    () => [...(detail?.episodes ?? [])].sort((a, b) => a.number - b.number),
+    [detail],
   );
 
-  const detail = (season && season !== base.data?.activeSeason ? seasonData.data : base.data) ?? base.data;
-  const activeSeason = season ?? base.data?.activeSeason ?? "1";
-  const episodes = useMemo(() => {
-    const list = detail?.episodes ?? [];
-    return [...list].sort((a, b) => a.number - b.number);
-  }, [detail]);
-
-  const title = detail?.title ?? library.state.titles[slug] ?? slug;
+  const title = base.data?.title ?? library.state.titles[slug] ?? slug;
   const alts = useMemo(() => base.data?.alts ?? [], [base.data]);
+  const art = covers.details(slug, provider);
 
-  // Verlauf schreiben und die Bilder besorgen.
-  //
-  // Bewusst nur an den geladenen Daten hängend: `library` ändert sich bei jedem
-  // Fortschritts-Tick, und der soll keinen Verlaufseintrag schreiben.
+  // Verlauf schreiben und Bilder besorgen. Nur an den geladenen Daten hängend:
+  // `library` ändert sich bei jedem Fortschrittstick.
   useEffect(() => {
-    if (!base.data) return;
+    if (!base.data) return undefined;
     library.remember(slug, base.data.title, provider);
     let cancelled = false;
     const request = { slug, provider, title: base.data.title, alts: base.data.alts };
     const year = Number.parseInt(base.data.yearStart ?? "", 10);
     void covers.ensure({ ...request, year: Number.isFinite(year) ? year : null }).then(() => {
-      if (!cancelled) setArt(covers.details(slug, provider));
+      if (!cancelled) setArtVersion((value) => value + 1);
     });
     void covers.ensureLogo(request).then(() => {
-      if (!cancelled) setArt(covers.details(slug, provider));
+      if (!cancelled) setArtVersion((value) => value + 1);
     });
     return () => {
       cancelled = true;
@@ -106,9 +113,9 @@ export function DetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base.data, provider, slug]);
 
-  // Folgentitel, Beschreibungen und Standbilder der gezeigten Staffel.
+  // Folgentitel, Laufzeiten und Standbilder der gezeigten Staffel.
   useEffect(() => {
-    if (!base.data || episodes.length === 0) return;
+    if (!base.data || episodes.length === 0) return undefined;
     let cancelled = false;
     setSeasonArt(tmdb.cachedSeason(slug, provider, activeSeason));
     void tmdb.ensureSeason({
@@ -131,12 +138,8 @@ export function DetailsPage() {
   }, [base.data, provider, slug, activeSeason, episodes.length]);
 
   /**
-   * Ähnliche Titel.
-   *
-   * Der Weg ist absichtlich der Umweg: TMDB nennt Empfehlungen, und jede davon
-   * wird über den **Nori-Katalog** zurückgeführt. Was Nori nicht anbietet,
-   * fällt weg. Eine Empfehlung, die sich auswählen lässt und nichts öffnet,
-   * ist schlechter als eine Reihe weniger.
+   * Ähnliche Titel: TMDB nennt Empfehlungen, und jede wird über den
+   * **Nori-Katalog** zurückgeführt. Was Nori nicht anbietet, fällt weg.
    */
   const catalog = scopedCatalog();
   const catalogIndex = useMemo(
@@ -146,7 +149,7 @@ export function DetailsPage() {
 
   useEffect(() => {
     const id = art.tmdbID;
-    if (!id || catalog.items.length === 0) return;
+    if (!id || catalog.items.length === 0) return undefined;
     let cancelled = false;
     void tmdb.ensureRelated(id).then((rows) => {
       if (cancelled) return;
@@ -177,9 +180,8 @@ export function DetailsPage() {
         });
         if (out.length >= 16) break;
       }
-      // Nur setzen, wenn sich etwas geändert hat. Ein neues, gleiches Feld
-      // löst ein Rendern aus, und ein Rendern löst diesen Effekt wieder aus —
-      // das war die Schleife, die den Fernseher hat hängen lassen.
+      // Nur setzen, wenn sich etwas geändert hat — ein gleiches neues Feld
+      // löste sonst ein Rendern und damit diesen Effekt erneut aus.
       setSimilar((current) => (sameTitles(current, out) ? current : out));
     }).catch(() => setSimilar((current) => (current.length === 0 ? current : [])));
     return () => {
@@ -189,16 +191,11 @@ export function DetailsPage() {
   }, [art.tmdbID, catalogIndex, catalog.items.length, provider, slug]);
 
   useEffect(() => {
-    if (base.status !== "ready") return;
-    return restoreFocusSoon(route, ["episodes", "actions", "seasons"]);
-  }, [base.status, route, activeSeason]);
-
-  const stats = useCallback(
-    (id: string) => (id === activeSeason
-      ? library.seasonStats(slug, id, episodes, provider)
-      : null),
-    [activeSeason, episodes, library, provider, slug],
-  );
+    if (base.status !== "ready") return undefined;
+    return restoreFocusSoon(route, ["episodes", "actions", "seasons", "similar"], {
+      initial: '[data-focus-key="play"]',
+    });
+  }, [base.status, route]);
 
   const openEpisode = useCallback((number: number, at = 0) => {
     const path = episodes.find((episode) => episode.number === number)?.path ?? "";
@@ -209,215 +206,230 @@ export function DetailsPage() {
     );
   }, [activeSeason, episodes, navigate, provider, slug]);
 
+  const back = (
+    <SpotButton className="glassbtn" focusRoute={route} focusArea="top" focusKey="back" onClick={() => navigate(-1)}>
+      <Icon name="back" />
+      Zurück
+    </SpotButton>
+  );
+  const eyebrow = `${PROVIDERS[provider].label} · ${PROVIDERS[provider].kind}`;
+
   if (base.status === "error") {
     return (
-      <div className="page">
-        <ErrorState
-          title="Seite nicht ladbar"
-          message={base.error ?? "Unbekannter Fehler"}
-          onRetry={() => base.reload()}
-        />
-      </div>
+      <Screen route={route} eyebrow={eyebrow} title={title} actions={back}>
+        <ErrorState title="Seite nicht ladbar" message={base.error ?? "Unbekannter Fehler"} onRetry={() => base.reload()} />
+      </Screen>
     );
   }
 
   const plan = detail
     ? library.nextPlay(slug, activeSeason, episodes, provider)
     : { episode: 1, resumeAt: 0, kind: "play" as const };
-  const seasonInfo = library.seasonStats(slug, activeSeason, episodes, provider);
-  const seasonCount = (detail?.seasons ?? [])
-    .filter((season) => Number.parseInt(season.id, 10) > 0).length;
+  const stats = library.seasonStats(slug, activeSeason, episodes, provider);
+  const seasons = base.data?.seasons ?? [];
+  const seasonCount = seasons.filter((entry) => Number.parseInt(entry.id, 10) > 0).length;
   const latest = library.progressForEpisode(slug, activeSeason, plan.episode, undefined, provider);
   const heroPercent = latest ? progressPercent(latest) : 0;
-  const description = detail?.description || art.overview || "";
+  const favorite = library.isFavorite(slug);
+  const years = base.data?.yearStart
+    ? (base.data.yearEnd && base.data.yearEnd !== base.data.yearStart
+      ? `${base.data.yearStart}–${base.data.yearEnd}`
+      : base.data.yearStart)
+    : null;
+  const seasonLabel = seasons.find((entry) => entry.id === activeSeason)?.label ?? `Staffel ${activeSeason}`;
+  const visibleEpisodes = episodes.slice(0, limit);
+  const loadingEpisodes = base.status !== "ready" || (wantsOther && !detail);
 
   return (
-    <div className="page details">
-      <div className="details-backdrop">
-        <PosterImage
-          slug={slug}
-          provider={provider}
-          title={title}
-          alts={alts}
-          src={art.backdrop ?? detail?.coverPath ?? null}
-          eager
-          className="hero-poster"
-        />
-        <div className="hero-vignette" />
-      </div>
-
-      <div className="details-head">
-        <div className="details-poster">
-          <PosterImage
-            slug={slug}
-            provider={provider}
-            title={title}
-            alts={alts}
-            src={art.poster ?? detail?.coverPath ?? null}
-            eager
-          />
-        </div>
-        <div className="details-copy">
-          <span className="eyebrow">{PROVIDERS[provider].label}</span>
-          {art.logo ? (
-            <img className="details-logo" src={art.logo} alt={title} />
-          ) : (
-            <h1>{title}</h1>
-          )}
-          <p className="hero-meta">
-            <Rating value={art.rating} votes={art.votes} />
-            {[
-              detail?.yearStart ? (detail.yearEnd && detail.yearEnd !== detail.yearStart
-                ? `${detail.yearStart}–${detail.yearEnd}` : detail.yearStart) : null,
-              detail?.fsk ? `FSK ${detail.fsk}` : null,
-              // Nur gezählte Staffeln. „Filme" steht in derselben Liste, ist
-              // aber keine Staffel — „3 Staffeln" über zwei Staffeln und einem
-              // Filmabschnitt ist eine falsche Zahl.
-              seasonCount > 1 ? `${seasonCount} Staffeln` : null,
-              seasonInfo.total > 0 ? `${seasonInfo.watched}/${seasonInfo.total} gesehen` : null,
-            ].filter(Boolean).map((part, index) => (
-              <span key={String(part)}>
-                {index > 0 || art.rating ? <i aria-hidden="true">•</i> : null}
-                {part}
-              </span>
-            ))}
-          </p>
-          {detail?.genres.length ? (
-            <p className="details-genres">{detail.genres.join(" · ")}</p>
-          ) : null}
-          {description ? <p className="hero-description">{description}</p> : null}
-          {alts.length ? (
-            <p className="details-alts">Auch bekannt als: {alts.slice(0, 3).join(", ")}</p>
-          ) : null}
-
-          {heroPercent > 0 && heroPercent < 100 ? (
-            <div className="hero-progress" aria-label={`${heroPercent} Prozent gesehen`}>
-              <span className="hero-progress-bar"><i style={{ width: `${heroPercent}%` }} /></span>
-              <small>Folge {plan.episode} · {heroPercent} % gesehen</small>
-            </div>
-          ) : null}
-
-          <SpotArea className="button-row" spotlightId={`details-actions-${slug}`}>
+    <Screen route={route} eyebrow={eyebrow} actions={back} className="details">
+      <Hero
+        variant="detail"
+        slug={slug}
+        provider={provider}
+        title={title}
+        alts={alts}
+        backdrop={art.backdrop}
+        logo={art.logo}
+        meta={[
+          years,
+          base.data?.genres.slice(0, 3).join(" · ") || null,
+          seasonCount > 1 ? `${seasonCount} Staffeln` : null,
+          base.data?.fsk ? `FSK ${base.data.fsk}` : null,
+        ].filter((part): part is string => Boolean(part))}
+        rating={ratingText(art.rating, art.votes)}
+        description={base.data?.description || art.overview || ""}
+        progress={heroPercent > 0 ? {
+          percent: heroPercent,
+          label: `Folge ${plan.episode} · ${heroPercent} % gesehen`,
+        } : null}
+        actions={(
+          <>
             <SpotButton
-              className="primary"
+              className="hero-btn primary"
               focusRoute={route}
               focusArea="actions"
               focusKey="play"
+              disabled={loadingEpisodes || episodes.length === 0}
               onClick={() => openEpisode(plan.episode, plan.resumeAt)}
             >
               <Icon name="play" />
               {plan.kind === "resume"
-                ? `Fortsetzen · Folge ${plan.episode}`
+                ? `Weiter ansehen · F${plan.episode}`
                 : plan.kind === "next"
-                  ? `Weiter · Folge ${plan.episode}`
-                  : `Abspielen · Folge ${plan.episode}`}
+                  ? `Weiter mit Folge ${plan.episode}`
+                  : "Jetzt ansehen"}
             </SpotButton>
             <SpotButton
+              className="hero-btn"
               focusRoute={route}
               focusArea="actions"
               focusKey="favorite"
-              aria-pressed={library.isFavorite(slug)}
+              aria-pressed={favorite}
               onClick={() => library.toggleFavorite(slug, title, provider)}
             >
-              <Icon name={library.isFavorite(slug) ? "check" : "bookmark"} />
-              {library.isFavorite(slug) ? "Auf Merkliste" : "Merkliste"}
+              <Icon name={favorite ? "heartFilled" : "heart"} />
+              {favorite ? "Gemerkt" : "Merkliste"}
             </SpotButton>
-          </SpotArea>
+            <SpotButton
+              className="hero-btn"
+              focusRoute={route}
+              focusArea="actions"
+              focusKey="more"
+              aria-haspopup="dialog"
+              onClick={() => setInfoOpen(true)}
+            >
+              <Icon name="more" />
+              Mehr
+            </SpotButton>
+          </>
+        )}
+      />
+
+      <section className="season-section" data-reveal="" aria-label="Folgen">
+        <div className="season-row">
+          {seasons.length > 1 ? (
+            <SpotButton
+              className="chip active season-trigger"
+              focusRoute={route}
+              focusArea="seasons"
+              focusKey="season-open"
+              aria-haspopup="dialog"
+              onClick={() => setSeasonMenu(true)}
+            >
+              {seasonLabel}
+              <Icon name="chevronDown" />
+            </SpotButton>
+          ) : (
+            <span className="season-label">{seasonLabel}</span>
+          )}
+          <span className="season-count">
+            {loadingEpisodes
+              ? "Folgen werden geladen …"
+              : `${episodes.length} ${episodes.length === 1 ? "Folge" : "Folgen"}`
+                + (stats.total > 0 && stats.watched > 0 ? ` · ${stats.watched} von ${stats.total} gesehen` : "")}
+          </span>
         </div>
-      </div>
 
-      <section className="episode-section">
-        <header className="episode-heading">
-          <h2>Folgen</h2>
-          {detail?.seasons.length ? (
-            <SeasonPicker
-              seasons={detail.seasons}
-              active={activeSeason}
-              route={route}
-              stats={stats}
-              onPick={(id) => setSeason(id)}
-            />
-          ) : null}
-        </header>
-
-        {seasonData.status === "loading" && season !== base.data?.activeSeason ? (
-          <GridSkeleton count={8} />
-        ) : null}
-
-        {seasonData.status === "error" && season !== base.data?.activeSeason ? (
-          <ErrorState
-            title="Staffel nicht ladbar"
-            message={seasonData.error ?? "Unbekannter Fehler"}
-            onRetry={() => seasonData.reload()}
-          />
-        ) : null}
-
-        {episodes.length > 0 ? (
-          <SpotArea className="episode-grid" spotlightId={`episodes-${slug}-${activeSeason}`}>
-            {episodes.map((episode) => (
-              <EpisodeCard
-                key={episode.path || episode.number}
-                episode={episode}
-                extras={seasonArt?.episodes[episode.number] ?? null}
-                progress={library.progressForEpisode(
-                  slug, activeSeason, episode.number, episode.path, provider,
-                )}
-                focusRoute={route}
-                focusArea="episodes"
-                onSelect={() => {
-                  const item = library.progressForEpisode(
-                    slug, activeSeason, episode.number, episode.path, provider,
-                  );
-                  openEpisode(
-                    episode.number,
-                    library.state.resumeEnabled ? resumePosition(item) : 0,
-                  );
-                }}
-              />
+        {wantsOther && seasonData.status === "error" ? (
+          <ErrorState title="Staffel nicht ladbar" message={seasonData.error ?? "Unbekannter Fehler"} onRetry={() => seasonData.reload()} />
+        ) : loadingEpisodes ? (
+          <div className="episode-grid" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div className="ep-card skeleton" key={index}>
+                <div className="card-art ep-thumb" />
+                <div className="ep-body"><div className="skeleton-line" /></div>
+              </div>
             ))}
-          </SpotArea>
-        ) : base.status === "ready" ? (
+          </div>
+        ) : episodes.length === 0 ? (
           <p className="muted-note">Für diese Staffel sind keine Folgen eingetragen.</p>
         ) : (
-          <GridSkeleton count={8} />
+          <div className="episode-grid">
+            {visibleEpisodes.map((episode, index) => (
+              <div
+                key={episode.path || episode.number}
+                className="ep-slot"
+                onFocus={() => {
+                  if (index >= visibleEpisodes.length - 6 && visibleEpisodes.length < episodes.length) {
+                    setLimit((current) => current + EPISODE_PAGE);
+                  }
+                }}
+              >
+                <EpisodeCard
+                  episode={episode}
+                  slug={slug}
+                  provider={provider}
+                  seriesTitle={title}
+                  extras={seasonArt?.episodes[episode.number] ?? null}
+                  progress={library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider)}
+                  focusRoute={route}
+                  onSelect={() => {
+                    const item = library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider);
+                    openEpisode(episode.number, library.state.resumeEnabled ? resumePosition(item) : 0);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
         )}
       </section>
 
       {similar.length > 0 ? (
-        <div className="details-similar">
-          <Rail
-            title="Ähnliche Titel"
-            id={`similar-${slug}`}
-            count={similar.length}
-            note="Von TMDB empfohlen — gezeigt wird nur, was Nori auch hat."
-          >
-            {similar.map((candidate, index) => (
-              <MediaCard
-                key={`${candidate.title.provider}|${candidate.title.slug}`}
-                slug={candidate.title.slug}
-                title={candidate.title.title}
-                provider={candidate.title.provider}
-                alts={candidate.title.alts}
-                subtitle={candidate.title.genres[0] ?? undefined}
-                rating={candidate.signals.voteAverage}
-                votes={candidate.signals.voteCount}
-                focusRoute={route}
-                focusArea="similar"
-                focusKey={`similar-${candidate.title.provider}-${candidate.title.slug}`}
-                eager={index < 6}
-              />
-            ))}
-          </Rail>
-        </div>
+        <Rail id={`similar-${slug}`} title="Ähnliche Titel" note="Von TMDB empfohlen — nur, was Nori auch hat">
+          {similar.map((candidate, index) => (
+            <PosterCard
+              key={`${candidate.title.provider}|${candidate.title.slug}`}
+              slug={candidate.title.slug}
+              provider={candidate.title.provider}
+              title={candidate.title.title}
+              alts={candidate.title.alts}
+              subtitle={titleMeta(candidate.title, candidate.signals)}
+              focusRoute={route}
+              focusArea="similar"
+              focusKey={`similar-${candidate.title.provider}-${candidate.title.slug}`}
+              eager={index < 6}
+            />
+          ))}
+        </Rail>
       ) : null}
-    </div>
+
+      <Menu
+        open={seasonMenu}
+        onClose={() => setSeasonMenu(false)}
+        eyebrow={title}
+        title="Staffel wählen"
+        id="season"
+        value={activeSeason}
+        options={seasons.map((entry) => ({ value: entry.id, label: entry.label }))}
+        onPick={(id) => {
+          setSeason(id);
+          setLimit(EPISODE_PAGE);
+        }}
+      />
+
+      <Dialog open={infoOpen} onClose={() => setInfoOpen(false)} eyebrow="Mehr zu" title={title} id="details-info">
+        <dl className="info-list">
+          {alts.length > 0 ? (<><dt>Auch bekannt als</dt><dd>{alts.slice(0, 4).join(" · ")}</dd></>) : null}
+          {years ? (<><dt>Jahre</dt><dd>{years}</dd></>) : null}
+          {base.data?.genres.length ? (<><dt>Genres</dt><dd>{base.data.genres.join(" · ")}</dd></>) : null}
+          {base.data?.fsk ? (<><dt>Altersfreigabe</dt><dd>FSK {base.data.fsk}</dd></>) : null}
+          <dt>Quelle</dt>
+          <dd>{PROVIDERS[provider].label} — bestimmt, was abspielbar ist</dd>
+          <dt>TMDB</dt>
+          <dd>{art.tmdbID ? `Zugeordnet (Kennung ${art.tmdbID})` : "Keine sichere Zuordnung — Daten der Quelle"}</dd>
+        </dl>
+        <div className="dialog-actions">
+          <SpotButton className="hero-btn primary" focusKey="info-close" onClick={() => setInfoOpen(false)}>
+            Schließen
+          </SpotButton>
+        </div>
+      </Dialog>
+    </Screen>
   );
 }
 
-/** Zwei Vorschlagslisten auf Gleichheit prüfen — über die Kennungen. */
 function sameTitles(a: HomeCandidate[], b: HomeCandidate[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((candidate, index) =>
-    candidate.title.slug === b[index].title.slug
-    && candidate.title.provider === b[index].title.provider);
+    candidate.title.slug === b[index].title.slug && candidate.title.provider === b[index].title.provider);
 }

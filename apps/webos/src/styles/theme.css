@@ -1,97 +1,83 @@
 /*
- * Nori-Farben und -Größen für den Fernseher.
+ * Nori auf dem Fernseher — Farben, Maße, Fokus.
  *
- * ## Die Palette
+ * ## Vorlage
  *
- * Sie ist die der Apple-Apps, Wert für Wert aus
- * `native/Nori-iOS/Sources/UI/Theme.swift` übernommen:
+ * `nori-webos-design-v4.html`: sehr dunkler Grund mit einem Hauch Blau,
+ * Flächen in Blau-Graphit, helle Schrift, ein zurückhaltendes Eisblau als
+ * Akzent. Kein Orange, kein Warmton außer dem Stern der Bewertung.
  *
- *     bg        #05060a   fastschwarz mit einem Hauch Blau
- *     surface   #0c0e14   Karten, Leisten, Eingabefelder
- *     elevated  #141822   das, was auf einer Karte liegt
- *     text      #eef1f6   Fließtext
- *     muted     #8b93a7   Nebenangaben
- *     accent    #d7deea   sehr helles Neutral — der Hauptakzent
- *     highlight #78c5ff   Signalblau für „ist gerade aktiv"
- *     star      #ffe07a   nur Bewertungen
+ * ## Skalierung
  *
- * Der Hauptakzent ist **kein Farbton**, sondern ein sehr helles Grau. Das ist
- * die eigentliche Entscheidung dahinter: Auf Kacheln liegen ständig fremde
- * Farben (Artwork), und ein gefärbter Akzent streitet mit jedem zweiten Cover.
- * Ein Hellgrau streitet mit keinem.
+ * 1920 × 1080 ist die Grundlage: dort ist 1 rem = 16 px. Die Wurzelschrift
+ * wächst mit der Breite **und** mit der Höhe, der kleinere Wert gilt. Bei
+ * 3840 × 2160 ist 1 rem = 32 px — dasselbe Layout, doppelt so scharf, mit
+ * denselben Abständen zum Bildrand. Deshalb steht unten kein px-Maß für etwas,
+ * das größer als eine Haarlinie ist.
  *
- * Deshalb gibt es daneben `--highlight`: Weiß auf Fastschwarz sagt „hier ist
- * etwas", aber nicht „das ist gerade an". Für Fokus, Spulen und aktive
- * Zustände braucht es ein Signal, und das ist blau.
- *
- * Frühere Stände dieser Datei trugen ein warmes Orange (#f47521) als
- * Hauptfarbe. Das ist nicht Noris Farbe — es war die Handschrift einer anderen
- * Streaming-App. Wer hier einen Farbton einführt, prüft ihn gegen
- * `Theme.swift`.
- *
- * ## Die Maße
- *
- * Alle hängen an der Wurzelschriftgröße, und die hängt an der Breite des
- * Bildschirms. Bei 1920 px ist 1rem = 16 px; bei 1280 px skaliert dasselbe
- * Layout mit, statt zu brechen. Deshalb steht unten kein einziges px-Maß für
- * etwas, das größer als ein Rand ist.
+ * webOS selbst rendert Apps mit `"resolution": "1920x1080"` auch auf einem
+ * 4K-Panel meist mit 1920 logischen Pixeln und doppeltem Pixelverhältnis. Beide
+ * Fälle kommen damit auf dasselbe Bild.
  */
 
 :root {
   color-scheme: dark;
 
-  --bg: #05060a;
-  --bg-raised: #080a11;
-  --surface: #0c0e14;
-  --surface-hover: #171b26;
-  --elevated: #141822;
-  --text: #eef1f6;
-  --muted: #8b93a7;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
+  --bg: #03070d;
+  --bg-top: #07111c;
+  --panel: rgba(18, 29, 43, 0.78);
+  --panel-soft: rgba(18, 29, 43, 0.68);
+  --panel-solid: #111c29;
+  --stroke: rgba(255, 255, 255, 0.1);
+  --stroke-soft: rgba(255, 255, 255, 0.07);
 
-  /* Der Hauptakzent: helles Neutral, dunkle Schrift darauf. */
-  --accent: #d7deea;
-  --accent-soft: rgba(215, 222, 234, 0.14);
-  --accent-ink: #05060a;
+  --text: #f5f8fc;
+  --text-soft: #dfe7f1;
+  --text-dim: #bdc8d6;
+  --muted: #94a3b8;
+  --muted-2: #8796aa;
 
-  /* Das Signal: aktiv, fokussiert, gerade in Bewegung. */
-  --highlight: #78c5ff;
-  --highlight-soft: rgba(120, 197, 255, 0.18);
-  --focus: #78c5ff;
-  --focus-glow: rgba(120, 197, 255, 0.22);
+  /* Der Akzent: Eisblau für „aktiv", Fortschritt und das Leuchten im Fokus. */
+  --accent: #79c7ff;
+  --accent-soft: rgba(121, 199, 255, 0.14);
+  --accent-glow: rgba(121, 199, 255, 0.28);
 
-  /* Nur Bewertungen. Sonst nirgends ein warmer Ton. */
-  --star: #ffe07a;
+  /* Fokus: heller Grund, dunkle Schrift. */
+  --focus: #eef8ff;
+  --focus-text: #08111a;
 
-  --danger: #ff6b5e;
-  --ok: #4bd78c;
+  /* Nur Bewertungen. */
+  --star: #ffd34f;
 
-  --shadow-card: 0 0.875rem 1.875rem rgba(0, 0, 0, 0.42);
-  --shadow-panel: 0 1.75rem 4.375rem rgba(0, 0, 0, 0.55);
+  --ok: #6dbb93;
+  --ok-text: #aef0cf;
+  --danger: #ff8a7a;
 
-  /* Sicherer Rand: Fernseher schneiden am Bildrand unterschiedlich viel ab. */
+  /* TV Safe Area und Aufteilung. */
   --safe-x: 4.5rem;
   --safe-y: 4rem;
+  --sidebar-w: 15.5rem;
+  --content-gap: 2.625rem;
 
-  --poster-w: 13.625rem;   /* 218 px bei 1080p */
-  --poster-h: 19.25rem;    /* 308 px bei 1080p */
-  --rail-gap: 1.5rem;
-  --radius-card: 0.875rem;
-  --radius-panel: 1.25rem;
+  /* Fokus. Die Werte stehen auch in `navigation/engine.ts` — die Scrollrechnung
+     muss wissen, wie weit ein fokussiertes Element über seine Box ragt. */
+  --focus-scale-card: 1.07;
+  --focus-scale-control: 1.045;
+  --focus-ring:
+    0 0 0 0.3125rem rgba(238, 248, 255, 0.92),
+    0 0 0 0.625rem rgba(121, 199, 255, 0.28),
+    0 1.5rem 3.375rem rgba(0, 0, 0, 0.42);
+  --focus-ms: 140ms;
 
-  --focus-in: 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --focus-out: 210ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Ebenen. */
+  --z-focus: 5;
+  --z-sidebar: 40;
+  --z-dialog: 100;
 }
 
-/*
- * 1920 px Breite → 16 px Wurzelschrift. Die Grenzen verhindern, dass die
- * Oberfläche auf einem sehr schmalen Fenster unleserlich klein oder auf einem
- * 4K-Panel unsinnig groß wird — webOS rendert dort ohnehin meist mit 1920
- * logischen Pixeln.
- */
 html {
-  font-size: clamp(10px, 0.8333vw, 21px);
+  font-size: 16px;
+  font-size: min(calc(100vw / 120), calc(100vh / 67.5));
 }
 
 * {
@@ -110,8 +96,8 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "LG Smart UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 1.25rem;         /* 20 px — Fließtext auf drei Metern */
+  font-family: "LG Smart UI", "Museo Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 1.125rem;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -124,87 +110,67 @@ input {
 }
 
 button {
+  margin: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+  text-align: left;
 }
 
-/*
- * Der Fokuszustand.
- *
- * Ring, Anhebung und ein leichter Maßstab — zusammen, weil ein Merkmal allein
- * je nach Untergrund verschwindet: ein Ring auf hellem Artwork, eine Skalierung
- * bei kleinen Elementen. Nie nur über Farbe, das wäre für rot-grün-schwache
- * Augen kein Zustand.
- *
- * Der Ring ist blau und nicht weiß: eine ausgewählte Kachel ist hell umrandet
- * (`--accent`), und ein weißer Fokusring daneben wäre derselbe Zustand.
- */
-.spottable:focus,
-.spottable.spotlight-focus,
-input.spottable:focus {
-  z-index: 5;
-  outline: 0.25rem solid var(--focus);
-  outline-offset: 0.25rem;
-  box-shadow: 0 0 0 0.5rem var(--focus-glow), var(--shadow-card);
-}
-
-/*
- * Fokus auf einer hellen Fläche.
- *
- * Ein blauer Ring um einen fast weißen Knopf ist kaum zu sehen — und genau
- * diese Knöpfe sind die wichtigsten: „Abspielen", die gewählte Staffel, der
- * aktive Filter. Deshalb dort umgekehrt: dunkler Ring direkt an der Fläche,
- * blauer Ring außen. Der Zustand bleibt blau kodiert, nur die Reihenfolge
- * dreht sich.
- */
-.spottable.selected:focus,
-.spottable.selected.spotlight-focus,
-.primary.spottable:focus,
-.primary.spotlight-focus,
-.season-trigger button.spottable:focus,
-.season-trigger button.spotlight-focus {
-  outline-color: var(--bg);
-  box-shadow: 0 0 0 0.5rem var(--focus), var(--shadow-card);
+h1,
+h2,
+h3,
+p {
+  margin: 0;
 }
 
 .spottable {
-  transition: transform var(--focus-out), background var(--focus-out), color var(--focus-out);
+  outline: none;
+  transition:
+    transform var(--focus-ms) ease,
+    box-shadow var(--focus-ms) ease,
+    background-color var(--focus-ms) ease,
+    color var(--focus-ms) ease,
+    border-color var(--focus-ms) ease;
 }
 
-.spottable:focus,
-.spottable.spotlight-focus {
-  transition-duration: 170ms;
+.spottable:focus {
+  outline: none;
+}
+
+.icon {
+  width: 1.25em;
+  height: 1.25em;
+  flex: 0 0 auto;
 }
 
 /*
- * Ältere Panels: weiche Flächen kosten dort Bilder pro Sekunde.
+ * Weniger Bewegung.
  *
- * `backdrop-filter` ist der teuerste Posten — er zwingt das Panel, für jede
- * Fläche darunter neu zu rechnen. Danach kommen die Übergänge: auf einem
- * 2019er Modell ruckelt eine Fokusbewegung sichtbarer, als sie hilft.
+ * Über die Einstellung „Animationen reduzieren" und über das System. Auf
+ * älteren Panels kostet jede Überblendung Bilder pro Sekunde; der Fokus bleibt
+ * trotzdem eindeutig, weil Ring und Farbwechsel ohne Übergang genauso wirken.
  */
-:root[data-effects="reduced"] .glass,
-:root[data-effects="reduced"] .player-panel,
-:root[data-effects="reduced"] .season-sheet,
-:root[data-effects="reduced"] .scope-tabs {
-  backdrop-filter: none;
+:root[data-effects="reduced"] *,
+:root[data-effects="reduced"] *::before,
+:root[data-effects="reduced"] *::after {
+  transition: none !important;
+  animation: none !important;
 }
 
-:root[data-effects="reduced"] .spottable {
-  transition: none;
+:root[data-effects="reduced"] .dialog,
+:root[data-effects="reduced"] .dialog-shade,
+:root[data-effects="reduced"] .glassbtn {
+  backdrop-filter: none !important;
 }
 
-:root[data-effects="reduced"] .media-card.spottable:focus,
-:root[data-effects="reduced"] .media-card.spotlight-focus,
-:root[data-effects="reduced"] .episode-card.spottable:focus,
-:root[data-effects="reduced"] .episode-card.spotlight-focus {
-  transform: none;
-}
-
-:root[data-effects="reduced"] .skeleton .skeleton-block,
-:root[data-effects="reduced"] .skeleton-line {
-  animation: none;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* Kaltstart, bevor React gerendert hat. */
@@ -215,13 +181,10 @@ input.spottable:focus {
   justify-content: center;
   width: 100%;
   height: 100%;
-  gap: 1.5rem;
-  background: radial-gradient(circle at 50% 40%, rgba(120, 197, 255, 0.08), transparent 34%), #05060a;
-  color: #8b93a7;
+  background: radial-gradient(circle at 50% 40%, rgba(121, 199, 255, 0.1), transparent 34%), #03070d;
+  color: #94a3b8;
 }
 
-/* Das App-Symbol selbst, nicht nachgezeichnet. Die Rundung ist die Kachelform
-   des Fernsehers und gehört zur Darstellung, nicht zum Bild. */
 .boot-mark {
   width: 6rem;
   height: 6rem;
@@ -230,7 +193,7 @@ input.spottable:focus {
 }
 
 .boot-splash p {
-  margin: 0;
+  margin: 1.5rem 0 0;
   font-size: 1.25rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;

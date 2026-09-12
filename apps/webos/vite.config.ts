@@ -1,4 +1,4 @@
-import { copyFileSync } from "node:fs";
+import { copyFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -79,8 +79,14 @@ function copyAppInfo() {
   };
 }
 
+/** Die Version aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
+const appVersion = (JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as { version: string }).version;
+
 export default defineConfig(({ command }) => ({
   base: "./",
+  define: {
+    __NORI_WEBOS_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [stubEnactLess(), react(), classicScriptTags(), copyAppInfo()],
   build: {
     target: ["chrome79"],

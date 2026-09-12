@@ -25,6 +25,18 @@ export interface RatingProps {
   className?: string;
 }
 
+/**
+ * Die Bewertung als Text, „8,4" — oder `null`, wenn sie nichts heißt.
+ *
+ * Dieselben Regeln wie `Rating`: ohne Wert oder mit weniger als fünfzig
+ * Stimmen gibt es keine Angabe.
+ */
+export function ratingText(value: number | null | undefined, votes?: number | null, minimumVotes = 50): string | null {
+  if (value === null || value === undefined || value <= 0) return null;
+  if (votes !== undefined && votes !== null && votes < minimumVotes) return null;
+  return value.toFixed(1).replace(".", ",");
+}
+
 export function Rating({ value, votes, minimumVotes = 50, className }: RatingProps): ReactNode {
   if (value === null || value <= 0) return null;
   if (votes !== undefined && votes !== null && votes < minimumVotes) return null;

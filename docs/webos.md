@@ -1,8 +1,47 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **1.4.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.0.0**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
-ausgelegt und auf andere Auflösungen mitskalierend.
+ausgelegt und proportional bis 3840 × 2160 skalierend.
+
+## Oberfläche
+
+Seit 2.0.0 nach der Vorlage `nori-webos-design-v4.html`: sehr dunkler Grund,
+Blau-Graphit-Flächen, eisblauer Akzent, links eine schmale Seitenleiste mit
+der Wortmarke „Nori" und fünf auf Bildmitte zentrierten Einträgen (Start,
+Katalog, Kalender, Merkliste, Mehr). Die Oberfläche davor ist vollständig
+ersetzt; übernommen sind nur Daten, Provider, Player-Logik, Bibliothek,
+Abgleich und TMDB-Schicht.
+
+| Ansicht | Datei |
+| --- | --- |
+| Start: Hero, Weiterschauen, Neu & beliebt, Neue Episoden, Für dich, Merkliste | `src/pages/Home.tsx` |
+| Katalog: Suche mit Tippfehlertoleranz, Schnellfilter, Filterdialog, 5er-Raster | `src/pages/Catalog.tsx` |
+| Detail: Hero, Staffelmenü, 3er-Folgenraster, ähnliche Titel | `src/pages/Details.tsx` |
+| Kalender: Heute, Woche, Monat | `src/pages/Calendar.tsx` |
+| Merkliste: Übersicht, Ungesehen/Angefangen/Gesehen, Bearbeiten | `src/pages/Watchlist.tsx` |
+| Mehr: Wiedergabe, Darstellung, Synchronisierung, Nori; Unterseiten Verbindung, Abgleich, Daten, Diagnose, Verlauf | `src/pages/More.tsx`, `src/pages/more/` |
+
+### Skalierung
+
+Alle Maße in `rem`; die Wurzelschrift ist `min(100vw / 120, 100vh / 67.5)`,
+bei 1920 × 1080 also 16 px, bei 3840 × 2160 32 px. 4K zeigt dasselbe Layout
+doppelt so scharf — fünf große Poster je Zeile, nicht zehn kleine. Bildgrößen
+wählt `src/services/images.ts` nach gezeichneter Breite mal Pixelverhältnis:
+Poster `w342` bei 1080p und `w780` bei 4K, das Hero-Breitbild `w1280` bzw.
+`original`.
+
+### Navigation
+
+`src/navigation/engine.ts` ersetzt Enact Spotlight. Links/Rechts bleiben in
+der Zeile; Hoch/Runter nehmen zuerst die nächste Zeile und darin das
+waagerecht nächste Element. Gemessen wird gegen das **Ziel** laufender
+Scrollbewegungen, damit schnelle Tastendrücke nicht springen. Sichtbar
+gemacht wird ohne `scrollIntoView`: Reihen bewegen sich nur so weit, dass die
+Karte samt Vergrößerung und Ring ganz dasteht; die Seite hält 3,5 rem Abstand
+zum Rand und holt die Überschrift einer Reihe mit herein. Overlays sperren den
+Fokus ein und geben ihn beim Schließen an ihren Auslöser zurück. Fokus und
+Scrollstand werden je Ansicht gemerkt.
 
 ## Aufbau
 
@@ -144,7 +183,7 @@ Zugeordnete Kennungen liegen versioniert im `localStorage`
 (`nori.tmdb.titles.v2` und Nachbarn). Ändert sich die Zuordnung, wird die
 Fassungsnummer erhöht und der alte Stand beim ersten Start verworfen — sonst
 bliebe ein falscher Treffer für immer stehen. Von Hand geht dasselbe über
-*Einstellungen → TMDB → Bildspeicher leeren*.
+*Mehr → Verbindung & TMDB → Bildspeicher leeren*.
 
 ## Voraussetzungen
 
@@ -161,7 +200,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_1.4.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.0.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -181,9 +220,12 @@ npm run dev            # hört auf 0.0.0.0:8730, TMDB ohne Einrichtung
 derselben Nummer, aber unterschiedlichem Inhalt, sind hinterher nicht mehr
 unterscheidbar — und der Fernseher installiert das zweite nicht über das erste.
 
-Zu erhöhen sind `apps/webos/appinfo.json` und `apps/webos/package.json`, dazu
-gehört ein Abschnitt `## [webOS x.y.z]` im `CHANGELOG.md` und die Zeile in
-seiner Übersicht. `python3 tools/check-webos-package.py` vergleicht alle vier
+Zu erhöhen sind `apps/webos/appinfo.json`, `apps/webos/package.json`,
+`shared/nori-core/package.json`, `services/nori-api/package.json` und
+`API_VERSION` in `services/nori-api/src/server.ts`; dazu gehört ein Abschnitt
+`## [webOS x.y.z]` im `CHANGELOG.md` und die Zeile in seiner Übersicht. Die
+Oberfläche zeigt die Nummer unter Mehr → Nori; sie wird beim Bauen aus
+`appinfo.json` gelesen. `python3 tools/check-webos-package.py` vergleicht alle vier
 Stellen samt Paketnamen und den Dateien im Paket und bricht ab, wenn eine
 abweicht.
 
@@ -224,7 +266,7 @@ entspricht der Zurück-Taste der Fernbedienung.
    Ohne Gerätenamen wird das voreingestellte Gerät benutzt; alternativ
    `NORI_WEBOS_DEVICE=tv` setzen.
 
-5. **Nori einrichten**: beim ersten Start unter *Einstellungen → Verbindung*
+5. **Nori einrichten**: beim ersten Start unter *Mehr → Verbindung & TMDB*
    die Adresse des Nori-Servers eintragen, etwa `http://192.168.1.20:8730`, und
    auf **Prüfen** gehen. Fernseher und Server müssen im selben Netz sein. Die
    Antwort sagt zugleich, welchen TMDB-Schlüssel der Server benutzt.
@@ -240,7 +282,7 @@ node tools/webos-cli.mjs log tv
 ```
 
 Im Protokoll trägt alles von Nori das Präfix `[Nori:webOS]`. Ausführlich wird
-es erst, wenn in den Einstellungen *Diagnoseprotokoll* eingeschaltet ist —
+es erst, wenn unter *Mehr → Diagnoseprotokoll* eingeschaltet ist —
 sonst bleiben nur Warnungen und Fehler übrig. Der Bereich `[tmdb]` nennt jeden
 Treffer samt Kennung, jede Staffelzuordnung samt Güte und Versatz und jede
 Zuordnung, die abgelehnt wurde.
@@ -258,14 +300,17 @@ entfernt und muss neu installiert werden.
 | --- | --- |
 | Pfeiltasten | Fokus bewegen; im Player ohne sichtbare Bedienung Links/Rechts = spulen, Hoch = Drawer |
 | OK (13) | auslösen; im Player ohne Bedienung Wiedergabe/Pause |
-| Zurück (461 / 10009) | Auswahlraster zu → Drawer zu → Bedienung zu → Player verlassen → Ansicht zurück → App verlassen |
+| Zurück (461 / 10009) | Dialog/Menü zu → Drawer zu → Bedienung zu → Player verlassen → Ansicht zurück → Hauptseite zur Startseite → auf der Startseite App verlassen |
 | Play (415) / Pause (19) / Stop (413) | Wiedergabe steuern |
 | Vor-/Zurückspulen (417 / 412) | springen, bei gehaltener Taste schneller |
 
 Am Rechner ersetzen Escape die Zurück-Taste und die Leertaste Wiedergabe/Pause.
 
-Der erste Fokus liegt im Inhalt, nicht in der Seitenleiste — die erreicht man
-über „links" und sie klappt nur auf, solange sie den Fokus hat.
+Der erste Fokus liegt im Inhalt, nicht in der Seitenleiste: auf der
+Startseite „Jetzt ansehen", im Katalog die erste Karte, auf der Detailseite
+„Jetzt ansehen", im Kalender der heutige Tag, in Mehr die erste Einstellung.
+Die Seitenleiste erreicht man mit „links" am Zeilenanfang und landet dort auf
+dem aktiven Eintrag; „rechts" führt zurück auf die zuletzt fokussierte Karte.
 
 ## Unterstützte Stände
 
@@ -274,23 +319,18 @@ Datei auf webOS 6 bis 26; neuere Sprachmerkmale werden übersetzt, `?.` und `??`
 eingeschlossen. `aspect-ratio` bekommt über `@supports` einen Rückfall,
 `CSS.escape` und `AbortSignal.any` werden nicht benutzt.
 
-### Flex-Abstände auf webOS 6
+### CSS für webOS 6
 
-Chrome 79 kennt `gap` **nur im Raster**, nicht im Flex-Layout — das kam erst
-mit Chrome 84. Noris Oberfläche benutzt es an gut vierzig Stellen; ohne
-Rückfall klebt dort alles aneinander, und zwar genau auf dem ältesten Gerät,
-das Nori unterstützen soll.
+Chrome 79 kennt `gap` **nur im Raster**, nicht im Flex-Layout (erst ab 84),
+dazu fehlen `aspect-ratio` (88) und `inset` (87). Die Oberfläche benutzt
+deshalb keines davon: Abstände zwischen Geschwistern entstehen über Raster
+(`grid-auto-flow: column`) oder Ränder, Seitenverhältnisse über `padding-top`,
+Flächen über `top/right/bottom/left`.
 
-Über `@supports` lässt sich das nicht erfragen: `@supports (gap: 1px)` ist in
-Chrome 79 **wahr**, weil es Rasterabstände kennt. Nori misst deshalb beim Start
-(`supportsFlexGap` in `src/services/webos.ts`) und schreibt das Ergebnis als
-`data-flex-gap` an das Wurzelelement; das Stylesheet hängt daran einen Rückfall
-über Ränder (`> * + *`). Auf einem neueren Panel greift keine dieser Regeln.
-
-Der Fernbedienungslauf prüft beides: dass die Messung in einem heutigen
-Chromium „ja" sagt — sonst gäbe es dort doppelte Abstände —, und dass der
-Rückfall bei abgeschaltetem Flex-`gap` denselben Abstand zwischen zwei Kacheln
-erzeugt.
+`tools/check-webos-package.py` beanstandet `inset` und `aspect-ratio` in den
+Stylesheets; der Fernbedienungslauf prüft im Browser, dass kein
+Flex-Container ein `gap` trägt. `supportsFlexGap` misst weiterhin beim Start
+und schreibt `data-flex-gap` ins Protokoll.
 
 ### Warum ein klassisches Bündel
 
@@ -343,24 +383,29 @@ Die Oberfläche lässt sich mit einer nachgebauten Fernbedienung durchspielen:
 cd apps/webos
 npm run build
 npm run mock &                          # Nori-Server und TMDB mit festen Daten
-npm i -D playwright && npx playwright install chromium
+npm i --no-save playwright && npx playwright install chromium
 npm run test:tv
 ```
 
-Der Lauf drückt echte LG-Tastencodes und prüft unter anderem, dass nie ein
-Zustand ohne Fokus entsteht, dass der Fokus nie außerhalb des Bildes liegt,
-dass er beim Zurückgehen auf derselben Kachel steht, dass Drawer und
-Staffelraster den Fokus einsperren, dass nach dem Verlassen des Players kein
-Stream weiterläuft, dass ein Hosterfehler in einem benannten Fehlerzustand
-endet — und dass im ganzen Bild keine orangefarbene Fläche mehr steht.
+Der Lauf drückt echte LG-Tastencodes — geklickt wird nur, um einen Zustand
+herzustellen — und prüft auf jeder Hauptansicht die Matrix →×10 ←×10 ↓×10
+↑×10 plus eine gemischte Folge. Nach **jedem** Druck: es gibt einen Fokus;
+das Element liegt samt Vergrößerung und Ring im Bild, in seiner Reihe, in
+seinem Scrollbereich und nicht unter der Seitenleiste; es liegt nicht hinter
+einem offenen Overlay; seine Schrift hat mindestens 4,5 : 1 Kontrast.
 
-Dabei entstehen **21 Bildschirmfotos** in `apps/webos/test-shots/`
-(Bootscreen, Startseite, fokussierte Kachel, Seitenleiste, Entdecken,
-Kalender, Suche, Merkliste, Verlauf, Einstellungen, Staffelwahl, Detailseite,
-ähnliche Titel, Weiterschauen, Player, Player-Drawer, Playerfehler,
-Fehlerzustand, TMDB ohne Einrichtung, Aufbau über `file://`). Der Ordner liegt
-nicht im Repository; `NORI_SHOTS=<Ordner>`
-legt sie woanders ab.
+Dazu: Rand der Reihen (erste Karte ←, letzte Karte →), schnelle Eingabe im
+25-ms-Takt, Hero → erste Reihe mit sichtbarer Überschrift, das alte
+Startseiten-Clipping (↓×8, ↑×8), Zurück mit Fokus- und Scrollwiederherstellung
+auf Start, Katalog, Detail und Kalender, Dialog- und Menü-Zurück, Kontrast des
+Merkliste-Knopfs normal und im Fokus, Überlappungen, Flex-`gap`,
+Mindestschriftgröße, abgeschnittene Titel, Bildgrößen je Auflösung, Player,
+TMDB-Zuordnung und -Ausfall, Katalogausfall, frische Installation und der
+Aufbau über `file://`. Die Ansichten werden getrennt bei **1920 × 1080** und
+**3840 × 2160** geprüft.
+
+Die Bildschirmfotos landen in `apps/webos/test-shots/` (nicht im Repository),
+`NORI_SHOTS=<Ordner>` legt sie woanders ab.
 
 Der Nachbau unter `test/mock-tmdb.mjs` enthält absichtlich die drei Fälle, die
 in der Praxis schiefgehen: ein Titel, dessen TMDB-Name mit dem Quelltitel
@@ -369,7 +414,7 @@ TMDB gar nicht führt.
 
 ## Mit Google Drive verbinden
 
-*Einstellungen → Synchronisation → „Mit Google Drive verbinden"*. Danach ein
+*Mehr → Synchronisierung → „Mit Google Drive verbinden"*. Danach ein
 eigener Bildschirm, kein Absatz in der Liste:
 
 ```

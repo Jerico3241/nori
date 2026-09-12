@@ -1,28 +1,36 @@
 // Die Startseite.
 //
-// Aufbau wie in den Apple-Apps: Kopfbereich, dann Reihen. Welche Reihen das
-// sind und in welcher Reihenfolge, entscheidet `useHomeFeed` — hier wird nur
-// gezeichnet. Das ist die eigentliche Änderung gegenüber dem vorherigen Stand,
-// der seine Reihen im Rendern bildete und „beliebt" zu den ersten 24 Titeln
-// des Katalogs sagte.
+//     Seitenkopf     Willkommen zurück · Start · Suche
+//     Hero           ein Titel aus dem Nori-Katalog, gewählt über TMDB-Signale
+//     Weiterschauen  breite Karten aus dem echten Fortschritt
+//     Neu & beliebt  TMDB-Trend und -Beliebtheit, begrenzt auf Noris Bestand
+//     Neue Episoden  aus dem Kalender der Quellen
+//     Für dich       aus Verlauf und Merkliste, mit TMDB-Empfehlungen
+//     Merkliste
 //
-// Es erscheinen nur Reihen, für die es tatsächlich Daten gibt — eine leere
-// „Neue Episoden"-Reihe ist schlechter als keine.
+// Welche Reihen es gibt, entscheidet `useHomeFeed`; hier wird gezeichnet. Es
+// erscheinen nur Reihen, für die es Daten gibt — eine leere Reihe ist
+// schlechter als keine.
 
 import {
   episodePathFor, progressPercent, providerFromPath, resumePosition,
-  type AiringEntry, type CatalogProvider, type HomeCandidate, type SeriesDetail, type WatchProgress,
+  type AiringEntry, type CatalogProvider, type HomeCandidate, type HomeTitle, type SeriesDetail,
+  type WatchProgress,
 } from "@nori/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Hero } from "../components/Hero";
-import { MediaCard } from "../components/MediaCard";
+import { Icon } from "../components/Icon";
+import { LandscapeCard } from "../components/LandscapeCard";
+import { titleMeta } from "../components/meta";
+import { PosterCard } from "../components/PosterCard";
 import { Rail } from "../components/Rail";
-import { ScopeTabs } from "../components/ScopeTabs";
+import { ratingText } from "../components/Rating";
+import { Screen } from "../components/Screen";
 import { EmptyState, ErrorState, RailSkeleton } from "../components/States";
-import { WideCard } from "../components/WideCard";
 import { restoreFocusSoon } from "../navigation/focusMemory";
+import { SpotButton } from "../navigation/Spot";
 import { covers } from "../services/covers";
 import { log } from "../services/log";
 import { tmdb } from "../services/tmdb";
@@ -38,66 +46,75 @@ export function HomePage() {
   const library = useLibrary();
   const catalog = scopedCatalog();
   const feed = useHomeFeed();
-
-  const [heroIndex, setHeroIndex] = useState(0);
   const [heroDetail, setHeroDetail] = useState<SeriesDetail | null>(null);
-  const [heroArt, setHeroArt] = useState<{ backdrop: string | null; logo: string | null }>(
-    { backdrop: null, logo: null },
-  );
+  const [, setArtVersion] = useState(0);
 
-  const hero = feed.hero[Math.min(heroIndex, Math.max(0, feed.hero.length - 1))] ?? null;
-  const heroTitle = hero?.title ?? null;
+  /**
+   * Der Titel im Kopfbereich.
+   *
+   * Erste Wahl ist die Rotation aus `heroPicks` (braucht TMDB, weil ein
+   * Breitbild da sein muss). Ohne TMDB der zuletzt geschaute Titel, sonst der
+   * erste des Katalogs — immer ein echter Nori-Titel, nie ein Beispiel.
+   */
+  const heroTitle = useMemo<HomeTitle | null>(() => {
+    if (feed.hero[0]) return feed.hero[0].title;
+    const recent = library.continueWatching()[0];
+    if (recent) {
+      const provider = recent.provider ?? providerFromPath(recent.episodePath);
+      const match = catalog.items.find((item) =>
+        item.slug === recent.slug && (item.provider ?? "aniworld") === provider);
+      return {
+        slug: recent.slug,
+        title: match?.title ?? (recent.title || recent.slug),
+        provider,
+        genres: match?.genres ?? [],
+        alts: match?.alts ?? [],
+      };
+    }
+    const first = catalog.items[0];
+    return first
+      ? { slug: first.slug, title: first.title, provider: first.provider ?? "aniworld", genres: first.genres, alts: first.alts }
+      : null;
+  }, [feed.hero, library, catalog.items]);
+  const heroKey = heroTitle ? `${heroTitle.provider}|${heroTitle.slug}` : "";
 
-  // Der Kopfbereich braucht mehr als eine Kachel: Beschreibung, Jahr, Genres
-  // und die Folgenliste für „Fortsetzen". Das ist ein Abruf, und nur für den
-  // einen gezeigten Titel.
   useEffect(() => {
-    if (!heroTitle) return;
+    if (!heroTitle) return undefined;
     let cancelled = false;
     setHeroDetail(null);
-    setHeroArt({
-      backdrop: covers.backdrop(heroTitle.slug, heroTitle.provider),
-      logo: covers.logo(heroTitle.slug, heroTitle.provider),
-    });
     series(heroTitle.provider, heroTitle.slug).then(
       (detail) => {
         if (!cancelled) setHeroDetail(detail);
       },
       (cause: unknown) => log("data", "Hero-Detail nicht ladbar", heroTitle.slug, (cause as Error)?.message),
     );
-
-    const request = {
-      slug: heroTitle.slug,
-      provider: heroTitle.provider,
-      title: heroTitle.title,
-      alts: heroTitle.alts,
-    };
-    void covers.ensureBackdrop(request).then((backdrop) => {
-      if (!cancelled && backdrop) setHeroArt((current) => ({ ...current, backdrop }));
+    const request = { slug: heroTitle.slug, provider: heroTitle.provider, title: heroTitle.title, alts: heroTitle.alts };
+    void covers.ensureBackdrop(request).then(() => {
+      if (!cancelled) setArtVersion((value) => value + 1);
     });
-    // Der Schriftzug kostet einen eigenen Abruf — deshalb nur hier, wo er
-    // auch gezeigt wird.
-    void covers.ensureLogo(request).then((logo) => {
-      if (!cancelled && logo) setHeroArt((current) => ({ ...current, logo }));
+    // Der Schriftzug kostet einen eigenen Abruf — deshalb nur hier.
+    void covers.ensureLogo(request).then(() => {
+      if (!cancelled) setArtVersion((value) => value + 1);
     });
     return () => {
       cancelled = true;
     };
-  }, [heroTitle, series]);
+    // Nur am Titel hängend: `heroTitle` ist bei jedem Fortschrittstick ein neues Objekt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heroKey, series]);
 
-  useEffect(() => restoreFocusSoon(ROUTE, ["continue", "popular", "hero", "sidebar"]), []);
+  useEffect(() => restoreFocusSoon(
+    ROUTE,
+    ["hero", "continue", "popular", "fresh", "episodes", "foryou", "discover", "watchlist", "top"],
+    { initial: '[data-focus-key="hero-play"]' },
+  ), []);
 
   const openTitle = useCallback((provider: CatalogProvider, slug: string) => {
     navigate(`/titel/${provider}/${encodeURIComponent(slug)}`);
   }, [navigate]);
 
   const playEpisode = useCallback((
-    provider: CatalogProvider,
-    slug: string,
-    season: string,
-    episode: number,
-    path: string,
-    at = 0,
+    provider: CatalogProvider, slug: string, season: string, episode: number, path: string, at = 0,
   ) => {
     navigate(
       `/player/${provider}/${encodeURIComponent(slug)}`
@@ -106,11 +123,9 @@ export function HomePage() {
     );
   }, [navigate]);
 
-  /** Der Fortschritt, der zum Kopfbereich gehört — für Balken und Knopfschrift. */
   const heroProgress = useMemo<WatchProgress | null>(() => {
     if (!heroTitle) return null;
-    const list = library.continueWatching();
-    return list.find((item) =>
+    return library.continueWatching().find((item) =>
       item.slug === heroTitle.slug
       && (item.provider ?? providerFromPath(item.episodePath)) === heroTitle.provider) ?? null;
   }, [heroTitle, library]);
@@ -128,118 +143,154 @@ export function HomePage() {
       openTitle(heroTitle.provider, heroTitle.slug);
       return;
     }
-    const plan = library.nextPlay(
-      heroTitle.slug, heroDetail.activeSeason, heroDetail.episodes, heroTitle.provider,
-    );
+    const plan = library.nextPlay(heroTitle.slug, heroDetail.activeSeason, heroDetail.episodes, heroTitle.provider);
     const path = heroDetail.episodes.find((episode) => episode.number === plan.episode)?.path
       ?? episodePathFor(heroTitle.provider, heroTitle.slug, heroDetail.activeSeason, plan.episode);
-    playEpisode(
-      heroTitle.provider, heroTitle.slug, heroDetail.activeSeason, plan.episode, path, plan.resumeAt,
-    );
+    playEpisode(heroTitle.provider, heroTitle.slug, heroDetail.activeSeason, plan.episode, path, plan.resumeAt);
   }, [heroTitle, heroDetail, heroProgress, library, openTitle, playEpisode]);
+
+  const searchButton = (
+    <SpotButton
+      className="glassbtn"
+      focusRoute={ROUTE}
+      focusArea="top"
+      focusKey="top-search"
+      onClick={() => navigate("/katalog?suche=1")}
+    >
+      <Icon name="search" />
+      Suche
+    </SpotButton>
+  );
 
   if (catalog.status === "error" && catalog.items.length === 0) {
     return (
-      <div className="page">
-        <ScopeTabs route={ROUTE} />
+      <Screen route={ROUTE} eyebrow="Willkommen zurück" title="Start" actions={searchButton}>
         <ErrorState
           title={online ? "Katalog nicht ladbar" : "Keine Verbindung"}
-          message={catalog.error ?? "Nori konnte keine Verbindung zum Server herstellen."}
+          message={catalog.error ?? "Nori konnte keine Verbindung herstellen."}
           onRetry={() => {
             reloadCatalog("aniworld");
             reloadCatalog("serienstream");
             feed.reload();
           }}
         />
-      </div>
+      </Screen>
     );
   }
 
-  const heroDetails = heroTitle ? covers.details(heroTitle.slug, heroTitle.provider) : null;
+  const art = heroTitle ? covers.details(heroTitle.slug, heroTitle.provider) : null;
+  const favorite = heroTitle ? library.isFavorite(heroTitle.slug) : false;
+  const years = heroDetail?.yearStart
+    ? (heroDetail.yearEnd && heroDetail.yearEnd !== heroDetail.yearStart
+      ? `${heroDetail.yearStart}–${heroDetail.yearEnd}`
+      : heroDetail.yearStart)
+    : null;
+  const genres = (heroDetail?.genres.length ? heroDetail.genres : heroTitle?.genres ?? []).slice(0, 3);
+  const heroPercent = heroProgress ? progressPercent(heroProgress) : 0;
 
   return (
-    <div className="page home">
-      <ScopeTabs route={ROUTE} />
-
-      {hero && heroTitle ? (
+    <Screen route={ROUTE} eyebrow="Willkommen zurück" title="Start" actions={searchButton} className="home">
+      {heroTitle ? (
         <Hero
-          detail={heroDetail}
-          provider={heroTitle.provider}
+          variant="home"
           slug={heroTitle.slug}
+          provider={heroTitle.provider}
           title={heroDetail?.title ?? heroTitle.title}
           alts={heroTitle.alts}
-          backdrop={heroArt.backdrop}
-          logo={heroArt.logo}
-          overview={heroDetails?.overview}
-          rating={heroDetails?.rating ?? null}
-          votes={heroDetails?.votes ?? null}
-          progress={heroProgress}
-          isFavorite={library.isFavorite(heroTitle.slug)}
-          onPlay={playHero}
-          onDetails={() => openTitle(heroTitle.provider, heroTitle.slug)}
-          onToggleFavorite={() => library.toggleFavorite(
-            heroTitle.slug, heroDetail?.title ?? heroTitle.title, heroTitle.provider,
+          eyebrow={heroProgress ? "Weiterschauen" : "Heute im Fokus"}
+          backdrop={art?.backdrop ?? null}
+          logo={art?.logo ?? null}
+          meta={[years, ...genres].filter((part): part is string => Boolean(part))}
+          rating={ratingText(art?.rating ?? null, art?.votes ?? null)}
+          description={heroDetail?.description || art?.overview || ""}
+          progress={heroProgress ? {
+            percent: heroPercent,
+            label: `Staffel ${heroProgress.season} · Folge ${heroProgress.episode} · ${heroPercent} % gesehen`,
+          } : null}
+          actions={(
+            <>
+              <SpotButton
+                className="hero-btn primary"
+                focusRoute={ROUTE}
+                focusArea="hero"
+                focusKey="hero-play"
+                onClick={playHero}
+              >
+                <Icon name="play" />
+                {heroProgress ? "Weiter ansehen" : "Jetzt ansehen"}
+              </SpotButton>
+              <SpotButton
+                className="hero-btn"
+                focusRoute={ROUTE}
+                focusArea="hero"
+                focusKey="hero-favorite"
+                aria-pressed={favorite}
+                onClick={() => library.toggleFavorite(heroTitle.slug, heroDetail?.title ?? heroTitle.title, heroTitle.provider)}
+              >
+                <Icon name={favorite ? "heartFilled" : "heart"} />
+                {favorite ? "Gemerkt" : "Merkliste"}
+              </SpotButton>
+              <SpotButton
+                className="hero-btn"
+                focusRoute={ROUTE}
+                focusArea="hero"
+                focusKey="hero-more"
+                aria-label="Mehr zu diesem Titel"
+                onClick={() => openTitle(heroTitle.provider, heroTitle.slug)}
+              >
+                <Icon name="more" />
+                Mehr
+              </SpotButton>
+            </>
           )}
-          pages={{ index: heroIndex, total: feed.hero.length, onPick: setHeroIndex }}
         />
+      ) : catalog.status === "loading" ? (
+        <section className="hero hero-home hero-skeleton" aria-hidden="true" />
       ) : null}
 
-      <div className={`home-rails ${hero ? "" : "no-hero"}`}>
-        {catalog.status === "loading" && catalog.items.length === 0 ? (
-          <section className="rail">
-            <header><h2>Wird geladen …</h2></header>
-            <RailSkeleton />
-          </section>
-        ) : null}
+      {catalog.status === "loading" && catalog.items.length === 0 ? (
+        <section className="section rail-section">
+          <div className="section-head"><h2>Wird geladen …</h2></div>
+          <RailSkeleton />
+        </section>
+      ) : null}
 
-        {feed.rows.map((row) => (
-          <HomeRail
-            key={row.id}
-            row={row}
-            onOpenTitle={openTitle}
-            onPlayEpisode={playEpisode}
-          />
-        ))}
+      {feed.rows.map((row) => (
+        <HomeRail key={row.id} row={row} onOpenTitle={openTitle} onPlayEpisode={playEpisode} />
+      ))}
 
-        {catalog.status === "ready" && catalog.items.length === 0 ? (
-          <EmptyState
-            title="Nichts in diesem Bereich"
-            message="Für diesen Bereich kamen keine Titel zurück. Ein anderer Bereich oder ein erneuter Versuch hilft meistens."
-          />
-        ) : null}
-      </div>
-    </div>
+      {catalog.status === "ready" && catalog.items.length === 0 ? (
+        <EmptyState
+          title="Nichts in diesem Bereich"
+          message="Für diesen Bereich kamen keine Titel zurück. Ein anderer Bereich oder ein erneuter Versuch hilft meistens."
+        />
+      ) : null}
+    </Screen>
   );
 }
 
 function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
   row: HomeRowView;
   onOpenTitle(provider: CatalogProvider, slug: string): void;
-  onPlayEpisode(
-    provider: CatalogProvider, slug: string, season: string, episode: number, path: string, at?: number,
-  ): void;
+  onPlayEpisode(provider: CatalogProvider, slug: string, season: string, episode: number, path: string, at?: number): void;
 }) {
   const library = useLibrary();
 
   if (row.kind === "progress" && row.progress) {
     return (
-      <Rail title={row.title} id={row.id} count={row.progress.length} note={row.note}>
+      <Rail id={row.id} title={row.title} note="Zuletzt angesehen">
         {row.progress.map((item, index) => {
           const provider = item.provider ?? providerFromPath(item.episodePath);
-          const season = tmdb.cachedSeason(item.slug, provider, item.season);
-          const still = season?.episodes[item.episode]?.still ?? null;
+          const still = tmdb.cachedSeason(item.slug, provider, item.season)?.episodes[item.episode]?.still ?? null;
           const remaining = Math.max(0, item.durationSec - item.positionSec);
           return (
-            <WideCard
-              key={`${provider}|${item.slug}|${item.episode}`}
+            <LandscapeCard
+              key={`${provider}|${item.slug}|${item.season}|${item.episode}`}
               slug={item.slug}
               provider={provider}
               title={item.title || item.slug}
               still={still}
-              subtitle={`Staffel ${item.season} · Folge ${item.episode}`}
-              footnote={remaining > 60
-                ? `noch ${Math.round(remaining / 60)} min`
-                : item.germanTitle || null}
+              subtitle={`S${item.season} · F${item.episode}${remaining > 60 ? ` · noch ${Math.round(remaining / 60)} Min.` : ""}`}
               percent={progressPercent(item)}
               focusRoute={ROUTE}
               focusArea={row.id}
@@ -258,7 +309,7 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
 
   if (row.kind === "episodes" && row.episodes) {
     return (
-      <Rail title={row.title} id={row.id} count={row.episodes.length} note={row.note}>
+      <Rail id={row.id} title={row.title} note="Aus dem Kalender der Quellen">
         {row.episodes.map((entry, index) => (
           <EpisodeRailCard key={entryKey(entry)} entry={entry} index={index} onOpenTitle={onOpenTitle} />
         ))}
@@ -267,9 +318,8 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
   }
 
   if (!row.titles || row.titles.length === 0) return null;
-
   return (
-    <Rail title={row.title} id={row.id} count={row.titles.length} note={row.note}>
+    <Rail id={row.id} title={row.title} note={row.note ?? (row.id === "popular" ? "Aktuell in Nori" : undefined)}>
       {row.titles.map((candidate, index) => (
         <TitleRailCard key={candidateKey(candidate)} candidate={candidate} area={row.id} index={index} />
       ))}
@@ -283,45 +333,36 @@ function EpisodeRailCard({ entry, index, onOpenTitle }: {
   onOpenTitle(provider: CatalogProvider, slug: string): void;
 }) {
   const provider = entry.provider ?? "aniworld";
-  const season = tmdb.cachedSeason(entry.slug, provider, entry.season);
-  const extras = season?.episodes[entry.episode] ?? null;
+  const extras = tmdb.cachedSeason(entry.slug, provider, entry.season)?.episodes[entry.episode] ?? null;
   return (
-    <WideCard
+    <LandscapeCard
       slug={entry.slug}
       provider={provider}
       title={entry.title}
       still={extras?.still ?? null}
-      subtitle={`Staffel ${entry.season} · Folge ${entry.episode}`}
-      footnote={extras?.title || (entry.languages.length > 0 ? entry.languages.join(" · ") : null)}
+      subtitle={[`S${entry.season} · F${entry.episode}`, entry.languages.join(", ") || null].filter(Boolean).join(" · ")}
       focusRoute={ROUTE}
       focusArea="episodes"
-      focusKey={`episodes-${provider}-${entry.slug}-${entry.episode}`}
+      focusKey={`episodes-${provider}-${entry.slug}-${entry.season}-${entry.episode}`}
       eager={index < 4}
       onSelect={() => onOpenTitle(provider, entry.slug)}
     />
   );
 }
 
-function TitleRailCard({ candidate, area, index }: {
-  candidate: HomeCandidate;
-  area: string;
-  index: number;
-}) {
+function TitleRailCard({ candidate, area, index }: { candidate: HomeCandidate; area: string; index: number }) {
   const { title } = candidate;
-  const details = covers.details(title.slug, title.provider);
   return (
-    <MediaCard
+    <PosterCard
       slug={title.slug}
-      title={title.title}
       provider={title.provider}
+      title={title.title}
       alts={title.alts}
-      subtitle={title.genres[0] ?? undefined}
-      rating={details.rating ?? candidate.signals.voteAverage}
-      votes={details.votes ?? candidate.signals.voteCount}
+      subtitle={titleMeta(title, candidate.signals)}
       focusRoute={ROUTE}
       focusArea={area}
       focusKey={`${area}-${title.provider}-${title.slug}`}
-      eager={index < 8}
+      eager={index < 7}
     />
   );
 }

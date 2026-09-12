@@ -1,6 +1,6 @@
 {
   "name": "@nori/webos",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Nori für LG webOS — TV-Oberfläche mit Fernbedienungsnavigation",
@@ -19,7 +19,6 @@
     "webos:devices": "node tools/webos-cli.mjs devices"
   },
   "dependencies": {
-    "@enact/spotlight": "4.9.8",
     "@nori/core": "file:../../shared/nori-core",
     "hls.js": "^1.7.2",
     "react": "^18.3.1",
