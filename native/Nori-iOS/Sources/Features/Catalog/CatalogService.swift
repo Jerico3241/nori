@@ -203,15 +203,15 @@ final class CatalogService {
 
     /// Noris eigener Kalender, beide Quellen.
     ///
-    /// `CalendarView.merged` ist dieselbe Funktion, die der Kalender-Tab und
-    /// die Startseite benutzen — inklusive Zwischenspeicher im Client. Der
+    /// `CalendarService.payload` ist dieselbe Funktion, die der Kalender-Tab
+    /// und die Startseite benutzen — inklusive Zwischenspeicher im Client. Der
     /// Katalog holt dadurch nichts zusätzlich, wenn eine der beiden kurz
     /// vorher offen war.
     ///
     /// Ausdrücklich `.all`: Der Katalog führt Anime und Serien gemeinsam.
     private static func recentEpisodes(force: Bool) async -> [AiringEntry] {
         do {
-            let payload = try await CalendarView.merged(scope: .all, slugs: nil, force: force)
+            let payload = try await CalendarService.payload(scope: .all, slugs: nil, force: force)
             // Kommendes zählt mit: Eine angekündigte Folge ist der stärkste
             // Beleg dafür, dass eine Serie läuft.
             return payload.recent + payload.upcoming
