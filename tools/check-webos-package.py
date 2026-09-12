@@ -18,6 +18,12 @@ Vier Fragen, die sich nicht durch Hinsehen beantworten lassen:
    (`/assets/index.js`) zeigt dort auf die Wurzel des Dateisystems. Im
    Entwicklungsstand über HTTP fällt das nie auf, auf dem Fernseher bleibt der
    Bildschirm schwarz.
+5. **Steckt ein Schlüssel im Quelltext?** Genau einer darf: der mitgelieferte
+   TMDB-Schlüssel in `shared/nori-core/src/tmdb/key.ts`. Das ist dieselbe
+   Ausnahme, die `tools/check-apple-sources.py` für `TMDBKeyStore.builtIn`
+   kennt — vom Betreiber entschieden, für eine private App in einem privaten
+   Repository. Jeder **zweite** einkompilierte Schlüssel fällt weiterhin auf,
+   auch einer in derselben Datei.
 
     python3 tools/check-webos-package.py
 
@@ -151,6 +157,84 @@ def check_appinfo() -> None:
         name = info.get(field)
         if name and not (APP / "public" / name).exists():
             problems.append(f"appinfo.json: `{field}` verweist auf {name}, das es in public/ nicht gibt")
+
+
+def check_no_secrets() -> None:
+    """Kein Schlüssel im Quelltext — mit einer benannten Ausnahme.
+
+    Ein Schlüssel im Quelltext liegt in jedem Klon, in jedem Build und dauerhaft
+    in der Git-Historie; wer ihn sperrt, sperrt alle Installationen zugleich.
+    Beim webOS-Paket kommt hinzu, dass er im `.ipk` liegt und sich daraus
+    herausziehen lässt.
+
+    Die eine Ausnahme ist der mitgelieferte TMDB-Schlüssel in
+    `shared/nori-core/src/tmdb/key.ts`. Sie ist absichtlich eng an genau diese
+    Zeile geknüpft: ein zweiter Schlüssel in derselben Datei fällt auf, ein
+    Schlüssel in einer anderen Datei ebenfalls. Auf einem Fernseher gibt es
+    keine Tastatur — die Begründung steht an der Deklaration.
+    """
+    long_hex = re.compile(r'"[0-9a-f]{32,}"')
+    named = re.compile(
+        r'\b(?:apiKey|api_key|apiSecret|clientSecret|accessToken|refreshToken|password)\b'
+        r'\s*(?:=|:)\s*"[^"\n]{8,}"',
+        re.IGNORECASE,
+    )
+    allowed_file = CORE / "src/tmdb/key.ts"
+    allowed_line = re.compile(r'export const BUILT_IN_TMDB_KEY = "[0-9a-f]{32}";')
+
+    for path in sources():
+        if path.suffix not in {".ts", ".tsx", ".mjs"}:
+            continue
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        # Kommentare weg: eine Erklärung, die das Wort „api_key" enthält, ist
+        # kein Fund. Die Zeichenketten bleiben stehen — sie sind der Fund.
+        stripped = re.sub(r"//[^\n]*", " ", re.sub(r"/\*.*?\*/", " ", raw, flags=re.S))
+        if path == allowed_file:
+            stripped = allowed_line.sub(" ", stripped)
+        rel = path.relative_to(ROOT)
+        # Prüfdateien werden nur auf lange Hex-Zeichenketten gelesen, nicht auf
+        # Zuweisungen an Schlüsselnamen. Der Grund ist inhaltlich: ein Test, der
+        # belegt, dass `api_key` aus einer Anfrage **entfernt** wird, muss genau
+        # so eine Zuweisung enthalten — sonst prüft er nichts. Ein echter
+        # Schlüssel wäre weiterhin auffällig, denn er ist hexadezimal.
+        patterns = [(long_hex, "lange Hex-Zeichenkette")]
+        if "test" not in path.parts:
+            patterns.append((named, "Zuweisung an einen Schlüsselnamen"))
+        for pattern, what in patterns:
+            match = pattern.search(stripped)
+            if match:
+                problems.append(
+                    f"{rel}: {what} im Quelltext — {match.group(0)[:48]}. "
+                    "Schlüssel gehören nicht in das Paket; die einzige Ausnahme ist "
+                    "BUILT_IN_TMDB_KEY in shared/nori-core/src/tmdb/key.ts."
+                )
+
+
+def check_key_matches_apple() -> None:
+    """Derselbe mitgelieferte Schlüssel wie auf der Apple-Seite.
+
+    Zwei Kopien einer Zeichenkette laufen auseinander. Läuft diese auseinander,
+    zeigt der Fernseher zu derselben Serie andere Daten als das iPhone — und
+    zwar ohne Fehlermeldung, weil beide Schlüssel gültig sind.
+    """
+    js = CORE / "src/tmdb/key.ts"
+    swift = ROOT / "native/NoriCore/Sources/NoriCore/AniworldClient.swift"
+    if not js.exists() or not swift.exists():
+        return
+    here = re.search(r'BUILT_IN_TMDB_KEY = "([0-9a-f]{32})"', js.read_text(encoding="utf-8"))
+    there = re.search(r'builtIn = "([0-9a-f]{32})"', swift.read_text(encoding="utf-8"))
+    if not here or not there:
+        warnings.append(
+            "Der mitgelieferte TMDB-Schlüssel ließ sich nicht auf beiden Seiten finden — "
+            "Abgleich übersprungen."
+        )
+        return
+    if here.group(1) != there.group(1):
+        problems.append(
+            "Der mitgelieferte TMDB-Schlüssel weicht ab: "
+            "shared/nori-core/src/tmdb/key.ts gegen TMDBKeyStore.builtIn. "
+            "Beide Seiten müssen denselben benutzen."
+        )
 
 
 def check_versions() -> None:
@@ -324,6 +408,8 @@ def main() -> int:
     check_foreign_names()
     check_foreign_hosts()
     check_appinfo()
+    check_no_secrets()
+    check_key_matches_apple()
     check_versions()
     check_relative_paths()
     check_package()
@@ -343,7 +429,7 @@ def main() -> int:
         pass
     print(
         f"OK — webOS-App geprüft ({len(sources())} Dateien), Version {version} überall gleich, "
-        "keine fremden Namen, appinfo.json gültig."
+        "keine fremden Namen, kein Schlüssel außer dem einen erlaubten, appinfo.json gültig."
     )
     return 0
 

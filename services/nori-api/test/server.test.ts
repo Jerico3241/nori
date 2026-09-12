@@ -18,7 +18,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cleanParams, hasTMDBKey, routeFor } from "../src/tmdb.js";
+import { BUILT_IN_TMDB_KEY } from "@nori/core";
+import { cleanParams, hasTMDBKey, routeFor, tmdbKeyOrigin } from "../src/tmdb.js";
 import { rewriteM3U8 } from "../src/playlist.js";
 
 // MARK: - HLS-Playlisten
@@ -168,8 +169,19 @@ test("cleanParams ordnet die Parameter, damit der Schlüssel stabil ist", () => 
   assert.equal(first, second);
 });
 
-test("ohne NORI_TMDB_KEY sagt der Server das, statt es zu versuchen", () => {
-  // Der Lauf setzt die Umgebungsvariable nicht; genau dieser Zustand ist der
-  // Normalfall eines frisch aufgesetzten Servers.
-  assert.equal(hasTMDBKey(), Boolean(process.env.NORI_TMDB_KEY ?? process.env.TMDB_API_KEY));
+
+
+// MARK: - Der Schlüssel
+
+test("ohne NORI_TMDB_KEY greift der mitgelieferte", () => {
+  // Ein frisch aufgesetzter Server kann damit sofort TMDB. Der Lauf setzt die
+  // Umgebungsvariable nicht, also ist das hier der geprüfte Zustand.
+  assert.equal(hasTMDBKey(), true);
+  assert.equal(tmdbKeyOrigin(), process.env.NORI_TMDB_KEY ? "own" : "builtIn");
+});
+
+test("der mitgelieferte Schlüssel kommt aus dem Kern", () => {
+  // Nicht im Server hinterlegt: eine zweite Kopie wäre eine, die beim
+  // Tauschen übersehen wird.
+  assert.match(BUILT_IN_TMDB_KEY, /^[0-9a-f]{32}$/);
 });

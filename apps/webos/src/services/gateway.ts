@@ -153,8 +153,13 @@ export function createGateway(config: GatewayConfig): NoriGateway {
 /** Was ein Nori-Server über sich sagt. */
 export interface ServerInfo {
   version: string;
-  /** Hat der Server einen TMDB-Schlüssel? Entscheidet über den TMDB-Weg. */
+  /** Kann der Server TMDB? Entscheidet über den TMDB-Weg. */
   tmdb: boolean;
+  /**
+   * Ob dort ein eigener Schlüssel eingetragen ist (`NORI_TMDB_KEY`) oder der
+   * mitgelieferte gilt. Ein älterer Server sagt dazu nichts — dann `null`.
+   */
+  tmdbKey: "own" | "builtIn" | null;
   tmdbCacheEntries: number;
 }
 
@@ -179,12 +184,14 @@ export async function pingServer(serverUrl: string): Promise<ServerInfo> {
   const body = (await res.json().catch(() => ({}))) as {
     name?: string;
     version?: string;
-    features?: { tmdb?: boolean; tmdbCacheEntries?: number };
+    features?: { tmdb?: boolean; tmdbKey?: string; tmdbCacheEntries?: number };
   };
   if (body.name !== "nori-api") throw NoriError.network("Antwort stammt nicht von einem Nori-Server");
+  const origin = body.features?.tmdbKey;
   return {
     version: body.version ?? "unbekannt",
     tmdb: body.features?.tmdb === true,
+    tmdbKey: origin === "own" || origin === "builtIn" ? origin : null,
     tmdbCacheEntries: body.features?.tmdbCacheEntries ?? 0,
   };
 }

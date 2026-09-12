@@ -8,6 +8,7 @@
 // Es gibt bewusst **keine** dritte TMDB-Umsetzung: die webOS-App und der
 // Nori-Server benutzen beide diese Dateien.
 
+export * from "./key.js";
 export * from "./images.js";
 export * from "./matcher.js";
 export * from "./seasons.js";

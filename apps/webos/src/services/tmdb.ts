@@ -27,7 +27,7 @@ import {
   TMDB_FEEDS, alignEpisodes, alignmentIsUsable, emptySignals, feedMaxAge, pickTmdbSeason,
   tmdbImageURL,
   type CatalogProvider, type SeasonMatch, type SourceEpisodeRef, type TMDBCandidate,
-  type TMDBEpisodeInfo, type TMDBFeed, type TMDBSignals, type TMDBStatus,
+  type TMDBEpisodeInfo, type TMDBFeed, type TMDBKeyOrigin, type TMDBSignals, type TMDBStatus,
 } from "@nori/core";
 import { log, warn } from "./log";
 
@@ -126,6 +126,13 @@ export interface TmdbConfig {
 export interface TmdbDiagnostics {
   mode: TmdbMode;
   available: boolean;
+  /**
+   * Ob der benutzte Schlüssel eingetragen oder mitgeliefert ist.
+   *
+   * `null` im Serverbetrieb: dort hält der Server den Schlüssel, und welcher
+   * es ist, sagt seine Antwort auf `/api/health` — nicht dieser Dienst.
+   */
+  keyOrigin: TMDBKeyOrigin | null;
   lastStatus: TMDBStatus | null;
   titles: number;
   misses: number;
@@ -161,6 +168,7 @@ class TmdbService {
 
   private client = new TMDBClient(new NoTMDBTransport());
   private config: TmdbConfig = { mode: "off", key: "", serverUrl: "" };
+  private keyOrigin: TMDBKeyOrigin | null = null;
   private lastStatus: TMDBStatus | null = null;
 
   private readonly inflight = new Map<string, Promise<unknown>>();
@@ -187,14 +195,25 @@ class TmdbService {
     // Kein Umschreiben von Adressen und keine Weiterleitungsauswertung: TMDB
     // antwortet direkt, und im Serverbetrieb sitzt der Nori-Server davor.
     const http = new FetchHttpClient({ canReadRedirects: false, timeoutMs: 15_000 });
-    if (config.mode === "direct" && config.key.trim()) {
-      this.client = new TMDBClient(new DirectTMDBTransport(config.key, http));
-    } else if (config.mode === "server" && config.serverUrl) {
+    if (config.mode === "server" && config.serverUrl) {
       this.client = new TMDBClient(new ServerTMDBTransport(config.serverUrl, http));
+      this.keyOrigin = null;
+    } else if (config.mode === "direct") {
+      // Ohne eingetragenen Schlüssel nimmt `DirectTMDBTransport` den
+      // mitgelieferten. Der direkte Weg ist damit immer benutzbar.
+      const transport = new DirectTMDBTransport(config.key, http);
+      this.client = new TMDBClient(transport);
+      this.keyOrigin = transport.keyOrigin;
     } else {
       this.client = new TMDBClient(new NoTMDBTransport());
+      this.keyOrigin = null;
     }
-    log("tmdb", "Zugang", config.mode, this.client.available ? "bereit" : "nicht eingerichtet");
+    log(
+      "tmdb", "Zugang", config.mode,
+      this.client.available ? "bereit" : "aus",
+      this.keyOrigin === "own" ? "eigener Schlüssel"
+        : this.keyOrigin === "builtIn" ? "mitgelieferter Schlüssel" : "",
+    );
   }
 
   get available(): boolean {
@@ -214,6 +233,7 @@ class TmdbService {
     return {
       mode: this.config.mode,
       available: this.available,
+      keyOrigin: this.keyOrigin,
       lastStatus: this.lastStatus,
       titles: Object.keys(this.titles.art).length,
       misses: Object.keys(this.titles.missing).length,

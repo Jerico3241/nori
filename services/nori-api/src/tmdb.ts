@@ -5,14 +5,21 @@
 // Der Fernseher könnte TMDB selbst fragen — der Kern kann beides (siehe
 // `DirectTMDBTransport`). Über den Server ist es trotzdem der bessere Weg:
 //
-// - **Ein Schlüssel statt einer je Gerät.** Wer drei Fernseher hat, trägt den
-//   Schlüssel sonst dreimal ein, und jeder Umzug bedeutet dreimal Tippen mit
-//   einer Fernbedienung.
 // - **Ein Zwischenspeicher für alle.** Die Kennung zu „Frieren" ist auf jedem
 //   Gerät dieselbe. Sie dreimal zu suchen sind zwei Anfragen zu viel.
 // - **Eine Ratenbegrenzung statt mehrerer.** TMDB begrenzt je Schlüssel; ein
 //   Katalogdurchlauf auf drei Geräten liefe sonst in dieselbe Grenze.
-// - **Kein Schlüssel im `localStorage` eines Fernsehers.**
+// - **Ein eigener Schlüssel an einer Stelle.** Wer `NORI_TMDB_KEY` setzt,
+//   trennt seine Ratenbegrenzung von der geteilten Kennung — und muss das nur
+//   einmal tun, nicht je Fernseher.
+//
+// ## Ohne eingetragenen Schlüssel
+//
+// Dann greift der mitgelieferte aus dem Kern (`BUILT_IN_TMDB_KEY`, siehe
+// `shared/nori-core/src/tmdb/key.ts`). Ein frisch aufgesetzter Server kann
+// damit sofort TMDB, ohne dass jemand etwas einträgt — das ist die
+// Entscheidung des Betreibers für dieses private Projekt, und sie gilt auf
+// allen Plattformen gleich.
 //
 // ## Warum das kein offener Weiterreicher ist
 //
@@ -25,11 +32,25 @@
 // ein Client einen fremden Schlüssel unterschieben und den Server als
 // Verschleierung benutzen.
 
-/** Der Schlüssel. Leer heißt: dieser Server kann kein TMDB. */
-const KEY = (process.env.NORI_TMDB_KEY ?? process.env.TMDB_API_KEY ?? "").trim();
+import { resolveTmdbKey, type TMDBKeyOrigin } from "@nori/core";
+
+/**
+ * Der Schlüssel: der eingetragene, sonst der mitgelieferte.
+ *
+ * Es gibt damit keinen Zustand „dieser Server kann kein TMDB" mehr. Die
+ * Auskunft, **welcher** Schlüssel gilt, bleibt: sie steht in `/api/health`,
+ * und der Fernseher zeigt sie in den Einstellungen an.
+ */
+const RESOLVED = resolveTmdbKey(process.env.NORI_TMDB_KEY ?? process.env.TMDB_API_KEY);
+const KEY = RESOLVED.key;
 
 export function hasTMDBKey(): boolean {
   return KEY.length > 0;
+}
+
+/** `"own"`, wenn `NORI_TMDB_KEY` gesetzt ist, sonst `"builtIn"`. */
+export function tmdbKeyOrigin(): TMDBKeyOrigin {
+  return RESOLVED.origin;
 }
 
 /**
@@ -134,9 +155,10 @@ export async function proxyTMDB(path: string, params: URLSearchParams): Promise<
     };
   }
   if (!hasTMDBKey()) {
-    // 503 und nicht 401: der Schlüssel fehlt hier, nicht beim Client. Das
-    // `kind` macht daraus in der Oberfläche „Server hat keinen Schlüssel"
-    // statt „nicht erreichbar".
+    // Kann nach `resolveTmdbKey` nicht mehr vorkommen — der mitgelieferte
+    // Schlüssel ist nie leer. Die Antwort bleibt trotzdem stehen: würde der
+    // mitgelieferte je entfernt, soll der Client „Server hat keinen
+    // Schlüssel" lesen und nicht „nicht erreichbar".
     return {
       status: 503,
       body: JSON.stringify({

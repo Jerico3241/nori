@@ -14,9 +14,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  alignEpisodes, alignmentIsUsable, bestCandidate, bestLogoPath, candidateFromRow,
-  emptyCandidate, isTMDBImage, namedEpisodeTitle, normalizeTitle, pickTmdbSeason,
-  scoreCandidate, searchQueries, stripVariants, tmdbImageURL,
+  BUILT_IN_TMDB_KEY, alignEpisodes, alignmentIsUsable, bestCandidate, bestLogoPath,
+  candidateFromRow, emptyCandidate, isTMDBImage, namedEpisodeTitle, normalizeTitle,
+  pickTmdbSeason, resolveTmdbKey, scoreCandidate, searchQueries, stripVariants,
+  tmdbImageURL,
   type TMDBCandidate, type TMDBEpisodeInfo,
 } from "../src/tmdb/index.js";
 import {
@@ -781,9 +782,9 @@ test("dieselbe Folge in vier Sprachen füllt die Reihe nicht", () => {
 
 // MARK: - Abrufweg
 
-test("ohne Schlüssel wird gar nicht gefragt", async () => {
+test("ohne eingerichteten Zugang wird gar nicht gefragt", async () => {
   const http = new FakeHttp([]);
-  const client = new TMDBClient(new DirectTMDBTransport("", http));
+  const client = new TMDBClient(new NoTMDBTransport());
   assert.equal(client.available, false);
   const { result, status } = await client.findSeries({ title: "Frieren", provider: "aniworld" });
   assert.equal(result, null);
@@ -994,4 +995,45 @@ test("die Anime-Ranglisten grenzen auf Zeichentrick aus Japan ein", async () => 
   assert.ok(call.includes("with_genres=16"));
   assert.ok(call.includes("with_origin_country=JP"));
   assert.ok(call.includes("air_date.gte=2026-01-15"));
+});
+
+// MARK: - Der Schlüssel
+
+test("ohne eigenen Schlüssel greift der mitgelieferte", () => {
+  // Auf einem Fernseher gibt es keine Tastatur: eine App, die vor dem ersten
+  // Bild einen 32-stelligen Schlüssel verlangt, zeigt nie ein Bild.
+  assert.equal(resolveTmdbKey(undefined).origin, "builtIn");
+  assert.equal(resolveTmdbKey(null).origin, "builtIn");
+  assert.equal(resolveTmdbKey("").origin, "builtIn");
+  assert.equal(resolveTmdbKey("   ").origin, "builtIn");
+  assert.equal(resolveTmdbKey(undefined).key, BUILT_IN_TMDB_KEY);
+});
+
+test("ein eigener Schlüssel hat Vorrang", () => {
+  const own = resolveTmdbKey("  eigener-schluessel  ");
+  assert.equal(own.origin, "own");
+  assert.equal(own.key, "eigener-schluessel");
+});
+
+test("der mitgelieferte Schlüssel ist der der Apple-Seite", () => {
+  // Wird er in `TMDBKeyStore.builtIn` getauscht, gehört er hier mitgetauscht —
+  // sonst zeigt der Fernseher zu derselben Serie andere Daten als das iPhone,
+  // und zwar ohne Fehlermeldung.
+  assert.match(BUILT_IN_TMDB_KEY, /^[0-9a-f]{32}$/);
+});
+
+test("der direkte Weg ist damit immer verfügbar", async () => {
+  const http = new FakeHttp([{ match: "search/tv", body: { results: [] } }]);
+  const client = new TMDBClient(new DirectTMDBTransport("", http));
+  assert.equal(client.available, true);
+  await client.search("Frieren");
+  // Angefragt wird mit dem mitgelieferten Schlüssel, nicht mit leerem Feld.
+  assert.ok(http.calls[0].includes(`api_key=${BUILT_IN_TMDB_KEY}`));
+});
+
+test("„aus“ bleibt eine eigene Entscheidung", async () => {
+  // Wer TMDB nicht will, schaltet es ab. Das ist etwas anderes als „noch
+  // nichts eingetragen" — und nur dieser Weg fragt gar nicht.
+  const client = new TMDBClient(new NoTMDBTransport());
+  assert.equal(client.available, false);
 });

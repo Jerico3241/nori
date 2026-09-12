@@ -72,46 +72,35 @@ const EMPTY: CatalogSlice = { items: [], status: "idle", error: null };
 /**
  * Aus Wunsch und Einrichtung den tatsächlichen TMDB-Weg bestimmen.
  *
- * Die beiden Fälle, die sonst stillschweigend nichts täten:
+ * **TMDB ist nie unkonfiguriert.** Ohne eingetragenen Schlüssel greift der
+ * mitgelieferte aus dem Kern (`BUILT_IN_TMDB_KEY`) — auf einem Fernseher gibt
+ * es keine Tastatur, und eine App, die vor dem ersten Bild einen 32-stelligen
+ * Schlüssel verlangt, zeigt nie ein Bild. „Aus" gibt es nur, weil jemand es
+ * ausdrücklich wählt.
  *
- * - „über den Server", aber es ist kein Server eingetragen (der Fernseher
- *   arbeitet direkt an den Quellen). Dann greift der eigene Schlüssel, sofern
- *   einer eingetragen ist.
- * - „direkt", aber kein Schlüssel. Dann gibt es kein TMDB — und die
- *   Einstellungen sagen das, statt einen Weg zu behaupten.
+ * Bleibt ein Fall, der eine Erklärung braucht: „über den Server", aber es ist
+ * keiner eingetragen — dann fragt der Fernseher selbst, und die Einstellungen
+ * sagen das, statt einen Weg zu behaupten, den es nicht gibt.
  */
 export function resolveTmdbRoute(input: {
   wanted: TmdbMode;
   serverUrl: string;
   key: string;
 }): TmdbRoute {
-  const hasServer = Boolean(input.serverUrl);
-  const hasKey = Boolean(input.key.trim());
-
   if (input.wanted === "off") return { wanted: "off", effective: "off", note: "" };
 
   if (input.wanted === "server") {
-    if (hasServer) return { wanted: "server", effective: "server", note: "" };
-    if (hasKey) {
-      return {
-        wanted: "server",
-        effective: "direct",
-        note: "Kein Nori-Server eingetragen — Nori fragt TMDB mit dem eigenen Schlüssel.",
-      };
-    }
+    if (input.serverUrl) return { wanted: "server", effective: "server", note: "" };
     return {
       wanted: "server",
-      effective: "off",
-      note: "Kein Nori-Server und kein eigener Schlüssel — Nori zeigt die Cover der Quellen.",
+      effective: "direct",
+      note: input.key.trim()
+        ? "Kein Nori-Server eingetragen — dieser Fernseher fragt TMDB selbst, mit dem eigenen Schlüssel."
+        : "Kein Nori-Server eingetragen — dieser Fernseher fragt TMDB selbst, mit dem mitgelieferten Schlüssel.",
     };
   }
 
-  if (hasKey) return { wanted: "direct", effective: "direct", note: "" };
-  return {
-    wanted: "direct",
-    effective: "off",
-    note: "Kein Schlüssel eingetragen — Nori zeigt die Cover der Quellen.",
-  };
+  return { wanted: "direct", effective: "direct", note: "" };
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {

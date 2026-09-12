@@ -20,7 +20,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | iOS / iPadOS | **1.19.0** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.15.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **1.1.0** | TV-App mit Fernbedienungsnavigation, TMDB über den Nori-Server; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **1.2.0** | TV-App mit Fernbedienungsnavigation, TMDB über den Nori-Server; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -240,7 +240,7 @@ Zum **Bauen** wird das SDK nicht gebraucht — `npm run webos:package` schnürt 
 cd apps/webos
 npm install
 npm run build
-npm run webos:package     # ergibt tv.nori.app_1.1.0_all.ipk
+npm run webos:package     # ergibt tv.nori.app_1.2.0_all.ipk
 ```
 
 Vom Repository-Stamm aus: `npm run webos:build` und `npm run webos:package`.
@@ -271,11 +271,16 @@ denen „Neu & beliebt" und „Für dich" entstehen. Die Zuordnung liegt im
 gemeinsamen Kern (`shared/nori-core/src/tmdb/`) und ist dieselbe wie auf
 iPhone und Mac.
 
-Der Schlüssel gehört auf den **Server** (`NORI_TMDB_KEY`): dann liegt er an
-einer Stelle statt auf jedem Fernseher, der Zwischenspeicher gilt für alle
-Geräte gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Gerät
-ausgeschöpft. Ein eigener Schlüssel am Gerät bleibt als Rückfall, und „aus" ist
-ein gültiger Zustand: dann zeigt Nori die Cover und Texte der Quellen.
+**Einzurichten ist nichts.** Ein Schlüssel ist mitgeliefert — derselbe, den
+iPhone und Mac benutzen (`BUILT_IN_TMDB_KEY` im Kern, `TMDBKeyStore.builtIn`
+auf der Apple-Seite). Auf einem Fernseher zählt das mehr als sonst: dort gibt
+es keine Tastatur.
+
+Ein **eigener** Schlüssel hat Vorrang und trennt die Ratenbegrenzung von der
+geteilten Kennung — am Server über `NORI_TMDB_KEY`, am Gerät in den
+Einstellungen. Über den Server gilt der Zwischenspeicher zusätzlich für alle
+Fernseher gemeinsam. „Aus" ist die einzige Art, TMDB nicht zu benutzen; dann
+zeigt Nori die Cover und Texte der Quellen.
 
 ### Installation
 
@@ -317,15 +322,15 @@ Gebaut auf Chrome 79 — die Engine von webOS 6. Damit läuft dasselbe Paket auf
 ### Prüfen
 
 ```bash
-npm --prefix shared/nori-core test        # Kern, 117 Tests
+npm --prefix shared/nori-core test        # Kern, 122 Tests
 python3 tools/check-webos-package.py      # Quelltext, Paket, Versionen
 cd apps/webos && npm run build
 npm run mock &                            # Nori-Server und TMDB mit festen Daten
 npm i -D playwright && npx playwright install chromium
-npm run test:tv                           # 127 Prüfungen mit echten LG-Tastencodes
+npm run test:tv                           # 130 Prüfungen mit echten LG-Tastencodes
 ```
 
-Der Fernbedienungslauf legt dabei 20 Bildschirmfotos in
+Der Fernbedienungslauf legt dabei 21 Bildschirmfotos in
 `apps/webos/test-shots/` ab.
 
 ### Architektur

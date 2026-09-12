@@ -7,7 +7,9 @@
 // Jede Eingabe ist eine Knopfreihe, kein Auswahlfeld — ein Dropdown lässt sich
 // mit einer Fernbedienung nur mit Mühe bedienen, weil es den Fokus in eine
 // Liste entführt, die man nicht sieht. Die beiden Textfelder (Serveradresse,
-// TMDB-Schlüssel) sind die Ausnahme; dort öffnet webOS seine eigene Tastatur.
+// eigener TMDB-Schlüssel) sind die Ausnahme; dort öffnet webOS seine eigene
+// Tastatur. Beide sind optional: Nori bringt einen TMDB-Schlüssel mit, und
+// ohne Server arbeitet der Fernseher direkt an den Quellen.
 
 import { LIBRARY_SCHEMA_VERSION, PLAYBACK_SPEEDS, type CatalogProvider } from "@nori/core";
 import { useCallback, useEffect, useState } from "react";
@@ -30,14 +32,14 @@ const LANGS: { value: string; label: string }[] = [
 const HOSTERS = ["VOE", "Vidmoly", "Vidoza", "Lulustream", "Speedfiles", "Filemoon", "Doodstream"];
 const TMDB_MODES: { value: TmdbMode; label: string }[] = [
   { value: "server", label: "Über den Nori-Server" },
-  { value: "direct", label: "Eigener Schlüssel" },
+  { value: "direct", label: "Dieser Fernseher" },
   { value: "off", label: "Aus" },
 ];
 
 /** Die Befunde des TMDB-Clients als deutsche Sätze. */
 const STATUS_TEXT: Record<string, string> = {
   ok: "antwortet",
-  noKey: "kein Schlüssel eingerichtet",
+  noKey: "nicht eingerichtet",
   unauthorized: "Schlüssel abgelehnt (401/403)",
   notFound: "Eintrag dort nicht vorhanden (404)",
   rateLimited: "zu viele Anfragen (429) — Nori wartet",
@@ -67,8 +69,9 @@ export function SettingsPage() {
       setPing(
         `erreichbar (Version ${info.version})`
         + (info.tmdb
-          ? ` · TMDB-Schlüssel vorhanden, ${info.tmdbCacheEntries} Antworten gespeichert`
-          : " · ohne TMDB-Schlüssel"),
+          ? ` · TMDB mit ${info.tmdbKey === "own" ? "eigenem" : "mitgeliefertem"} Schlüssel, `
+            + `${info.tmdbCacheEntries} Antworten gespeichert`
+          : " · ohne TMDB"),
       );
     } catch (cause) {
       setServer(null);
@@ -290,14 +293,16 @@ export function SettingsPage() {
           <p>
             TMDB liefert Poster, Hintergrundbilder, Schriftzüge, Beschreibungen,
             Bewertungen, Folgentitel und Folgenbilder — und die Signale, aus denen
-            „Neu &amp; beliebt" und „Für dich" entstehen. Ohne TMDB zeigt Nori die Cover
-            und Texte der Quellen. Das ist ein gültiger Zustand, kein Fehler.
+            „Neu &amp; beliebt" und „Für dich" entstehen. Ein Schlüssel ist
+            mitgeliefert; hier ist nichts einzurichten. Wer einen eigenen einträgt,
+            benutzt seinen eigenen — das trennt die Ratenbegrenzung von der
+            geteilten Kennung.
           </p>
         </header>
 
         <Row
           label="Woher die Daten kommen"
-          hint="Über den Server liegt der Schlüssel an einer Stelle statt auf jedem Fernseher — und der Zwischenspeicher gilt für alle Geräte."
+          hint="Über den Server gilt der Zwischenspeicher für alle Geräte gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Fernseher ausgeschöpft."
         >
           <SpotArea className="chip-grid" spotlightId="set-tmdb-mode">
             {TMDB_MODES.map((mode) => (
@@ -317,24 +322,40 @@ export function SettingsPage() {
           {tmdbRoute.note ? <p className="field-note">{tmdbRoute.note}</p> : null}
           {settings.tmdbMode === "server" && server && !server.tmdb ? (
             <p className="field-note">
-              Der geprüfte Server hat keinen TMDB-Schlüssel. Auf dem Server
-              <code> NORI_TMDB_KEY</code> setzen — oder hier „Eigener Schlüssel" wählen.
+              Der geprüfte Server kann kein TMDB. Auf dem Server
+              <code> NORI_TMDB_KEY</code> setzen — oder hier „Dieser Fernseher" wählen.
             </p>
           ) : null}
         </Row>
 
         {settings.tmdbMode === "direct" ? (
-          <Row label="TMDB-Schlüssel" hint="Ein v3-Schlüssel von themoviedb.org. Er bleibt auf diesem Fernseher.">
+          <Row
+            label="Eigener TMDB-Schlüssel"
+            hint="Optional. Leer heißt: der mitgelieferte Schlüssel. Ein eigener v3-Schlüssel von themoviedb.org bleibt auf diesem Fernseher."
+          >
             <div className="field-row">
               <input
                 className="spottable"
                 type="password"
                 value={tmdbDraft}
-                placeholder="leer lassen für Quellcover"
-                aria-label="TMDB-Schlüssel"
+                placeholder="leer lassen für den mitgelieferten"
+                aria-label="Eigener TMDB-Schlüssel"
                 onChange={(event) => setTmdbDraft(event.target.value)}
                 onBlur={() => update({ tmdbKey: tmdbDraft })}
               />
+              {tmdbDraft ? (
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="images"
+                  focusKey="tmdb-key-clear"
+                  onClick={() => {
+                    setTmdbDraft("");
+                    update({ tmdbKey: "" });
+                  }}
+                >
+                  Löschen
+                </SpotButton>
+              ) : null}
             </div>
           </Row>
         ) : null}
@@ -342,7 +363,9 @@ export function SettingsPage() {
         <Row label="Zustand" hint="Was Nori bisher zuordnen konnte. Hilft, wenn ein Titel das falsche Bild zeigt.">
           <p className="field-note">
             {diagnostics.available
-              ? `Weg: ${tmdbRoute.effective === "server" ? "Nori-Server" : "eigener Schlüssel"}`
+              ? `Weg: ${tmdbRoute.effective === "server"
+                ? "Nori-Server"
+                : `dieser Fernseher, ${diagnostics.keyOrigin === "own" ? "eigener" : "mitgelieferter"} Schlüssel`}`
               : "Weg: aus"}
             {diagnostics.lastStatus
               ? ` · TMDB ${STATUS_TEXT[diagnostics.lastStatus] ?? diagnostics.lastStatus}`

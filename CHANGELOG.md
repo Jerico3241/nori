@@ -5,7 +5,74 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.1.0**.
+Windows **1.8.0**, LG webOS **1.2.0**.
+
+## [webOS 1.2.0] — 2026-09-12
+
+Nachtrag zu 1.1.0. Dort war TMDB vollständig eingebaut, aber **einzurichten**:
+Wer keinen Nori-Server und keinen eigenen Schlüssel hatte, sah die kleinen
+Cover der Quellen. Auf einem Fernseher ist das derselbe Zustand wie „geht
+nicht" — dort gibt es keine Tastatur, und einen 32-stelligen Hex-Schlüssel mit
+einer Fernbedienung über eine Bildschirmtastatur einzugeben, macht niemand.
+
+Die Apple-Apps haben dafür längst einen mitgelieferten Schlüssel
+(`TMDBKeyStore.builtIn`, dokumentiert in `CLAUDE.md` und als einzige erlaubte
+Zeile in `tools/check-apple-sources.py`). webOS hatte ihn nicht.
+
+### Geändert
+
+- **Der TMDB-Schlüssel ist mitgeliefert.**
+  `shared/nori-core/src/tmdb/key.ts` hält `BUILT_IN_TMDB_KEY` — denselben, den
+  die Apple-Seite benutzt. Damit ist TMDB auf einem frisch installierten
+  Fernseher sofort da: Poster, Hintergrundbilder, Schriftzüge, Beschreibungen,
+  Bewertungen, Folgentitel, Folgenbilder und die Signale für „Neu & beliebt"
+  und „Für dich". Einzurichten ist nichts.
+- **Der Nori-Server ebenso.** Ohne `NORI_TMDB_KEY` greift derselbe
+  mitgelieferte Schlüssel; ein frisch aufgesetzter Server kann sofort TMDB.
+  `/api/health` sagt in `features.tmdbKey`, ob ein eigener oder der
+  mitgelieferte gilt — den Schlüssel selbst gibt der Dienst nie heraus.
+- **Ein eigener Schlüssel hat weiter Vorrang** und heißt in den Einstellungen
+  jetzt so: „Eigener TMDB-Schlüssel", optional, mit „Löschen" daneben. Der Weg
+  heißt nicht mehr „Eigener Schlüssel", sondern „Dieser Fernseher" — er
+  funktioniert ja ohne einen. Wer einen einträgt, trennt seine
+  Ratenbegrenzung von der geteilten Kennung.
+- **„Aus" ist die einzige Art, TMDB nicht zu benutzen.** Vorher konnte der
+  Zustand „nicht eingerichtet" dasselbe bewirken, ohne dass jemand ihn gewählt
+  hatte. Der Unterschied steht jetzt in den Einstellungen: der Weg nennt
+  entweder „Nori-Server", „dieser Fernseher, mitgelieferter Schlüssel",
+  „dieser Fernseher, eigener Schlüssel" — oder „aus".
+
+### Hinzugefügt
+
+- **`tools/check-webos-package.py` prüft auf Schlüssel im Quelltext.** Dieselbe
+  enge Ausnahme wie auf der Apple-Seite: genau die Zeile mit
+  `BUILT_IN_TMDB_KEY` ist erlaubt, jeder zweite einkompilierte Schlüssel fällt
+  auf — auch einer in derselben Datei. Prüfdateien werden nur auf lange
+  Hex-Zeichenketten gelesen: ein Test, der belegt, dass `api_key` aus einer
+  Anfrage **entfernt** wird, muss so eine Zuweisung enthalten.
+- **Und darauf, dass beide Seiten denselben Schlüssel benutzen.** Zwei Kopien
+  einer Zeichenkette laufen auseinander; läuft diese auseinander, zeigt der
+  Fernseher zu derselben Serie andere Daten als das iPhone — ohne
+  Fehlermeldung, weil beide Schlüssel gültig sind.
+- **Fünf Tests** für die Schlüsselauflösung im Kern (122 gesamt) und einer für
+  den Server (13 gesamt). Der Fernbedienungslauf prüft zusätzlich den Zustand
+  eines frisch installierten Fernsehers: keine Einstellungen, kein Server, kein
+  Schlüssel — und TMDB trotzdem eingerichtet. 130 Prüfungen.
+
+### Warum eine neue Nummer
+
+1.1.0 war nie installiert, aber der CI-Lauf des Pull Requests hat dafür ein
+`.ipk` abgelegt. Ein Paket ist ein Paket: zwei mit derselben Nummer und
+unterschiedlichem Inhalt sind hinterher nicht mehr unterscheidbar, und der
+Fernseher installiert das zweite nicht über das erste.
+
+### Was das bedeutet
+
+Der Schlüssel steckt damit im gebauten `.ipk`, und aus dem lässt er sich
+herausziehen. Das ist die Entscheidung des Betreibers für ein privates
+Repository, dieselbe wie auf iPhone und Mac — aufgeschrieben an der
+Deklaration in `key.ts`. Wird das Repository je öffentlich, ist der Schlüssel
+es auch.
 
 ## [webOS 1.1.0] — 2026-09-12
 

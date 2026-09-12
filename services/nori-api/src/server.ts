@@ -21,7 +21,7 @@ import {
   type CatalogProvider, type HosterOption,
 } from "@nori/core";
 import { rewriteM3U8 } from "./playlist.js";
-import { cacheSize, clearTMDBCache, hasTMDBKey, proxyTMDB } from "./tmdb.js";
+import { cacheSize, clearTMDBCache, hasTMDBKey, proxyTMDB, tmdbKeyOrigin } from "./tmdb.js";
 
 setHtmlParser((html: string) => parseHTML(html).document as unknown as Document);
 
@@ -33,7 +33,7 @@ setHtmlParser((html: string) => parseHTML(html).document as unknown as Document)
  * von der Couch aus sehen, ob der Server alt ist — etwa einer ohne
  * `/api/tmdb`.
  */
-export const API_VERSION = "1.1.0";
+export const API_VERSION = "1.2.0";
 
 const PORT = Number(process.env.NORI_API_PORT ?? process.env.PORT ?? 8730);
 const HOST = process.env.NORI_API_HOST ?? "0.0.0.0";
@@ -178,6 +178,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       // kann.
       features: {
         tmdb: hasTMDBKey(),
+        // „own", wenn NORI_TMDB_KEY gesetzt ist, sonst „builtIn". Der
+        // Fernseher zeigt das in den Einstellungen an — den Schlüssel selbst
+        // gibt der Dienst nie heraus.
+        tmdbKey: tmdbKeyOrigin(),
         tmdbCacheEntries: cacheSize(),
       },
       endpoints: [

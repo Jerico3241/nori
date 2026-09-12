@@ -29,14 +29,17 @@ export interface DeviceSettings {
    *   „server"  — der Nori-Server hält den Schlüssel. Der empfohlene Weg: ein
    *               Schlüssel statt einer je Gerät, ein Zwischenspeicher für
    *               alle Fernseher, eine Ratenbegrenzung statt mehrerer.
-   *   „direct"  — dieser Fernseher fragt TMDB selbst, mit eigenem Schlüssel.
-   *               Der Rückfall, wenn kein Server läuft oder der keinen
-   *               Schlüssel hat.
+   *   „direct"  — dieser Fernseher fragt TMDB selbst. Ohne eingetragenen
+   *               Schlüssel mit dem mitgelieferten; einzurichten ist also
+   *               nichts.
    *   „aus"     — keine TMDB-Daten. Ein gültiger Zustand: Nori zeigt dann die
-   *               Cover und Texte der Quellen.
+   *               Cover und Texte der Quellen. Nur, wenn jemand es wählt.
    */
   tmdbMode: TmdbMode;
-  /** Nur für den direkten Weg. Leer heißt: nur Quelldaten. */
+  /**
+   * Ein **eigener** Schlüssel für den direkten Weg. Leer heißt: der
+   * mitgelieferte aus dem Kern (`BUILT_IN_TMDB_KEY`) — nicht „kein TMDB".
+   */
   tmdbKey: string;
   /** Weiche Flächen kosten auf älteren Panels Bilder pro Sekunde. */
   reduceEffects: boolean;
@@ -70,8 +73,8 @@ function read(): DeviceSettings {
     const parsed = JSON.parse(raw) as Partial<DeviceSettings>;
     const merged = { ...DEFAULTS, ...parsed };
     // Ein Stand von vor dem Serverweg kennt `tmdbMode` nicht. Wer dort einen
-    // Schlüssel eingetragen hat, meinte damit „direkt" — die Voreinstellung
-    // „server" würde ihm den Schlüssel stillschweigend abschalten.
+    // eigenen Schlüssel eingetragen hat, meinte damit „dieser Fernseher" — die
+    // Voreinstellung „server" würde ihn stillschweigend übergehen.
     if (parsed.tmdbMode === undefined) {
       merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : DEFAULTS.tmdbMode;
     }

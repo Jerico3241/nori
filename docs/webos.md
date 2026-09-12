@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **1.1.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **1.2.0**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und auf andere Auflösungen mitskalierend.
 
@@ -62,33 +62,57 @@ entspricht `TMDBMatcher.swift`, `TMDBImages.swift`, `TMDBCatalog.swift` und
 `HomeFeed.swift` der Apple-Seite. Es gibt bewusst **keine** dritte Umsetzung:
 die webOS-App und der Nori-Server benutzen beide diese Dateien.
 
-### Drei Wege, einer davon empfohlen
+### Der Schlüssel ist mitgeliefert
 
-| Einstellung | Wo liegt der Schlüssel | Wann |
+**Einzurichten ist nichts.** `shared/nori-core/src/tmdb/key.ts` hält
+`BUILT_IN_TMDB_KEY` — denselben Schlüssel, den iPhone und Mac benutzen
+(`TMDBKeyStore.builtIn`). Ein frisch installierter Fernseher hat damit sofort
+Poster, Hintergrundbilder, Schriftzüge, Beschreibungen, Bewertungen,
+Folgentitel und Folgenbilder.
+
+Auf einem Fernseher wiegt das mehr als auf einem Telefon: dort gibt es keine
+Tastatur, und einen 32-stelligen Hex-Schlüssel mit einer Fernbedienung über
+eine Bildschirmtastatur einzugeben, ist die Sorte Einrichtung, die niemand
+macht.
+
+Was das heißt, gehört dazugesagt: der Schlüssel steckt im gebauten `.ipk` und
+lässt sich daraus herausziehen. Das ist die Entscheidung des Betreibers für ein
+privates Repository — dieselbe wie auf der Apple-Seite, nachzulesen an der
+Deklaration in `key.ts`. `tools/check-webos-package.py` erlaubt genau diese
+eine Zeile; jeder zweite einkompilierte Schlüssel fällt auf, und ein Abgleich
+prüft, dass beide Seiten dieselbe Zeichenkette benutzen.
+
+### Drei Wege
+
+| Einstellung | Wer fragt TMDB | Welcher Schlüssel |
 | --- | --- | --- |
-| **Über den Nori-Server** | auf dem Server, `NORI_TMDB_KEY` | der Normalfall |
-| **Eigener Schlüssel** | im `localStorage` dieses Fernsehers | ohne Server |
-| **Aus** | nirgends | gültiger Zustand |
+| **Über den Nori-Server** | der Server | `NORI_TMDB_KEY`, sonst der mitgelieferte |
+| **Dieser Fernseher** | der Fernseher selbst | der eigene aus den Einstellungen, sonst der mitgelieferte |
+| **Aus** | niemand | — |
 
-Über den Server ist es der bessere Weg, aus vier Gründen: ein Schlüssel statt
-einer je Gerät, ein Zwischenspeicher für alle Fernseher gemeinsam, TMDBs
-Ratenbegrenzung wird einmal statt je Gerät ausgeschöpft, und kein Schlüssel
-liegt im Speicher eines Fernsehers.
+Über den Server ist es der bessere Weg: der Zwischenspeicher gilt für alle
+Fernseher gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Gerät
+ausgeschöpft. Nötig ist er nicht.
+
+Ein **eigener** Schlüssel hat immer Vorrang. Er ist der Weg, die
+Ratenbegrenzung von der geteilten Kennung zu trennen:
 
 ```bash
 cd services/nori-api
-NORI_TMDB_KEY=<v3-Schlüssel> npm run dev
+NORI_TMDB_KEY=<eigener v3-Schlüssel> npm run dev
 ```
 
-`/api/health` sagt danach `features.tmdb: true`, und die Einstellungen des
-Fernsehers zeigen das beim Prüfen der Serveradresse an.
+`/api/health` sagt in `features.tmdbKey`, ob dort ein eigener oder der
+mitgelieferte gilt — den Schlüssel selbst gibt der Dienst nie heraus. Die
+Einstellungen des Fernsehers zeigen es beim Prüfen der Serveradresse an, und
+die Diagnosezeile nennt den tatsächlich benutzten Weg.
 
 `/api/tmdb/<pfad>` ist **kein** offener Weiterreicher: der Pfad wird gegen eine
 Liste geprüft (`services/nori-api/src/tmdb.ts`), `api_key` aus der Anfrage
 verworfen, und die Antworten liegen mit eigener Frist je Pfad im
 Arbeitsspeicher.
 
-**Ohne TMDB** zeigt Nori die Cover und Texte der Quellen. Das ist ein gültiger
+**Mit „Aus"** zeigt Nori die Cover und Texte der Quellen. Das ist ein gültiger
 Zustand, kein Fehler: „Neu & beliebt" erscheint dann nicht, an seiner Stelle
 steht „Neu im Katalog" mit dem Hinweis, dass die Reihenfolge von der Quelle
 kommt. Eine Reihe, die „beliebt" heißt und der Katalogreihenfolge folgt, wäre
@@ -137,7 +161,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_1.1.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_1.2.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -148,7 +172,7 @@ Der Nori-Server daneben:
 ```bash
 cd services/nori-api
 npm install
-NORI_TMDB_KEY=<optional> npm run dev   # hört auf 0.0.0.0:8730
+npm run dev            # hört auf 0.0.0.0:8730, TMDB ohne Einrichtung
 ```
 
 ### Versionsnummer
@@ -203,7 +227,10 @@ entspricht der Zurück-Taste der Fernbedienung.
 5. **Nori einrichten**: beim ersten Start unter *Einstellungen → Verbindung*
    die Adresse des Nori-Servers eintragen, etwa `http://192.168.1.20:8730`, und
    auf **Prüfen** gehen. Fernseher und Server müssen im selben Netz sein. Die
-   Antwort sagt zugleich, ob der Server einen TMDB-Schlüssel hat.
+   Antwort sagt zugleich, welchen TMDB-Schlüssel der Server benutzt.
+
+   Für TMDB selbst ist nichts einzurichten — ohne Server fragt der Fernseher
+   direkt, mit dem mitgelieferten Schlüssel.
 
 ### Fehlersuche
 
@@ -299,7 +326,8 @@ Stile greifen, die Daten ankommen und der Fokus sitzt.
 
 ```bash
 npm --prefix shared/nori-core test     # Kern gegen dieselben Fixtures wie Swift
-python3 tools/check-webos-package.py   # Quelltext, .ipk, appinfo.json, Versionen
+npm --prefix services/nori-api test    # Playlisten, TMDB-Pfadliste, Schlüssel
+python3 tools/check-webos-package.py   # Quelltext, .ipk, Versionen, Schlüssel
 cd apps/webos && npm run typecheck
 ```
 
@@ -326,11 +354,12 @@ Staffelraster den Fokus einsperren, dass nach dem Verlassen des Players kein
 Stream weiterläuft, dass ein Hosterfehler in einem benannten Fehlerzustand
 endet — und dass im ganzen Bild keine orangefarbene Fläche mehr steht.
 
-Dabei entstehen **20 Bildschirmfotos** in `apps/webos/test-shots/`
+Dabei entstehen **21 Bildschirmfotos** in `apps/webos/test-shots/`
 (Bootscreen, Startseite, fokussierte Kachel, Seitenleiste, Entdecken,
 Kalender, Suche, Merkliste, Verlauf, Einstellungen, Staffelwahl, Detailseite,
 ähnliche Titel, Weiterschauen, Player, Player-Drawer, Playerfehler,
-Fehlerzustand, Aufbau über `file://`). Der Ordner liegt nicht im Repository; `NORI_SHOTS=<Ordner>`
+Fehlerzustand, TMDB ohne Einrichtung, Aufbau über `file://`). Der Ordner liegt
+nicht im Repository; `NORI_SHOTS=<Ordner>`
 legt sie woanders ab.
 
 Der Nachbau unter `test/mock-tmdb.mjs` enthält absichtlich die drei Fälle, die

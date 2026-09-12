@@ -869,6 +869,63 @@ const relevant = consoleErrors.filter((e) =>
   !/Failed to load resource|net::ERR|ERR_FAILED|MEDIA_ELEMENT|no supported source|Unable to preventDefault/i.test(e));
 check("Keine Skriptfehler in der Konsole", relevant.length === 0, relevant.slice(0, 3).join(" | "));
 
+// --- 20a. Frisch installiert: TMDB ohne Einrichtung ---------------------
+//
+// Der Zustand, den ein Fernseher nach der Installation hat: keine
+// Einstellungen, kein Server, kein Schlüssel. TMDB muss trotzdem eingerichtet
+// sein — mit dem mitgelieferten Schlüssel. Auf einem Fernseher gibt es keine
+// Tastatur, und eine App, die vor dem ersten Bild einen 32-stelligen
+// Schlüssel verlangt, zeigt nie ein Bild.
+//
+// Geprüft wird der **Weg**, nicht der Abruf: api.themoviedb.org ist von hier
+// nicht erreichbar, und ein Test, der das bräuchte, hinge an einer fremden
+// Verfügbarkeit.
+section("Frisch installiert");
+
+const fresh = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+await fresh.route("https://image.tmdb.org/**", (route) =>
+  route.fulfill({ status: 200, contentType: "image/png", body: PLACEHOLDER }));
+// api.themoviedb.org ist von hier nicht erreichbar; abgewiesen statt
+// dreißig Sekunden Zeitüberschreitung je Abruf.
+await fresh.route("https://api.themoviedb.org/**", (route) => route.abort("failed"));
+await fresh.goto(`${BASE}/#/einstellungen`, { waitUntil: "domcontentloaded" });
+await fresh.waitForTimeout(3500);
+
+const freshState = await fresh.evaluate(() => {
+  const notes = Array.from(document.querySelectorAll(".page.settings .field-note"))
+    .map((node) => node.textContent ?? "");
+  return {
+    stored: localStorage.getItem("nori.webos.settings"),
+    way: notes.find((text) => text.startsWith("Weg:")) ?? "",
+    modes: Array.from(document.querySelectorAll('[data-focus-key^="tmdb-"]'))
+      .map((node) => `${node.textContent?.trim()}${node.classList.contains("selected") ? " ✓" : ""}`),
+  };
+});
+check(
+  "Ohne Einstellungen ist TMDB eingerichtet",
+  freshState.way.includes("mitgelieferter Schlüssel"),
+  freshState.way.trim().slice(0, 110),
+);
+check(
+  "Der Weg heißt „Dieser Fernseher“, nicht „Eigener Schlüssel“",
+  freshState.modes.some((label) => label.startsWith("Dieser Fernseher")),
+  freshState.modes.join(" | "),
+);
+await fresh.screenshot({ path: join(SHOTS, "20-tmdb-ohne-einrichtung.png") });
+await fresh.close();
+
+// Und mit Server: dann gilt der Serverweg, nicht der eigene.
+await goto(page, "#/einstellungen", 1200);
+const serverWay = await page.evaluate(() =>
+  Array.from(document.querySelectorAll(".page.settings .field-note"))
+    .map((node) => node.textContent ?? "")
+    .find((text) => text.startsWith("Weg:")) ?? "");
+check(
+  "Mit Server gilt der Serverweg",
+  serverWay.includes("Nori-Server"),
+  serverWay.trim().slice(0, 110),
+);
+
 // --- 20b. Abstände ohne Flex-`gap` (webOS 6) ----------------------------
 //
 // Chrome 79 kennt `gap` nur im Raster, nicht im Flex-Layout. Nori misst das

@@ -11,19 +11,22 @@
 //
 // ## Zwei Wege zu denselben Daten
 //
-//     DirectTMDBTransport  — der Client fragt api.themoviedb.org selbst und
-//                            braucht dafür einen eigenen Schlüssel.
+//     DirectTMDBTransport  — der Client fragt api.themoviedb.org selbst. Ohne
+//                            eingetragenen Schlüssel mit dem mitgelieferten
+//                            (siehe `key.ts`), also immer verfügbar.
 //     ServerTMDBTransport  — der Client fragt den Nori-Server, der den
 //                            Schlüssel hält und Antworten zwischenspeichert.
 //
-// Für den Fernseher ist der zweite der bessere: der Schlüssel liegt dann an
-// einer Stelle statt auf jedem Gerät, der Zwischenspeicher gilt für alle
-// Geräte gemeinsam, und die Ratenbegrenzung von TMDB wird einmal statt je
-// Fernseher ausgeschöpft.
+// Für den Fernseher ist der zweite der bessere: der Zwischenspeicher gilt dann
+// für alle Geräte gemeinsam, und die Ratenbegrenzung von TMDB wird einmal
+// statt je Fernseher ausgeschöpft. Beide brauchen aber **keine** Einrichtung —
+// auf einem Fernseher gibt es keine Tastatur, und eine App, die vor dem ersten
+// Bild einen 32-stelligen Schlüssel verlangt, zeigt nie ein Bild.
 
 import type { HttpClient } from "../http.js";
 import type { CatalogProvider } from "../models.js";
 import { tmdbImageURL } from "./images.js";
+import { resolveTmdbKey, type TMDBKeyOrigin } from "./key.js";
 import {
   bestCandidate, candidateFromRow, searchQueries, tmdbDate,
   type TMDBCandidate,
@@ -34,7 +37,7 @@ import type { TMDBEpisodeInfo, TMDBSeasonRef } from "./seasons.js";
 export type TMDBStatus =
   /** Antwort mit brauchbarem Inhalt. */
   | "ok"
-  /** Kein Schlüssel eingetragen — es wurde gar nicht gefragt. */
+  /** Kein Zugang eingerichtet — es wurde gar nicht gefragt. */
   | "noKey"
   /** 401 oder 403: der Schlüssel stimmt nicht oder darf das nicht. */
   | "unauthorized"
@@ -87,13 +90,24 @@ async function readJSON(http: HttpClient, url: string): Promise<TMDBReply> {
   }
 }
 
-/** Fragt api.themoviedb.org direkt, mit eigenem Schlüssel. */
+/**
+ * Fragt api.themoviedb.org direkt.
+ *
+ * Ohne eigenen Schlüssel mit dem mitgelieferten — siehe `key.ts`. Dieser Weg
+ * ist damit immer verfügbar, und `available` ist hier nie `false`. Wer TMDB
+ * nicht will, benutzt `NoTMDBTransport`; das ist eine Entscheidung, kein
+ * Mangel an Einrichtung.
+ */
 export class DirectTMDBTransport implements TMDBTransport {
   private readonly key: string;
+  /** Ob der Schlüssel eingetragen oder mitgeliefert ist. Für die Anzeige. */
+  readonly keyOrigin: TMDBKeyOrigin;
   private readonly http: HttpClient;
 
   constructor(key: string, http: HttpClient) {
-    this.key = key.trim();
+    const resolved = resolveTmdbKey(key);
+    this.key = resolved.key;
+    this.keyOrigin = resolved.origin;
     this.http = http;
   }
 
