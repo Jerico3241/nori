@@ -196,4 +196,83 @@ final class TMDBMatcherTests: XCTestCase {
         )
         XCTAssertEqual(index.match(row)?.slug, "daemonenjaeger")
     }
+
+    // MARK: - Alternativtitel als Rettung
+
+    /// Der belegte Fall: `/search/tv?query=Shingeki no Kyojin` liefert genau
+    /// **eine** Zeile, nämlich die richtige (#1429). Deren `name` ist auf
+    /// Deutsch „Attack on Titan", deren `original_name` „進撃の巨人" — zum
+    /// Suchbegriff passt keines von beiden, und die Bewertung verwarf die
+    /// Zeile. Die Umschrift steht ausschließlich in `/alternative_titles`.
+    func testRomajiQueryOnlyMatchesOnceAlternateTitlesAreLoaded() {
+        let bare = TMDBCandidate(id: 1429, name: "Attack on Titan", originalName: "進撃の巨人", posterPath: "/p.jpg")
+        XCTAssertNil(
+            TMDBMatcher.best(in: [bare], query: "Shingeki no Kyojin", kind: .aniworld),
+            "Ohne Alternativtitel ist die Zeile nicht zuzuordnen"
+        )
+
+        var enriched = bare
+        enriched.alternateNames = ["Shingeki no Kyojin", "Angriff auf Titan", "Ataque dos Titãs"]
+        XCTAssertEqual(
+            TMDBMatcher.best(in: [enriched], query: "Shingeki no Kyojin", kind: .aniworld)?.id,
+            1429
+        )
+    }
+
+    /// Dasselbe für Frieren: „Sousou no Frieren" steht bei TMDB unter den
+    /// weiteren Schreibweisen, nicht in `name` oder `original_name`.
+    func testFrierenRomajiMatchesViaAlternateTitle() {
+        var candidate = TMDBCandidate(
+            id: 209867,
+            name: "Frieren - Nach dem Ende der Reise",
+            originalName: "葬送のフリーレン",
+            posterPath: "/p.jpg"
+        )
+        candidate.alternateNames = ["Sousou no Frieren", "Sōsō no Furīren"]
+        XCTAssertEqual(
+            TMDBMatcher.best(in: [candidate], query: "Sousou no Frieren", kind: .aniworld)?.id,
+            209867
+        )
+    }
+
+    /// Alternativtitel dürfen keinen Treffer erzeugen, der am Titel gar nicht
+    /// hängt — sonst zöge die Nachbesserung beliebige Nachbarn heran.
+    func testAlternateTitlesDoNotCreateAMatchOutOfNothing() {
+        var candidate = TMDBCandidate(id: 1, name: "Etwas anderes", originalName: "Etwas anderes", posterPath: "/p.jpg")
+        candidate.alternateNames = ["Noch etwas", "Und noch was"]
+        XCTAssertNil(TMDBMatcher.best(in: [candidate], query: "Shingeki no Kyojin", kind: .aniworld))
+    }
+
+    // MARK: - Die Kette der Suchbegriffe
+
+    /// „Attack on Titan Staffel 2" liefert bei TMDB **null** Zeilen,
+    /// „attack on titan" vier. Die bereinigte Fassung muss deshalb in der
+    /// Kette stehen — vorher war sie es zwar, wurde von der Cover-Suche aber
+    /// nie benutzt.
+    func testQueryChainContainsTheStrippedForm() {
+        let queries = TMDBMatcher.queries(for: "Attack on Titan Staffel 2")
+        XCTAssertEqual(queries.first, "Attack on Titan Staffel 2")
+        XCTAssertTrue(
+            queries.contains { TMDBMatcher.normalize($0) == "attack on titan" },
+            "Kette war: \(queries)"
+        )
+    }
+
+    func testQueryChainKeepsTheSourceTitleInFront() {
+        let queries = TMDBMatcher.queries(for: "Dr. Stone", alternates: ["Doctor Stone"])
+        XCTAssertEqual(queries.first, "Dr. Stone")
+        XCTAssertTrue(queries.contains("Doctor Stone"))
+    }
+
+    /// Ein Treffer ohne Poster ist für die Kennung weiterhin brauchbar — an
+    /// ihr hängen Logo und sämtliche Folgendaten. Nur die Cover-Kachel
+    /// braucht ein Poster.
+    func testCandidateWithoutPosterIsStillAMatchWhenNoPosterIsRequired() {
+        let candidate = TMDBCandidate(id: 42, name: "Ohne Titelbild", posterPath: nil)
+        XCTAssertNil(TMDBMatcher.best(in: [candidate], query: "Ohne Titelbild", kind: .aniworld, requirePoster: true))
+        XCTAssertEqual(
+            TMDBMatcher.best(in: [candidate], query: "Ohne Titelbild", kind: .aniworld, requirePoster: false)?.id,
+            42
+        )
+    }
 }

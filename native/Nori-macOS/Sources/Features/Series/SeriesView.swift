@@ -72,6 +72,10 @@ struct SeriesView: View {
             details = await CoverIndex.shared.detailsLoading(
                 slug: slug,
                 title: loaded.title,
+                // Ohne die Alternativtitel sucht TMDB nur unter dem Namen,
+                // unter dem die Quelle die Serie führt — bei Anime
+                // regelmäßig einer, den TMDB gar nicht kennt.
+                alternates: loaded.alts,
                 kind: providerOverride ?? library.provider
             )
         }
@@ -88,7 +92,11 @@ struct SeriesView: View {
                 // von der Detailseite treffen dann meist.
                 alternates: loaded.alts,
                 season: season,
-                kind: providerOverride ?? library.provider
+                kind: providerOverride ?? library.provider,
+                // Die Folgen der Quelle als Anker: TMDB teilt Anime oft
+                // anders in Staffeln ein, und dann trifft die bloße Nummer
+                // die falsche Folge oder gar keine.
+                sourceEpisodes: loaded.episodes.tmdbSourceEpisodes
             )
             guard !Task.isCancelled, !fetched.isEmpty else { return }
             episodeInfo = fetched

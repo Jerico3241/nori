@@ -269,7 +269,15 @@ struct SeriesView: View {
 
     private func loadArt() async {
         guard let detail else { return }
-        art = await CoverIndex.shared.detailsLoading(slug: slug, title: detail.title, kind: source)
+        art = await CoverIndex.shared.detailsLoading(
+            slug: slug,
+            title: detail.title,
+            // Ohne die Alternativtitel sucht TMDB nur unter dem Namen, unter
+            // dem die Quelle die Serie führt — bei Anime regelmäßig einer,
+            // den TMDB gar nicht kennt.
+            alternates: detail.alts,
+            kind: source
+        )
 
         // Ohne TMDB-Treffer hätte der Kopfbereich weder Breitbild noch Poster
         // und bliebe leer. Der Coverpfad steht schon auf der Detailseite und
@@ -323,7 +331,11 @@ struct SeriesView: View {
             // der Detailseite treffen dann meist.
             alternates: detail.alts,
             season: season,
-            kind: source
+            kind: source,
+            // Die Folgen der Quelle als Anker: TMDB teilt Anime oft anders in
+            // Staffeln ein, und dann trifft die bloße Nummer die falsche
+            // Folge oder gar keine.
+            sourceEpisodes: detail.episodes.tmdbSourceEpisodes
         )
         guard !Task.isCancelled, !loaded.isEmpty else { return }
         episodeInfo = loaded
