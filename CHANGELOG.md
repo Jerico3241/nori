@@ -5,7 +5,40 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.3.0**.
+Windows **1.8.0**, LG webOS **1.3.1**.
+
+## [webOS 1.3.1] — 2026-09-12
+
+Die Seitenleiste, nachgemessen statt nach Augenmaß.
+
+### Behoben
+
+- **Die Auswahl reichte weit über ihr Symbol hinaus.** Eingeklappt war das
+  Feld 83 px breit, das Symbol darin lag bei 34…64 px — rechts davon standen
+  38 px leere Fläche, und die Markierung endete im Nichts. Der Grund war nicht
+  die Breite allein: Abstand (`gap`) und Schriftzug belegten auch eingeklappt
+  Platz. Jetzt ist das Feld eingeklappt 3,5 rem im Quadrat, dasselbe Maß wie
+  das Markenbild darüber und an derselben linken Kante.
+- **Die Marke ragte 23,7 px über die eingeklappte Leiste hinaus.** Das Wort
+  „Nori" stand auch dort im Textfluss; sichtbar wurde es nur nicht, weil es
+  mit `opacity: 0` steht und die Leiste kein `overflow: hidden` hat.
+- **Die Einträge saßen oben angeschlagen.** Die Leiste ist 1080 px hoch, die
+  sieben Einträge zusammen 468 px; darunter blieben über vierhundert Pixel
+  leer. Sie sitzen jetzt auf Bildmitte — auf 540 px genau, weil die Marke
+  dafür aus dem Fluss genommen ist und die Mitte nicht mehr verschiebt.
+
+### Geprüft
+
+Vier neue Prüfungen im Fernbedienungslauf messen genau diese vier Maße, damit
+sie nicht wieder wegdriften: Überhang der Marke, Polster links und rechts des
+Symbols, gemeinsame linke Kante von Symbolfeld und Markenbild, Abstand des
+Eintragsblocks zur Bildmitte. 140 Prüfungen insgesamt, dazu 165 Kern- und 13
+Servertests. Beide Zustände der Leiste habe ich mir als Bildschirmfoto
+angesehen.
+
+Das App-Symbol ist **nicht** geändert: `tools/make-app-icons.py --write`
+erzeugt aus `assets/branding/nori-app-icon.png` bitgleich die Dateien, die
+schon im Paket liegen — webOS zeigt dasselbe Motiv wie iOS, macOS und Windows.
 
 ## [webOS 1.3.0] — 2026-09-12
 

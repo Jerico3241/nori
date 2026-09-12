@@ -375,6 +375,55 @@ for (let i = 0; i < 3; i += 1) await press(page, "right");
 const collapsed = await page.evaluate(() => !document.querySelector(".side-nav")?.classList.contains("expanded"));
 check("Klappt beim Verlassen zu", collapsed);
 
+// Geometrie der eingeklappten Leiste.
+//
+// Drei Maße, die in der Bedienung sofort auffallen und im Quelltext leicht
+// wegdriften: ob die Auswahl ihr Symbol umschließt statt daneben ins Leere zu
+// laufen, ob die Marke innerhalb der Leiste bleibt, und ob die Einträge auf
+// Bildmitte sitzen. Alle drei waren gemessen falsch — die Auswahl 83 px breit
+// um ein 30 px breites Symbol, die Marke 23,7 px über die Leiste hinaus, der
+// Eintragsblock 44 px unter der Bildmitte.
+const geometrie = await page.evaluate(() => {
+  const nav = document.querySelector(".side-nav");
+  const brand = document.querySelector(".brand");
+  const mark = document.querySelector(".brand-mark");
+  const links = Array.from(document.querySelectorAll(".nav-link"));
+  const aktiv = document.querySelector(".nav-link.active") ?? links[0];
+  if (!nav || !brand || !mark || !aktiv || links.length === 0) return null;
+  const feld = aktiv.getBoundingClientRect();
+  const symbol = aktiv.querySelector(".icon").getBoundingClientRect();
+  const oben = links[0].getBoundingClientRect().top;
+  const unten = links[links.length - 1].getBoundingClientRect().bottom;
+  return {
+    ueberhang: brand.getBoundingClientRect().right - nav.getBoundingClientRect().right,
+    links: symbol.left - feld.left,
+    rechts: feld.right - symbol.right,
+    kanteFeld: feld.left,
+    kanteMarke: mark.getBoundingClientRect().left,
+    blockmitte: (oben + unten) / 2,
+    bildmitte: window.innerHeight / 2,
+  };
+});
+
+check("Die Marke bleibt in der Leiste", Boolean(geometrie) && geometrie.ueberhang <= 0,
+  geometrie ? `${geometrie.ueberhang.toFixed(1)} px über die rechte Kante` : "nicht messbar");
+check(
+  "Die Auswahl umschließt ihr Symbol mittig",
+  Boolean(geometrie) && Math.abs(geometrie.links - geometrie.rechts) < 1,
+  geometrie ? `${geometrie.links.toFixed(1)} px links, ${geometrie.rechts.toFixed(1)} px rechts` : "-",
+);
+check(
+  "Symbolfeld und Markenbild stehen auf derselben Kante",
+  Boolean(geometrie) && Math.abs(geometrie.kanteFeld - geometrie.kanteMarke) < 1,
+  geometrie ? `Feld ${geometrie.kanteFeld.toFixed(0)}, Marke ${geometrie.kanteMarke.toFixed(0)}` : "-",
+);
+check(
+  "Die Einträge sitzen auf Bildmitte",
+  Boolean(geometrie) && Math.abs(geometrie.blockmitte - geometrie.bildmitte) < 8,
+  geometrie ? `Block ${geometrie.blockmitte.toFixed(0)}, Bild ${geometrie.bildmitte.toFixed(0)}` : "-",
+);
+await shot(page, "03b-sidebar-eingeklappt");
+
 // --- 8. Alle Seiten anfahren --------------------------------------------
 section("Alle Ansichten");
 

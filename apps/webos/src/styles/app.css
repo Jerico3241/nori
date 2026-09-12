@@ -87,11 +87,24 @@
     12rem 0 9rem rgba(5, 6, 10, 0.45);
 }
 
+/*
+ * Die Marke.
+ *
+ * `overflow: hidden` und eine Breite, die der Leiste folgt: das Wort „Nori"
+ * steht auch eingeklappt im Textfluss, und ohne diese beiden Zeilen ragte die
+ * Marke **23,7 px über die eingeklappte Leiste hinaus** — gemessen, nicht
+ * vermutet. Sichtbar wurde das nur nicht, weil das Wort dort mit `opacity: 0`
+ * steht; die Leiste selbst hat kein `overflow: hidden`.
+ */
 .brand {
+  position: absolute;
+  top: 3rem;
+  left: 1.25rem;
+  right: 1.25rem;
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  padding-left: 0.25rem;
+  overflow: hidden;
 }
 
 .brand-mark {
@@ -119,37 +132,78 @@
   object-fit: cover;
 }
 
+/*
+ * Eingeklappt nimmt das Wort **keinen Platz** ein, nicht nur keine Farbe.
+ *
+ * `max-width` statt `display: none`, damit es sich auf- und zuziehen lässt:
+ * eine Breite ist animierbar, eine Anzeigeart nicht.
+ */
 .brand-word {
+  max-width: 0;
   overflow: hidden;
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   opacity: 0;
   white-space: nowrap;
-  transition: opacity var(--focus-out);
+  transition: opacity var(--focus-out), max-width var(--focus-out);
 }
 
 .side-nav.expanded .brand-word {
+  max-width: 9rem;
   opacity: 1;
 }
 
+/*
+ * Mittig in der Höhe, nicht oben angeschlagen.
+ *
+ * Die Leiste ist 1080 px hoch und die sieben Einträge zusammen 468 px; oben
+ * angeschlagen blieben darunter über vierhundert Pixel leer, und der Blick
+ * fiel auf eine Spalte, die im obersten Drittel endet. Mittig liegt sie auf
+ * Augenhöhe des Inhalts daneben — und die Marke bleibt oben, wo eine Marke
+ * hingehört, ohne die Mitte zu verschieben (siehe `.brand`).
+ */
 .nav-links {
   display: flex;
   flex: 1;
   flex-direction: column;
+  justify-content: center;
   gap: 0.625rem;
   width: 100%;
 }
 
+/*
+ * Eingeklappt ein Quadrat um das Symbol, ausgeklappt eine Zeile.
+ *
+ * Vorher war das Feld in beiden Zuständen `width: 100%` — eingeklappt also
+ * 83 px breit, während das Symbol darin bei 34…64 px lag. Rechts davon standen
+ * 38 px leere Fläche: die Auswahl reichte weit über ihr Symbol hinaus und
+ * endete im Nichts. Der Grund war nicht die Breite allein, sondern dass
+ * Abstand (`gap`) und Schriftzug auch eingeklappt Platz belegten.
+ *
+ * Jetzt ist das Feld eingeklappt 3,5 rem im Quadrat — dasselbe Maß wie das
+ * Markenbild darüber, und an derselben linken Kante. Die Auswahl umschließt
+ * damit genau ihr Symbol.
+ */
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  width: 100%;
-  padding: 0.875rem;
+  justify-content: center;
+  gap: 0;
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
   border-radius: 1rem;
   color: var(--muted);
   text-align: left;
+  transition: width var(--focus-out), gap var(--focus-out), padding var(--focus-out);
+}
+
+.side-nav.expanded .nav-link {
+  justify-content: flex-start;
+  gap: 1rem;
+  width: 100%;
+  padding: 0 0.8rem;
 }
 
 .nav-link .icon {
@@ -158,16 +212,19 @@
   height: 1.9rem;
 }
 
+/* Wie beim Markenwort: eingeklappt kein Platz, nicht nur keine Farbe. */
 .nav-label {
+  max-width: 0;
   overflow: hidden;
   font-size: 1.25rem;
   font-weight: 600;
   opacity: 0;
   white-space: nowrap;
-  transition: opacity var(--focus-out);
+  transition: opacity var(--focus-out), max-width var(--focus-out);
 }
 
 .side-nav.expanded .nav-label {
+  max-width: 10rem;
   opacity: 1;
 }
 
@@ -1772,8 +1829,13 @@ button[aria-disabled="true"] {
 :root[data-flex-gap="no"] .hero-pages > * + * { margin-left: 0.625rem; }
 :root[data-flex-gap="no"] .field-row > * + * { margin-left: 0.75rem; }
 :root[data-flex-gap="no"] .search-bar > * + * { margin-left: 1rem; }
-:root[data-flex-gap="no"] .brand > * + * { margin-left: 0.875rem; }
-:root[data-flex-gap="no"] .nav-link > * + * { margin-left: 1rem; }
+/*
+ * Nur ausgeklappt: eingeklappt belegen Markenwort und Schriftzug keinen Platz,
+ * und ein Rand dahinter schöbe das Feld wieder über die Leiste hinaus — genau
+ * der Fehler, den die Breitenbegrenzung oben behebt.
+ */
+:root[data-flex-gap="no"] .side-nav.expanded .brand > * + * { margin-left: 0.875rem; }
+:root[data-flex-gap="no"] .side-nav.expanded .nav-link > * + * { margin-left: 1rem; }
 :root[data-flex-gap="no"] .switch > * + * { margin-left: 0.875rem; }
 :root[data-flex-gap="no"] .calendar-item > * + *,
 :root[data-flex-gap="no"] .history-item > * + * { margin-left: 1.25rem; }
