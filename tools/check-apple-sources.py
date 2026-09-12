@@ -658,6 +658,71 @@ def check_deployment_targets() -> None:
             )
 
 
+def check_pbxproj_identifiers() -> None:
+    """Keine Kennung zweimal, und keine Quelldatei ohne Build-Eintrag.
+
+    Die Xcode-Projekte vergeben kurze Kennungen von Hand (`AB07`, `AC42`)
+    statt der üblichen 24-stelligen Hex-Kennungen. Das ist lesbar, hat aber
+    eine Falle: zwei Zweige, die gleichzeitig Dateien hinzufügen, leiten ihre
+    freien Nummern von **derselben** Basis ab und vergeben dieselben.
+
+    Git merkt davon nichts — die Zeilen stehen an verschiedenen Stellen und
+    lassen sich konfliktfrei zusammenführen. Xcode löst eine doppelte Kennung
+    dann auf genau eine Datei auf, und die andere wird stillschweigend nicht
+    mehr übersetzt. Im Build sieht das aus wie ein fehlender Typ irgendwo
+    ganz woanders: „cannot find 'CatalogService' in scope", während die Datei
+    unverändert im Ordner liegt.
+
+    Genau so ist der Lauf `Build iOS` einmal rot geworden, nachdem der
+    Katalog-Umbau und der Kalender-Umbau kurz nacheinander gelandet waren.
+    """
+    projects = [
+        ("iOS", ROOT / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj"),
+        ("macOS", ROOT / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj"),
+    ]
+    reference = re.compile(r"^\t\t(A[BC]\d+) /\* (.+?) \*/ = \{isa = PBX(BuildFile|FileReference)", re.M)
+
+    for label, path in projects:
+        if not path.is_file():
+            continue
+        src = path.read_text()
+
+        owners: dict[str, set[str]] = {}
+        for identifier, name, _ in reference.findall(src):
+            # „Foo.swift in Sources" und „Foo.swift" gehören derselben Datei.
+            owners.setdefault(identifier, set()).add(name.removesuffix(" in Sources"))
+
+        for identifier, names in sorted(owners.items()):
+            if len(names) > 1:
+                add(
+                    "ERROR",
+                    f"{label}/project.pbxproj",
+                    f"Kennung {identifier} ist an mehrere Dateien vergeben: "
+                    f"{', '.join(sorted(names))}. Xcode übersetzt dann nur eine davon. "
+                    "Eine der beiden auf eine freie Nummer umschreiben.",
+                )
+
+        # Eine Datei, die referenziert, aber nicht gebaut wird, fehlt im
+        # Ergebnis genauso — nur ohne doppelte Kennung als Hinweis.
+        referenced = {
+            name
+            for identifier, name, kind in reference.findall(src)
+            if kind == "FileReference" and name.endswith(".swift")
+        }
+        built = {
+            name.removesuffix(" in Sources")
+            for identifier, name, kind in reference.findall(src)
+            if kind == "BuildFile"
+        }
+        for name in sorted(referenced - built):
+            add(
+                "ERROR",
+                f"{label}/project.pbxproj",
+                f"{name} ist als Datei eingetragen, steht aber in keiner Sources-Phase "
+                "und wird deshalb nicht übersetzt.",
+            )
+
+
 def main() -> int:
     if not IOS.is_dir() or not MAC.is_dir():
         print("Quellordner nicht gefunden – bitte aus dem Repo-Wurzelverzeichnis aufrufen.", file=sys.stderr)
@@ -678,6 +743,7 @@ def main() -> int:
     check_app_icons()
     check_icon_declared()
     check_deployment_targets()
+    check_pbxproj_identifiers()
 
     errors = [p for p in problems if p[0] == "ERROR"]
     warnings = [p for p in problems if p[0] == "WARN"]
