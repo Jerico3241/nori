@@ -281,7 +281,11 @@ check("Player-Abbau: kein Video läuft weiter", strayVideos === 0, `${strayVideo
 const stored = await page.evaluate(() => {
   try { return JSON.parse(localStorage.getItem("nori.library") ?? "{}"); } catch { return {}; }
 });
-check("Bibliothek: Schema v4", stored.version === 4, `version ${stored.version}`);
+// Die Zahl gehört zu `LibraryStore.schemaVersion` und `LIBRARY_SCHEMA_VERSION`;
+// beide stehen auf 6, ebenso `config/contract.json`. Diese Zeile war bei 4
+// stehen geblieben und schlug dadurch dauerhaft fehl — womit sie eine echte
+// Schemaregression nicht mehr hätte bemerken können.
+check("Bibliothek: Schema v6", stored.version === 6, `version ${stored.version}`);
 check("Bibliothek: Merkliste gespeichert", Array.isArray(stored.favorites) && stored.favorites.length > 0,
   JSON.stringify(stored.favorites));
 
