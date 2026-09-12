@@ -451,14 +451,20 @@ final class LibraryStore {
     private func load() {
         guard let data = try? Data(contentsOf: url),
               let stored = try? JSONDecoder().decode(LibraryData.self, from: data) else {
+            // Erster Start. Die Gerätekennung wird sofort festgeschrieben:
+            // entstünde sie erst bei der ersten Änderung, hätte jeder Start bis
+            // dahin eine andere, und in Drive läge für dasselbe Gerät bei jedem
+            // Lauf eine weitere Datei.
             deviceId = UUID().uuidString
+            preferenceStamps = SyncPreference.allCases.reduce(into: [:]) { $0[$1.rawValue] = 0 }
+            persist()
             return
         }
         apply(stored)
         modifiedAt = stored.modifiedAt ?? 0
-        adoptSyncMeta(stored)
+        let issued = adoptSyncMeta(stored)
         let migrated = (stored.version ?? 1) < Self.schemaVersion
-        if migrated || progress.count != stored.progress.count { persist() }
+        if migrated || issued || progress.count != stored.progress.count { persist() }
     }
 
     /// Die Sync-Angaben aus einer geladenen Datei übernehmen — und das
@@ -474,9 +480,14 @@ final class LibraryStore {
     /// würde jede spätere Änderung an *einer* Einstellung alle anderen
     /// mit frischmachen — wer heute die Sprache umstellt, überschriebe damit
     /// den Hoster, den ein anderes Gerät gestern bewusst gewählt hat.
-    private func adoptSyncMeta(_ stored: LibraryData) {
+    /// Gibt zurück, ob eine neue Gerätekennung vergeben wurde — dann muss die
+    /// Datei geschrieben werden, sonst bekäme der nächste Start wieder eine
+    /// andere.
+    @discardableResult
+    private func adoptSyncMeta(_ stored: LibraryData) -> Bool {
         let meta = stored.sync
-        deviceId = meta?.deviceId?.isEmpty == false ? meta!.deviceId! : UUID().uuidString
+        let existing = meta?.deviceId.flatMap { $0.isEmpty ? nil : $0 }
+        deviceId = existing ?? UUID().uuidString
         historyClearedAt = meta?.historyClearedAt ?? 0
         progressClearedAt = meta?.progressClearedAt ?? 0
         recentsRemoved = meta?.recentsRemoved ?? [:]
@@ -498,6 +509,7 @@ final class LibraryStore {
                     FavoriteMark(isFavorite: true, updatedAt: stamp, addedAt: stamp)
             }
         }
+        return existing == nil
     }
 
     private func apply(_ bag: LibraryData) {
