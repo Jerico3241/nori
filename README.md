@@ -20,7 +20,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | iOS / iPadOS | **1.19.0** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.15.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **1.0.0** | TV-App mit Fernbedienungsnavigation; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **1.1.0** | TV-App mit Fernbedienungsnavigation, TMDB über den Nori-Server; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -240,7 +240,7 @@ Zum **Bauen** wird das SDK nicht gebraucht — `npm run webos:package` schnürt 
 cd apps/webos
 npm install
 npm run build
-npm run webos:package     # ergibt tv.nori.app_1.0.0_all.ipk
+npm run webos:package     # ergibt tv.nori.app_1.1.0_all.ipk
 ```
 
 Vom Repository-Stamm aus: `npm run webos:build` und `npm run webos:package`.
@@ -255,13 +255,27 @@ setzen.
 ```bash
 cd services/nori-api
 npm install
-npm run dev               # hört auf 0.0.0.0:8730
+NORI_TMDB_KEY=<optional> npm run dev   # hört auf 0.0.0.0:8730
 ```
 
 Die Adresse wird in der App unter *Einstellungen → Verbindung* eingetragen.
 Alternativ steht dort „Direkt vom Fernseher" — dann benutzt der Client denselben
 Kern selbst, was ohne Einrichtung auskommt, aber vom Verhalten des Geräts und
 des Hosters abhängt.
+
+### TMDB
+
+Poster, Hintergrundbilder, Schriftzüge, Beschreibungen, Bewertungen,
+Folgentitel und Folgenbilder kommen von TMDB — und mit ihnen die Signale, aus
+denen „Neu & beliebt" und „Für dich" entstehen. Die Zuordnung liegt im
+gemeinsamen Kern (`shared/nori-core/src/tmdb/`) und ist dieselbe wie auf
+iPhone und Mac.
+
+Der Schlüssel gehört auf den **Server** (`NORI_TMDB_KEY`): dann liegt er an
+einer Stelle statt auf jedem Fernseher, der Zwischenspeicher gilt für alle
+Geräte gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Gerät
+ausgeschöpft. Ein eigener Schlüssel am Gerät bleibt als Rückfall, und „aus" ist
+ein gültiger Zustand: dann zeigt Nori die Cover und Texte der Quellen.
 
 ### Installation
 
@@ -299,6 +313,20 @@ Alles von Nori trägt das Präfix `[Nori:webOS]`.
 
 Gebaut auf Chrome 79 — die Engine von webOS 6. Damit läuft dasselbe Paket auf
 **webOS 6 bis 26**. Auf einem echten Gerät ist der Stand noch nicht erprobt.
+
+### Prüfen
+
+```bash
+npm --prefix shared/nori-core test        # Kern, 117 Tests
+python3 tools/check-webos-package.py      # Quelltext, Paket, Versionen
+cd apps/webos && npm run build
+npm run mock &                            # Nori-Server und TMDB mit festen Daten
+npm i -D playwright && npx playwright install chromium
+npm run test:tv                           # 127 Prüfungen mit echten LG-Tastencodes
+```
+
+Der Fernbedienungslauf legt dabei 20 Bildschirmfotos in
+`apps/webos/test-shots/` ab.
 
 ### Architektur
 
