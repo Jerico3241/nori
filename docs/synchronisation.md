@@ -1,7 +1,7 @@
 # Bibliothek zwischen Geräten abgleichen
 
 Merkliste, Verlauf, Fortschritt und Einstellungen liegen in einer einzigen
-Datei: `~/Library/Application Support/Nori/library.json`, Schema v4, mit einem
+Datei: `~/Library/Application Support/Nori/library.json`, Schema v5, mit einem
 Zeitstempel `modifiedAt`. Ein Abgleich muss deshalb nur zwei Dinge können —
 die Datei irgendwo ablegen und sie wieder holen. Genau das verlangt
 `LibrarySyncProvider`:

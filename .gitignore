@@ -46,3 +46,6 @@ Nori.exe
 *.ipk
 apps/webos/dist/
 shared/nori-core/dist/
+
+# Screenshots des Fernbedienungslaufs (npm run test:tv)
+apps/webos/shot-*.png
