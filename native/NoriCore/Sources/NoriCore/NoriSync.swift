@@ -36,36 +36,45 @@ final class GoogleDriveSync {
     /// Anmeldung selbst gerade tut.
     let engine: LibrarySyncEngine
 
-    /// `nil`, solange keine Client-ID hinterlegt ist. Dann bietet die
-    /// Oberfläche keine Anmeldung an, statt eine anzubieten, die sicher
-    /// scheitert.
-    private let configuration: GoogleOAuthConfiguration?
-    private let authorization: GoogleAuthorization?
+    /// Die hinterlegte Client-ID, oder `nil`, solange keine da ist.
+    ///
+    /// Beobachtbar, weil sie sich im Betrieb ändern kann: sie wird in den
+    /// Einstellungen eingetragen und nicht nur beim Bauen gesetzt. Ohne das
+    /// bliebe die Seite nach dem Eintragen auf „nicht eingerichtet" stehen.
+    private(set) var clientId: String?
+
+    private var authorization: GoogleAuthorization?
     private let store: LibraryStore
     private let tokenStore: GoogleTokenStore
+
+    /// Wie das Anmeldefenster gebaut wird — als Fabrik, nicht als fertiges
+    /// Objekt.
+    ///
+    /// Auf iOS hängt die Rückleitungsadresse an der Client-ID. Ein einmal
+    /// gebautes Anmeldefenster wäre nach dem Eintragen einer ID also auf die
+    /// alte geeicht — oder auf gar keine.
+    private let makePresenter: (GoogleOAuthConfiguration) -> GoogleSignInPresenter?
 
     private(set) var isAuthorizing = false
     private(set) var authorizationError: String?
 
-    var isConfigured: Bool { configuration != nil }
+    var isConfigured: Bool { clientId != nil }
     var status: LibrarySyncStatus { engine.status }
     var lastSuccessfulSync: Double? { engine.lastSuccessfulSync }
     var lastWarning: String? { engine.lastWarning }
 
     init(
         store: LibraryStore,
-        presenter: GoogleSignInPresenter?,
-        configuration: GoogleOAuthConfiguration? = .fromBundle(),
+        makePresenter: @escaping (GoogleOAuthConfiguration) -> GoogleSignInPresenter?,
         tokenStore: GoogleTokenStore = KeychainTokenStore(),
         bookkeeping: SyncBookkeeping = UserDefaultsBookkeeping()
     ) {
         self.store = store
         self.tokenStore = tokenStore
-        self.configuration = configuration
+        self.makePresenter = makePresenter
         self.engine = LibrarySyncEngine(store: store, bookkeeping: bookkeeping)
-        self.authorization = configuration.map {
-            GoogleAuthorization(configuration: $0, tokenStore: tokenStore, presenter: presenter)
-        }
+        self.clientId = GoogleClientIDStore.current
+        rebuildAuthorization()
 
         // Der Store meldet Änderungen, der Zeitplan entscheidet, wann daraus
         // ein Upload wird. Ohne das müsste entweder jede Änderung sofort ins
@@ -76,6 +85,53 @@ final class GoogleDriveSync {
             Task { @MainActor in engine?.noteChange() }
         }
     }
+
+    private func rebuildAuthorization() {
+        guard let clientId else {
+            authorization = nil
+            return
+        }
+        let configuration = GoogleOAuthConfiguration(clientId: clientId, redirectURI: "")
+        authorization = GoogleAuthorization(
+            configuration: configuration,
+            tokenStore: tokenStore,
+            presenter: makePresenter(configuration)
+        )
+    }
+
+    /// Eine Client-ID eintragen. Gibt einen Fehlertext zurück, oder `nil`, wenn
+    /// es geklappt hat.
+    ///
+    /// Geprüft wird vorher: auf iOS wird aus der Client-ID die
+    /// Rückleitungsadresse abgeleitet, und steht dort etwas anderes, öffnet
+    /// sich das Anmeldefenster und kommt nie zurück.
+    @discardableResult
+    func saveClientId(_ raw: String) -> String? {
+        if let problem = GoogleClientIDStore.validationError(for: raw) { return problem }
+        guard GoogleClientIDStore.save(raw) else {
+            return "Der Schlüsselbund hat die Ablage abgelehnt."
+        }
+        clientId = GoogleClientIDStore.current
+        authorizationError = nil
+        rebuildAuthorization()
+        return nil
+    }
+
+    /// Die eingetragene Client-ID entfernen.
+    ///
+    /// Trennt dieses Gerät gleich mit: die Tokens gehören zu genau dieser
+    /// Client-ID und wären danach wertlos.
+    func clearClientId() async {
+        await disconnectDevice()
+        GoogleClientIDStore.clear()
+        clientId = GoogleClientIDStore.current
+        authorizationError = nil
+        rebuildAuthorization()
+    }
+
+    /// Wurde die Client-ID von Hand eingetragen? Dann lässt sie sich auch
+    /// wieder entfernen — eine aus der Build-Einstellung nicht.
+    var clientIdIsUserProvided: Bool { GoogleClientIDStore.isUserProvided }
 
     /// Eine bestehende Verbindung nach dem Start wieder aufnehmen.
     ///
@@ -90,7 +146,7 @@ final class GoogleDriveSync {
     /// Mit Google Drive verbinden.
     func connect() async {
         guard let authorization else {
-            authorizationError = "Für diese Nori-Fassung ist keine Google-Client-ID hinterlegt."
+            authorizationError = "Es ist keine Google-Client-ID hinterlegt."
             return
         }
         isAuthorizing = true
@@ -140,7 +196,7 @@ final class GoogleDriveSync {
     static func text(for error: Error) -> String {
         switch error {
         case GoogleOAuthError.notConfigured:
-            return "Für diese Nori-Fassung ist keine Google-Client-ID hinterlegt."
+            return "Es ist keine Google-Client-ID hinterlegt."
         case GoogleOAuthError.noRefreshToken:
             return "Google hat keine dauerhafte Berechtigung erteilt. Bitte erneut verbinden."
         case GoogleOAuthError.stateMismatch:

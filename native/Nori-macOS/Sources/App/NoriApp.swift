@@ -132,15 +132,14 @@ struct NoriApp: App {
         library.appVersion = Bundle.main
             .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
-        // Ohne hinterlegte Client-ID gibt es keinen Anmeldeweg — und die
-        // Einstellungen bieten dann auch keinen an, statt einen anzubieten,
-        // der sicher scheitert.
-        let configuration = GoogleOAuthConfiguration.fromBundle()
-        let presenter = configuration.map { _ in LoopbackSignInPresenter() }
-
         _library = State(initialValue: library)
-        _sync = State(initialValue: GoogleDriveSync(
-            store: library, presenter: presenter, configuration: configuration))
+        // Der Loopback-Server hängt nicht an der Client-ID, wohl aber daran,
+        // dass überhaupt eine hinterlegt ist. Gebaut wird er deshalb erst,
+        // wenn eine feststeht — aus der Build-Einstellung oder aus den
+        // Einstellungen.
+        _sync = State(initialValue: GoogleDriveSync(store: library) { _ in
+            LoopbackSignInPresenter()
+        })
     }
 
     var body: some Scene {

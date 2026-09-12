@@ -225,3 +225,45 @@ final class GoogleAuthorizationTests: XCTestCase {
         }
     }
 }
+
+/// Die Prüfung der eingetragenen Client-ID.
+///
+/// Sie ist keine Förmlichkeit: auf iOS wird aus der Client-ID die
+/// Rückleitungsadresse abgeleitet. Steht dort etwas anderes, öffnet sich das
+/// Anmeldefenster und kommt nie zurück — ein Fehler, der aussieht wie „Google
+/// ist kaputt" und in Wahrheit ein Tippfehler ist.
+final class GoogleClientIDTests: XCTestCase {
+
+    func testAWellFormedClientIdIsAccepted() {
+        XCTAssertNil(GoogleClientIDStore.validationError(
+            for: "123456-abc.apps.googleusercontent.com"))
+        // Umschließende Leerzeichen kommen beim Einfügen ständig mit.
+        XCTAssertNil(GoogleClientIDStore.validationError(
+            for: "  123456-abc.apps.googleusercontent.com \n"))
+    }
+
+    func testTheEmptyValueIsRejected() {
+        XCTAssertNotNil(GoogleClientIDStore.validationError(for: ""))
+        XCTAssertNotNil(GoogleClientIDStore.validationError(for: "   "))
+    }
+
+    func testSomethingThatIsNotAClientIdIsRejected() {
+        XCTAssertNotNil(GoogleClientIDStore.validationError(for: "falsche-eingabe"))
+        XCTAssertNotNil(GoogleClientIDStore.validationError(for: "1234.apps.google.com"))
+        // Der reine Suffix ohne Kennung davor ist keine Client-ID.
+        XCTAssertNotNil(GoogleClientIDStore.validationError(
+            for: ".apps.googleusercontent.com"))
+    }
+
+    /// Aus der Client-ID entsteht die Rückleitungsadresse für iOS. Genau
+    /// deshalb muss die Form stimmen.
+    func testTheRedirectSchemeIsDerivedFromTheClientId() {
+        let configuration = GoogleOAuthConfiguration(
+            clientId: "123456-abc.apps.googleusercontent.com", redirectURI: "")
+        XCTAssertEqual(configuration.reversedClientId, "com.googleusercontent.apps.123456-abc")
+
+        let unsinn = GoogleOAuthConfiguration(clientId: "falsch", redirectURI: "")
+        XCTAssertNil(unsinn.reversedClientId,
+                     "Ohne erkennbare Client-ID darf keine Rückleitung entstehen")
+    }
+}

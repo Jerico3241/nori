@@ -30,6 +30,9 @@ export function SettingsPage() {
   const [serverDraft, setServerDraft] = useState(settings.serverUrl);
   const [ping, setPing] = useState<string | null>(null);
   const [tmdbDraft, setTmdbDraft] = useState(settings.tmdbKey);
+  const [clientIdDraft, setClientIdDraft] = useState("");
+  const [clientSecretDraft, setClientSecretDraft] = useState("");
+  const [credentialsNote, setCredentialsNote] = useState<string | null>(null);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["playback", "connection"]), []);
 
@@ -302,9 +305,63 @@ export function SettingsPage() {
           <span className="field-note">{syncStatusLabel(sync)}</span>
         </Row>
 
-        {sync.pending ? <DeviceCodePanel /> : (
+        {!sync.isConfigured ? (
+          <>
+            {/*
+              Hier stand vorher nur ein Knopf, der eine Meldung zeigte. Das war
+              eine Sackgasse: wer ein fertiges .ipk installiert, hat keine
+              Build-Variable und kam deshalb nie zu einer Anmeldung.
+            */}
+            <Row
+              label="Google-Client-ID"
+              hint="Aus einem eigenen Google-Cloud-Projekt, OAuth-Client vom Typ „Fernseher und Geräte mit eingeschränkter Eingabe“. Endet auf .apps.googleusercontent.com"
+            >
+              <div className="field-row">
+                <input
+                  className="spottable"
+                  type="text"
+                  value={clientIdDraft}
+                  placeholder="123456-abc.apps.googleusercontent.com"
+                  aria-label="Google-Client-ID"
+                  onChange={(event) => setClientIdDraft(event.target.value)}
+                />
+              </div>
+            </Row>
+            <Row
+              label="Client-Secret"
+              hint="Googles Fluss für Fernseher verlangt es. Es liegt unverschlüsselt im Speicher dieser App."
+            >
+              <div className="field-row">
+                <input
+                  className="spottable"
+                  type="password"
+                  value={clientSecretDraft}
+                  placeholder="GOCSPX-…"
+                  aria-label="Google-Client-Secret"
+                  onChange={(event) => setClientSecretDraft(event.target.value)}
+                />
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="credentials-save"
+                  onClick={() => {
+                    const problem = sync.saveCredentials(clientIdDraft, clientSecretDraft);
+                    setCredentialsNote(problem);
+                    if (!problem) {
+                      setClientIdDraft("");
+                      setClientSecretDraft("");
+                    }
+                  }}
+                >
+                  Zugangsdaten sichern
+                </SpotButton>
+              </div>
+            </Row>
+            {credentialsNote ? <p className="field-note">{credentialsNote}</p> : null}
+          </>
+        ) : sync.pending ? <DeviceCodePanel /> : (
           <SpotArea className="filter-row" spotlightId="set-sync">
-            {sync.status === "disconnected" || !sync.isConfigured ? (
+            {sync.status === "disconnected" ? (
               <SpotButton
                 focusRoute={ROUTE}
                 focusArea="sync"
@@ -353,12 +410,31 @@ export function SettingsPage() {
 
         {sync.message ? <p className="field-note">{sync.message}</p> : null}
         {sync.lastWarning ? <p className="field-note">{sync.lastWarning}</p> : null}
-        {!sync.isConfigured ? (
+        {sync.isConfigured ? (
+          <>
+            {/* Kein Geheimnis: die Client-ID steht in jeder Anmeldeadresse. Sie
+                zu sehen ist der einzige Weg zu bemerken, dass beim Einfügen
+                etwas verrutscht ist. Das Secret wird nicht angezeigt. */}
+            <p className="field-note">Client-ID: {sync.clientId}</p>
+            {sync.credentialsFromDevice ? (
+              <SpotArea className="filter-row" spotlightId="set-sync-credentials">
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="credentials-clear"
+                  onClick={() => sync.clearCredentials()}
+                >
+                  Zugangsdaten entfernen
+                </SpotButton>
+              </SpotArea>
+            ) : null}
+          </>
+        ) : (
           <p className="field-note">
-            Für diese Nori-Fassung sind keine Google-Zugangsdaten hinterlegt. Die Bibliothek
-            funktioniert weiterhin vollständig, nur eben auf diesem Fernseher.
+            Ohne Zugangsdaten funktioniert die Bibliothek vollständig weiter, nur eben auf
+            diesem Fernseher. Die Schritte stehen in docs/google-drive-sync.md.
           </p>
-        ) : null}
+        )}
       </section>
 
       <section className="settings-section">

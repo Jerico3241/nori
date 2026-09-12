@@ -15,10 +15,11 @@
 // das iPhone nicht mehr mitkommt.
 
 import {
+  clientIdValidationError, clientSecretValidationError,
   GoogleAuthError, GoogleDeviceAuthorization, GoogleDriveClient, GoogleDriveSnapshotStore,
   LibrarySyncEngine,
-  type DeviceAuthorization, type GoogleTokens, type GoogleTokenStore, type LibrarySyncStatus,
-  type SyncBookkeeping,
+  type DeviceAuthorization, type GoogleDeviceConfiguration, type GoogleTokens,
+  type GoogleTokenStore, type LibrarySyncStatus, type SyncBookkeeping,
 } from "@nori/core";
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
@@ -27,6 +28,8 @@ import { useLibrary } from "./library";
 import { log, warn } from "../services/log";
 
 const TOKEN_KEY = "nori.google.tokens";
+const CLIENT_ID_KEY = "nori.google.clientId";
+const CLIENT_SECRET_KEY = "nori.google.clientSecret";
 
 /**
  * Wo die Tokens liegen.
@@ -76,20 +79,43 @@ const bookkeeping: SyncBookkeeping = {
   },
 };
 
+function readItem(key: string): string {
+  try {
+    return localStorage.getItem(key)?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /**
- * Zugangsdaten aus der Build-Variablen — nicht aus dem Quelltext.
+ * Die Zugangsdaten: eingetragene zuerst, sonst die aus der Build-Variablen.
  *
- * Zum `client_secret`: Googles Fluss für Fernseher verlangt ihn, anders als der
- * für native Apps. Das steht im Widerspruch zu der Regel, dass in einer App
- * kein Client-Secret liegen darf, und lässt sich nicht auflösen — ohne den Wert
- * antwortet Google mit `invalid_client`. Er wird deshalb nicht eingecheckt,
- * sondern beim Bauen gesetzt. Warum das vertretbar ist und was es bedeutet,
- * steht in `docs/google-drive-sync.md`.
+ * Der erste Weg ist der wichtigere. Wer ein fertiges `.ipk` installiert, hat
+ * keine Build-Variable — und ohne die Eingabe im Gerät gäbe es auf dem
+ * Fernseher überhaupt keine Möglichkeit, sich jemals anzumelden.
+ *
+ * Zum `client_secret`: Googles Fluss für Fernseher verlangt ihn, anders als
+ * der für native Apps. Das lässt sich nicht auflösen — ohne den Wert antwortet
+ * Google mit `invalid_client`. Er wird nicht eingecheckt; warum das vertretbar
+ * ist und was es bedeutet, steht in `docs/google-drive-sync.md`.
+ *
+ * Abgelegt wird im privaten Speicher der App. Der ist von anderen Apps nicht
+ * lesbar, aber **nicht verschlüsselt** — webOS bietet Web-Apps keinen
+ * Schlüsselbund. Für die Tokens gilt dasselbe und steht ebenso in der
+ * Dokumentation.
  */
-const configuration = {
-  clientId: (import.meta.env.VITE_NORI_GOOGLE_TV_CLIENT_ID as string | undefined) ?? "",
-  clientSecret: (import.meta.env.VITE_NORI_GOOGLE_TV_CLIENT_SECRET as string | undefined) ?? "",
-};
+function readCredentials(): GoogleDeviceConfiguration {
+  const stored = { clientId: readItem(CLIENT_ID_KEY), clientSecret: readItem(CLIENT_SECRET_KEY) };
+  if (stored.clientId && stored.clientSecret) return stored;
+  return {
+    clientId: (import.meta.env.VITE_NORI_GOOGLE_TV_CLIENT_ID as string | undefined) ?? "",
+    clientSecret: (import.meta.env.VITE_NORI_GOOGLE_TV_CLIENT_SECRET as string | undefined) ?? "",
+  };
+}
+
+function credentialsAreUserProvided(): boolean {
+  return Boolean(readItem(CLIENT_ID_KEY)) && Boolean(readItem(CLIENT_SECRET_KEY));
+}
 
 export interface SyncContextValue {
   isConfigured: boolean;
@@ -101,6 +127,13 @@ export interface SyncContextValue {
   pending: DeviceAuthorization | null;
   /** Was während des Verbindens angezeigt wird. */
   message: string | null;
+  /** Die hinterlegte Client-ID, oder leer. Kein Geheimnis — sie darf sichtbar sein. */
+  clientId: string;
+  /** Wurden die Zugangsdaten im Gerät eingetragen und lassen sich entfernen? */
+  credentialsFromDevice: boolean;
+  /** Gibt einen Fehlertext zurück, oder `null`, wenn es geklappt hat. */
+  saveCredentials(clientId: string, clientSecret: string): string | null;
+  clearCredentials(): void;
   connect(): void;
   cancelConnect(): void;
   syncNow(): void;
@@ -125,9 +158,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const libraryRef = useRef(library);
   libraryRef.current = library;
 
+  // Die Zugangsdaten können sich im Betrieb ändern — sie werden in den
+  // Einstellungen eingetragen. Ein einmal gebautes Autorisierungsobjekt wäre
+  // danach auf die alten geeicht, deshalb hängt es am Zustand.
+  const [credentials, setCredentials] = useState<GoogleDeviceConfiguration>(readCredentials);
+
   const authorization = useMemo(() => new GoogleDeviceAuthorization({
-    configuration, tokenStore: new LocalTokenStore(),
-  }), []);
+    configuration: credentials, tokenStore: new LocalTokenStore(),
+  }), [credentials]);
 
   const engine = useMemo(() => new LibrarySyncEngine({
     host: {
@@ -165,11 +203,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     return () => library.setChangeListener(null);
   }, [library, engine]);
 
-  const abort = useRef<AbortController | null>(null);
-
   const connect = useCallback(() => {
     if (!authorization.isConfigured) {
-      setMessage("Für diese Nori-Fassung sind keine Google-Zugangsdaten hinterlegt.");
+      setMessage("Es sind keine Google-Zugangsdaten hinterlegt.");
       return;
     }
     const controller = new AbortController();
@@ -201,6 +237,45 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     })();
   }, [attach, authorization, engine]);
 
+  // Die laufende Abfrage beim Gerätefluss, damit sie sich abbrechen lässt.
+  const abort = useRef<AbortController | null>(null);
+
+  const saveCredentials = useCallback((clientId: string, clientSecret: string): string | null => {
+    const problem = clientIdValidationError(clientId) ?? clientSecretValidationError(clientSecret);
+    if (problem) return problem;
+    try {
+      localStorage.setItem(CLIENT_ID_KEY, clientId.trim());
+      localStorage.setItem(CLIENT_SECRET_KEY, clientSecret.trim());
+    } catch (cause) {
+      warn("app", "Zugangsdaten nicht speicherbar", cause);
+      return "Der Speicher des Fernsehers hat die Ablage abgelehnt.";
+    }
+    // Eine laufende Abfrage gehört noch zu den alten Zugangsdaten.
+    abort.current?.abort();
+    abort.current = null;
+    setPending(null);
+    setMessage(null);
+    setCredentials(readCredentials());
+    return null;
+  }, []);
+
+  const clearCredentials = useCallback(() => {
+    abort.current?.abort();
+    abort.current = null;
+    try {
+      localStorage.removeItem(CLIENT_ID_KEY);
+      localStorage.removeItem(CLIENT_SECRET_KEY);
+    } catch (cause) {
+      warn("app", "Zugangsdaten nicht löschbar", cause);
+    }
+    // Die Tokens gehören zu genau diesen Zugangsdaten und wären danach wertlos.
+    authorization.disconnectDevice();
+    engine.disconnect();
+    setPending(null);
+    setMessage(null);
+    setCredentials(readCredentials());
+  }, [authorization, engine]);
+
   const cancelConnect = useCallback(() => {
     abort.current?.abort();
     abort.current = null;
@@ -217,6 +292,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     lastWarning,
     pending,
     message,
+    clientId: credentials.clientId,
+    credentialsFromDevice: credentialsAreUserProvided(),
+    saveCredentials,
+    clearCredentials,
     connect,
     cancelConnect,
     syncNow: () => engine.syncNow(),
@@ -231,7 +310,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       setMessage(null);
     },
   }), [authorization, status, lastSuccessfulSync, lastError, lastWarning, pending, message,
-       connect, cancelConnect, engine]);
+       credentials, saveCredentials, clearCredentials, connect, cancelConnect, engine]);
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }

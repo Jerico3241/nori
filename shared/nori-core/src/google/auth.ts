@@ -96,6 +96,42 @@ export class GoogleAuthError extends Error {
   }
 }
 
+/** Woran eine Google-Client-ID zu erkennen ist. */
+export const GOOGLE_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
+
+/**
+ * Sieht der Wert überhaupt nach einer Google-Client-ID aus?
+ *
+ * Dieselbe Regel wie `GoogleClientIDStore.validationError` im Swift-Kern. Sie
+ * ist keine Förmlichkeit: mit einer falschen Client-ID antwortet Google auf
+ * die Anfrage nach dem Gerätecode mit `invalid_client`, und auf dem Fernseher
+ * sieht das aus wie „der Abgleich ist kaputt".
+ */
+export function clientIdValidationError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "Bitte eine Client-ID eintragen.";
+  if (!trimmed.endsWith(GOOGLE_CLIENT_ID_SUFFIX)) {
+    return `Eine Google-Client-ID endet auf „${GOOGLE_CLIENT_ID_SUFFIX}".`;
+  }
+  if (trimmed.length <= GOOGLE_CLIENT_ID_SUFFIX.length) return "Die Client-ID ist unvollständig.";
+  return null;
+}
+
+/**
+ * Das Client-Secret des Fernseher-Clients.
+ *
+ * Eine feste Form gibt Google nicht zu — die heute ausgegebenen beginnen mit
+ * `GOCSPX-`, aber darauf zu bestehen hiesse, eine künftige Schreibweise
+ * abzulehnen. Geprüft wird deshalb nur, was sicher falsch ist: leer, oder mit
+ * Leerraum mittendrin, wie er beim Einfügen aus einer Zwischenablage entsteht.
+ */
+export function clientSecretValidationError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "Bitte ein Client-Secret eintragen.";
+  if (/\s/.test(trimmed)) return "Das Client-Secret enthält Leerzeichen.";
+  return null;
+}
+
 export function tokensAreValid(tokens: GoogleTokens | null, now: number, leewayMs = 60_000): boolean {
   // Eine Minute Vorlauf: ein Token, das in fünf Sekunden abläuft, ist
   // praktisch abgelaufen — die Anfrage ist noch unterwegs, wenn es so weit ist.

@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  clientIdValidationError, clientSecretValidationError,
   GoogleAuthError, GoogleDeviceAuthorization, MemoryTokenStore, tokensAreValid,
 } from "../src/google/auth.js";
 
@@ -259,4 +260,32 @@ test("Ein Token, das gleich abläuft, gilt als abgelaufen", () => {
   assert.equal(tokensAreValid(tokens, 0), true);
   assert.equal(tokensAreValid(tokens, 99_000), false, "Zehn Sekunden Restlaufzeit gelten noch als gültig");
   assert.equal(tokensAreValid(null, 0), false);
+});
+
+// --- Zugangsdaten prüfen ----------------------------------------------------
+//
+// Dieselben Fälle wie `GoogleClientIDTests.swift`. Mit einer falschen
+// Client-ID antwortet Google mit `invalid_client`, und auf dem Fernseher sieht
+// das aus wie „der Abgleich ist kaputt" statt wie ein Tippfehler.
+
+test("Eine wohlgeformte Client-ID wird angenommen", () => {
+  assert.equal(clientIdValidationError("123456-abc.apps.googleusercontent.com"), null);
+  // Umschliessender Leerraum kommt beim Einfügen ständig mit.
+  assert.equal(clientIdValidationError("  123456-abc.apps.googleusercontent.com \n"), null);
+});
+
+test("Was keine Client-ID ist, wird abgewiesen", () => {
+  assert.ok(clientIdValidationError(""));
+  assert.ok(clientIdValidationError("   "));
+  assert.ok(clientIdValidationError("falsche-eingabe"));
+  assert.ok(clientIdValidationError("1234.apps.google.com"));
+  // Der reine Suffix ohne Kennung davor ist keine Client-ID.
+  assert.ok(clientIdValidationError(".apps.googleusercontent.com"));
+});
+
+test("Das Client-Secret darf nicht leer sein und keinen Leerraum enthalten", () => {
+  assert.equal(clientSecretValidationError("GOCSPX-abcdef"), null);
+  assert.equal(clientSecretValidationError("  GOCSPX-abcdef  "), null);
+  assert.ok(clientSecretValidationError(""));
+  assert.ok(clientSecretValidationError("GOCSPX abcdef"));
 });

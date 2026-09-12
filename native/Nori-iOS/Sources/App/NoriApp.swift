@@ -11,16 +11,15 @@ struct NoriApp: App {
         // ein Gerät etwas schreibt, das die anderen nicht verstehen.
         library.appVersion = NoriBuild.version
 
-        // Ohne hinterlegte Client-ID gibt es keinen Anmeldeweg — und die
-        // Einstellungen bieten dann auch keinen an, statt einen anzubieten,
-        // der sicher scheitert.
-        let configuration = GoogleOAuthConfiguration.fromBundle()
-        let presenter = configuration?.reversedClientId
-            .map(WebAuthenticationSignInPresenter.init(reversedClientId:))
-
         _library = State(initialValue: library)
-        _sync = State(initialValue: GoogleDriveSync(
-            store: library, presenter: presenter, configuration: configuration))
+        // Das Anmeldefenster wird erst gebaut, wenn eine Client-ID feststeht —
+        // aus ihr entsteht die Rückleitungsadresse. Die ID kann aus der
+        // Build-Einstellung kommen oder in den Einstellungen eingetragen
+        // werden; beides landet hier.
+        _sync = State(initialValue: GoogleDriveSync(store: library) { configuration in
+            configuration.reversedClientId
+                .map(WebAuthenticationSignInPresenter.init(reversedClientId:))
+        })
     }
 
     var body: some Scene {

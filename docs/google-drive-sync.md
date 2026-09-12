@@ -91,25 +91,63 @@ Keiner dieser Werte steht im Quelltext, und keiner gehört ins Repository.
 
 ### Apple
 
-Build-Einstellung `GOOGLE_CLIENT_ID`, von der `Info.plist` beider Targets als
-`$(GOOGLE_CLIENT_ID)` übernommen — genau wie `TMDB_API_KEY`. Zum Beispiel in
-einer nicht eingecheckten `Local.xcconfig` oder als Umgebungsvariable im Build:
+Zwei Wege, und der erste ist der wichtigere.
+
+**In der App eintragen.** *Mehr → Synchronisation → Einrichten* (macOS:
+*Einstellungen → Synchronisation*). Die Client-ID wird dort eingefügt und
+bleibt auf dem Gerät. Das ist der Weg für jede fertig installierte App — wer
+Nori nicht selbst übersetzt, hat keine Build-Einstellung, und ohne diesen Weg
+gäbe es auf dem iPhone überhaupt keine Möglichkeit, sich anzumelden.
+
+Geprüft wird beim Eintragen, dass die ID auf `.apps.googleusercontent.com`
+endet. Das ist keine Förmlichkeit: auf iOS entsteht aus ihr die
+Rückleitungsadresse, und steht dort etwas anderes, öffnet sich das
+Anmeldefenster und kommt nie zurück.
+
+**Beim Bauen setzen.** Build-Einstellung `GOOGLE_CLIENT_ID`, von der
+`Info.plist` beider Targets als `$(GOOGLE_CLIENT_ID)` übernommen — genau wie
+`TMDB_API_KEY`. Zum Beispiel in einer nicht eingecheckten `Local.xcconfig`
+oder als Umgebungsvariable:
 
 ```bash
 xcodebuild -project native/Nori-iOS/Nori.xcodeproj -scheme Nori \
   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com build
 ```
 
-Fehlt die Einstellung, bleibt in der `Info.plist` der unaufgelöste Platzhalter
-`$(GOOGLE_CLIENT_ID)` stehen. Nori erkennt das und zeigt „nicht eingerichtet",
-statt eine Anmeldung anzubieten, die sicher scheitert.
+Die eingetragene ID hat Vorrang vor der aus dem Build. Ist keine von beiden da,
+bleibt in der `Info.plist` der unaufgelöste Platzhalter `$(GOOGLE_CLIENT_ID)`
+stehen; Nori erkennt das und bietet die Einrichtung an, statt eine Anmeldung
+anzubieten, die sicher scheitert.
+
+**Wo sie liegt.** Im Schlüsselbund — und wenn der nicht zur Verfügung steht, in
+den Voreinstellungen der App. Der zweite Weg ist kein Versehen: ohne
+Signierteam bekommt eine iOS-App keine `application-identifier`-Berechtigung,
+und dann lehnt der Schlüsselbund **jede** Ablage ab. Vertretbar ist der
+Rückfall nur, weil eine Client-ID kein Geheimnis ist; für **Tokens** gibt es
+ihn ausdrücklich nicht.
 
 Ein URL-Schema muss **nicht** in die `Info.plist`:
 `ASWebAuthenticationSession` fängt die Rückleitung selbst ab.
 
 ### webOS
 
-Vite-Variablen beim Bauen:
+Ebenfalls zwei Wege, und auch hier ist der erste der wichtigere.
+
+**Am Fernseher eintragen.** *Einstellungen → Synchronisation*. Dort stehen zwei
+Felder: Client-ID und Client-Secret. Wer ein fertiges `.ipk` installiert, hat
+keine Build-Variable — ohne diesen Weg gäbe es auf dem Fernseher keine
+Möglichkeit, sich jemals anzumelden.
+
+Geprüft wird wie auf Apple, dass die Client-ID auf
+`.apps.googleusercontent.com` endet, und beim Secret, dass es nicht leer ist
+und keinen Leerraum enthält (der kommt beim Einfügen aus einer Zwischenablage
+gern mit).
+
+Die Client-ID wird danach angezeigt — sie ist kein Geheimnis, und sie zu sehen
+ist der einzige Weg zu bemerken, dass beim Einfügen etwas verrutscht ist. Das
+Secret wird **nicht** angezeigt.
+
+**Beim Bauen setzen.** Vite-Variablen:
 
 ```bash
 VITE_NORI_GOOGLE_TV_CLIENT_ID=1234-xyz.apps.googleusercontent.com \
@@ -119,11 +157,22 @@ npm --prefix apps/webos run build
 
 Am besten über eine `apps/webos/.env.local` — die steht in `.gitignore`.
 
+Eingetragene Werte haben Vorrang vor denen aus dem Build, und „Zugangsdaten
+entfernen" räumt beide wieder weg und trennt das Gerät gleich mit: die Tokens
+gehören zu genau diesen Zugangsdaten und wären danach wertlos.
+
+**Wo sie liegen.** Im privaten Speicher der App — von anderen Apps nicht
+lesbar, aber **nicht verschlüsselt**. Für das Secret gilt damit dasselbe wie
+für die Tokens (Abschnitt 4). Schlimmer als die Lage ohnehin schon ist wird es
+dadurch nicht: ein beim Bauen gesetztes Secret liegt im `.ipk` und damit
+ebenso offen.
+
 ### Was öffentlich ist und was nicht
 
 | Wert | Öffentlich? | Darf ins Repository? |
 | --- | --- | --- |
 | Client-ID (alle Plattformen) | ja, sie steht in jeder Anmeldeadresse | **nein** — gehört zum Projekt des Betreibers |
+| Client-ID im Gerät (Schlüsselbund oder Voreinstellungen) | ja | wird nicht abgeglichen und nie hochgeladen |
 | Client-Secret (nur webOS) | nein | **nein, unter keinen Umständen** |
 | Access Token, Refresh Token | nein | **nein** |
 | `deviceId` | harmlos, zufällig | steht ohnehin nur in der Bibliothek |
@@ -367,7 +416,8 @@ gelten für jeden Client, der sie so anfragt.
 | `access_denied` beim Zustimmen | Konto nicht als Testnutzer eingetragen | Im Zustimmungsbildschirm ergänzen. |
 | `invalid_scope` | Der Bereich ist für den Clienttyp nicht erlaubt | Der Gerätefluss erlaubt nur wenige Bereiche; `drive.appdata` gehört dazu. |
 | `invalid_grant` beim Erneuern | Zugriff widerrufen, Passwort geändert, lange nicht benutzt | Neu verbinden. Nori räumt den wertlosen Token selbst weg. |
-| „nicht eingerichtet" | Build-Variable fehlt | Abschnitt 2. |
+| „nicht eingerichtet" | Keine Client-ID hinterlegt | In der App eintragen oder beim Bauen setzen — Abschnitt 2. |
+| „Der Schlüsselbund hat die Ablage abgelehnt" | App ohne Signierteam gebaut | Tritt seit dem Rückfall auf die Voreinstellungen nicht mehr auf; bei Tokens bleibt der Schlüsselbund Voraussetzung. |
 | „neuerer Stand in der Cloud" | Ein anderes Gerät hat mit neuerem Schema geschrieben | Diese Nori-Fassung aktualisieren. Sie lädt bewusst nicht hoch, um nichts wegzuwerfen. |
 | Abgleich bleibt „offline" | Kein Netz, DNS, oder TLS auf dem Fernseher | Lokal ist alles da; beim nächsten Netz geht es weiter. |
 | Zwei Dateien für ein Gerät | Sollte nicht vorkommen | Nori erkennt seine Datei am `deviceId` in `appProperties` wieder. Überzählige lassen sich gefahrlos löschen. |
