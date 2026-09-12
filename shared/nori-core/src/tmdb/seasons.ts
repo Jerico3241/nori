@@ -197,17 +197,35 @@ function comparableTitles(episode: SourceEpisodeRef): string[] {
 }
 
 /**
+ * Mindestens so viele übereinstimmende Titel, sonst gilt kein Versatz als
+ * belegt. Dieselbe Zahl wie `TMDBSeasonMap.minimumAnchors` in Swift.
+ */
+const MINIMUM_ANCHORS = 3;
+
+/** Und mindestens dieser Anteil der benennbaren Quellfolgen. */
+const MINIMUM_SHARE = 0.5;
+
+/**
  * Quellfolgen auf TMDB-Folgen legen.
  *
  * Zuerst wird über die Folgentitel geprüft, ob die TMDB-Zählung versetzt ist:
  * bei „Attack on Titan Final Season Part 2" beginnt die Quelle wieder bei
- * Folge 1, TMDB zählt ab 17 weiter. Ein Versatz gilt nur als erkannt, wenn
- * **mindestens zwei** Titel auf denselben Versatz zeigen — ein einzelner
- * Treffer kann ein gleichnamiger Recap sein.
+ * Folge 1, TMDB zählt ab 17 weiter.
  *
- * Danach wird nach Nummer plus Versatz zugeordnet. Folgen ohne Gegenstück
- * bleiben ohne Eintrag; das ist der Normalfall, wenn die Quelle mehr Folgen
- * führt als die TMDB-Staffel.
+ * Wann ein Versatz als **belegt** gilt, steht in `config/contract.json` und
+ * gleichlautend in `TMDBSeasonMap.offset` auf der Swift-Seite. Drei Bedingungen
+ * zugleich:
+ *
+ * 1. Mindestens `MINIMUM_ANCHORS` übereinstimmende Titel — oder, wenn die
+ *    Staffel überhaupt weniger benannte Folgen hat, alle davon.
+ * 2. Mindestens `MINIMUM_SHARE` der benennbaren Quellfolgen.
+ * 3. Kein zweiter Versatz mit gleich vielen Belegen. Zwei gleich gut belegte
+ *    Versätze sind kein Ergebnis, sondern ein Münzwurf.
+ *
+ * Wird keiner belegt, bleibt es bei Versatz 0 — also der Zählung, die beide
+ * Seiten ohnehin behaupten. Danach wird nach Nummer plus Versatz zugeordnet.
+ * Folgen ohne Gegenstück bleiben ohne Eintrag; das ist der Normalfall, wenn die
+ * Quelle mehr Folgen führt als die TMDB-Staffel.
  */
 export function alignEpisodes(
   sourceEpisodes: SourceEpisodeRef[],
@@ -231,29 +249,43 @@ export function alignEpisodes(
 
   const offsets = new Map<number, number>();
   let matches = 0;
+  let namedSources = 0;
   for (const episode of sourceEpisodes) {
-    for (const key of comparableTitles(episode)) {
-      const hits = titleIndex.get(key);
-      // Nur eindeutige Titel zählen: ein Titel, der bei TMDB zweimal
-      // vorkommt, belegt keinen Versatz.
-      if (!hits || hits.length !== 1) continue;
-      matches += 1;
-      const offset = hits[0] - episode.number;
-      offsets.set(offset, (offsets.get(offset) ?? 0) + 1);
-      break;
+    const keys = comparableTitles(episode);
+    if (keys.length === 0) continue;
+    namedSources += 1;
+    // Je Quellfolge zählt jeder Versatz höchstens einmal — sonst zählte eine
+    // Folge, deren deutscher und englischer Titel bei TMDB gleich heißen,
+    // doppelt.
+    const seen = new Set<number>();
+    for (const key of keys) {
+      for (const number of titleIndex.get(key) ?? []) {
+        const offset = number - episode.number;
+        if (seen.has(offset)) continue;
+        seen.add(offset);
+        offsets.set(offset, (offsets.get(offset) ?? 0) + 1);
+      }
     }
+    if (seen.size > 0) matches += 1;
   }
 
+  // Nach Belegen sortiert, bei Gleichstand der kleinere Betrag zuerst — damit
+  // die Reihenfolge nicht von der Einfügereihenfolge der Map abhängt und
+  // TypeScript und Swift dieselbe Rangliste bilden.
+  const ranked = [...offsets.entries()].sort((a, b) =>
+    a[1] === b[1] ? Math.abs(a[0]) - Math.abs(b[0]) : b[1] - a[1]);
+
   let offset = 0;
-  let best = 0;
-  for (const [value, count] of offsets) {
-    if (count > best || (count === best && value === 0)) {
-      best = count;
-      offset = value;
-    }
+  const top = ranked[0];
+  if (top && namedSources > 0) {
+    const enoughAnchors = top[1] >= Math.min(MINIMUM_ANCHORS, namedSources);
+    const enoughShare = top[1] >= namedSources * MINIMUM_SHARE;
+    // Ein zweiter Versatz mit gleich vielen Belegen ist keine Zuordnung.
+    // Häufig bei Serien, deren Folgen alle „Folge n" heißen — die filtert
+    // `namedEpisodeTitle` zwar heraus, aber nicht jede Wiederholung.
+    const unambiguous = !(ranked.length > 1 && ranked[1][1] === top[1]);
+    if (enoughAnchors && enoughShare && unambiguous) offset = top[0];
   }
-  // Ein einzelner Titeltreffer bestätigt die Staffel, aber keinen Versatz.
-  if (best < 2) offset = 0;
 
   const pairs = new Map<number, TMDBEpisodeInfo>();
   for (const episode of sourceEpisodes) {

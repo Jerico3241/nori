@@ -174,8 +174,12 @@ enum TMDBMatcher {
             #"\s*\b(19|20)\d{2}\b\s*$"#,
             #"\s*\b(staffel|season|saison|serie|part|teil|cour)\s+\d+\b"#,
             #"\s*\b\d+\s*(staffel|season)\b"#,
-            #"\s*\b(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b"#,
-            #"\s*\b(the\s+)?final\s+season\b"#,
+            // Der bestimmte Artikel gehört mit in den Ausdruck, nicht in eine
+            // eigene Zeile dahinter: „The Final Season" wurde vorher von der
+            // Zeile darüber zu „the" abgeräumt, und übrig blieb
+            // „attack on titan the" — als Suchbegriff schlechter als der
+            // bereinigte Titel, um dessentwillen der ganze Schritt existiert.
+            #"\s*\b(the\s+)?(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b"#,
             #"\s*\b\d+(st|nd|rd|th)\s+season\b"#,
         ]
         for pattern in patterns {

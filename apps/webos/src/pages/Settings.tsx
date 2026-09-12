@@ -21,7 +21,13 @@ import { covers } from "../services/covers";
 import { tmdb, type TmdbMode } from "../services/tmdb";
 import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
+import { syncStatusLabel, useSync } from "../state/sync";
 import { useSettings } from "../state/settings";
+
+/** „1 Folge", „2 Folgen". Eine Zahl mit falschem Plural liest sich wie ein Fehler. */
+function folgen(count: number): string {
+  return count === 1 ? "1 Folge" : `${count} Folgen`;
+}
 
 const ROUTE = "settings";
 const LANGS: { value: string; label: string }[] = [
@@ -50,6 +56,7 @@ export function SettingsPage() {
   const { settings, update, reset } = useSettings();
   const { tmdbRoute } = useData();
   const library = useLibrary();
+  const sync = useSync();
   const [serverDraft, setServerDraft] = useState(settings.serverUrl);
   const [ping, setPing] = useState<string | null>(null);
   const [server, setServer] = useState<ServerInfo | null>(null);
@@ -57,6 +64,9 @@ export function SettingsPage() {
   const [dataNote, setDataNote] = useState<string | null>(null);
   // Hochgezählt, damit die Diagnosezeile nach dem Leeren neu gelesen wird.
   const [tick, setTick] = useState(0);
+  const [clientIdDraft, setClientIdDraft] = useState("");
+  const [clientSecretDraft, setClientSecretDraft] = useState("");
+  const [credentialsNote, setCredentialsNote] = useState<string | null>(null);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["playback", "connection"]), []);
 
@@ -426,6 +436,151 @@ export function SettingsPage() {
 
       <section className="settings-section">
         <header>
+          <h2>Synchronisation</h2>
+          <p>
+            Merkliste, Verlauf und Fortschritt über Google Drive mit iPhone, iPad und Mac
+            teilen. Ohne Netz funktioniert Nori vollständig weiter.
+          </p>
+        </header>
+
+        <Row label="Zustand">
+          <span className="field-note">{syncStatusLabel(sync)}</span>
+        </Row>
+
+        {!sync.isConfigured ? (
+          <>
+            {/*
+              Hier stand vorher nur ein Knopf, der eine Meldung zeigte. Das war
+              eine Sackgasse: wer ein fertiges .ipk installiert, hat keine
+              Build-Variable und kam deshalb nie zu einer Anmeldung.
+            */}
+            <Row
+              label="Google-Client-ID"
+              hint="Aus einem eigenen Google-Cloud-Projekt, OAuth-Client vom Typ „Fernseher und Geräte mit eingeschränkter Eingabe“. Endet auf .apps.googleusercontent.com"
+            >
+              <div className="field-row">
+                <input
+                  className="spottable"
+                  type="text"
+                  value={clientIdDraft}
+                  placeholder="123456-abc.apps.googleusercontent.com"
+                  aria-label="Google-Client-ID"
+                  onChange={(event) => setClientIdDraft(event.target.value)}
+                />
+              </div>
+            </Row>
+            <Row
+              label="Client-Secret"
+              hint="Googles Fluss für Fernseher verlangt es. Es liegt unverschlüsselt im Speicher dieser App."
+            >
+              <div className="field-row">
+                <input
+                  className="spottable"
+                  type="password"
+                  value={clientSecretDraft}
+                  placeholder="GOCSPX-…"
+                  aria-label="Google-Client-Secret"
+                  onChange={(event) => setClientSecretDraft(event.target.value)}
+                />
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="credentials-save"
+                  onClick={() => {
+                    const problem = sync.saveCredentials(clientIdDraft, clientSecretDraft);
+                    setCredentialsNote(problem);
+                    if (!problem) {
+                      setClientIdDraft("");
+                      setClientSecretDraft("");
+                    }
+                  }}
+                >
+                  Zugangsdaten sichern
+                </SpotButton>
+              </div>
+            </Row>
+            {credentialsNote ? <p className="field-note">{credentialsNote}</p> : null}
+          </>
+        ) : sync.pending ? <DeviceCodePanel /> : (
+          <SpotArea className="filter-row" spotlightId="set-sync">
+            {sync.status === "disconnected" ? (
+              <SpotButton
+                focusRoute={ROUTE}
+                focusArea="sync"
+                focusKey="connect"
+                onClick={() => sync.connect()}
+              >
+                Mit Google Drive verbinden
+              </SpotButton>
+            ) : (
+              <>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="sync-now"
+                  onClick={() => sync.syncNow()}
+                >
+                  Jetzt synchronisieren
+                </SpotButton>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="disconnect"
+                  onClick={() => sync.disconnect()}
+                >
+                  Dieses Gerät trennen
+                </SpotButton>
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="revoke"
+                  onClick={() => {
+                    // Betrifft alle Geräte an diesem Konto, nicht nur den
+                    // Fernseher. Deshalb wird vorher gefragt.
+                    if (window.confirm(
+                      "Damit verlieren alle Geräte an diesem Google-Konto den Zugriff — "
+                      + "auch iPhone und Mac. Die Bibliothek auf diesem Fernseher bleibt erhalten.",
+                    )) sync.revokeAccess();
+                  }}
+                >
+                  Google-Zugriff widerrufen
+                </SpotButton>
+              </>
+            )}
+          </SpotArea>
+        )}
+
+        {sync.message ? <p className="field-note">{sync.message}</p> : null}
+        {sync.lastWarning ? <p className="field-note">{sync.lastWarning}</p> : null}
+        {sync.isConfigured ? (
+          <>
+            {/* Kein Geheimnis: die Client-ID steht in jeder Anmeldeadresse. Sie
+                zu sehen ist der einzige Weg zu bemerken, dass beim Einfügen
+                etwas verrutscht ist. Das Secret wird nicht angezeigt. */}
+            <p className="field-note">Client-ID: {sync.clientId}</p>
+            {sync.credentialsFromDevice ? (
+              <SpotArea className="filter-row" spotlightId="set-sync-credentials">
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="sync"
+                  focusKey="credentials-clear"
+                  onClick={() => sync.clearCredentials()}
+                >
+                  Zugangsdaten entfernen
+                </SpotButton>
+              </SpotArea>
+            ) : null}
+          </>
+        ) : (
+          <p className="field-note">
+            Ohne Zugangsdaten funktioniert die Bibliothek vollständig weiter, nur eben auf
+            diesem Fernseher. Die Schritte stehen in docs/google-drive-sync.md.
+          </p>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <header>
           <h2>Daten</h2>
           <p>Merkliste, Verlauf und Fortschritt liegen im Format der übrigen Nori-Apps vor.</p>
         </header>
@@ -460,7 +615,7 @@ export function SettingsPage() {
                 const result = library.importJSON(raw);
                 setDataNote(
                   `Zusammengeführt: ${result.favorites} auf der Merkliste, `
-                  + `${result.progress} Folgen mit Fortschritt. Nichts wurde gelöscht.`,
+                  + `${folgen(result.progress)} mit Fortschritt. Nichts wurde gelöscht.`,
                 );
               } catch (cause) {
                 setDataNote(`Nicht lesbar: ${(cause as Error)?.message ?? "ungültiges JSON"}`);
@@ -494,16 +649,66 @@ export function SettingsPage() {
         </SpotArea>
         {dataNote ? <p className="field-note">{dataNote}</p> : null}
         <p className="field-note">
-          Bibliotheksschema v{LIBRARY_SCHEMA_VERSION} · {library.state.favorites.length} auf der Merkliste ·{" "}
-          {Object.keys(library.state.progress).length} Folgen mit Fortschritt
+          Bibliotheksschema v{LIBRARY_SCHEMA_VERSION} · {library.state.favorites.length} auf der
+          Merkliste · {folgen(Object.keys(library.state.progress).length)} mit Fortschritt
         </p>
         <p className="field-note">
-          Ein Abgleich zwischen Geräten ist nicht eingebaut: die Bibliothek liegt im
-          Speicher dieses Fernsehers. Das Format ist dasselbe wie in der
-          <code> library.json</code> von iPhone und Mac — ein Stand lässt sich also von
-          Hand übernehmen, und beim Einlesen wird zusammengeführt statt ersetzt.
+          Ohne Google Drive bleibt die Bibliothek im Speicher dieses Fernsehers. Das
+          Format ist dasselbe wie in der <code>library.json</code> von iPhone und Mac —
+          ein Stand lässt sich also auch von Hand übernehmen, und beim Einlesen wird
+          zusammengeführt statt ersetzt.
         </p>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Der Gerätefluss, so gross, dass man ihn vom Sofa aus lesen kann.
+ *
+ * Kein Wartekreisel ohne Erklärung: auf dem Fernseher sieht der Nutzer die
+ * Adresse, den Code und wie lange er noch gilt. Was er tun soll, steht dabei —
+ * sonst wartet er auf etwas, das ohne ihn nie passiert.
+ */
+function DeviceCodePanel() {
+  const sync = useSync();
+  const [remaining, setRemaining] = useState(0);
+
+  const expiresAt = sync.pending?.expiresAt ?? 0;
+  useEffect(() => {
+    if (!expiresAt) return undefined;
+    const tick = () => setRemaining(Math.max(0, Math.round((expiresAt - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  if (!sync.pending) return null;
+  const minutes = Math.floor(remaining / 60);
+  const seconds = String(remaining % 60).padStart(2, "0");
+
+  return (
+    <div className="device-code">
+      <p className="device-code-lead">
+        Öffne diese Adresse auf deinem Smartphone oder Computer und gib den Code ein:
+      </p>
+      <p className="device-code-url">{sync.pending.verificationUrl}</p>
+      <p className="device-code-value">{sync.pending.userCode}</p>
+      <p className="device-code-hint">
+        {remaining > 0
+          ? `Der Code gilt noch ${minutes}:${seconds} Minuten. Nori wartet auf deine Bestätigung …`
+          : "Der Code ist abgelaufen. Bitte neu beginnen."}
+      </p>
+      <SpotArea className="filter-row" spotlightId="set-sync-pending">
+        <SpotButton
+          focusRoute={ROUTE}
+          focusArea="sync"
+          focusKey="cancel"
+          onClick={() => sync.cancelConnect()}
+        >
+          Abbrechen
+        </SpotButton>
+      </SpotArea>
     </div>
   );
 }

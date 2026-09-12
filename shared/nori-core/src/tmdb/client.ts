@@ -62,12 +62,28 @@ export interface TMDBTransport {
   readonly available: boolean;
 }
 
-function statusFor(code: number): TMDBStatus {
-  if (code === 200) return "ok";
+/** HTTP-Code zu `TMDBStatus`. Entspricht `failureFromStatus` auf der Swift-Seite. */
+export function statusForCode(code: number): TMDBStatus {
+  if (code >= 200 && code < 300) return "ok";
   if (code === 401 || code === 403) return "unauthorized";
   if (code === 404) return "notFound";
   if (code === 429) return "rateLimited";
   return "unavailable";
+}
+
+const statusFor = statusForCode;
+
+/**
+ * Darf dieser Ausgang dauerhaft gemerkt werden?
+ *
+ * Genau einer: **404**. TMDB kennt die Serie nicht, und das ändert sich
+ * praktisch nie. Alles andere — Ratenbegrenzung, falscher Schlüssel, Netz —
+ * ist ein Zustand des Augenblicks. Würde er als Fehlschlag festgeschrieben,
+ * machte eine einzige Ratenbegrenzung aus „gerade nicht erreichbar" ein „gibt
+ * es nicht", und die Kachel bliebe wochenlang unbebildert.
+ */
+export function isDefinitive(status: TMDBStatus): boolean {
+  return status === "notFound";
 }
 
 async function readJSON(http: HttpClient, url: string): Promise<TMDBReply> {
@@ -577,18 +593,22 @@ export class TMDBClient {
 /**
  * Das brauchbarste Logo aus der TMDB-Antwort.
  *
- * Deutsch vor Englisch vor sprachlos, und **PNG vor SVG**: ein `<img>` mit
+ * Deutsch vor Englisch vor sprachlos vor fremdsprachig, und **PNG vor SVG**: ein `<img>` mit
  * SVG-Quelle zeichnet webOS 6 nicht zuverlässig, das Logo bliebe unsichtbar.
  * Bei gleicher Sprache entscheidet die Bewertung.
  */
+export function languageRank(iso: string | null | undefined): number {
+  if (iso === "de") return 0;
+  if (iso === "en") return 1;
+  // Ein Logo ohne Sprachkennung ist meist der reine Schriftzug ohne
+  // übersetzten Untertitel — brauchbarer als ein japanisches.
+  if (iso === null || iso === undefined || iso === "") return 2;
+  return 3;
+}
+
 export function bestLogoPath(logos: unknown[]): string | null {
-  const rank = (row: Record<string, unknown>): number => {
-    switch (row.iso_639_1) {
-      case "de": return 0;
-      case "en": return 1;
-      default: return 2;
-    }
-  };
+  const rank = (row: Record<string, unknown>): number =>
+    languageRank(typeof row.iso_639_1 === "string" ? row.iso_639_1 : null);
   const usable: Record<string, unknown>[] = [];
   for (const row of logos) {
     if (!row || typeof row !== "object") continue;
@@ -603,7 +623,12 @@ export function bestLogoPath(logos: unknown[]): string | null {
     if (rank(a) !== rank(b)) return rank(a) - rank(b);
     const va = typeof a.vote_average === "number" ? a.vote_average : 0;
     const vb = typeof b.vote_average === "number" ? b.vote_average : 0;
-    return vb - va;
+    if (va !== vb) return vb - va;
+    // Bei gleicher Bewertung das häufiger bewertete: eine 10,0 aus einer
+    // Stimme sagt weniger als eine 9,0 aus vierzig.
+    const ca = typeof a.vote_count === "number" ? a.vote_count : 0;
+    const cb = typeof b.vote_count === "number" ? b.vote_count : 0;
+    return cb - ca;
   });
   const path = usable[0].file_path;
   return typeof path === "string" ? path : null;

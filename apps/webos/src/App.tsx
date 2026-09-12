@@ -24,6 +24,7 @@ import { exitApp } from "./services/webos";
 import { DataProvider } from "./state/data";
 import { LibraryProvider } from "./state/library";
 import { SettingsProvider } from "./state/settings";
+import { SyncProvider } from "./state/sync";
 
 function Shell() {
   const location = useLocation();
@@ -118,11 +119,14 @@ export function App() {
   return (
     <SettingsProvider>
       <LibraryProvider>
-        <DataProvider>
-          <HashRouter>
-            <Shell />
-          </HashRouter>
-        </DataProvider>
+        {/* Der Abgleich braucht die Bibliothek und sonst nichts. */}
+        <SyncProvider>
+          <DataProvider>
+            <HashRouter>
+              <Shell />
+            </HashRouter>
+          </DataProvider>
+        </SyncProvider>
       </LibraryProvider>
     </SettingsProvider>
   );

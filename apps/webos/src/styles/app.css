@@ -1818,3 +1818,44 @@ button[aria-disabled="true"] {
 :root[data-flex-gap="no"] .episode-heading > * { margin: 0 2rem 1.5rem 0; }
 :root[data-flex-gap="no"] .hero-meta > * { margin: 0 0.75rem 0 0; }
 :root[data-flex-gap="no"] .settings-row > * { margin: 0 2rem 0 0; }
+/* Der Google-Gerätecode.
+ *
+ * Absichtlich gross: gelesen wird das aus drei Metern Entfernung, und der Code
+ * muss auf einem Telefon abgetippt werden. `tabular-nums` hält die Ziffern an
+ * ihrem Platz, damit der Code beim Ablesen nicht springt.
+ */
+.device-code {
+  margin: 0.5rem 0 1.25rem;
+  padding: 1.75rem 2rem;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  text-align: center;
+}
+
+.device-code-lead {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 1.125rem;
+}
+
+.device-code-url {
+  margin: 0 0 0.75rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.device-code-value {
+  margin: 0 0 1rem;
+  font-size: 3.25rem;
+  font-weight: 700;
+  letter-spacing: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-code-hint {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 1.0625rem;
+}

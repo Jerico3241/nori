@@ -51,6 +51,10 @@ const SEGMENTS: Record<TMDBImageSize, string> = {
  */
 export function tmdbImageURL(path: string | null | undefined, size: TMDBImageSize): string | null {
   if (!path) return null;
+  // Eine fertige Adresse kommt unverändert zurück. Der Aufrufer weiß nicht
+  // immer, ob er einen TMDB-Pfad oder eine gespeicherte Adresse in der Hand
+  // hat — zweimal zusammengesetzt entstünde `…/w342/https://…`.
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
   const clean = path.startsWith("/") ? path : `/${path}`;
   return HOST + SEGMENTS[size] + clean;
 }

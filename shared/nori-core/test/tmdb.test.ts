@@ -515,6 +515,61 @@ test("ein einzelner Titeltreffer belegt keinen Versatz", () => {
   assert.equal(alignment.pairs.get(1)?.episodeNumber, 1);
 });
 
+test("zwei Belege unter vielen benannten Folgen reichen nicht", () => {
+  // `TMDBSeasonMap.minimumAnchors` ist 3, und mindestens die Hälfte der
+  // benennbaren Quellfolgen muss zustimmen. Hier sind acht Folgen benannt und
+  // nur zwei stimmen überein — beides verfehlt. Zwei zufällig gleichnamige
+  // Folgen dürfen eine ganze Staffel nicht verschieben.
+  const source = Array.from({ length: 8 }, (_, i) => ({
+    number: i + 1,
+    germanTitle: `Eigener Titel Nummer ${i + 1}`,
+  }));
+  const alignment = alignEpisodes(source, [
+    tmdbEpisode(21, "Eigener Titel Nummer 1"),
+    tmdbEpisode(22, "Eigener Titel Nummer 2"),
+    tmdbEpisode(23, "Ganz etwas anderes"),
+  ]);
+  assert.equal(alignment.offset, 0);
+});
+
+test("drei Belege bei drei benannten Folgen genügen", () => {
+  // Dieselbe Regel von der anderen Seite: drei Belege, drei benennbare
+  // Quellfolgen — Schwelle und Anteil beide erreicht.
+  const alignment = alignEpisodes(
+    [
+      { number: 1, germanTitle: "Erster eigener Titel" },
+      { number: 2, germanTitle: "Zweiter eigener Titel" },
+      { number: 3, germanTitle: "Dritter eigener Titel" },
+    ],
+    [
+      tmdbEpisode(21, "Erster eigener Titel"),
+      tmdbEpisode(22, "Zweiter eigener Titel"),
+      tmdbEpisode(23, "Dritter eigener Titel"),
+    ],
+  );
+  assert.equal(alignment.offset, 20);
+});
+
+test("zwei gleich gut belegte Versätze sind kein Ergebnis", () => {
+  // Eine Staffel, deren Folgen bei TMDB doppelt vorkommen — etwa eine
+  // Wiederholung mit denselben Titeln. Beide Versätze haben drei Belege; der
+  // eine ist so gut wie der andere, und damit ist keiner belegt.
+  const source = [
+    { number: 1, germanTitle: "Erster eigener Titel" },
+    { number: 2, germanTitle: "Zweiter eigener Titel" },
+    { number: 3, germanTitle: "Dritter eigener Titel" },
+  ];
+  const alignment = alignEpisodes(source, [
+    tmdbEpisode(11, "Erster eigener Titel"),
+    tmdbEpisode(12, "Zweiter eigener Titel"),
+    tmdbEpisode(13, "Dritter eigener Titel"),
+    tmdbEpisode(21, "Erster eigener Titel"),
+    tmdbEpisode(22, "Zweiter eigener Titel"),
+    tmdbEpisode(23, "Dritter eigener Titel"),
+  ]);
+  assert.equal(alignment.offset, 0, "ein Münzwurf ist keine Zuordnung");
+});
+
 test("Platzhaltertitel von TMDB gelten nicht als Titel", () => {
   assert.equal(namedEpisodeTitle("Folge 11"), null);
   assert.equal(namedEpisodeTitle("Episode 11"), null);

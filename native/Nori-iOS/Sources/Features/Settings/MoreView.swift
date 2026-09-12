@@ -22,6 +22,7 @@ import SwiftUI
 /// `NoriSettings.swift`. Ein zweites Einstellungssystem gibt es nicht.
 struct MoreView: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(GoogleDriveSync.self) private var sync
 
     @AppStorage(NoriGlassSetting.key) private var liquidGlass = true
     @AppStorage(NoriLook.dynamicColorsKey) private var dynamicColors = true
@@ -41,7 +42,7 @@ struct MoreView: View {
                     SettingsProfileCard(
                         favorites: library.favorites.count,
                         inProgress: startedEpisodes,
-                        syncName: library.syncProvider?.name
+                        syncName: isConnected ? "Google Drive" : nil
                     )
                     SettingsSyncCard(state: syncState)
 
@@ -194,26 +195,16 @@ struct MoreView: View {
 
     private var data: some View {
         SettingsGroup(title: "Bibliothek & Daten") {
-            if let provider = library.syncProvider {
-                SettingsButtonRow(
-                    symbol: "arrow.triangle.2.circlepath",
-                    tint: .green,
-                    title: "Jetzt synchronisieren",
-                    subtitle: "WatchProgress, Merkliste und Einstellungen",
-                    action: { library.syncNow() }
-                ) {
-                    if library.syncState == .running {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(NoriTheme.muted)
-                    }
-                }
-                .disabled(library.syncState == .running)
-                .accessibilityHint("Gleicht mit \(provider.name) ab")
-                SettingsDivider()
+            SettingsLinkRow(
+                symbol: "arrow.triangle.2.circlepath",
+                tint: .green,
+                title: "Synchronisation",
+                subtitle: "Merkliste, Verlauf und Fortschritt über Google Drive",
+                value: cardState.pill
+            ) {
+                SyncSettingsView()
             }
+            SettingsDivider()
             SettingsLinkRow(
                 symbol: "clock.arrow.circlepath",
                 tint: .green,
@@ -299,18 +290,27 @@ struct MoreView: View {
 
     /// Der Zustand, den die Abgleichkarte zeigt — aus dem Store, nicht
     /// geschrieben.
-    private var syncState: SettingsSyncCard.State {
-        guard let provider = library.syncProvider else { return .notConfigured }
-        switch library.syncState {
-        case .running:
-            return .running(name: provider.name)
-        case .failed(let message):
-            return .failed(name: provider.name, message: message)
-        case .idle:
-            return .idle(
-                name: provider.name,
-                lastRun: library.syncLastRun.map { Date(timeIntervalSince1970: $0 / 1000) }
-            )
+    private var syncState: SettingsSyncCard.State { cardState }
+
+    private var isConnected: Bool {
+        if case .disconnected = sync.status { return false }
+        return sync.isConfigured
+    }
+
+    /// Der Zustand, den die Abgleichkarte zeigt — aus der Engine, nicht
+    /// geschrieben.
+    private var cardState: SettingsSyncCard.State {
+        guard sync.isConfigured else { return .notConfigured }
+        let name = "Google Drive"
+        let lastRun = sync.lastSuccessfulSync.map { Date(timeIntervalSince1970: $0 / 1000) }
+        switch sync.status {
+        case .disconnected: return .disconnected(name: name)
+        case .authorizing: return .authorizing(name: name)
+        case .idle: return .idle(name: name, lastRun: lastRun)
+        case .syncing: return .running(name: name)
+        case .offline: return .offline(name: name, lastRun: lastRun)
+        case .error(let message): return .failed(name: name, message: message)
+        case .unsupportedRemoteVersion: return .needsUpdate(name: name)
         }
     }
 

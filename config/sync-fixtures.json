@@ -1,0 +1,1120 @@
+{
+  "note": "Gemeinsame Fälle für den Geräteabgleich. Swift und TypeScript lesen dieselbe Datei und müssen dasselbe Ergebnis liefern — sonst entscheidet der Fernseher anders als das iPhone, beide schreiben zurück, und die Bibliothek pendelt. Gelesen von native/Tests/NoriCoreTests/LibrarySyncTests.swift und shared/nori-core/test/sync.test.ts. Jeder Fall wird zusätzlich in jeder Eingabereihenfolge geprüft: das Ergebnis darf nicht davon abhängen, wie Drive die Dateien herausgibt.",
+  "now": 1780000000000,
+  "cases": [
+    {
+      "name": "D — Merkliste auf A, Fortschritt auf B: beides bleibt",
+      "why": "Der Fall, an dem eine einzelne Datei mit einem modifiedAt scheitert. Beide Geräte hatten denselben alten Stand; wer zuletzt hochlädt, löschte die Änderung des anderen.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [
+            "one-piece"
+          ],
+          "recents": [],
+          "titles": {
+            "one-piece": "One Piece"
+          },
+          "progress": {},
+          "favoriteSource": {
+            "one-piece": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "one-piece": 1779999910000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": true,
+                "updatedAt": 1779999910000,
+                "addedAt": 1779999910000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999912000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 900,
+              "durationSec": 1400,
+              "updatedAt": 1779999912000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999912000
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "one-piece"
+        ],
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-2": 900
+        }
+      }
+    },
+    {
+      "name": "E — Ein Grabstein schlägt einen älteren Merkzeitpunkt",
+      "why": "A hat den Titel entfernt, B kennt nur den alten Stand. Ohne Grabstein legte B ihn beim nächsten Abgleich wieder hin.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": false,
+                "updatedAt": 1779999930000,
+                "addedAt": 1779999910000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [
+            "one-piece"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "one-piece": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "one-piece": 1779999910000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999910000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": true,
+                "updatedAt": 1779999910000,
+                "addedAt": 1779999910000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "favorites": []
+      }
+    },
+    {
+      "name": "E2 — Neu gemerkt schlägt einen älteren Grabstein",
+      "why": "Die Gegenprobe. Ein Grabstein ist kein Dauerverbot: wer den Titel später wieder merkt, bekommt ihn zurück.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": false,
+                "updatedAt": 1779999910000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [
+            "one-piece"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "one-piece": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "one-piece": 1779999930000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999930000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": true,
+                "updatedAt": 1779999930000,
+                "addedAt": 1779999930000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "one-piece"
+        ],
+        "favoriteSource": {
+          "one-piece": "aniworld"
+        }
+      }
+    },
+    {
+      "name": "E3 — Dieselbe Serie bei beiden Quellen ist zweimal gemerkt",
+      "why": "Der Schlüssel trägt die Quelle. Wer den Titel bei AniWorld entfernt, entfernt damit nicht den bei Serienstream.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "favorites": {
+              "aniworld|tokyo": {
+                "isFavorite": false,
+                "updatedAt": 1779999930000,
+                "addedAt": 1779999910000
+              },
+              "serienstream|tokyo": {
+                "isFavorite": true,
+                "updatedAt": 1779999920000,
+                "addedAt": 1779999920000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [
+            "tokyo"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "tokyo": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "tokyo": 1779999910000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999910000,
+            "favorites": {
+              "aniworld|tokyo": {
+                "isFavorite": true,
+                "updatedAt": 1779999910000,
+                "addedAt": 1779999910000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "tokyo"
+        ],
+        "favoriteSource": {
+          "tokyo": "serienstream"
+        }
+      }
+    },
+    {
+      "name": "F — Fortschritt: der jüngere Stand gewinnt",
+      "why": "TV bei 15:00, iPhone später bei 22:00. 22:00 gewinnt.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 900,
+              "durationSec": 1400,
+              "updatedAt": 1779999910000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 1320,
+              "durationSec": 1400,
+              "updatedAt": 1779999930000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999930000
+          }
+        }
+      ],
+      "expect": {
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-2": 1320
+        }
+      }
+    },
+    {
+      "name": "F2 — Bei gleichem Zeitstempel entscheidet die Gerätekennung",
+      "why": "Ohne festen Tie-Break hinge das Ergebnis davon ab, in welcher Reihenfolge Drive die Dateien herausgibt — und zwei Geräte kämen zu verschiedenen Ergebnissen und überschrieben sich endlos gegenseitig.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999920000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 900,
+              "durationSec": 1400,
+              "updatedAt": 1779999920000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999920000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999920000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 1320,
+              "durationSec": 1400,
+              "updatedAt": 1779999920000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "zzz",
+            "generatedAt": 1779999920000
+          }
+        }
+      ],
+      "expect": {
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-2": 1320
+        }
+      }
+    },
+    {
+      "name": "F3 — Fortschritt bleibt nach Quelle getrennt",
+      "why": "Dieselbe Folge bei AniWorld und bei Serienstream sind zwei Einträge. Sonst überschriebe die eine Quelle den Stand der anderen.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/tokyo/staffel-1/episode-1": {
+              "slug": "tokyo",
+              "title": "tokyo",
+              "season": "1",
+              "episode": 1,
+              "episodePath": "/anime/stream/tokyo/staffel-1/episode-1",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 300,
+              "durationSec": 1400,
+              "updatedAt": 1779999910000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999920000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "serienstream|/serie/tokyo/staffel-1/episode-1": {
+              "slug": "tokyo",
+              "title": "tokyo",
+              "season": "1",
+              "episode": 1,
+              "episodePath": "/serie/tokyo/staffel-1/episode-1",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 800,
+              "durationSec": 1400,
+              "updatedAt": 1779999920000,
+              "provider": "serienstream"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999920000
+          }
+        }
+      ],
+      "expect": {
+        "progress": {
+          "aniworld|/anime/stream/tokyo/staffel-1/episode-1": 300,
+          "serienstream|/serie/tokyo/staffel-1/episode-1": 800
+        }
+      }
+    },
+    {
+      "name": "G — Gelöschter Verlauf kommt nicht zurück",
+      "why": "A hat den Verlauf gelöscht, B kennt ihn noch. Alles, was älter ist als die Löschmarke, ist erledigt — was danach kam, nicht.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "historyClearedAt": 1779999930000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999940000,
+          "favorites": [],
+          "recents": [
+            {
+              "slug": "alt",
+              "title": "alt",
+              "viewedAt": 1779999910000,
+              "provider": "aniworld"
+            },
+            {
+              "slug": "neu",
+              "title": "neu",
+              "viewedAt": 1779999940000,
+              "provider": "aniworld"
+            }
+          ],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999940000
+          }
+        }
+      ],
+      "expect": {
+        "recents": [
+          "neu"
+        ]
+      }
+    },
+    {
+      "name": "G2 — Einzeln aus dem Verlauf genommen bleibt weg",
+      "why": "„Aus dem Verlauf nehmen\" ist keine Totallöschung und braucht einen eigenen Grabstein, sonst brächte ihn jedes Gerät mit älterem Stand zurück.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "recentsRemoved": {
+              "aniworld|alt": 1779999930000
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999920000,
+          "favorites": [],
+          "recents": [
+            {
+              "slug": "alt",
+              "title": "alt",
+              "viewedAt": 1779999910000,
+              "provider": "aniworld"
+            },
+            {
+              "slug": "bleibt",
+              "title": "bleibt",
+              "viewedAt": 1779999920000,
+              "provider": "aniworld"
+            }
+          ],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999920000
+          }
+        }
+      ],
+      "expect": {
+        "recents": [
+          "bleibt"
+        ]
+      }
+    },
+    {
+      "name": "G3 — Erneut geöffnet hebt das Entfernen auf",
+      "why": "Der Grabstein gilt bis zu seinem Zeitpunkt, nicht für immer.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "recentsRemoved": {
+              "aniworld|alt": 1779999930000
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999950000,
+          "favorites": [],
+          "recents": [
+            {
+              "slug": "alt",
+              "title": "alt",
+              "viewedAt": 1779999950000,
+              "provider": "aniworld"
+            }
+          ],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999950000
+          }
+        }
+      ],
+      "expect": {
+        "recents": [
+          "alt"
+        ]
+      }
+    },
+    {
+      "name": "H — Gelöschter Fortschritt kommt nicht zurück",
+      "why": "Dasselbe für `clearProgress`. Was nach der Löschmarke entstand, bleibt.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "progressClearedAt": 1779999930000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999940000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 900,
+              "durationSec": 1400,
+              "updatedAt": 1779999910000,
+              "provider": "aniworld"
+            },
+            "aniworld|/anime/stream/naruto/staffel-1/episode-3": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 3,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-3",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 120,
+              "durationSec": 1400,
+              "updatedAt": 1779999940000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999940000
+          }
+        }
+      ],
+      "expect": {
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-3": 120
+        }
+      }
+    },
+    {
+      "name": "I — Zwei Einstellungen auf zwei Geräten, beide bleiben",
+      "why": "Der Fall, für den ein globales modifiedAt nicht reicht: A stellt die Sprache um, B das Autoplay. Mit nur einem Zeitstempel verlöre eine der beiden Änderungen komplett.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "langPref": "EN",
+          "autoplayNext": true,
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "preferences": {
+              "langPref": {
+                "updatedAt": 1779999930000
+              },
+              "autoplayNext": {
+                "updatedAt": 1779999905000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "langPref": "DE",
+          "autoplayNext": false,
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999930000,
+            "preferences": {
+              "langPref": {
+                "updatedAt": 1779999905000
+              },
+              "autoplayNext": {
+                "updatedAt": 1779999930000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "preferences": {
+          "langPref": "EN",
+          "autoplayNext": "false"
+        }
+      }
+    },
+    {
+      "name": "I2 — Hoster, Tempo und Bereich folgen derselben Regel",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "hosterPref": "Vidmoly",
+          "playbackSpeed": 1.5,
+          "scope": "all",
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "preferences": {
+              "hosterPref": {
+                "updatedAt": 1779999930000
+              },
+              "playbackSpeed": {
+                "updatedAt": 1779999905000
+              },
+              "scope": {
+                "updatedAt": 1779999905000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "hosterPref": "VOE",
+          "playbackSpeed": 2.0,
+          "scope": "serienstream",
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999930000,
+            "preferences": {
+              "hosterPref": {
+                "updatedAt": 1779999905000
+              },
+              "playbackSpeed": {
+                "updatedAt": 1779999930000
+              },
+              "scope": {
+                "updatedAt": 1779999930000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "preferences": {
+          "hosterPref": "Vidmoly",
+          "playbackSpeed": "2",
+          "scope": "serienstream"
+        }
+      }
+    },
+    {
+      "name": "Merkliste steht nach Merkzeitpunkt, nicht nach Fundreihenfolge",
+      "why": "Die Merkliste sortiert „zuletzt hinzugefügt\". Käme die Reihenfolge aus der Hash-Ordnung eines Dictionaries, stünde dieselbe Liste auf zwei Geräten verschieden da.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [
+            "alt"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "alt": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "alt": 1779999910000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000,
+            "favorites": {
+              "aniworld|alt": {
+                "isFavorite": true,
+                "updatedAt": 1779999910000,
+                "addedAt": 1779999910000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999950000,
+          "favorites": [
+            "neu"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "neu": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "neu": 1779999950000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1779999950000,
+            "favorites": {
+              "aniworld|neu": {
+                "isFavorite": true,
+                "updatedAt": 1779999950000,
+                "addedAt": 1779999950000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "neu",
+          "alt"
+        ]
+      }
+    },
+    {
+      "name": "L — Ein leerer Fremdstand nimmt nichts mit",
+      "why": "Eine frische Installation, die sich zum ersten Mal verbindet, lädt einen leeren Stand hoch. Der darf die Bibliothek der anderen Geräte nicht löschen — leer ist keine Löschung.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [
+            "one-piece"
+          ],
+          "recents": [
+            {
+              "slug": "one-piece",
+              "title": "one-piece",
+              "viewedAt": 1779999930000,
+              "provider": "aniworld"
+            }
+          ],
+          "titles": {
+            "one-piece": "One Piece"
+          },
+          "progress": {
+            "aniworld|/anime/stream/one-piece/staffel-1/episode-5": {
+              "slug": "one-piece",
+              "title": "one-piece",
+              "season": "1",
+              "episode": 5,
+              "episodePath": "/anime/stream/one-piece/staffel-1/episode-5",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 640,
+              "durationSec": 1400,
+              "updatedAt": 1779999930000,
+              "provider": "aniworld"
+            }
+          },
+          "favoriteSource": {
+            "one-piece": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "one-piece": 1779999930000
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999930000,
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": true,
+                "updatedAt": 1779999930000,
+                "addedAt": 1779999930000
+              }
+            }
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 0,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "neu",
+            "generatedAt": 0
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "one-piece"
+        ],
+        "recents": [
+          "one-piece"
+        ],
+        "progress": {
+          "aniworld|/anime/stream/one-piece/staffel-1/episode-5": 640
+        },
+        "titles": {
+          "one-piece": "One Piece"
+        }
+      }
+    },
+    {
+      "name": "Eine kaputte Uhr blockiert den Abgleich nicht",
+      "why": "Ein Fernseher ohne Netz startet gern im Jahr 2100. Ein Zeitstempel von dort schlüge jede echte Änderung für Jahrzehnte; deshalb gilt alles jenseits eines Tages als „gerade eben\" und verliert damit seinen Vorsprung.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 100,
+              "durationSec": 1400,
+              "updatedAt": 4102444800000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "aaa",
+            "generatedAt": 1779999910000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1780000000000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 200,
+              "durationSec": 1400,
+              "updatedAt": 1780000000000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "bbb",
+            "generatedAt": 1780000000000
+          }
+        }
+      ],
+      "expect": {
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-2": 200
+        }
+      }
+    },
+    {
+      "name": "K — Drei Geräte, drei Änderungen, nichts geht verloren",
+      "why": "TV bei Folge 2, iPhone weiter in derselben Folge, Mac an der Merkliste. Am Ende trägt der Stand alle drei.",
+      "snapshots": [
+        {
+          "version": 6,
+          "modifiedAt": 1779999910000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 300,
+              "durationSec": 1400,
+              "updatedAt": 1779999910000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "tv",
+            "generatedAt": 1779999910000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999920000,
+          "favorites": [],
+          "recents": [],
+          "titles": {},
+          "progress": {
+            "aniworld|/anime/stream/naruto/staffel-1/episode-2": {
+              "slug": "naruto",
+              "title": "naruto",
+              "season": "1",
+              "episode": 2,
+              "episodePath": "/anime/stream/naruto/staffel-1/episode-2",
+              "germanTitle": "",
+              "englishTitle": "",
+              "positionSec": 540,
+              "durationSec": 1400,
+              "updatedAt": 1779999920000,
+              "provider": "aniworld"
+            }
+          },
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "iphone",
+            "generatedAt": 1779999920000
+          }
+        },
+        {
+          "version": 6,
+          "modifiedAt": 1779999930000,
+          "favorites": [
+            "one-piece"
+          ],
+          "recents": [],
+          "titles": {},
+          "progress": {},
+          "favoriteSource": {
+            "one-piece": "aniworld"
+          },
+          "favoriteAddedAt": {
+            "one-piece": 1779999930000
+          },
+          "langPref": "GerSub",
+          "sync": {
+            "formatVersion": 1,
+            "deviceId": "mac",
+            "generatedAt": 1779999930000,
+            "preferences": {
+              "langPref": {
+                "updatedAt": 1779999930000
+              }
+            },
+            "favorites": {
+              "aniworld|one-piece": {
+                "isFavorite": true,
+                "updatedAt": 1779999930000,
+                "addedAt": 1779999930000
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "favorites": [
+          "one-piece"
+        ],
+        "progress": {
+          "aniworld|/anime/stream/naruto/staffel-1/episode-2": 540
+        },
+        "preferences": {
+          "langPref": "GerSub"
+        }
+      }
+    }
+  ]
+}

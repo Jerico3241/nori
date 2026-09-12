@@ -38,6 +38,10 @@
 		AB63 /* SeriesEpisodeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC63 /* SeriesEpisodeCard.swift */; };
 		AB70 /* ScopeSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC70 /* ScopeSwitch.swift */; };
 		AB71 /* TMDBImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71 /* TMDBImages.swift */; };
+		ABA3 /* NoriLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA3 /* NoriLog.swift */; };
+		ABA2 /* TMDBSeasonMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA2 /* TMDBSeasonMap.swift */; };
+		ABA1 /* TMDBFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA1 /* TMDBFailure.swift */; };
+		ABA0 /* TMDBArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0 /* TMDBArtwork.swift */; };
 		AB72 /* TMDBMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC72 /* TMDBMatcher.swift */; };
 		AB73 /* TMDBCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC73 /* TMDBCatalog.swift */; };
 		AB74 /* HomeFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC74 /* HomeFeed.swift */; };
@@ -76,6 +80,14 @@
 		AB109 /* CacheSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC109 /* CacheSettingsView.swift */; };
 		AB99 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC99 /* AboutView.swift */; };
 		AB100 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC100 /* DiagnosticsView.swift */; };
+		AB110 /* LibrarySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC110 /* LibrarySync.swift */; };
+		AB111 /* LibrarySyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC111 /* LibrarySyncEngine.swift */; };
+		AB112 /* GoogleDrive.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC112 /* GoogleDrive.swift */; };
+		AB113 /* GoogleOAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC113 /* GoogleOAuth.swift */; };
+		AB114 /* GoogleAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC114 /* GoogleAuthorization.swift */; };
+		AB115 /* NoriSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC115 /* NoriSync.swift */; };
+		AB116 /* GoogleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC116 /* GoogleSignIn.swift */; };
+		AB120 /* SyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC120 /* SyncSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -111,6 +123,10 @@
 		AC63 /* SeriesEpisodeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesEpisodeCard.swift; sourceTree = "<group>"; };
 		AC70 /* ScopeSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopeSwitch.swift; sourceTree = "<group>"; };
 		AC71 /* TMDBImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBImages.swift; sourceTree = "<group>"; };
+		ACA3 /* NoriLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriLog.swift; sourceTree = "<group>"; };
+		ACA2 /* TMDBSeasonMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBSeasonMap.swift; sourceTree = "<group>"; };
+		ACA1 /* TMDBFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBFailure.swift; sourceTree = "<group>"; };
+		ACA0 /* TMDBArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBArtwork.swift; sourceTree = "<group>"; };
 		AC72 /* TMDBMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBMatcher.swift; sourceTree = "<group>"; };
 		AC73 /* TMDBCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBCatalog.swift; sourceTree = "<group>"; };
 		AC74 /* HomeFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeed.swift; sourceTree = "<group>"; };
@@ -149,6 +165,14 @@
 		AC109 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		AC99 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		AC100 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		AC110 /* LibrarySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySync.swift; sourceTree = "<group>"; };
+		AC111 /* LibrarySyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncEngine.swift; sourceTree = "<group>"; };
+		AC112 /* GoogleDrive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDrive.swift; sourceTree = "<group>"; };
+		AC113 /* GoogleOAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuth.swift; sourceTree = "<group>"; };
+		AC114 /* GoogleAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthorization.swift; sourceTree = "<group>"; };
+		AC115 /* NoriSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriSync.swift; sourceTree = "<group>"; };
+		AC116 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignIn.swift; sourceTree = "<group>"; };
+		AC120 /* SyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +202,14 @@
 				AC02 /* Theme.swift */,
 				AC03 /* Models.swift */,
 				AC04 /* LibraryStore.swift */,
+				AC120 /* SyncSettingsView.swift */,
+				AC110 /* LibrarySync.swift */,
+				AC111 /* LibrarySyncEngine.swift */,
+				AC112 /* GoogleDrive.swift */,
+				AC113 /* GoogleOAuth.swift */,
+				AC114 /* GoogleAuthorization.swift */,
+				AC115 /* NoriSync.swift */,
+				AC116 /* GoogleSignIn.swift */,
 				AC05 /* HTML.swift */,
 				AC06 /* AniworldClient.swift */,
 				AC07 /* HosterResolver.swift */,
@@ -218,6 +250,10 @@
 				AC57 /* HLSPlaylist.swift */,
 				AC70 /* ScopeSwitch.swift */,
 				AC71 /* TMDBImages.swift */,
+				ACA3 /* NoriLog.swift */,
+				ACA2 /* TMDBSeasonMap.swift */,
+				ACA1 /* TMDBFailure.swift */,
+				ACA0 /* TMDBArtwork.swift */,
 				AC72 /* TMDBMatcher.swift */,
 				AC73 /* TMDBCatalog.swift */,
 				AC74 /* HomeFeed.swift */,
@@ -335,6 +371,14 @@
 				AB02 /* Theme.swift in Sources */,
 				AB03 /* Models.swift in Sources */,
 				AB04 /* LibraryStore.swift in Sources */,
+				AB120 /* SyncSettingsView.swift in Sources */,
+				AB110 /* LibrarySync.swift in Sources */,
+				AB111 /* LibrarySyncEngine.swift in Sources */,
+				AB112 /* GoogleDrive.swift in Sources */,
+				AB113 /* GoogleOAuth.swift in Sources */,
+				AB114 /* GoogleAuthorization.swift in Sources */,
+				AB115 /* NoriSync.swift in Sources */,
+				AB116 /* GoogleSignIn.swift in Sources */,
 				AB05 /* HTML.swift in Sources */,
 				AB06 /* AniworldClient.swift in Sources */,
 				AB07 /* HosterResolver.swift in Sources */,
@@ -369,6 +413,10 @@
 				AB57 /* HLSPlaylist.swift in Sources */,
 				AB70 /* ScopeSwitch.swift in Sources */,
 				AB71 /* TMDBImages.swift in Sources */,
+				ABA3 /* NoriLog.swift in Sources */,
+				ABA2 /* TMDBSeasonMap.swift in Sources */,
+				ABA1 /* TMDBFailure.swift in Sources */,
+				ABA0 /* TMDBArtwork.swift in Sources */,
 				AB72 /* TMDBMatcher.swift in Sources */,
 				AB73 /* TMDBCatalog.swift in Sources */,
 				AB74 /* HomeFeed.swift in Sources */,

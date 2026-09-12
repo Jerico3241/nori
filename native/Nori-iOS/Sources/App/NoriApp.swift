@@ -2,12 +2,31 @@ import SwiftUI
 
 @main
 struct NoriApp: App {
-    @State private var library = LibraryStore()
+    @State private var library: LibraryStore
+    @State private var sync: GoogleDriveSync
+
+    init() {
+        let library = LibraryStore()
+        // Landet als Metadatum im abgelegten Stand. Nützlich, wenn irgendwann
+        // ein Gerät etwas schreibt, das die anderen nicht verstehen.
+        library.appVersion = NoriBuild.version
+
+        _library = State(initialValue: library)
+        // Das Anmeldefenster wird erst gebaut, wenn eine Client-ID feststeht —
+        // aus ihr entsteht die Rückleitungsadresse. Die ID kann aus der
+        // Build-Einstellung kommen oder in den Einstellungen eingetragen
+        // werden; beides landet hier.
+        _sync = State(initialValue: GoogleDriveSync(store: library) { configuration in
+            configuration.reversedClientId
+                .map(WebAuthenticationSignInPresenter.init(reversedClientId:))
+        })
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(library)
+                .environment(sync)
                 .preferredColorScheme(.dark)
         }
     }
@@ -15,6 +34,8 @@ struct NoriApp: App {
 
 struct RootView: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(GoogleDriveSync.self) private var sync
+    @Environment(\.scenePhase) private var scenePhase
     /// Beide Kataloge, zusammengeführt und alphabetisch. Bleibt beim
     /// Bereichswechsel stehen, damit nicht jedes Mal neu geladen wird.
     @State private var allItems: [CatalogItem] = []
@@ -108,6 +129,27 @@ struct RootView: View {
         }
         .tint(NoriTheme.accent)
         .task(id: library.scope) { await load() }
+        // Eine bestehende Verbindung wieder aufnehmen. Hier wird nichts
+        // gefragt und kein Fenster geöffnet — liegen Tokens im Schlüsselbund,
+        // geht es weiter, sonst bleibt es bei „nicht verbunden".
+        .task { await sync.restore() }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                // Beim Zurückkommen sofort sehen, was die anderen Geräte
+                // inzwischen geschrieben haben.
+                sync.syncNow()
+                sync.engine.startPolling()
+            case .background:
+                // Der letzte verlässliche Moment. Auf ein „App wird beendet"
+                // ist kein Verlass, und genau deshalb wird hier abgeglichen
+                // statt dort.
+                sync.engine.stopPolling()
+                sync.syncNow()
+            default:
+                sync.engine.stopPolling()
+            }
+        }
     }
 
     /// Beide Kataloge laden, zusammenführen, nach Bereich ausschneiden.

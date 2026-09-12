@@ -50,3 +50,19 @@ apps/webos/test-shots/
 shared/nori-core/dist/
 services/nori-api/dist/
 services/nori-api/dist-test/
+
+# Ausgabeordner von `xcodebuild`.
+#
+# Ohne `-derivedDataPath` legt ein Build ihn neben dem Projekt an, nicht in
+# DerivedData. `.build/` weiter oben ist SwiftPM und greift hier nicht.
+native/*/build/
+
+# Modul-Zwischenspeicher, den `xcodebuild` neben dem Projekt anlegt.
+#
+# Er heisst `-Xcc`, liegt *innerhalb* von `.xcodeproj` und wird deshalb von
+# keiner der üblichen Xcode-Regeln erfasst. Ein `git add -A` nach einem Build
+# nimmt ihn sonst mit: 1600 Dateien, 22 MB, alle generiert.
+**/*.xcodeproj/-Xcc/
+
+# Screenshots des Fernbedienungslaufs (npm run test:tv)
+apps/webos/shot-*.png

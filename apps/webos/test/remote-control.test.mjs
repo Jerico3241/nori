@@ -701,12 +701,17 @@ section("Fortschritt");
 const stored = await page.evaluate(() => {
   try { return JSON.parse(localStorage.getItem("nori.library") ?? "{}"); } catch { return {}; }
 });
+// Die Zahl wird aus `@nori/core` gelesen und nicht abgeschrieben. Vorher stand
+// hier eine feste 4, während der Kern längst weiter war — die Prüfung schlug
+// dadurch dauerhaft fehl und hätte eine echte Schemaregression nicht mehr
+// bemerken können. Gelesen statt festgeschrieben kann das nicht wieder
+// auseinanderlaufen.
 check(
   `Bibliothek: Schema v${LIBRARY_SCHEMA_VERSION}`,
   stored.version === LIBRARY_SCHEMA_VERSION,
   `version ${stored.version}`,
 );
-check("Merkliste gespeichert", Array.isArray(stored.favorites) && stored.favorites.length > 0,
+check("Bibliothek: Merkliste gespeichert", Array.isArray(stored.favorites) && stored.favorites.length > 0,
   JSON.stringify(stored.favorites));
 check(
   "Fortschritt gespeichert",
@@ -933,6 +938,95 @@ check(
   serverWay.includes("Nori-Server"),
   serverWay.trim().slice(0, 110),
 );
+
+// --- 20a2. Der Abgleich-Abschnitt ---------------------------------------
+//
+// Der Abgleich über Google Drive ist in der Zusammenführung mit `main` auf den
+// Fernseher gekommen. Was hier geprüft werden **kann**, ist die Naht zur
+// Oberfläche: dass der Abschnitt steht, seinen Zustand benennt, mit der
+// Fernbedienung erreichbar ist und eine falsche Eingabe beanstandet statt sie
+// stillschweigend zu schlucken.
+//
+// Was hier **nicht** geprüft wird: die Anmeldung über den Gerätecode, der
+// Drive-Abruf und das Zusammenführen über zwei echte Geräte. Das hängt an
+// einem echten Google-Konto. Die Zusammenführungsregel selbst liegt im Kern
+// und ist dort gegen `config/sync-fixtures.json` geprüft — in beiden Kernen,
+// mit denselben Fällen.
+section("Abgleich über Google Drive");
+
+await goto(page, "#/einstellungen", 1200);
+
+const syncSection = await page.evaluate(() => {
+  const heading = Array.from(document.querySelectorAll(".settings-section h2"))
+    .find((node) => node.textContent?.trim() === "Synchronisation");
+  const box = heading?.closest(".settings-section");
+  if (!box) return null;
+  box.scrollIntoView({ block: "start" });
+  return {
+    zustand: Array.from(box.querySelectorAll(".field-note")).map((n) => n.textContent?.trim() ?? ""),
+    felder: Array.from(box.querySelectorAll("input")).map((n) => n.getAttribute("aria-label") ?? ""),
+    knoepfe: Array.from(box.querySelectorAll(".spottable")).length,
+    text: box.textContent ?? "",
+  };
+});
+
+check("Der Abgleich-Abschnitt steht", syncSection !== null,
+  syncSection ? `${syncSection.knoepfe} bedienbare Elemente` : "fehlt");
+check(
+  "Ohne Zugangsdaten heißt der Zustand „nicht eingerichtet“",
+  Boolean(syncSection?.zustand.some((text) => text === "nicht eingerichtet")),
+  syncSection?.zustand.join(" | ") ?? "",
+);
+check(
+  "Er fragt Client-ID und Secret, statt in eine Sackgasse zu führen",
+  Boolean(syncSection?.felder.includes("Google-Client-ID")
+    && syncSection?.felder.includes("Google-Client-Secret")),
+  syncSection?.felder.join(", ") ?? "",
+);
+check(
+  "Er sagt, dass Nori ohne Netz vollständig weiterläuft",
+  (syncSection?.text ?? "").includes("Ohne Netz funktioniert Nori vollständig weiter"),
+  "",
+);
+
+// Eine falsche Client-ID: die Beanstandung muss sichtbar werden.
+const beanstandung = await page.evaluate(async () => {
+  const box = Array.from(document.querySelectorAll(".settings-section"))
+    .find((node) => node.querySelector("h2")?.textContent?.trim() === "Synchronisation");
+  const id = box?.querySelector('input[aria-label="Google-Client-ID"]');
+  const secret = box?.querySelector('input[aria-label="Google-Client-Secret"]');
+  const save = Array.from(box?.querySelectorAll(".spottable") ?? [])
+    .find((node) => node.textContent?.trim() === "Zugangsdaten sichern");
+  if (!id || !secret || !save) return { fehler: "Felder nicht gefunden" };
+
+  const setValue = (node, value) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(node), "value")?.set;
+    setter?.call(node, value);
+    node.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  setValue(id, "kein-google-client");
+  setValue(secret, "zu-kurz");
+  save.click();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  return {
+    note: Array.from(box.querySelectorAll(".field-note")).map((n) => n.textContent?.trim() ?? ""),
+    gespeichert: localStorage.getItem("nori.google.clientId"),
+  };
+});
+check(
+  "Eine falsche Client-ID wird beanstandet",
+  Array.isArray(beanstandung.note)
+    && beanstandung.note.some((text) => text.length > 0 && text !== "nicht eingerichtet"),
+  (beanstandung.note ?? [beanstandung.fehler]).filter(Boolean).join(" | ").slice(0, 140),
+);
+check(
+  "Und nicht trotzdem gespeichert",
+  !beanstandung.gespeichert,
+  String(beanstandung.gespeichert),
+);
+
+await page.screenshot({ path: join(SHOTS, "22-abgleich-nicht-eingerichtet.png") });
 
 // --- 20b. Abstände ohne Flex-`gap` (webOS 6) ----------------------------
 //

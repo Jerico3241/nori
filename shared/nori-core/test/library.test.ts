@@ -5,7 +5,7 @@ import type { Episode, WatchProgress } from "../src/models.js";
 import {
   backfillAddedAt, continueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
   findProgress, LIBRARY_SCHEMA_VERSION, migrateProgress, nextEpisode, nextPlay,
-  mergeLibraries, previousEpisode, rememberRecent, seasonStats, upsertProgress,
+  previousEpisode, rememberRecent, seasonStats, upsertProgress,
 } from "../src/library.js";
 
 function item(overrides: Partial<WatchProgress> = {}): WatchProgress {
@@ -168,7 +168,7 @@ test("Verlauf hält höchstens 100 Einträge und schiebt den jüngsten nach vorn
 // lesen, sonst stünde dieselbe Merkliste auf zwei Geräten anders sortiert da.
 
 test("Schema v5 trägt favoriteAddedAt", () => {
-  assert.equal(LIBRARY_SCHEMA_VERSION, 5);
+  assert.equal(LIBRARY_SCHEMA_VERSION, 6);
   const state = decodeLibrary({
     version: 5, favorites: ["a"], recents: [], titles: {}, progress: {},
     favoriteAddedAt: { a: 1234 },
@@ -194,133 +194,4 @@ test("Ein abgeleiteter Merkzeitpunkt überholt keinen echten", () => {
 test("Merkzeitpunkte entfernter Titel werden nicht mitgeschleppt", () => {
   const out = backfillAddedAt({ weg: 5, bleibt: 9 }, ["bleibt"]);
   assert.deepEqual(Object.keys(out), ["bleibt"]);
-});
-
-// MARK: - Zwei Stände zusammenführen
-//
-// Der Fall, für den es diese Regel gibt: Eine Bibliothek wird eingelesen — von
-// Hand über die Einstellungen oder später über einen Abgleichdienst. Ein
-// Einlesen, das den lokalen Stand **ersetzt**, löscht stillschweigend alles,
-// was nur hier stand. Genau das darf nie passieren.
-
-test("Zusammenführen behält den Fortschritt beider Seiten", () => {
-  const local = emptyLibrary();
-  local.progress = {
-    "aniworld|/anime/stream/one-piece/staffel-1/episode-1": item({ positionSec: 300, updatedAt: 5000 }),
-  };
-  local.modifiedAt = 5000;
-
-  const remote = emptyLibrary();
-  remote.progress = {
-    "aniworld|/anime/stream/frieren/staffel-1/episode-2": item({
-      slug: "frieren",
-      episodePath: "/anime/stream/frieren/staffel-1/episode-2",
-      episode: 2,
-      positionSec: 900,
-      updatedAt: 4000,
-    }),
-  };
-  remote.modifiedAt = 4000;
-
-  const merged = mergeLibraries(local, remote);
-  assert.equal(Object.keys(merged.progress).length, 2);
-  assert.equal(merged.progress["aniworld|/anime/stream/one-piece/staffel-1/episode-1"].positionSec, 300);
-  assert.equal(merged.progress["aniworld|/anime/stream/frieren/staffel-1/episode-2"].positionSec, 900);
-});
-
-test("Beim selben Eintrag gewinnt der jüngere Zeitstempel", () => {
-  const key = "aniworld|/anime/stream/one-piece/staffel-1/episode-1";
-  const local = emptyLibrary();
-  local.progress = { [key]: item({ positionSec: 100, updatedAt: 1000 }) };
-  const remote = emptyLibrary();
-  remote.progress = { [key]: item({ positionSec: 800, updatedAt: 9000 }) };
-
-  assert.equal(mergeLibraries(local, remote).progress[key].positionSec, 800);
-  assert.equal(mergeLibraries(remote, local).progress[key].positionSec, 800);
-});
-
-test("Ein leerer Fremdstand löscht nichts", () => {
-  // Der wichtigste Fall überhaupt: ein Abgleichfehler oder eine leere Datei
-  // darf keine Merkliste und keinen Fortschritt kosten.
-  const local = emptyLibrary();
-  local.favorites = ["frieren", "dark"];
-  local.favoriteSource = { frieren: "aniworld", dark: "serienstream" };
-  local.favoriteAddedAt = { frieren: 2000, dark: 1000 };
-  local.titles = { frieren: "Frieren" };
-  local.progress = { "aniworld|/anime/stream/frieren/staffel-1/episode-1": item({ slug: "frieren" }) };
-  local.modifiedAt = 3000;
-
-  const merged = mergeLibraries(local, emptyLibrary());
-  assert.deepEqual(merged.favorites, ["frieren", "dark"]);
-  assert.equal(Object.keys(merged.progress).length, 1);
-  assert.equal(merged.titles.frieren, "Frieren");
-});
-
-test("Die Merkliste wird vereinigt und nach Merkzeitpunkt sortiert", () => {
-  const local = emptyLibrary();
-  local.favorites = ["alt"];
-  local.favoriteAddedAt = { alt: 1000 };
-  local.favoriteSource = { alt: "aniworld" };
-
-  const remote = emptyLibrary();
-  remote.favorites = ["neu"];
-  remote.favoriteAddedAt = { neu: 9000 };
-  remote.favoriteSource = { neu: "serienstream" };
-
-  const merged = mergeLibraries(local, remote);
-  assert.deepEqual(merged.favorites, ["neu", "alt"]);
-  assert.equal(merged.favoriteSource.neu, "serienstream");
-  assert.equal(merged.favoriteSource.alt, "aniworld");
-});
-
-test("Der jüngere Stand bestimmt die Einstellungen, und zwar vollständig", () => {
-  const local = emptyLibrary();
-  local.langPref = "DE";
-  local.hosterPref = "VOE";
-  local.playbackSpeed = 1.0;
-  local.modifiedAt = 1000;
-
-  const remote = emptyLibrary();
-  remote.langPref = "GerSub";
-  remote.hosterPref = "Vidmoly";
-  remote.playbackSpeed = 1.5;
-  remote.modifiedAt = 9000;
-
-  const merged = mergeLibraries(local, remote);
-  assert.equal(merged.langPref, "GerSub");
-  assert.equal(merged.hosterPref, "Vidmoly");
-  assert.equal(merged.playbackSpeed, 1.5);
-  assert.equal(merged.modifiedAt, 9000);
-
-  // Umgekehrt bleibt der lokale Stand stehen.
-  const other = mergeLibraries(remote, local);
-  assert.equal(other.langPref, "GerSub");
-});
-
-test("Ein echter Titel verdrängt einen Slug als Platzhalter", () => {
-  const local = emptyLibrary();
-  local.titles = { frieren: "frieren" };
-  const remote = emptyLibrary();
-  remote.titles = { frieren: "Frieren: Nach dem Ende der Reise" };
-  assert.equal(mergeLibraries(local, remote).titles.frieren, "Frieren: Nach dem Ende der Reise");
-});
-
-test("Der Verlauf wird vereinigt, je Titel der jüngste Aufruf", () => {
-  const local = emptyLibrary();
-  local.recents = [{ slug: "frieren", title: "Frieren", viewedAt: 1000, provider: "aniworld" }];
-  const remote = emptyLibrary();
-  remote.recents = [
-    { slug: "frieren", title: "Frieren", viewedAt: 9000, provider: "aniworld" },
-    { slug: "dark", title: "Dark", viewedAt: 5000, provider: "serienstream" },
-  ];
-  const merged = mergeLibraries(local, remote);
-  assert.equal(merged.recents.length, 2);
-  assert.equal(merged.recents[0].slug, "frieren");
-  assert.equal(merged.recents[0].viewedAt, 9000);
-});
-
-test("Ein zusammengeführter Stand bleibt lesbar und trägt die Schemaversion", () => {
-  const merged = mergeLibraries(emptyLibrary(), emptyLibrary());
-  const round = decodeLibrary(JSON.parse(JSON.stringify(encodeLibrary(merged))));
-  assert.equal(encodeLibrary(round).version, LIBRARY_SCHEMA_VERSION);
 });

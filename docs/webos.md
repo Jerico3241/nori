@@ -369,13 +369,16 @@ TMDB gar nicht führt.
 
 ## Bekannte Einschränkungen
 
-- **Kein Abgleich zwischen Geräten.** Die Bibliothek liegt im `localStorage`
-  des Fernsehers. Das Format ist dasselbe wie in der `library.json` von iPhone
-  und Mac, und „Bibliothek einlesen" **führt zusammen statt zu ersetzen**
-  (`mergeLibraries` im Kern) — ein Stand lässt sich also von Hand übernehmen,
-  ohne etwas zu verlieren. Ein Abgleichdienst (Google Drive, Dropbox, WebDAV)
-  ist auf **keiner** Plattform gebaut; `LibrarySyncProvider` beschreibt nur die
-  Naht, siehe `docs/synchronisation.md`.
+- **Der Abgleich über Google Drive ist nicht auf einem Fernseher geprüft.** Er
+  ist gebaut (Einstellungen → Abgleich, Anmeldung über den Gerätecode) und die
+  Zusammenführungsregel ist in beiden Kernen gegen dieselben Fälle geprüft
+  (`config/sync-fixtures.json`); der Ablauf über ein echtes Google-Konto und
+  zwei echte Geräte ist es nicht. Siehe `docs/google-drive-sync.md`.
+- **Ohne Drive bleibt die Bibliothek im `localStorage`** des Fernsehers. Das
+  Format ist dasselbe wie in der `library.json` von iPhone und Mac, und
+  „Bibliothek einlesen" **führt zusammen statt zu ersetzen**
+  (`mergeLibrarySnapshots` im Kern) — ein Stand lässt sich also auch von Hand
+  übernehmen, ohne etwas zu verlieren.
 - **Export und Einlesen gehen über die Konsole und ein Eingabefeld.** Der
   Fernseher hat keinen Dateimanager, und webOS blockt einen Download aus einer
   `file://`-App.

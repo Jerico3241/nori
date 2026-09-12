@@ -1,118 +1,158 @@
 # Bibliothek zwischen Geräten abgleichen
 
-Merkliste, Verlauf, Fortschritt und Einstellungen liegen in einer einzigen
-Datei: `~/Library/Application Support/Nori/library.json`, Schema v5, mit einem
-Zeitstempel `modifiedAt`. Ein Abgleich muss deshalb nur zwei Dinge können —
-die Datei irgendwo ablegen und sie wieder holen. Genau das verlangt
-`LibrarySyncProvider`:
+Merkliste, Verlauf, Wiedergabefortschritt und die geteilten Einstellungen
+liegen in einer Datei je Gerät — auf Apple
+`~/Library/Application Support/Nori/library.json`, auf dem Fernseher unter
+`nori.library` im lokalen Speicher. Schema **v6**.
 
-```swift
-protocol LibrarySyncProvider: AnyObject, Sendable {
-    var name: String { get }
-    func load() async throws -> Data?
-    func save(_ data: Data, modifiedAt: Double) async throws
-}
+Abgeglichen wird über **Google Drive**, ausschließlich im versteckten
+`appDataFolder`. Wie das eingerichtet wird und welche Werte der Betreiber
+anlegen muss, steht in **[google-drive-sync.md](google-drive-sync.md)**. Diese
+Datei erklärt, warum es so gebaut ist.
+
+## Warum nicht eine Datei mit einem Zeitstempel
+
+Ursprünglich stand hier: eine `library.json`, ein `modifiedAt`, der neuere
+Stand gewinnt. Kein Feldabgleich, kein Konfliktdialog — bei einer Bibliothek,
+die eine Person auf ihren eigenen Geräten führt, wäre das Aufwand ohne
+Gegenwert.
+
+Das stimmt nicht. Es verliert schon bei zwei Geräten:
+
+```text
+Fernseher und iPhone laden denselben Stand von gestern.
+Der Fernseher schreibt den Fortschritt einer Folge.
+Das iPhone merkt gleichzeitig einen Titel.
+Beide laden ihren kompletten Zustand hoch.
+Wer zuletzt schreibt, löscht die Änderung des anderen.
 ```
 
-Der neuere Zeitstempel gewinnt. Kein Feldabgleich, kein Konfliktdialog: bei
-einer Bibliothek, die eine Person auf ihren eigenen Geräten führt, wäre das
-Aufwand ohne Gegenwert.
+Niemand bemerkt das als Konflikt. Jedes Gerät sieht für sich richtig aus; nur
+die Änderung ist weg.
 
-## Was nach dem Holen passiert
+Deshalb schreibt **jedes Gerät nur seine eigene Datei** und liest die aller
+anderen:
 
-Das ist **keine** Frage des Anbieters, sondern eine Regel des Datenmodells —
-und sie liegt deshalb im Kern, nicht in einem Abgleichdienst:
-`mergeLibraries` in `shared/nori-core/src/library.ts` (TypeScript-Seite; die
-Swift-Seite zieht nach, wenn dort ein Anbieter entsteht).
+```text
+alle Gerätedateien lesen
+        ↓
+gemeinsamen Zustand berechnen
+        ↓
+lokal anwenden
+        ↓
+eigene Datei schreiben
+```
 
-- **Fortschritt**: je Folge gewinnt der jüngere `updatedAt`.
-- **Merkliste**: Vereinigung, sortiert nach `favoriteAddedAt`. Löschungen
-  wandern **nicht** mit — dafür bräuchte das Schema Grabsteine. Bis die es
-  gibt, ist ein zu viel gemerkter Titel der harmlosere Fehler.
-- **Titel und Verlauf**: Vereinigung, der jüngere Eintrag gewinnt.
-- **Einstellungen**: vollständig aus dem Stand mit dem jüngeren `modifiedAt`.
-  Ein Mischen einzelner Schalter ergäbe eine Einstellung, die auf keinem Gerät
-  jemals so gesetzt wurde.
+Ein Gerät verändert nie die Datei eines anderen. Damit gibt es praktisch keine
+Schreibkonflikte, und der Rest ist Rechnen.
 
-Die wichtigste Folge davon: **ein leerer oder alter Fremdstand löscht nichts.**
-Genau das ist der Fehler, den ein Abgleich machen kann und der nicht
-rückgängig zu machen ist.
+## Warum eine Löschung eine Spur hinterlassen muss
 
-Die webOS-App benutzt dieselbe Funktion schon heute für „Bibliothek einlesen"
-in den Einstellungen — ein Einlesen, das den lokalen Stand ersetzt, löscht
-stillschweigend alles, was nur auf diesem Gerät stand.
+Eine Liste sagt, was da ist — nie, was absichtlich weg ist. Würden nur Listen
+zusammengeführt, brächte jedes Gerät mit älterem Stand einen entfernten Titel
+zurück, und das Entfernen ließe sich nie durchsetzen.
+
+Seit v6 trägt deshalb jede Änderung ihre eigene Marke:
+
+- Die Merkliste ist ein **Zustand** je `provider|slug`, nicht eine Liste.
+  `isFavorite: false` ist ein Grabstein und schlägt jedes ältere `true`.
+- `historyClearedAt` und `progressClearedAt` verwerfen alles Ältere.
+- `recentsRemoved` tut dasselbe für einzeln entfernte Verlaufseinträge.
+- Jede Einstellung hat ihren **eigenen** Zeitstempel. Wer auf dem Mac die
+  Sprache umstellt und auf dem Fernseher das Autoplay, behält beides — mit
+  einem globalen `modifiedAt` verlöre eine der beiden Änderungen.
+
+## Warum die Gerätekennung mitentscheidet
+
+Bei gleichem Zeitstempel gewinnt die lexikographisch größere `deviceId`. Das
+sieht willkürlich aus und ist der Kern der Sache: Drive gibt Dateien in keiner
+zugesicherten Reihenfolge heraus. Ohne festen Tie-Break käme jedes Gerät zu
+einem anderen Ergebnis, schriebe es zurück, und der nächste Abgleich drehte es
+wieder um.
+
+`merge(A, B, C)` muss `merge(C, A, B)` sein. Das ist getestet — in beiden
+Kernen, in jeder Eingabereihenfolge.
+
+## Warum die Regeln zweimal existieren
+
+Den Kern gibt es in Swift und in TypeScript; TypeScript kann Swift nicht
+einbinden. Beide Fassungen müssen dieselbe Entscheidung treffen, sonst
+entscheidet der Fernseher anders als das iPhone, beide schreiben zurück, und die
+Bibliothek pendelt zwischen zwei Ständen.
+
+Abgesichert ist das über gemeinsame Fälle:
+
+```text
+config/sync-fixtures.json
+        ├── native/Tests/NoriCoreTests/LibrarySyncTests.swift
+        └── shared/nori-core/test/sync.test.ts
+```
+
+Dieselbe Datei, dieselben Erwartungen, zusätzlich jede Eingabereihenfolge und
+ein zweiter Durchlauf. Wer eine Regel ändert, ändert sie an drei Stellen —
+Swift, TypeScript, `config/contract.json` — und die Fixtures fangen ab, wenn
+nur zwei davon stimmen.
+
+## Warum ein Fehler nie Daten kostet
+
+Cloud-Abgleich ist optional, die lokale Bibliothek ist es nicht. Deshalb gilt
+ausnahmslos: kein Fehler in OAuth, Drive, Netz, Parsing oder Schema führt dazu,
+dass lokal etwas gelöscht wird.
+
+- Ein **unlesbarer Fremdstand** wird übergangen; die übrigen laufen durch.
+- Ein Stand mit **neuerer Schemaversion** hält den Upload an, statt Felder
+  wegzuwerfen, die diese Fassung nicht kennt.
+- **Kein Netz** ist ein Zustand und kein Fehler: die Änderungen liegen lokal,
+  und beim nächsten Netz geht es weiter.
+- Geschrieben wird **atomar**: ein Absturz mittendrin lässt den alten Stand
+  stehen statt eines halben JSON.
+
+## Warum nicht bei jeder Wiedergabesekunde
+
+Der Fortschritt wird lokal im Sekundentakt geschrieben — das muss er auch,
+sonst fehlt nach einem Absturz die letzte Minute. In die Cloud gehört er
+deshalb noch lange nicht im Sekundentakt.
+
+| Auslöser | Wann |
+| --- | --- |
+| Merkliste, Einstellungen, Verlauf | nach 4 Sekunden Ruhe |
+| laufende Wiedergabe | höchstens alle 25 Sekunden |
+| Pause, Player verlassen, Folge beendet | sofort |
+| App-Start, Rückkehr in den Vordergrund | sofort |
+| Gang in den Hintergrund | sofort |
+| im Vordergrund | alle 30 Sekunden nachsehen |
+| „Jetzt synchronisieren" | sofort, vollständig — holen, zusammenführen, schreiben |
+
+Der Gang in den Hintergrund ist der letzte verlässliche Moment. Auf ein „App
+wird beendet" ist kein Verlass, und deshalb hängt daran auch nichts.
+
+Die Wiedergabe wartet nie auf Drive: der Spieler schreibt lokal, meldet die
+Änderung und läuft weiter.
 
 ## Warum iCloud draußen ist
 
 iCloud war fest im Store verdrahtet und hat **nie funktioniert**.
 `NSUbiquitousKeyValueStore` braucht die Berechtigung
 `com.apple.developer.ubiquity-kvstore-identifier`. Die gibt es nur über das
-kostenpflichtige Apple-Developer-Programm (99 €/Jahr), und ohne sie tun die
-Aufrufe schlicht nichts — kein Fehler, keine Ausnahme, kein Protokolleintrag.
-Der Schalter in den Einstellungen versprach also einen Abgleich, der nie
-stattfand.
+kostenpflichtige Apple-Developer-Programm, und ohne sie tun die Aufrufe schlicht
+nichts — kein Fehler, keine Ausnahme, kein Protokolleintrag. Der Schalter in den
+Einstellungen versprach also einen Abgleich, der nie stattfand.
 
-Weggefallen ist damit auch das automatische Hochladen bei jeder Änderung. Ein
-Anbieter, der über das Netz geht, gehört nicht in jeden Tastendruck;
-angestoßen wird über `syncNow()`.
+Google Drive war auch deshalb die Wahl: es funktioniert auf allen vier
+Plattformen mit demselben Konto, und der `appDataFolder` ist genau für diesen
+Zweck gemacht.
 
-## Was stattdessen möglich ist
+Eine Korrektur zur früheren Fassung dieser Datei: `drive.appdata` gilt bei
+Google **nicht** als sensibler Bereich. Eine Überprüfung ist dafür nicht nötig,
+und der Testmodus ist keine Einschränkung, sondern nur der bequemste Weg für den
+Eigengebrauch.
 
-Alle vier Wege sind für den Nutzer kostenlos. Der Unterschied liegt darin,
-was **einmalig eingerichtet** werden muss.
+## Was von der alten Abstraktion bleibt
 
-| Weg | Kosten | Einmalige Einrichtung | Aufwand im Code |
-| --- | --- | --- | --- |
-| **Google Drive** (`appDataFolder`) | keine | Google-Cloud-Projekt, OAuth-Client-ID | mittel |
-| **Dropbox** | keine | App im Dropbox-Entwicklerportal, App-Key | mittel |
-| **WebDAV / Nextcloud** | keine, wenn ein Server da ist | Adresse, Benutzer, Passwort | **klein** |
-| **Git-Repository** | keine | privates Repo, Zugriffstoken | klein |
+`LibrarySyncProvider` — eine Datei ablegen, eine Datei holen — steht weiterhin
+im Kern. Sie ist für eine einfache Ablage die richtige Form und wird nicht
+entfernt, nur weil aktuell Google Drive umgesetzt ist.
 
-### Google Drive
-
-Der `appDataFolder` ist ein versteckter Ordner je App und Konto. Der Nutzer
-sieht ihn in Drive nicht, andere Apps kommen nicht heran, und beim Löschen der
-App verschwindet er mit.
-
-- Anmeldung über `ASWebAuthenticationSession` mit OAuth 2.0 und PKCE. Ein
-  Client-Secret ist damit nicht nötig und gehört auch nicht in eine App.
-- Nötiger Bereich: `https://www.googleapis.com/auth/drive.appdata`.
-- Zwei Aufrufe genügen: `files.list` mit `spaces=appDataFolder`, dann
-  `files.create` beziehungsweise `files.update` mit `uploadType=media`.
-- **Haken:** `drive.appdata` gilt bei Google als sensibler Bereich. Eine
-  veröffentlichte App braucht dafür eine Überprüfung. Für den Eigengebrauch
-  reicht der Testmodus mit bis zu 100 eingetragenen Konten — ohne
-  Überprüfung, ohne Kosten.
-
-### Dropbox
-
-Technisch dasselbe Bild, ohne Überprüfungshürde: App anlegen, Bereich
-`files.content.write` und `files.content.read`, dann `/2/files/upload` und
-`/2/files/download`. Die Datei liegt sichtbar im Ordner der App.
-
-### WebDAV
-
-Der kürzeste Weg: zwei HTTP-Aufrufe, `GET` und `PUT`, Anmeldung per Basic Auth
-über den Schlüsselbund. Kein Entwicklerportal, keine Überprüfung, kein
-Token-Auffrischen. Setzt voraus, dass der Nutzer eine Nextcloud oder einen
-anderen WebDAV-Speicher hat.
-
-### Git
-
-Ein privates Repository und ein Token; die Bibliothek als eine Datei darin.
-Ungewöhnlich, aber der Verlauf ist damit gratis dabei — jeder Stand bleibt
-nachvollziehbar und lässt sich zurückholen.
-
-## Empfehlung
-
-**Google Drive**, weil fast jeder ein Konto hat und der `appDataFolder` genau
-für diesen Zweck gemacht ist. Der Testmodus deckt den Eigengebrauch ab.
-
-Nötig ist dafür **eine Angabe, die nur der Betreiber liefern kann**: eine
-OAuth-Client-ID aus der Google Cloud Console. Ohne sie lässt sich die
-Anmeldung nicht bauen — und genau daran ist iCloud gescheitert, nur unsichtbar.
-Deshalb wird die Client-ID wie der TMDB-Schlüssel behandelt: nicht im
-Quelltext, sondern über Schlüsselbund beziehungsweise Build-Einstellung.
-
-Wer keinen Google-Account einbinden will, ist mit **WebDAV** schneller am
-Ziel — vorausgesetzt, es gibt einen Server.
+Der Abgleich über mehrere Geräte benutzt daneben `LibrarySnapshotStore`, der
+viele Dateien kennt. Umgesetzt ist davon genau einer:
+`GoogleDriveSnapshotStore`. Dropbox, WebDAV und Git sind nicht gebaut.

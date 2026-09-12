@@ -33,7 +33,7 @@ setHtmlParser((html: string) => parseHTML(html).document as unknown as Document)
  * von der Couch aus sehen, ob der Server alt ist — etwa einer ohne
  * `/api/tmdb`.
  */
-export const API_VERSION = "1.2.0";
+export const API_VERSION = "1.3.0";
 
 const PORT = Number(process.env.NORI_API_PORT ?? process.env.PORT ?? 8730);
 const HOST = process.env.NORI_API_HOST ?? "0.0.0.0";

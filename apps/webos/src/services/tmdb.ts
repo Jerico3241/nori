@@ -25,7 +25,7 @@
 import {
   DirectTMDBTransport, FetchHttpClient, NoTMDBTransport, ServerTMDBTransport, TMDBClient,
   TMDB_FEEDS, alignEpisodes, alignmentIsUsable, emptySignals, feedMaxAge, pickTmdbSeason,
-  tmdbImageURL,
+  isDefinitive, tmdbImageURL,
   type CatalogProvider, type SeasonMatch, type SourceEpisodeRef, type TMDBCandidate,
   type TMDBEpisodeInfo, type TMDBFeed, type TMDBKeyOrigin, type TMDBSignals, type TMDBStatus,
 } from "@nori/core";
@@ -38,11 +38,13 @@ import { log, warn } from "./log";
  * dann mit einer anderen Regel entstanden und teilweise falsch; sie weiter zu
  * benutzen hieße, den Fehler zu konservieren.
  *
+ * v3: Fehlschläge tragen ihre Gültigkeitsdauer mit sich, weil „TMDB kennt
+ * das nicht" (404) länger gilt als „gesucht und nichts Passendes gefunden".
  * v2: erste Fassung mit Titelabgleich aus dem Kern, Staffelzuordnung mit
  * Versatzerkennung und Alternativtiteln. v1 waren die Backdrops aus
  * `covers.ts`, die den erstbesten Suchtreffer nahmen — die sind verworfen.
  */
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 const TITLES_KEY = `nori.tmdb.titles.v${STORE_VERSION}`;
 const FEEDS_KEY = `nori.tmdb.feeds.v${STORE_VERSION}`;
@@ -50,8 +52,21 @@ const SEASONS_KEY = `nori.tmdb.seasons.v${STORE_VERSION}`;
 const RELATED_KEY = `nori.tmdb.related.v${STORE_VERSION}`;
 
 const MAX_CONCURRENT = 4;
-/** Wie lange ein Fehlschlag gilt, bevor erneut gesucht wird. */
+/**
+ * Wie lange ein Fehlschlag gilt, bevor erneut gesucht wird.
+ *
+ * Zwei Fristen, weil es zwei verschiedene Auskünfte sind. Bei **404** sagt
+ * TMDB, dass es die Kennung nicht führt — das ändert sich praktisch nie, also
+ * zwei Wochen. „Gesucht, geantwortet, nichts hat die Titelschwelle erreicht"
+ * ist dagegen eine Aussage über den heutigen Datenstand: TMDB wächst, und
+ * gerade bei frischen Anime kommt der Eintrag oft Tage später. Ein halber Tag.
+ *
+ * Ratenbegrenzung und abgelehnter Schlüssel gelten überhaupt nicht als
+ * Fehlschlag — sie werden nie gemerkt.
+ */
 const MISS_MAX_AGE = 12 * 3_600_000;
+/** Frist für ein belegtes „gibt es dort nicht" (HTTP 404). */
+const DEFINITIVE_MISS_MAX_AGE = 14 * 86_400_000;
 /** Wie lange die Angaben zu einem Titel gelten. */
 const TITLE_MAX_AGE = 21 * 86_400_000;
 /** Wie lange eine Staffel gilt. Folgentitel ändern sich kaum. */
@@ -90,11 +105,17 @@ export interface SeasonArt {
   fetchedAt: number;
 }
 
+/** Ein gemerkter Fehlschlag: wann, und wie lange er gilt. */
+interface TitleMiss {
+  at: number;
+  maxAge: number;
+}
+
 interface TitleStore {
   version: number;
   art: Record<string, TitleArt>;
-  /** Schlüssel → Zeitpunkt des Fehlschlags. */
-  missing: Record<string, number>;
+  /** Schlüssel → Fehlschlag. */
+  missing: Record<string, TitleMiss>;
 }
 
 interface FeedStore {
@@ -300,8 +321,8 @@ class TmdbService {
     if (known && Date.now() - known.fetchedAt < TITLE_MAX_AGE) return known;
     if (!this.available) return known ?? null;
 
-    const missedAt = this.titles.missing[key];
-    if (missedAt && Date.now() - missedAt < MISS_MAX_AGE) return known ?? null;
+    const miss = this.titles.missing[key];
+    if (miss && Date.now() - miss.at < miss.maxAge) return known ?? null;
 
     return this.once(`art:${key}`, () => this.schedule(async () => {
       const { result, status } = await this.client.findSeries({
@@ -315,7 +336,10 @@ class TmdbService {
         // Nur einen echten Fehlschlag merken. Bei 401 oder 429 hat TMDB nichts
         // über den Titel gesagt — das ist kein „gibt es dort nicht".
         if (status === "ok" || status === "notFound") {
-          this.titles.missing[key] = Date.now();
+          this.titles.missing[key] = {
+            at: Date.now(),
+            maxAge: isDefinitive(status) ? DEFINITIVE_MISS_MAX_AGE : MISS_MAX_AGE,
+          };
           this.save(TITLES_KEY, () => this.titles);
         }
         return known ?? null;
@@ -624,8 +648,8 @@ class TmdbService {
     }
     // Abgelaufene Fehlschläge kosten nur Platz.
     const now = Date.now();
-    for (const [key, stamp] of Object.entries(this.titles.missing)) {
-      if (now - stamp > MISS_MAX_AGE) delete this.titles.missing[key];
+    for (const [key, miss] of Object.entries(this.titles.missing)) {
+      if (now - miss.at > miss.maxAge) delete this.titles.missing[key];
     }
   }
 

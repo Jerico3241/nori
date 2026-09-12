@@ -5,7 +5,76 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.2.0**.
+Windows **1.8.0**, LG webOS **1.3.0**.
+
+## [webOS 1.3.0] — 2026-09-12
+
+Die Zusammenführung von 1.2.0 mit dem Stand auf `main`. Beide Seiten hatten
+gleichzeitig an TMDB gearbeitet, und `main` hat dabei den Abgleich über Google
+Drive und Bibliotheksschema v6 bekommen. Eine neue Nummer, weil ein anderes
+Paket entsteht: derselbe Stand unter derselben Version wäre der Fehler, den man
+auf einem Fernseher nicht mehr auseinanderhalten kann.
+
+### Hinzugefügt
+
+- **Abgleich über Google Drive** auf dem Fernseher — aus `main` übernommen,
+  mitsamt Anmeldung über den Gerätecode (die Fernbedienung tippt keine
+  Zugangsdaten) und Bibliotheksschema **v6** mit Löschmarken. Was daran geprüft
+  ist und was nicht, steht unten.
+
+### Geändert
+
+- **Eine TMDB-Fassung statt zweier.** `main` hatte `shared/nori-core/src/tmdb.ts`
+  bekommen, dieser Zweig `shared/nori-core/src/tmdb/`. Geblieben ist das
+  Verzeichnis; aus der Einzeldatei sind die Teile übernommen, die dort besser
+  waren:
+  - „The Final Season" räumt nicht mehr zu „… the" ab — der bestimmte Artikel
+    gehört **in** den Ausdruck und nicht in eine zweite Zeile danach.
+  - Ein Logo **ohne** Sprachkennzeichen steht jetzt vor einem fremdsprachigen
+    statt mit ihm auf einer Stufe, und bei gleicher Bewertung entscheidet
+    `vote_count`.
+  - Eine bereits vollständige Bildadresse wird nicht noch einmal
+    zusammengesetzt.
+  - Fehlschläge haben zwei Fristen statt einer: **HTTP 404** gilt vierzehn
+    Tage, „gesucht und nichts über der Titelschwelle" nur zwölf Stunden. TMDB
+    wächst, und gerade bei frischen Anime kommt der Eintrag Tage später.
+    Ratenbegrenzung und abgelehnter Schlüssel gelten wie vorher überhaupt nicht
+    als Fehlschlag.
+- **Die Staffelzuordnung folgt jetzt buchstäblich dem Contract.** Sie hatte
+  einen Versatz schon bei **zwei** übereinstimmenden Folgentiteln übernommen,
+  während `config/contract.json` und `TMDBSeasonMap` auf der Swift-Seite drei
+  verlangen, dazu die Hälfte der benennbaren Quellfolgen und keinen zweiten
+  gleich gut belegten Versatz. Jetzt gilt dieselbe Regel in beiden Kernen —
+  drei neue Testfälle grenzen sie ab. Das ist die strengere Fassung: lieber
+  keine Folgendaten als die der falschen Folge.
+- **„Bibliothek einlesen" benutzt `mergeLibrarySnapshots`**, also dieselbe
+  Regel wie der Geräteabgleich, statt einer eigenen. Von Hand eingelesen und
+  über Drive abgeglichen führen damit nicht zu zwei verschiedenen Ergebnissen.
+  Die eigene Gerätekennung bleibt dabei die dieser Installation — übernähme der
+  Fernseher die des Geräts, von dem der Stand stammt, schrieben beide in
+  dieselbe Drive-Datei.
+- **Die Ablage der TMDB-Angaben auf dem Fernseher ist v3.** v2-Stände werden
+  verworfen, weil die Fehlschläge dort keine Frist mittragen. Kostet einmal
+  Nachladen, keine Daten.
+
+### Behoben
+
+- **Aussagen über den Geräteabgleich, die nicht mehr stimmten.** Einstellungen,
+  `docs/webos.md` und der CHANGELOG behaupteten „ein Abgleich zwischen Geräten
+  ist auf keiner Plattform gebaut". Das war vor der Zusammenführung richtig und
+  danach falsch.
+
+### Geprüft
+
+- **Automatisch:** 165 Testfälle im Kern (davon die TMDB-Zuordnung,
+  Staffelversätze, Ranglisten und der Schlüssel), 13 am Nori-Server, 130 Prüfungen
+  im Fernbedienungslauf gegen einen nachgebauten Server — einschließlich Start
+  von `file://`, dem Rückfall für fehlendes Flex-`gap` und der Ablage nach
+  Schema v6.
+- **Nicht geprüft:** der Abgleich über ein echtes Google-Konto und zwei echte
+  Geräte. Die Zusammenführungsregel selbst ist es — in beiden Kernen gegen
+  `config/sync-fixtures.json`. Und wie immer: kein Lauf auf einem echten
+  webOS-Gerät.
 
 ## [webOS 1.2.0] — 2026-09-12
 
@@ -125,12 +194,11 @@ Namen verdienen.
   aus zwei Stimmen neben einer weltweit laufenden Serie.
 - **Schriftzüge von TMDB** im Kopfbereich von Startseite und Detailseite; ohne
   einen steht der Titel als Schrift, und das ist kein Mangel.
-- **`mergeLibraries` im Kern.** „Bibliothek einlesen" führt jetzt zusammen
-  statt zu ersetzen: je Folge gewinnt der jüngere Zeitstempel, die Merkliste
-  wird vereinigt, und die Einstellungen kommen vollständig aus dem jüngeren
-  Stand. Ein eingelesener Stand von letzter Woche kann damit den Fortschritt
-  von heute Abend nicht mehr löschen. Dieselbe Regel wird jeder künftige
-  Abgleichdienst benutzen.
+- **„Bibliothek einlesen" führt zusammen statt zu ersetzen.** Ein eingelesener
+  Stand von letzter Woche kann damit den Fortschritt von heute Abend nicht mehr
+  löschen. Die Regel ist dieselbe, die der Geräteabgleich benutzt
+  (`mergeLibrarySnapshots` im Kern) — von Hand eingelesen und über Drive
+  abgeglichen führen also nicht zu zwei verschiedenen Ergebnissen.
 - **TMDB-Diagnose in den Einstellungen**: welcher Weg gilt, was TMDB
   zuletzt geantwortet hat, wie viele Titel zugeordnet sind, wie viele davon
   erst über Alternativtitel, wie viele Staffeln abgelegt sind und wie viele
@@ -265,9 +333,131 @@ Namen verdienen.
   dieselben Antwortformen liefert — einschließlich der Fälle, die in der Praxis
   schiefgehen (Name ohne Gemeinsamkeit mit dem Quelltitel, versetzte
   Folgenzählung, Titel ohne TMDB-Eintrag, 401, 404, 429, Netzfehler).
-- **Ein Abgleich zwischen Geräten** gibt es weiterhin nicht — auf keiner
-  Plattform. `LibrarySyncProvider` beschreibt die Naht, `mergeLibraries` die
-  Regel danach; ein Anbieter (Google Drive, Dropbox, WebDAV) ist nicht gebaut.
+- **Der Abgleich über Google Drive.** Er ist in derselben Zusammenführung nach
+  webOS gekommen (eigener Abschnitt weiter unten) und im Fernbedienungslauf nur
+  bis zur Einstellungsseite geprüft: dass der Abschnitt steht, sagt, was fehlt,
+  und bedienbar ist. Der Geräteanmeldecode, der Drive-Abruf und das
+  Zusammenführen über zwei echte Geräte sind hier **nicht** geprüft — die
+  Regel selbst schon, gegen `config/sync-fixtures.json` und in beiden Kernen.
+
+## [Unveröffentlicht] — TMDB-Metadaten
+
+Fehlende Cover, Backdrops, Logos, Folgenbilder, Folgentitel und -beschreibungen
+hatten nicht **eine** Ursache, sondern sechs voneinander unabhängige. Alle
+wurden gegen die echte TMDB-Schnittstelle nachgewiesen, bevor etwas geändert
+wurde.
+
+### Behoben
+
+- **Die Cover-Suche stellte nur eine einzige Anfrage.** `TMDBMatcher.queries`
+  baut seit jeher eine Kette von Schreibweisen auf — die Cover-Suche benutzte
+  sie nie, nur die Kennungssuche. Gemessen: „Attack on Titan Staffel 2" liefert
+  bei TMDB **null** Zeilen, „attack on titan" vier. Die Kette wird jetzt
+  abgearbeitet, der erste Treffer beendet sie. Für Titel, die schon vorher
+  gefunden wurden, bleibt es bei einer Anfrage.
+- **Alternativtitel erreichten die Cover-Suche gar nicht.** `detailsLoading`
+  nahm keine entgegen; die Detailseite gab sie nur an Kennungs- und Logosuche
+  weiter. Sie werden jetzt durchgereicht.
+- **Anime unter ihrer Umschrift waren nicht auffindbar.** `/search/tv?query=
+  Shingeki no Kyojin` liefert genau eine Zeile — die richtige (#1429) —, deren
+  `name` „Attack on Titan" und deren `original_name` „進撃の巨人" ist. Zu
+  keinem von beiden passt der Suchbegriff, also verwarf Nori den Treffer. Die
+  Umschrift steht nur in `/tv/{id}/alternative_titles`; die werden jetzt
+  nachgeladen, wenn die Kette nichts ergibt. Dasselbe galt für „Sousou no
+  Frieren".
+- **Ein fehlendes Poster kostete sämtliche Metadaten.** Die Cover-Suche verlangte
+  ein Poster und verwarf sonst die ganze Zeile — mitsamt Breitbild,
+  Beschreibung, Bewertung und vor allem der **TMDB-Kennung**, an der Logo und
+  alle Folgendaten hängen. Übernommen wird jetzt, was dasteht.
+- **Folgendaten fehlten, sobald die Quelle anders in Staffeln teilt als TMDB.**
+  Gemessen: Jujutsu Kaisen ist bei TMDB **eine** Staffel mit 59 Folgen, AniWorld
+  führt zwei — `/tv/95479/season/2` antwortet mit HTTP 404. Dasselbe bei
+  Detektiv Conan (eine Staffel, 1213 Folgen) und Frieren. Neu ordnet
+  `TMDBSeasonMap` die Folgen über ihre **Titel** zu und belegt den Versatz;
+  lässt er sich nicht belegen, wird nichts zugeordnet.
+- **Fehlgeschlagene Abrufe wurden wie gültige leere Daten abgelegt.** Jede
+  Antwort ohne Folgen landete im `missed`-Satz, der auf die Platte wandert —
+  auch eine Zeitüberschreitung, ein 429 und ein 401. Eine einzige
+  Ratenbegrenzung schrieb eine Staffel damit dauerhaft ab. Neu unterscheidet
+  `TMDBFailure`; nur HTTP 404 darf gemerkt werden, und auch das nur 14 Tage.
+- **Einzelne Textlücken wurden nie gefüllt.** Die englische Fassung wurde erst
+  geholt, wenn mehr als der **halben** Staffel die deutsche Beschreibung
+  fehlte. Gemessen an Dan Da Dan, Staffel 1: 23 von 24 deutschen Texten
+  vorhanden, der 24. blieb leer, obwohl der englische vorlag. Jetzt entscheidet
+  jede Folge und jedes Feld für sich, und `airDate` und `runtime` werden beim
+  Zusammenführen nicht mehr vergessen.
+- **Der Sprachfilter für Logos hatte keinen Ausweg.** `include_image_language=
+  de,en,null` kostet messbar Bilder — Jujutsu Kaisen 8 gefiltert gegen 30
+  ungefiltert, Naruto 3 gegen 20, Demon Slayer 13 gegen 49. Ergibt der Filter
+  nichts, wird jetzt ohne ihn gefragt. In der Rangfolge steht ein Logo **ohne**
+  Sprachkennzeichen nun vor einem fremdsprachigen statt mit ihm auf einer Stufe.
+- **„The Final Season" wurde zu „the" abgeräumt.** Ein Ausdruck in
+  `stripVariants` griff vor dem, der den Artikel mitnimmt; übrig blieb
+  „attack on titan the". Beide Kerne korrigiert.
+- **webOS nahm den erstbesten TMDB-Treffer.** Die Fernseh-App suchte einmal und
+  nahm `results.find((row) => row.backdrop_path)` — die erste Zeile mit einem
+  Bild, ungeprüft. Sie benutzt jetzt dieselbe Bewertung wie die Apple-Apps, aus
+  `@nori/core`.
+
+### Hinzugefügt
+
+- `shared/nori-core/src/tmdb/` — die TMDB-Zuordnung als zweiter Kern, mit
+  denselben Testfällen wie auf der Swift-Seite.
+- Ein `tmdb`-Abschnitt in `config/contract.json`: Bildgrößen, Titelschwelle,
+  Suchkette, Sprachreihenfolgen, Logorangfolge, Staffelzuordnung und die Regel,
+  welche Fehlschläge gemerkt werden dürfen.
+- `NoriLog` — Protokollzeilen zur Fehlersuche, über `NORI_LOG` einzuschalten und
+  standardmäßig aus. Sie tragen nie den API-Schlüssel und nie eine vollständige
+  Anfrageadresse.
+
+## [Unveröffentlicht] — Abgleich über Google Drive
+
+Noch keine Version geschnitten: die App-Versionen stammen aus
+`MARKETING_VERSION` der Xcode-Projekte und werden beim Release gesetzt.
+
+### Hinzugefügt
+
+- **Abgleich über Google Drive** zwischen iPhone, iPad, Mac und Fernseher.
+  Ausschließlich im versteckten `appDataFolder` (Bereich `drive.appdata`) —
+  die Dateien tauchen in „Meine Ablage" nicht auf, und mehr als diesen einen
+  Bereich fordert Nori nicht an. Einrichtung: `docs/google-drive-sync.md`.
+- **Eine Datei je Gerät** statt einer gemeinsamen. Jedes Gerät schreibt nur
+  seine eigene und liest die der anderen; damit gehen gleichzeitige Änderungen
+  auf zwei Geräten nicht mehr verloren.
+- **Anmeldung je Plattform auf dem dafür vorgesehenen Weg:**
+  `ASWebAuthenticationSession` auf iOS, Browser mit Loopback-Server auf macOS,
+  Gerätecode auf dem Fernseher — dort mit großer Adresse, großem Code und
+  sichtbarem Ablauf statt eines Wartekreisels.
+- **„Dieses Gerät trennen" und „Google-Zugriff widerrufen"** als getrennte
+  Handlungen. Das erste lässt Bibliothek, Drive-Dateien und die anderen Geräte
+  unangetastet; das zweite betrifft alle Geräte an diesem Konto und fragt
+  vorher.
+
+### Geändert
+
+- **Bibliotheksschema v6.** Jede Änderung trägt jetzt ihre eigene Marke: die
+  Merkliste ist ein Zustand mit Grabsteinen statt einer Liste, Löschungen von
+  Verlauf und Fortschritt hinterlassen einen Zeitpunkt, und jede Einstellung
+  hat ihren eigenen Änderungsstempel. Bestehende Stände werden verlustfrei
+  übernommen; die Migration ist getestet.
+- **Der Fortschritt geht nicht mehr bei jeder Sekunde ins Netz.** Lokal wird
+  weiter im Sekundentakt geschrieben, in die Cloud höchstens alle 25 Sekunden —
+  und sofort bei Pause, Verlassen des Players und Wechsel in den Hintergrund.
+
+### Behoben
+
+- **`docs/synchronisation.md` behauptete, `drive.appdata` sei bei Google ein
+  sensibler Bereich** und brauche eine Überprüfung, weshalb nur der Testmodus
+  infrage komme. Das stimmt nicht: der Bereich gilt als nicht sensibel.
+
+### Sicherheit
+
+- Tokens liegen auf Apple im Schlüsselbund, nie in `library.json`, nie im
+  Protokoll und nie in der Cloud. Client-IDs kommen aus Build-Einstellungen.
+- Ein Fehler in OAuth, Drive, Netz, Parsing oder Schema führt unter keinen
+  Umständen dazu, dass lokal etwas gelöscht wird. Ein unlesbarer Fremdstand
+  wird übergangen, ein neuerer Schemastand hält den Upload an, und ohne Netz
+  läuft Nori vollständig weiter.
 
 ## [iOS 1.20.0] — 2026-09-12
 

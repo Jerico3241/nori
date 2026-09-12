@@ -203,8 +203,10 @@ export function stripVariants(raw: string): string {
     /\s*\b(19|20)\d{2}\b\s*$/gi,
     /\s*\b(staffel|season|saison|serie|part|teil|cour)\s+\d+\b/gi,
     /\s*\b\d+\s*(staffel|season)\b/gi,
-    /\s*\b(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b/gi,
-    /\s*\b(the\s+)?final\s+season\b/gi,
+    // Der bestimmte Artikel gehört **in** den Ausdruck, nicht in eine zweite
+    // Zeile danach: „The Final Season" ohne ihn ergibt „… the" und findet
+    // nichts. Das war der gemessene Fall bei Shingeki no Kyojin.
+    /\s*\b(the\s+)?(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b/gi,
     /\s*\b\d+(st|nd|rd|th)\s+season\b/gi,
   ];
   for (const pattern of patterns) text = text.replace(pattern, " ");
