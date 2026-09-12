@@ -417,3 +417,32 @@ final class LibrarySyncEngineTests: XCTestCase {
         XCTAssertEqual(remote.downloads, nachErstem, "Ein unveränderter Fremdstand wurde erneut geladen")
     }
 }
+
+// MARK: - Wiedererkennung der eigenen Datei
+
+extension LibrarySyncEngineTests {
+
+    /// Ohne gemerkte Kennung wird die eigene Datei am Gerätekennzeichen
+    /// wiedererkannt — statt eine zweite anzulegen.
+    ///
+    /// Der Fall tritt nach jeder erneuten Zustimmung ein: die Engine hält die
+    /// Kennung dann für die eines anderen Kontos und vergisst sie. Ohne diesen
+    /// Weg füllte sich der Ordner mit Karteileichen desselben Geräts.
+    func testOwnFileIsFoundByDeviceIdWhenTheIdWasForgotten() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let books = FakeBookkeeping()
+        let sync = engine(store, remote, books)
+
+        await sync.run()
+        XCTAssertEqual(remote.files.count, 1)
+
+        // Wie nach einer erneuten Zustimmung.
+        books.values["nori.sync.driveFileId"] = nil
+        store.toggleFavorite("naruto", title: "Naruto")
+        await sync.run()
+
+        XCTAssertEqual(remote.files.count, 1, "Für dasselbe Gerät liegen jetzt zwei Dateien in Drive")
+    }
+}

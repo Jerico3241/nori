@@ -212,9 +212,9 @@ final class LibrarySyncEngine {
 
         status = .syncing
         do {
-            let merged = try await pullAndMerge(from: remote)
-            guard let merged else { return }  // Status ist bereits gesetzt
-            store.applyMerged(merged)
+            let pulled = try await pullAndMerge(from: remote)
+            guard let pulled else { return }  // Status ist bereits gesetzt
+            store.applyMerged(pulled.merged)
 
             // Der eigene Stand wird **nach** dem Anwenden gebildet. Sonst
             // fehlte darin genau das, was gerade zusammengeführt wurde.
@@ -223,7 +223,7 @@ final class LibrarySyncEngine {
             guard payload.count <= LibrarySyncLimits.maxSnapshotBytes else {
                 throw GoogleDriveError.tooLarge(payload.count)
             }
-            let written = try await upload(payload, to: remote)
+            let written = try await upload(payload, to: remote, known: pulled.refs)
             bookkeeping.setSyncValue(written.id, forKey: Self.fileIdKey)
             // Der eigene Stand ist damit bekannt. Ohne diesen Eintrag lädt der
             // nächste Abgleich die gerade selbst geschriebene Datei wieder
@@ -252,7 +252,9 @@ final class LibrarySyncEngine {
     /// und in denen läuft die Wiedergabe weiter. Würde gegen eine Kopie von
     /// vorhin zusammengeführt, setzte der Abgleich den Fortschritt zurück, den
     /// der Spieler gerade geschrieben hat.
-    private func pullAndMerge(from remote: LibrarySnapshotStore) async throws -> LibraryData? {
+    private func pullAndMerge(
+        from remote: LibrarySnapshotStore
+    ) async throws -> (merged: LibraryData, refs: [RemoteSnapshotRef])? {
         let refs = try await remote.list()
         var snapshots: [LibraryData] = []
         var warning: String?
@@ -298,16 +300,28 @@ final class LibrarySyncEngine {
         lastWarning = warning
         // Der lokale Stand kommt zuletzt dazu und hat keinen Sonderrang — das
         // Ergebnis ist dasselbe, wenn er zuerst käme.
-        return mergeLibrarySnapshots(snapshots + [store.snapshot()], now: clock())
+        return (mergeLibrarySnapshots(snapshots + [store.snapshot()], now: clock()), refs)
     }
 
-    private func upload(_ payload: Data, to remote: LibrarySnapshotStore) async throws -> RemoteSnapshotRef {
-        let known = bookkeeping.syncValue(forKey: Self.fileIdKey)
+    private func upload(
+        _ payload: Data,
+        to remote: LibrarySnapshotStore,
+        known refs: [RemoteSnapshotRef]
+    ) async throws -> RemoteSnapshotRef {
+        // Die gemerkte Kennung zuerst; ist keine da, die eigene Datei am
+        // Gerätekennzeichen wiedererkennen.
+        //
+        // Der zweite Weg ist der wichtige. Ohne ihn legte jede erneute
+        // Zustimmung — und jede Neuinstallation mit erhaltener Bibliothek —
+        // eine zweite Datei für dasselbe Gerät an, und der Ordner füllte sich
+        // mit Karteileichen.
+        let fileId = bookkeeping.syncValue(forKey: Self.fileIdKey)
+            ?? refs.first { $0.deviceId == store.deviceId }?.id
         do {
-            return try await remote.upload(payload, deviceId: store.deviceId, fileId: known)
+            return try await remote.upload(payload, deviceId: store.deviceId, fileId: fileId)
         } catch let error as GoogleDriveError where error == .notFound {
-            // Die gemerkte Datei gibt es nicht mehr — von Hand gelöscht, oder
-            // das Konto wurde gewechselt. Eine neue anlegen statt aufzugeben.
+            // Zwischen Auflisten und Schreiben gelöscht. Eine neue anlegen
+            // statt aufzugeben.
             bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
             return try await remote.upload(payload, deviceId: store.deviceId, fileId: nil)
         }
