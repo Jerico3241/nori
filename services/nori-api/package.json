@@ -1,15 +1,16 @@
 {
   "name": "@nori/api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Nori-Provider-Schicht als HTTP-Dienst für Clients, die nicht selbst scrapen können (webOS)",
   "scripts": {
     "prebuild": "npm --prefix ../../shared/nori-core run build",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "dev": "npm run build && node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
   },
   "dependencies": {
     "@nori/core": "file:../../shared/nori-core",

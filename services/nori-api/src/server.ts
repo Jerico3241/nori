@@ -20,8 +20,20 @@ import {
   isSafeRemoteURL, setHtmlParser,
   type CatalogProvider, type HosterOption,
 } from "@nori/core";
+import { rewriteM3U8 } from "./playlist.js";
+import { cacheSize, clearTMDBCache, hasTMDBKey, proxyTMDB } from "./tmdb.js";
 
 setHtmlParser((html: string) => parseHTML(html).document as unknown as Document);
+
+/**
+ * Die Version dieses Dienstes.
+ *
+ * Sie steht in der Antwort von `/api/health`, und der Fernseher zeigt sie in
+ * den Einstellungen unter „Server: erreichbar (Version …)". Damit lässt sich
+ * von der Couch aus sehen, ob der Server alt ist — etwa einer ohne
+ * `/api/tmdb`.
+ */
+export const API_VERSION = "1.1.0";
 
 const PORT = Number(process.env.NORI_API_PORT ?? process.env.PORT ?? 8730);
 const HOST = process.env.NORI_API_HOST ?? "0.0.0.0";
@@ -51,7 +63,7 @@ function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
   };
 }
 
@@ -146,35 +158,6 @@ async function proxy(
   Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
 }
 
-/**
- * Adressen in einer HLS-Playlist auf den eigenen Weiterreicher umbiegen.
- *
- * Sonst holt der Fernseher die Segmente direkt beim Hoster — ohne `Referer`,
- * und damit oft mit 403. Betroffen sind Zeilen ohne `#` und die
- * `URI="…"`-Angaben in Schlüssel-, Map- und Media-Zeilen.
- */
-export function rewriteM3U8(text: string, baseUrl: string, referer: string | null): string {
-  const wrap = (raw: string): string => {
-    let absolute: string;
-    try {
-      absolute = new URL(raw, baseUrl).toString();
-    } catch {
-      return raw;
-    }
-    if (!isSafeRemoteURL(absolute)) return raw;
-    const params = new URLSearchParams({ u: absolute });
-    if (referer) params.set("r", referer);
-    return `/api/stream?${params.toString()}`;
-  };
-
-  return text.split(/\r?\n/).map((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return line;
-    if (!trimmed.startsWith("#")) return wrap(trimmed);
-    return line.replace(/URI="([^"]+)"/g, (_m, uri: string) => `URI="${wrap(uri)}"`);
-  }).join("\n");
-}
-
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -188,8 +171,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (path === "/" || path === "/api" || path === "/api/health") {
     send(res, 200, {
       name: "nori-api",
-      version: "1.0.0",
+      version: API_VERSION,
       providers: CATALOG_PROVIDERS,
+      // Woran ein Client erkennt, was dieser Server kann. Ohne das müsste der
+      // Fernseher einen TMDB-Abruf wagen, um zu erfahren, ob er einen wagen
+      // kann.
+      features: {
+        tmdb: hasTMDBKey(),
+        tmdbCacheEntries: cacheSize(),
+      },
       endpoints: [
         "/api/catalog/:provider",
         "/api/series/:provider/:slug?season=",
@@ -198,6 +188,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         "POST /api/resolve",
         "/api/stream?u=&r=",
         "/api/image?u=",
+        "/api/tmdb/*",
       ],
     });
     return;
@@ -282,6 +273,29 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         const target = url.searchParams.get("u");
         if (!target) throw NoriError.parse("Keine Adresse angegeben");
         await proxy(req, res, target, url.searchParams.get("r"), false);
+        return;
+      }
+      case "tmdb": {
+        // Der Rest des Pfades ist der TMDB-Pfad. Er wird in `proxyTMDB` gegen
+        // eine Liste geprüft, nicht durchgereicht — siehe src/tmdb.ts.
+        const tmdbPath = segments.slice(2).join("/");
+        if (!tmdbPath) throw NoriError.parse("Kein TMDB-Pfad angegeben");
+        if (req.method === "DELETE") {
+          clearTMDBCache();
+          send(res, 200, { cleared: true });
+          return;
+        }
+        const result = await proxyTMDB(tmdbPath, url.searchParams);
+        res.writeHead(result.status, {
+          "Content-Type": "application/json; charset=utf-8",
+          // Der Client hat seinen eigenen Zwischenspeicher; dieser hier ist
+          // der gemeinsame. Ein zusätzlicher im Browser des Fernsehers würde
+          // nur die Frage aufwerfen, welcher der beiden gilt.
+          "Cache-Control": "no-store",
+          "X-Nori-TMDB-Cache": result.cached ? "hit" : "miss",
+          ...corsHeaders(),
+        });
+        res.end(result.body);
         return;
       }
       default:
