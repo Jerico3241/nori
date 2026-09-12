@@ -911,6 +911,14 @@ check(
   freshState.modes.some((label) => label.startsWith("Dieser Fernseher")),
   freshState.modes.join(" | "),
 );
+// Zum TMDB-Abschnitt scrollen: ein Bildschirmfoto mit diesem Namen soll auch
+// den Abschnitt zeigen, um den es geht.
+await fresh.evaluate(() => {
+  const heading = Array.from(document.querySelectorAll(".settings-section h2"))
+    .find((node) => node.textContent?.trim() === "TMDB");
+  heading?.closest(".settings-section")?.scrollIntoView({ block: "start" });
+});
+await fresh.waitForTimeout(500);
 await fresh.screenshot({ path: join(SHOTS, "20-tmdb-ohne-einrichtung.png") });
 await fresh.close();
 
