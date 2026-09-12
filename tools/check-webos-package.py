@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Statische Prüfung der webOS-App von Nori.
 
-Zwei Fragen, die sich nicht durch Hinsehen beantworten lassen:
+Vier Fragen, die sich nicht durch Hinsehen beantworten lassen:
 
 1. Steckt in Quelltext oder Paket etwas von der Referenz-App? Weder Name noch
    Marke noch ein Aufruf ihres Dienstes darf in Nori landen. Die Referenz durfte
@@ -9,6 +9,15 @@ Zwei Fragen, die sich nicht durch Hinsehen beantworten lassen:
 2. Ist `appinfo.json` gültig? webOS lehnt ein Paket mit einem unbekannten Feld
    nicht ab — es ignoriert es. Ein Tippfehler fällt sonst erst auf dem Fernseher
    auf, und auch dort nur als „tut nichts".
+3. **Stimmen die Versionsnummern überein?** `appinfo.json`, `package.json`, der
+   Dateiname des Pakets, die Datei darin und der Changelog müssen dieselbe
+   Nummer tragen. Zwei Pakete mit derselben Nummer, aber unterschiedlichem
+   Inhalt, sind hinterher nicht mehr unterscheidbar — und der Fernseher
+   installiert das zweite nicht über das erste.
+4. **Läuft das Paket von `file://`?** Eine Adresse mit führendem Schrägstrich
+   (`/assets/index.js`) zeigt dort auf die Wurzel des Dateisystems. Im
+   Entwicklungsstand über HTTP fällt das nie auf, auf dem Fernseher bleibt der
+   Bildschirm schwarz.
 
     python3 tools/check-webos-package.py
 
@@ -28,6 +37,10 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "apps/webos"
 CORE = ROOT / "shared/nori-core"
 API = ROOT / "services/nori-api"
+
+# Symbole, die im Paket liegen müssen. Ein Paket ohne sie installiert sich und
+# erscheint auf dem Fernseher als weiße Fläche im Launcher.
+REQUIRED_ASSETS = ["icon-80.png", "icon-130.png", "splash-1920x1080.png"]
 
 # Namen und Kennungen der Referenz-App. Groß-/Kleinschreibung egal.
 FOREIGN_NAMES = ["fireanime", "fireani", "animecloud", "fireani.me"]
@@ -140,6 +153,85 @@ def check_appinfo() -> None:
             problems.append(f"appinfo.json: `{field}` verweist auf {name}, das es in public/ nicht gibt")
 
 
+def check_versions() -> None:
+    """Dieselbe Nummer an allen Stellen."""
+    appinfo_path = APP / "appinfo.json"
+    package_path = APP / "package.json"
+    if not appinfo_path.exists() or not package_path.exists():
+        return
+    try:
+        appinfo = json.loads(appinfo_path.read_text(encoding="utf-8"))
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return  # check_appinfo hat das schon beanstandet
+
+    version = str(appinfo.get("version", ""))
+    if str(package.get("version", "")) != version:
+        problems.append(
+            "Versionen weichen ab — appinfo.json "
+            f"{version!r}, apps/webos/package.json {package.get('version')!r}"
+        )
+
+    changelog = ROOT / "CHANGELOG.md"
+    if changelog.exists():
+        text = changelog.read_text(encoding="utf-8")
+        if f"[webOS {version}]" not in text:
+            problems.append(
+                f"CHANGELOG.md hat keinen Abschnitt `[webOS {version}]`. "
+                "Ein Paket ohne Eintrag ist eines, dessen Änderungen niemand kennt."
+            )
+        # Die Übersicht am Anfang nennt die Stände aller Plattformen.
+        if not re.search(rf"LG webOS \*\*{re.escape(version)}\*\*", text):
+            warnings.append(
+                f"CHANGELOG.md nennt in der Übersicht nicht `LG webOS **{version}**`."
+            )
+
+    packages = sorted(APP.glob("*.ipk"))
+    expected = f"{appinfo.get('id', '')}_{version}_all.ipk"
+    if packages and not any(package_file.name == expected for package_file in packages):
+        problems.append(
+            f"Kein Paket mit dem erwarteten Namen {expected} — "
+            f"vorhanden: {', '.join(p.name for p in packages)}. "
+            "Erst `npm run build && npm run webos:package`."
+        )
+
+
+def check_relative_paths() -> None:
+    """Läuft der gebaute Stand von `file://`?
+
+    Drei Dinge gehen dort schief, die über HTTP nie auffallen:
+
+    * eine Adresse mit führendem Schrägstrich zeigt auf die Wurzel des
+      Dateisystems,
+    * `type="module"` lädt gar nicht — Chromium verweigert ES-Module von
+      `file://`, weil die Seite die Herkunft `null` hat,
+    * `crossorigin` macht aus einem gleichartigen Abruf einen mit
+      Herkunftsprüfung, und die scheitert aus demselben Grund.
+
+    Alle drei enden auf dem Fernseher in einem schwarzen Bildschirm ohne
+    Fehlermeldung: das Skript, das den Fehler melden würde, läuft nicht.
+    """
+    index = APP / "dist" / "index.html"
+    if not index.exists():
+        return
+    text = index.read_text(encoding="utf-8")
+    for match in re.finditer(r'(?:src|href)="(/[^/][^"]*)"', text):
+        problems.append(
+            f"dist/index.html verweist absolut auf {match.group(1)} — "
+            "von `file://` zeigt das auf die Wurzel des Dateisystems."
+        )
+    if 'type="module"' in text:
+        problems.append(
+            "dist/index.html lädt ein ES-Modul — von `file://` lädt Chromium "
+            "keines. Das Bündel muss klassisch sein (`format: \"iife\"`)."
+        )
+    if "crossorigin" in text:
+        problems.append(
+            "dist/index.html setzt `crossorigin` — von `file://` scheitert die "
+            "Herkunftsprüfung, weil die Seite die Herkunft `null` hat."
+        )
+
+
 def check_package() -> None:
     """Das fertige Paket noch einmal von außen ansehen."""
     packages = sorted(APP.glob("*.ipk"))
@@ -184,6 +276,33 @@ def check_package() -> None:
         names = archive.getnames()
         if not any(name.endswith("/index.html") for name in names):
             problems.append(f"{rel}: index.html fehlt im Paket")
+
+        # Die Startdatei, die Symbole und die Paketbeschreibung.
+        for asset in REQUIRED_ASSETS:
+            if not any(name.endswith("/" + asset) for name in names):
+                problems.append(f"{rel}: {asset} fehlt im Paket")
+        if not any(name.endswith("/packageinfo.json") for name in names):
+            problems.append(f"{rel}: packageinfo.json fehlt im Paket")
+
+        # Die Version im Paket muss die des Pakets sein.
+        wanted_version = str(json.loads((APP / "appinfo.json").read_text(encoding="utf-8")).get("version", ""))
+        for name in names:
+            if not name.endswith("/appinfo.json") and not name.endswith("/packageinfo.json"):
+                continue
+            handle = archive.extractfile(name)
+            if handle is None:
+                continue
+            try:
+                inside = json.loads(handle.read().decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                problems.append(f"{rel}: {name} ist kein gültiges JSON ({error})")
+                continue
+            if str(inside.get("version", "")) != wanted_version:
+                problems.append(
+                    f"{rel}: {name} trägt Version {inside.get('version')!r}, "
+                    f"erwartet {wanted_version!r}"
+                )
+
         for member in archive.getmembers():
             if pattern.search(member.name):
                 problems.append(f"{rel}: Datei mit fremdem Namen im Paket — {member.name}")
@@ -205,6 +324,8 @@ def main() -> int:
     check_foreign_names()
     check_foreign_hosts()
     check_appinfo()
+    check_versions()
+    check_relative_paths()
     check_package()
 
     for warning in warnings:
@@ -215,7 +336,15 @@ def main() -> int:
     if problems:
         print(f"\n{len(problems)} Fehler.")
         return 1
-    print(f"OK — webOS-App geprüft ({len(sources())} Dateien), keine fremden Namen, appinfo.json gültig.")
+    version = "?"
+    try:
+        version = json.loads((APP / "appinfo.json").read_text(encoding="utf-8")).get("version", "?")
+    except (OSError, json.JSONDecodeError):
+        pass
+    print(
+        f"OK — webOS-App geprüft ({len(sources())} Dateien), Version {version} überall gleich, "
+        "keine fremden Namen, appinfo.json gültig."
+    )
     return 0
 
 
