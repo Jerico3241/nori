@@ -1,10 +1,11 @@
 // Merkliste, Verlauf, Fortschritt und Einstellungen — die Regeln aus
-// `LibraryStore.swift`, Schema v5.
+// `LibraryStore.swift`, Schema v6.
 //
 // Wichtig: das abgelegte JSON hat **dieselbe Form** wie
 // `~/Library/Application Support/Nori/library.json` der Apple-Apps. Eine dort
-// gesicherte Datei lässt sich hier einlesen und umgekehrt; das ist die
-// Voraussetzung für einen späteren Geräteabgleich (docs/synchronisation.md).
+// gesicherte Datei lässt sich hier einlesen und umgekehrt — das ist die
+// Voraussetzung des Geräteabgleichs über Google Drive
+// (docs/google-drive-sync.md). Die Konfliktregeln liegen in `sync.ts`.
 
 import {
   type CatalogProvider, type Episode, type LibraryScope, type RecentItem, type WatchProgress,
@@ -12,8 +13,12 @@ import {
 import {
   isEpisodeComplete, normalizeEpisodePath, progressKey, providerFromPath, resumePosition,
 } from "./rules.js";
+import {
+  favoriteKey, LIBRARY_SYNC_FORMAT_VERSION, SYNC_PREFERENCES,
+  type FavoriteMark, type SyncMeta,
+} from "./sync.js";
 
-export const LIBRARY_SCHEMA_VERSION = 5;
+export const LIBRARY_SCHEMA_VERSION = 6;
 
 /** Die Ablageform. Feldnamen wie im Swift-`Bag`. */
 export interface LibraryBag {
@@ -45,6 +50,11 @@ export interface LibraryBag {
    * der Reihenfolge von `favorites` abgeleitet.
    */
   favoriteAddedAt?: Record<string, number>;
+  /**
+   * Herkunft und Änderungsmarken für den Geräteabgleich. Neu in v6; jede
+   * ältere Datei kommt ohne und bekommt den Block beim Dekodieren ergänzt.
+   */
+  sync?: SyncMeta;
 }
 
 export interface LibraryState {
@@ -63,6 +73,18 @@ export interface LibraryState {
   provider: CatalogProvider;
   scope: LibraryScope;
   modifiedAt: number;
+  /**
+   * Zufällige Kennung dieser Installation. Leer heisst „noch keine" — wer den
+   * Zustand ablegt, vergibt sie (siehe `apps/webos/src/state/library.tsx`).
+   * Bewusst nicht hier erzeugt: `decodeLibrary` wird auch beim Einlesen einer
+   * *fremden* Datei benutzt, und deren Kennung darf die eigene nicht ersetzen.
+   */
+  deviceId: string;
+  historyClearedAt: number;
+  progressClearedAt: number;
+  preferenceStamps: Record<string, number>;
+  favoriteMarks: Record<string, FavoriteMark>;
+  recentsRemoved: Record<string, number>;
 }
 
 export function emptyLibrary(): LibraryState {
@@ -82,6 +104,12 @@ export function emptyLibrary(): LibraryState {
     provider: "aniworld",
     scope: "all",
     modifiedAt: 0,
+    deviceId: "",
+    historyClearedAt: 0,
+    progressClearedAt: 0,
+    preferenceStamps: {},
+    favoriteMarks: {},
+    recentsRemoved: {},
   };
 }
 
@@ -123,7 +151,60 @@ export function decodeLibrary(raw: unknown): LibraryState {
   );
   state.progress = migrateProgress(isRecord(bag.progress) ? (bag.progress as Record<string, WatchProgress>) : {});
   state.modifiedAt = bag.modifiedAt ?? 0;
+  adoptSyncMeta(state, bag);
   return state;
+}
+
+/**
+ * Die Sync-Angaben übernehmen — und ergänzen, was eine ältere Datei nicht
+ * haben kann. Das ist die Migration v5 → v6.
+ *
+ * Sie erfindet nichts: die Merkliste wird zu lauter „gemerkt seit
+ * `favoriteAddedAt`", die Einstellungen bekommen den Änderungszeitpunkt der
+ * ganzen Datei. Beides ist die beste Auskunft, die in einem v5-Stand steckt.
+ *
+ * Die Zeitstempel der Einstellungen werden dabei **festgeschrieben**. Liesse
+ * man sie leer und fiele beim Vergleich auf `modifiedAt` zurück, würde jede
+ * spätere Änderung an *einer* Einstellung alle anderen mit frischmachen — wer
+ * heute die Sprache umstellt, überschriebe damit den Hoster, den ein anderes
+ * Gerät gestern bewusst gewählt hat.
+ *
+ * Dieselbe Regel wie `LibraryStore.adoptSyncMeta` im Swift-Kern.
+ */
+function adoptSyncMeta(state: LibraryState, bag: Partial<LibraryBag>): void {
+  const meta = isRecord(bag.sync) ? (bag.sync as SyncMeta) : undefined;
+  state.deviceId = typeof meta?.deviceId === "string" ? meta.deviceId : "";
+  state.historyClearedAt = meta?.historyClearedAt ?? 0;
+  state.progressClearedAt = meta?.progressClearedAt ?? 0;
+  state.recentsRemoved = isRecord(meta?.recentsRemoved) ? { ...meta.recentsRemoved } : {};
+
+  const stamps = isRecord(meta?.preferences) ? meta.preferences : undefined;
+  if (stamps && Object.keys(stamps).length > 0) {
+    state.preferenceStamps = {};
+    for (const [key, stamp] of Object.entries(stamps)) {
+      if (typeof stamp?.updatedAt === "number") state.preferenceStamps[key] = stamp.updatedAt;
+    }
+  } else {
+    const anchor = state.modifiedAt;
+    state.preferenceStamps = {};
+    for (const key of SYNC_PREFERENCES) state.preferenceStamps[key] = anchor;
+  }
+
+  const marks = isRecord(meta?.favorites) ? meta.favorites : undefined;
+  if (marks && Object.keys(marks).length > 0) {
+    state.favoriteMarks = { ...marks };
+  } else {
+    state.favoriteMarks = {};
+    for (const slug of state.favorites) {
+      const provider = state.favoriteSource[slug] ?? state.provider;
+      const stamp = state.favoriteAddedAt[slug] ?? state.modifiedAt;
+      state.favoriteMarks[favoriteKey(slug, provider)] = {
+        isFavorite: true,
+        updatedAt: stamp,
+        addedAt: stamp,
+      };
+    }
+  }
 }
 
 /**
@@ -174,6 +255,19 @@ export function encodeLibrary(state: LibraryState): LibraryBag {
     scope: state.scope,
     favoriteSource: state.favoriteSource,
     favoriteAddedAt: state.favoriteAddedAt,
+    sync: {
+      formatVersion: LIBRARY_SYNC_FORMAT_VERSION,
+      deviceId: state.deviceId,
+      platform: "webos",
+      generatedAt: state.modifiedAt,
+      historyClearedAt: state.historyClearedAt,
+      progressClearedAt: state.progressClearedAt,
+      preferences: Object.fromEntries(
+        Object.entries(state.preferenceStamps).map(([key, updatedAt]) => [key, { updatedAt }]),
+      ),
+      favorites: state.favoriteMarks,
+      recentsRemoved: state.recentsRemoved,
+    },
   };
 }
 

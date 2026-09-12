@@ -171,40 +171,148 @@ private struct PlaybackSettingsTab: View {
     }
 }
 
+/// Der Abgleich in den Einstellungen.
+///
+/// Zwei Dinge sind ausdrücklich **nicht** dasselbe und stehen deshalb
+/// auseinander:
+///
+/// - **Dieses Gerät trennen** hört auf abzugleichen. Die Bibliothek bleibt
+///   vollständig, die Daten in Drive bleiben liegen, die anderen Geräte
+///   gleichen weiter ab.
+/// - **Google-Zugriff widerrufen** zieht die Berechtigung für *alle* Geräte an
+///   diesem Konto zurück.
+///
+/// Das Zweite hinter einem unscheinbaren „Abmelden" zu verstecken, wäre die
+/// Art Fehler, die jemand erst bemerkt, wenn der Fernseher nicht mehr
+/// mitkommt.
 private struct SyncSettingsTab: View {
-    @Environment(LibraryStore.self) private var library
+    @Environment(GoogleDriveSync.self) private var sync
+
+    @State private var showRevokeConfirmation = false
 
     var body: some View {
         Form {
             Section {
-                if let provider = library.syncProvider {
-                    HStack {
-                        Button("Jetzt mit \(provider.name) abgleichen") { library.syncNow() }
-                        Spacer()
-                        if let stamp = library.syncLastRun {
-                            Text(Date(timeIntervalSince1970: stamp / 1000).formatted(date: .abbreviated, time: .shortened))
-                                .font(.footnote)
-                                .foregroundStyle(NoriTheme.muted)
+                LabeledContent("Zustand", value: statusText)
+
+                if sync.isConfigured {
+                    if isConnected {
+                        HStack {
+                            Button("Jetzt synchronisieren") { sync.syncNow() }
+                                .disabled(sync.status == .syncing)
+                            if sync.status == .syncing {
+                                ProgressView().controlSize(.small)
+                            }
+                            Spacer()
+                            if let stamp = sync.lastSuccessfulSync {
+                                Text(Date(timeIntervalSince1970: stamp / 1000)
+                                    .formatted(date: .abbreviated, time: .shortened))
+                                    .font(.footnote)
+                                    .foregroundStyle(NoriTheme.muted)
+                            }
+                        }
+                        Button("Dieses Gerät trennen") {
+                            Task { await sync.disconnectDevice() }
+                        }
+                    } else {
+                        HStack {
+                            Button("Mit Google Drive verbinden") {
+                                Task { await sync.connect() }
+                            }
+                            .disabled(sync.isAuthorizing)
+                            if sync.isAuthorizing {
+                                ProgressView().controlSize(.small)
+                            }
                         }
                     }
-                } else {
-                    LabeledContent("Zustand", value: "nicht eingerichtet")
+                }
+
+                if let message = sync.authorizationError {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } header: {
-                Text("Synchronisation")
+                Text("Google Drive")
             } footer: {
-                Text("""
-                     Hier stand ein iCloud-Schalter. Er hat nie etwas getan: iCloud \
-                     verlangt eine Berechtigung aus dem kostenpflichtigen \
-                     Apple-Developer-Programm, und ohne sie bleibt der Aufruf \
-                     wirkungslos — ohne Fehlermeldung. Merkliste, Verlauf und \
-                     Fortschritt liegen ausschließlich auf diesem Mac.
-                     """)
+                Text(footer)
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if sync.isConfigured && isConnected {
+                Section {
+                    Button("Google-Zugriff widerrufen…", role: .destructive) {
+                        showRevokeConfirmation = true
+                    }
+                } header: {
+                    Text("Erweitert")
+                } footer: {
+                    Text("""
+                         Zieht die Berechtigung für alle Geräte an diesem \
+                         Google-Konto zurück, nicht nur für diesen Mac.
+                         """)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .formStyle(.grouped)
+        .task { await sync.restore() }
+        .confirmationDialog(
+            "Google-Zugriff widerrufen?",
+            isPresented: $showRevokeConfirmation
+        ) {
+            Button("Zugriff widerrufen", role: .destructive) {
+                Task { await sync.revokeAccess() }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("""
+                 Damit verlieren alle Geräte an diesem Google-Konto den Zugriff — \
+                 auch iPhone und Fernseher. Die Bibliothek auf diesem Mac bleibt \
+                 vollständig erhalten.
+                 """)
+        }
+    }
+
+    private var isConnected: Bool {
+        if case .disconnected = sync.status { return false }
+        return sync.isConfigured
+    }
+
+    private var statusText: String {
+        guard sync.isConfigured else { return "nicht eingerichtet" }
+        switch sync.status {
+        case .disconnected: return "nicht verbunden"
+        case .authorizing: return "wird verbunden…"
+        case .idle: return sync.lastSuccessfulSync == nil ? "bereit" : "synchronisiert"
+        case .syncing: return "wird abgeglichen…"
+        case .offline: return "offline — wird später abgeglichen"
+        case .error(let message): return message
+        case .unsupportedRemoteVersion: return "neuerer Stand in der Cloud — Nori aktualisieren"
+        }
+    }
+
+    private var footer: String {
+        guard sync.isConfigured else {
+            return """
+                   Für diese Nori-Fassung ist keine Google-Client-ID hinterlegt. \
+                   Merkliste, Verlauf und Fortschritt liegen ausschließlich auf \
+                   diesem Mac.
+                   """
+        }
+        return """
+               Nori legt seinen Stand in einem versteckten Ordner deines \
+               Google-Drive-Kontos ab. Er taucht in „Meine Ablage" nicht auf, und \
+               andere Apps kommen nicht heran. Jedes Gerät schreibt nur seine \
+               eigene Datei und liest die der anderen — deshalb geht nichts \
+               verloren, wenn zwei Geräte gleichzeitig etwas ändern. Ohne Netz \
+               funktioniert Nori vollständig weiter.
+               """
     }
 }
 

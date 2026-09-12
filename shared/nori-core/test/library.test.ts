@@ -168,7 +168,7 @@ test("Verlauf hält höchstens 100 Einträge und schiebt den jüngsten nach vorn
 // lesen, sonst stünde dieselbe Merkliste auf zwei Geräten anders sortiert da.
 
 test("Schema v5 trägt favoriteAddedAt", () => {
-  assert.equal(LIBRARY_SCHEMA_VERSION, 5);
+  assert.equal(LIBRARY_SCHEMA_VERSION, 6);
   const state = decodeLibrary({
     version: 5, favorites: ["a"], recents: [], titles: {}, progress: {},
     favoriteAddedAt: { a: 1234 },

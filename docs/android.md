@@ -191,6 +191,42 @@ Symbol eine `<monochrome>`-Ebene in
 `res/mipmap-anydpi-v26/ic_launcher.xml`. `tools/make-app-icons.py` erzeugt
 die Apple-Symbole schon; die einfarbige Ebene kommt dort dazu.
 
+## Google-Drive-Abgleich
+
+Der Abgleich über Google Drive ist im geteilten Kern fertig und übersetzt für
+Android mit — ausdrücklich auch die Kryptografie: SHA-256 für PKCE ist von Hand
+geschrieben und benutzt **nicht** `CryptoKit`, das es hier nicht gibt.
+
+Fertig und mitübersetzt:
+
+| Datei | Inhalt |
+| --- | --- |
+| `LibrarySync.swift` | Schema v6, Migration, Zusammenführung |
+| `LibrarySyncEngine.swift` | Ablauf, Zeitplan, Fehlerbehandlung |
+| `GoogleDrive.swift` | Drive-Client, Wiederholungen, Backoff |
+| `GoogleOAuth.swift` | PKCE, Tokentausch, Erneuern, Widerruf |
+| `NoriSync.swift` | Zusammenbau |
+
+Was fehlt, sind vier kleine Klassen, und alle vier können nur in der
+Android-App liegen — im geteilten Kern wären sie auf Apple toter Code, genau
+wie `Security` und `ImageIO` weiter oben:
+
+1. **`GoogleTokenStore`** über den aktuell empfohlenen Android-Weg für
+   Zugangsdaten. `KeychainTokenStore` gibt außerhalb von Apple nichts zurück.
+2. **`GoogleSignInPresenter`** über den Authorization-Client von Google
+   Identity Services. **Kein Firebase** — Drive braucht es nicht.
+3. **`SyncBookkeeping`** über `SharedPreferences`.
+4. Der Aufruf von `GoogleDriveSync` aus der Compose-Oberfläche und die Anbindung
+   an den Lebenszyklus.
+
+Dazu kommt ein OAuth-Client vom Typ *Android* im selben Google-Cloud-Projekt,
+mit Paketname und SHA-1-Fingerabdruck des Signaturschlüssels
+(`docs/google-drive-sync.md`).
+
+Die Arbeit liegt damit in der Compose-App und nicht im Abgleich. **Solange diese
+vier Klassen fehlen, gibt es auf Android keinen Abgleich**, und nichts in diesem
+Repository behauptet etwas anderes.
+
 ## Wie es weitergeht
 
 1. **Durchbau** — ✅ **erledigt.** Der geteilte Kern übersetzt für

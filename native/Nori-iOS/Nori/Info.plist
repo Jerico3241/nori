@@ -33,6 +33,15 @@
 	     Quellen; ein Schlüssel lässt sich in den Einstellungen eintragen. -->
 	<key>TMDBAPIKey</key>
 	<string>$(TMDB_API_KEY)</string>
+	<!-- Wird aus der Build-Einstellung GOOGLE_CLIENT_ID gefüllt. Ist sie nicht
+	     gesetzt, bleibt hier der unaufgelöste Platzhalter stehen, und die
+	     Einstellungen zeigen „nicht eingerichtet" statt eine Anmeldung
+	     anzubieten, die sicher scheitert. Eine Client-ID ist kein Geheimnis —
+	     sie steht in jeder Anmeldeadresse —, gehört aber zum Google-Cloud-
+	     Projekt des Betreibers und nicht ins Repository. Ein Client-Secret
+	     gibt es für diesen Fluss nicht; siehe docs/google-drive-sync.md. -->
+	<key>GoogleClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIBackgroundModes</key>

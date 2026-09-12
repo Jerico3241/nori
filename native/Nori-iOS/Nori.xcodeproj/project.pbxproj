@@ -80,6 +80,14 @@
 		AB109 /* CacheSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC109 /* CacheSettingsView.swift */; };
 		AB99 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC99 /* AboutView.swift */; };
 		AB100 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC100 /* DiagnosticsView.swift */; };
+		AB110 /* LibrarySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC110 /* LibrarySync.swift */; };
+		AB111 /* LibrarySyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC111 /* LibrarySyncEngine.swift */; };
+		AB112 /* GoogleDrive.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC112 /* GoogleDrive.swift */; };
+		AB113 /* GoogleOAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC113 /* GoogleOAuth.swift */; };
+		AB114 /* GoogleAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC114 /* GoogleAuthorization.swift */; };
+		AB115 /* NoriSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC115 /* NoriSync.swift */; };
+		AB116 /* GoogleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC116 /* GoogleSignIn.swift */; };
+		AB120 /* SyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC120 /* SyncSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -157,6 +165,14 @@
 		AC109 /* CacheSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSettingsView.swift; sourceTree = "<group>"; };
 		AC99 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		AC100 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		AC110 /* LibrarySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySync.swift; sourceTree = "<group>"; };
+		AC111 /* LibrarySyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncEngine.swift; sourceTree = "<group>"; };
+		AC112 /* GoogleDrive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDrive.swift; sourceTree = "<group>"; };
+		AC113 /* GoogleOAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuth.swift; sourceTree = "<group>"; };
+		AC114 /* GoogleAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthorization.swift; sourceTree = "<group>"; };
+		AC115 /* NoriSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriSync.swift; sourceTree = "<group>"; };
+		AC116 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignIn.swift; sourceTree = "<group>"; };
+		AC120 /* SyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -186,6 +202,14 @@
 				AC02 /* Theme.swift */,
 				AC03 /* Models.swift */,
 				AC04 /* LibraryStore.swift */,
+				AC120 /* SyncSettingsView.swift */,
+				AC110 /* LibrarySync.swift */,
+				AC111 /* LibrarySyncEngine.swift */,
+				AC112 /* GoogleDrive.swift */,
+				AC113 /* GoogleOAuth.swift */,
+				AC114 /* GoogleAuthorization.swift */,
+				AC115 /* NoriSync.swift */,
+				AC116 /* GoogleSignIn.swift */,
 				AC05 /* HTML.swift */,
 				AC06 /* AniworldClient.swift */,
 				AC07 /* HosterResolver.swift */,
@@ -347,6 +371,14 @@
 				AB02 /* Theme.swift in Sources */,
 				AB03 /* Models.swift in Sources */,
 				AB04 /* LibraryStore.swift in Sources */,
+				AB120 /* SyncSettingsView.swift in Sources */,
+				AB110 /* LibrarySync.swift in Sources */,
+				AB111 /* LibrarySyncEngine.swift in Sources */,
+				AB112 /* GoogleDrive.swift in Sources */,
+				AB113 /* GoogleOAuth.swift in Sources */,
+				AB114 /* GoogleAuthorization.swift in Sources */,
+				AB115 /* NoriSync.swift in Sources */,
+				AB116 /* GoogleSignIn.swift in Sources */,
 				AB05 /* HTML.swift in Sources */,
 				AB06 /* AniworldClient.swift in Sources */,
 				AB07 /* HosterResolver.swift in Sources */,

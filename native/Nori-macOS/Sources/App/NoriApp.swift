@@ -120,16 +120,44 @@ enum NoriWindow {
 
 @main
 struct NoriApp: App {
-    @State private var library = LibraryStore()
+    @State private var library: LibraryStore
+    @State private var sync: GoogleDriveSync
     @State private var playerHost = PlayerHost()
     @State private var catalogStore = CatalogStore()
+
+    init() {
+        let library = LibraryStore()
+        // Landet als Metadatum im abgelegten Stand. Nützlich, wenn irgendwann
+        // ein Gerät etwas schreibt, das die anderen nicht verstehen.
+        library.appVersion = Bundle.main
+            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+
+        // Ohne hinterlegte Client-ID gibt es keinen Anmeldeweg — und die
+        // Einstellungen bieten dann auch keinen an, statt einen anzubieten,
+        // der sicher scheitert.
+        let configuration = GoogleOAuthConfiguration.fromBundle()
+        let presenter = configuration.map { _ in LoopbackSignInPresenter() }
+
+        _library = State(initialValue: library)
+        _sync = State(initialValue: GoogleDriveSync(
+            store: library, presenter: presenter, configuration: configuration))
+    }
 
     var body: some Scene {
         WindowGroup("Nori") {
             RootView()
                 .environment(library)
+                .environment(sync)
                 .environment(playerHost)
                 .environment(catalogStore)
+                // Eine bestehende Verbindung wieder aufnehmen und danach im
+                // Vordergrund regelmäßig nach fremden Änderungen sehen. Hier
+                // wird nichts gefragt: liegen Tokens im Schlüsselbund, geht es
+                // weiter, sonst bleibt es bei „nicht verbunden".
+                .task {
+                    await sync.restore()
+                    sync.engine.startPolling()
+                }
         }
         .defaultSize(width: 1180, height: 780)
         .windowToolbarStyle(.unified)
@@ -145,6 +173,7 @@ struct NoriApp: App {
         Settings {
             SettingsView()
                 .environment(library)
+                .environment(sync)
         }
     }
 }

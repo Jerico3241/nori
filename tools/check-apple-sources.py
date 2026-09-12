@@ -46,6 +46,15 @@ SHARED_IDENTICAL = [
     # dieselbe Zuordnung, um TMDB-Ranglisten auf Noris Katalog zurückzuführen.
     "TMDBImages.swift",
     "TMDBMatcher.swift",
+    # Der Geräteabgleich über Google Drive. Regeln, Ablauf, HTTP und OAuth
+    # gehören in beide Targets gleichermaßen; nur der Anmeldeweg ist
+    # plattformeigen und liegt deshalb je Target in `GoogleSignIn.swift`.
+    "LibrarySync.swift",
+    "LibrarySyncEngine.swift",
+    "GoogleDrive.swift",
+    "GoogleOAuth.swift",
+    "GoogleAuthorization.swift",
+    "NoriSync.swift",
 ]
 
 # Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag

@@ -26,6 +26,12 @@ Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`
 
 - `Models.swift`
 - `LibraryStore.swift`
+- `LibrarySync.swift`
+- `LibrarySyncEngine.swift`
+- `GoogleDrive.swift`
+- `GoogleOAuth.swift`
+- `GoogleAuthorization.swift`
+- `NoriSync.swift`
 - `AniworldClient.swift`
 - `HosterResolver.swift`
 - `HTML.swift`
@@ -94,7 +100,7 @@ webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
 
 ## Datenmodell
 
-`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v4**.
+`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v6**.
 
 `config/contract.json` muss denselben Schemawert dokumentieren. Änderungen an `WatchProgress` oder der gespeicherten `Bag` brauchen eine rückwärtskompatible Migration; neue Felder möglichst optional halten.
 
@@ -104,9 +110,21 @@ Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei 
 
 ## Synchronisation
 
-Der Core kennt nur das Protokoll `LibrarySyncProvider`. Konkrete Anbieter wie Google Drive, Dropbox oder WebDAV werden außerhalb des Stores angebunden. Ohne Provider bleibt Nori lokal.
+Abgeglichen wird ausschließlich über **Google Drive**, und dort ausschließlich im versteckten `appDataFolder` (Bereich `drive.appdata`). Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
 
-Keine Cloud-Implementierung direkt in `LibraryStore` verdrahten.
+Jedes Gerät schreibt **nur seine eigene Datei** (`nori-sync-v1-<deviceId>.json`) und liest die aller anderen. Ablauf immer **Pull → Merge → Push**, nie andersherum.
+
+Die Schichten bleiben getrennt:
+
+```text
+LibraryStore → LibrarySyncEngine → LibrarySnapshotStore → GoogleDriveClient → GoogleAuthorization
+```
+
+Keine OAuth-Logik in `LibraryStore`, kein Drive-HTTP in Views oder React-Komponenten. `LibrarySyncProvider` (eine Datei ablegen und holen) bleibt als Abstraktion bestehen und wird nicht entfernt.
+
+Die Merge-Regeln sind eine reine Funktion und existieren zweimal — `LibrarySync.swift` und `shared/nori-core/src/sync.ts`. Beide laufen gegen dieselben Fälle in `config/sync-fixtures.json`; wer eine Regel ändert, ändert sie in Swift, in TypeScript und in `config/contract.json`.
+
+Tokens gehören in den Schlüsselbund und niemals in `library.json`, ins Protokoll oder in die Cloud.
 
 ## Contract
 
@@ -127,5 +145,9 @@ Hoster ändern ihre Seiten häufig. Stream-Auflösungsfehler zuerst anhand Redir
 ## Schlüssel
 
 Der TMDB-Schlüssel kann über Schlüsselbund bzw. Build-Einstellung bereitgestellt werden. Im aktuellen privaten Projekt existiert zusätzlich bewusst ein eingebauter Fallback-Schlüssel in `TMDBKeyStore`; diese Ausnahme ist eng begrenzt und in `tools/check-apple-sources.py` dokumentiert.
+
+Die Google-Client-IDs kommen ebenso aus Build-Einstellungen (`GOOGLE_CLIENT_ID` auf Apple, `VITE_NORI_GOOGLE_TV_CLIENT_ID` auf webOS) und nicht aus dem Quelltext.
+
+Eine Ausnahme mit Ansage: Googles OAuth-Fluss für Fernseher verlangt zusätzlich ein `client_secret` (`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`). Der Wert wird **nicht** eingecheckt; warum er trotzdem in der gebauten `.ipk` liegt, steht in `docs/google-drive-sync.md`.
 
 Keine weiteren Secrets oder Zugangsdaten fest in den Quelltext schreiben.

@@ -22,7 +22,7 @@ protocol LibrarySyncProvider: AnyObject, Sendable {
 
 @Observable
 final class LibraryStore {
-    static let schemaVersion = 5
+    static let schemaVersion = 6
 
     var favorites: [String] = []
     var recents: [RecentItem] = []
@@ -43,9 +43,9 @@ final class LibraryStore {
     /// erste Eintrag gilt als der jüngste. Das ist keine Erfindung, sondern
     /// genau die Aussage, die in der Reihenfolge steckt.
     var favoriteAddedAt: [String: Double] = [:]
-    var langPref: String = "DE" { didSet { persist() } }
-    var hosterPref: String = "VOE" { didSet { persist() } }
-    var resumeEnabled: Bool = true { didSet { persist() } }
+    var langPref: String = "DE" { didSet { stamp(.langPref); persist() } }
+    var hosterPref: String = "VOE" { didSet { stamp(.hosterPref); persist() } }
+    var resumeEnabled: Bool = true { didSet { stamp(.resumeEnabled); persist() } }
     /// Bevorzugte Bildhöhe als Zeichenkette: „auto", „1080", „720", „480".
     ///
     /// Eine Höhe und keine Bitrate, weil die Oberfläche Höhen nennt und jede
@@ -55,14 +55,14 @@ final class LibraryStore {
     /// anbietet — eine einzelne MP4-Datei hat keine Stufen, und Nori tut dann
     /// auch nicht so. Die Auswahl ist deshalb ein *Wunsch*: der Spieler nimmt
     /// die höchste angebotene Stufe, die nicht darüber liegt.
-    var preferredQuality: String = "auto" { didSet { persist() } }
-    var autoplayNext: Bool = true { didSet { persist() } }
-    var playbackSpeed: Float = 1.0 { didSet { persist() } }
-    var provider: CatalogProvider = .aniworld { didSet { persist() } }
+    var preferredQuality: String = "auto" { didSet { stamp(.preferredQuality); persist() } }
+    var autoplayNext: Bool = true { didSet { stamp(.autoplayNext); persist() } }
+    var playbackSpeed: Float = 1.0 { didSet { stamp(.playbackSpeed); persist() } }
+    var provider: CatalogProvider = .aniworld { didSet { stamp(.provider); persist() } }
     /// Was die Bibliothek zeigt. Vorgabe „Alle": beide Quellen in einer
     /// Liste. `provider` bleibt daneben bestehen und entscheidet, welche
     /// Seite ein Titel ohne eigene Quellangabe öffnet.
-    var scope: LibraryScope = .all { didSet { persist() } }
+    var scope: LibraryScope = .all { didSet { stamp(.scope); persist() } }
     /// Wann zuletzt mit einem Fremdstand abgeglichen wurde. Ohne eingerichteten
     /// Anbieter bleibt der Wert leer.
     var syncLastRun: Double?
@@ -96,9 +96,36 @@ final class LibraryStore {
     /// außen gesetzt. Solange keiner da ist, sagt die Oberfläche das auch.
     var syncProvider: LibrarySyncProvider?
 
+    /// Zufällige Kennung dieser Installation, als UUID.
+    ///
+    /// Sie steht in jeder abgelegten Datei und entscheidet bei gleichen
+    /// Zeitstempeln, welcher Wert gewinnt — sonst hinge das Ergebnis davon ab,
+    /// in welcher Reihenfolge Drive die Dateien herausgibt.
+    ///
+    /// Bewusst aus nichts abgeleitet: kein Gerätename, keine Seriennummer,
+    /// keine Werbekennung. Wer die Bibliothek in die Hand bekommt, soll daraus
+    /// nicht ablesen können, wem sie gehört.
+    private(set) var deviceId: String = ""
+
+    /// Wann Verlauf beziehungsweise Fortschritt zuletzt vollständig gelöscht
+    /// wurden. Ohne diese beiden Marken brächte das nächste Gerät mit altem
+    /// Stand alles zurück, was gerade gelöscht wurde.
+    private(set) var historyClearedAt: Double = 0
+    private(set) var progressClearedAt: Double = 0
+    private var preferenceStamps: [String: Double] = [:]
+    private var favoriteMarks: [String: FavoriteMark] = [:]
+    private var recentsRemoved: [String: Double] = [:]
+
     private let url: URL
     private var isLoading = false
     private var modifiedAt: Double = 0
+
+    /// Was der Abgleich hochladen soll, sobald er darf.
+    ///
+    /// Der Zeitplan liegt in `LibrarySyncEngine`; der Store sagt nur Bescheid.
+    /// Ohne das müsste entweder jede Änderung sofort ins Netz — bei laufender
+    /// Wiedergabe im Sekundentakt — oder der Abgleich müsste raten.
+    var onChange: (@Sendable () -> Void)?
 
     /// `directory` nur für Tests.
     ///
@@ -120,15 +147,33 @@ final class LibraryStore {
         load()
     }
 
+    /// Jetzt, in Millisekunden seit 1970 — dieselbe Einheit wie überall sonst
+    /// in der Bibliothek.
+    private var now: Double { Date().timeIntervalSince1970 * 1000 }
+
+    /// Den Änderungszeitpunkt einer Einstellung festhalten.
+    ///
+    /// Während des Ladens nicht: `apply` setzt dieselben Eigenschaften, und
+    /// jeder `didSet` schlüge sonst als frische Änderung durch. Ein gerade
+    /// eingelesener Fremdwert hätte damit immer den jüngsten Zeitstempel und
+    /// gewänne jeden künftigen Vergleich.
+    private func stamp(_ preference: SyncPreference) {
+        guard !isLoading else { return }
+        preferenceStamps[preference.rawValue] = now
+    }
+
     func isFavorite(_ slug: String) -> Bool { favorites.contains(slug) }
 
     func toggleFavorite(_ slug: String, title: String? = nil) {
         if favorites.contains(slug) {
             _ = removeFavorite(slug)
         } else {
+            let stamp = now
             favorites.insert(slug, at: 0)
             favoriteSource[slug] = provider
-            favoriteAddedAt[slug] = Date().timeIntervalSince1970 * 1000
+            favoriteAddedAt[slug] = stamp
+            favoriteMarks[favoriteKey(slug: slug, provider: provider)] =
+                FavoriteMark(isFavorite: true, updatedAt: stamp, addedAt: stamp)
             if let title { titles[slug] = title }
             persist()
         }
@@ -180,9 +225,14 @@ final class LibraryStore {
             source: favoriteSource[slug],
             addedAt: favoriteAddedAt[slug]
         )
+        let source = favoriteSource[slug] ?? provider
         favorites.remove(at: index)
         favoriteSource.removeValue(forKey: slug)
         favoriteAddedAt.removeValue(forKey: slug)
+        // Der Grabstein. Ohne ihn wäre „entfernt" nur die Abwesenheit eines
+        // Eintrags, und jedes Gerät mit älterem Stand legte ihn wieder hin.
+        favoriteMarks[favoriteKey(slug: slug, provider: source)] =
+            FavoriteMark(isFavorite: false, updatedAt: now, addedAt: snapshot.addedAt)
         persist()
         return snapshot
     }
@@ -193,16 +243,26 @@ final class LibraryStore {
         guard !favorites.contains(snapshot.slug) else { return }
         favorites.insert(snapshot.slug, at: min(snapshot.index, favorites.count))
         if let source = snapshot.source { favoriteSource[snapshot.slug] = source }
-        favoriteAddedAt[snapshot.slug] = snapshot.addedAt ?? Date().timeIntervalSince1970 * 1000
+        let addedAt = snapshot.addedAt ?? now
+        favoriteAddedAt[snapshot.slug] = addedAt
+        // `updatedAt` ist jetzt, `addedAt` bleibt der alte: die Rücknahme ist
+        // frisch und schlägt den Grabstein, der Platz in der Liste nicht.
+        favoriteMarks[favoriteKey(slug: snapshot.slug, provider: snapshot.source ?? provider)] =
+            FavoriteMark(isFavorite: true, updatedAt: now, addedAt: addedAt)
         if let title = snapshot.title { titles[snapshot.slug] = title }
         persist()
     }
 
     func remember(slug: String, title: String, provider: CatalogProvider? = nil) {
+        let source = provider ?? self.provider
         titles[slug] = title
         recents.removeAll { $0.slug == slug }
-        recents.insert(RecentItem(slug: slug, title: title, viewedAt: Date().timeIntervalSince1970 * 1000, provider: provider ?? self.provider), at: 0)
+        recents.insert(RecentItem(slug: slug, title: title, viewedAt: now, provider: source), at: 0)
         if recents.count > 100 { recents = Array(recents.prefix(100)) }
+        // Wer den Titel erneut öffnet, hebt sein früheres „aus dem Verlauf
+        // nehmen" auf. Bliebe der Grabstein stehen, verschwände der Eintrag
+        // beim nächsten Abgleich wieder.
+        recentsRemoved.removeValue(forKey: recentKey(slug: slug, provider: source))
         persist()
     }
 
@@ -322,7 +382,14 @@ final class LibraryStore {
         return next < sorted.endIndex ? sorted[next] : nil
     }
 
-    func clearHistory() { recents = []; persist() }
+    func clearHistory() {
+        recents = []
+        historyClearedAt = now
+        // Einzelne Grabsteine sind damit erledigt — die Marke erschlägt sie
+        // alle, und die Datei muss sie nicht weiter mitschleppen.
+        recentsRemoved = [:]
+        persist()
+    }
 
     /// Einen einzelnen Verlaufseintrag entfernen.
     ///
@@ -332,11 +399,18 @@ final class LibraryStore {
     /// Fortschritt — dafür gibt es `clearProgress`.
     func forgetRecent(slug: String) {
         let before = recents.count
+        let sources = Set(recents.filter { $0.slug == slug }.map { $0.provider ?? provider })
         recents.removeAll { $0.slug == slug }
         guard recents.count != before else { return }
+        for source in sources { recentsRemoved[recentKey(slug: slug, provider: source)] = now }
         persist()
     }
-    func clearProgress() { progress = [:]; persist() }
+
+    func clearProgress() {
+        progress = [:]
+        progressClearedAt = now
+        persist()
+    }
 
     /// Von Hand angestoßener Abgleich. Ohne eingerichteten Anbieter passiert
     /// nichts — und die Oberfläche bietet den Knopf dann auch nicht an.
@@ -358,7 +432,7 @@ final class LibraryStore {
             // Erst holen: ein neuerer Fremdstand gewinnt, danach wird der
             // zusammengeführte Stand zurückgeschrieben.
             if let data = try await provider.load(),
-               let bag = try? JSONDecoder().decode(Bag.self, from: data),
+               let bag = try? JSONDecoder().decode(LibraryData.self, from: data),
                let remote = bag.modifiedAt, remote > modifiedAt {
                 apply(bag)
                 modifiedAt = remote
@@ -375,13 +449,70 @@ final class LibraryStore {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: url), let bag = try? JSONDecoder().decode(Bag.self, from: data) else { return }
-        apply(bag)
-        modifiedAt = bag.modifiedAt ?? 0
-        if (bag.version ?? 1) < Self.schemaVersion || progress.count != bag.progress.count { persist() }
+        guard let data = try? Data(contentsOf: url),
+              let stored = try? JSONDecoder().decode(LibraryData.self, from: data) else {
+            // Erster Start. Die Gerätekennung wird sofort festgeschrieben:
+            // entstünde sie erst bei der ersten Änderung, hätte jeder Start bis
+            // dahin eine andere, und in Drive läge für dasselbe Gerät bei jedem
+            // Lauf eine weitere Datei.
+            deviceId = UUID().uuidString
+            preferenceStamps = SyncPreference.allCases.reduce(into: [:]) { $0[$1.rawValue] = 0 }
+            persist()
+            return
+        }
+        apply(stored)
+        modifiedAt = stored.modifiedAt ?? 0
+        let issued = adoptSyncMeta(stored)
+        let migrated = (stored.version ?? 1) < Self.schemaVersion
+        if migrated || issued || progress.count != stored.progress.count { persist() }
     }
 
-    private func apply(_ bag: Bag) {
+    /// Die Sync-Angaben aus einer geladenen Datei übernehmen — und das
+    /// ergänzen, was eine ältere Datei nicht haben kann.
+    ///
+    /// Das ist die Migration v5 → v6, und sie erfindet nichts: die Merkliste
+    /// wird zu lauter „gemerkt seit `favoriteAddedAt`", die Einstellungen
+    /// bekommen den Änderungszeitpunkt der ganzen Datei. Beides ist die beste
+    /// Auskunft, die in einem v5-Stand überhaupt steckt.
+    ///
+    /// Die Zeitstempel der Einstellungen werden dabei **festgeschrieben**.
+    /// Ließe man sie leer und fiele beim Vergleich auf `modifiedAt` zurück,
+    /// würde jede spätere Änderung an *einer* Einstellung alle anderen
+    /// mit frischmachen — wer heute die Sprache umstellt, überschriebe damit
+    /// den Hoster, den ein anderes Gerät gestern bewusst gewählt hat.
+    /// Gibt zurück, ob eine neue Gerätekennung vergeben wurde — dann muss die
+    /// Datei geschrieben werden, sonst bekäme der nächste Start wieder eine
+    /// andere.
+    @discardableResult
+    private func adoptSyncMeta(_ stored: LibraryData) -> Bool {
+        let meta = stored.sync
+        let existing = meta?.deviceId.flatMap { $0.isEmpty ? nil : $0 }
+        deviceId = existing ?? UUID().uuidString
+        historyClearedAt = meta?.historyClearedAt ?? 0
+        progressClearedAt = meta?.progressClearedAt ?? 0
+        recentsRemoved = meta?.recentsRemoved ?? [:]
+
+        if let stamps = meta?.preferences, !stamps.isEmpty {
+            preferenceStamps = stamps.mapValues(\.updatedAt)
+        } else {
+            let anchor = stored.modifiedAt ?? 0
+            preferenceStamps = SyncPreference.allCases.reduce(into: [:]) { $0[$1.rawValue] = anchor }
+        }
+
+        if let marks = meta?.favorites, !marks.isEmpty {
+            favoriteMarks = marks
+        } else {
+            favoriteMarks = [:]
+            for slug in favorites {
+                let stamp = favoriteAddedAt[slug] ?? stored.modifiedAt ?? 0
+                favoriteMarks[favoriteKey(slug: slug, provider: favoriteSource[slug] ?? provider)] =
+                    FavoriteMark(isFavorite: true, updatedAt: stamp, addedAt: stamp)
+            }
+        }
+        return existing == nil
+    }
+
+    private func apply(_ bag: LibraryData) {
         isLoading = true
         favorites = bag.favorites
         recents = bag.recents
@@ -456,43 +587,82 @@ final class LibraryStore {
 
     private func persist() {
         guard !isLoading else { return }
-        modifiedAt = Date().timeIntervalSince1970 * 1000
-        let bag = makeBag(modifiedAt: modifiedAt)
-        writeLocal(bag)
-        // Kein automatisches Hochladen: das lief früher bei jeder Änderung.
-        // Ein Anbieter, der über das Netz geht, gehört nicht in jeden
-        // Tastendruck — angestoßen wird über `syncNow`.
+        modifiedAt = now
+        writeLocal(makeBag(modifiedAt: modifiedAt))
+        // Kein Hochladen von hier aus. Der Fortschritt wird während der
+        // Wiedergabe im Sekundentakt geschrieben, und eine Netzanfrage pro
+        // Sekunde wäre weder Drive noch dem Gerät zumutbar. Gemeldet wird nur,
+        // *dass* sich etwas geändert hat; wann daraus ein Upload wird,
+        // entscheidet `LibrarySyncEngine`.
+        onChange?()
     }
 
-    private func writeLocal(_ bag: Bag) {
-        if let data = try? JSONEncoder().encode(bag) { try? data.write(to: url, options: .atomic) }
+    private func writeLocal(_ bag: LibraryData) {
+        guard let data = try? JSONEncoder().encode(bag) else { return }
+        // `.atomic` schreibt in eine Nebendatei und tauscht sie erst danach
+        // ein. Ein Absturz mittendrin lässt damit den alten Stand stehen
+        // statt eines halben JSON, das beim nächsten Start gar nicht lädt.
+        try? data.write(to: url, options: .atomic)
     }
 
-    private func makeBag(modifiedAt: Double) -> Bag {
-        Bag(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, preferredQuality: preferredQuality, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt)
+    private func makeBag(modifiedAt: Double) -> LibraryData {
+        LibraryData(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, preferredQuality: preferredQuality, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt, sync: makeSyncMeta(generatedAt: modifiedAt))
     }
 
-    private struct Bag: Codable {
-        var version: Int?
-        var modifiedAt: Double?
-        var favorites: [String]
-        var recents: [RecentItem]
-        var titles: [String: String]
-        var progress: [String: WatchProgress]
-        var langPref: String?
-        var hosterPref: String?
-        var resumeEnabled: Bool?
-        var autoplayNext: Bool?
-        var playbackSpeed: Float?
-        var preferredQuality: String?
-        var provider: String?
-        var scope: String?
-        var favoriteSource: [String: String]?
-        /// Neu in v5. Optional, damit ältere library.json weiter dekodieren;
-        /// fehlt der Eintrag, leitet `backfillAddedAt` ihn aus `favorites` ab.
-        var favoriteAddedAt: [String: Double]?
-        // `cloudSyncEnabled` und `cloudLastSync` standen hier, solange iCloud
-        // eingebaut war. Ältere library.json tragen die Schlüssel weiter;
-        // JSONDecoder überliest, was der Typ nicht kennt.
+    private func makeSyncMeta(generatedAt: Double) -> SyncMeta {
+        SyncMeta(
+            formatVersion: librarySyncFormatVersion,
+            deviceId: deviceId,
+            platform: LibraryStore.platformName,
+            appVersion: appVersion,
+            generatedAt: generatedAt,
+            historyClearedAt: historyClearedAt,
+            progressClearedAt: progressClearedAt,
+            preferences: preferenceStamps.mapValues(SyncStamp.init(updatedAt:)),
+            favorites: favoriteMarks,
+            recentsRemoved: recentsRemoved
+        )
+    }
+
+    /// Der lokale Stand als Datensatz — die Eingabe für `mergeLibrarySnapshots`
+    /// und zugleich das, was hochgeladen wird.
+    func snapshot() -> LibraryData { makeBag(modifiedAt: modifiedAt) }
+
+    /// Einen zusammengeführten Stand übernehmen.
+    ///
+    /// Der Gegenstück zu `snapshot()`. Die eigene Gerätekennung bleibt: sie
+    /// gehört zur Installation, nicht zu den Daten, und ein zusammengeführter
+    /// Stand trägt gar keine.
+    ///
+    /// Geschrieben wird sofort und atomar. Ein Absturz direkt danach darf
+    /// nicht dazu führen, dass der Abgleich gelaufen ist, das Ergebnis aber
+    /// nur im Arbeitsspeicher stand.
+    func applyMerged(_ merged: LibraryData) {
+        var next = merged
+        next.sync?.deviceId = deviceId
+        apply(next)
+        historyClearedAt = next.sync?.historyClearedAt ?? historyClearedAt
+        progressClearedAt = next.sync?.progressClearedAt ?? progressClearedAt
+        recentsRemoved = next.sync?.recentsRemoved ?? recentsRemoved
+        if let stamps = next.sync?.preferences { preferenceStamps = stamps.mapValues(\.updatedAt) }
+        if let marks = next.sync?.favorites { favoriteMarks = marks }
+        modifiedAt = max(modifiedAt, next.modifiedAt ?? 0)
+        writeLocal(makeBag(modifiedAt: modifiedAt))
+    }
+
+    /// Version der laufenden App, für die Metadaten im abgelegten Stand.
+    /// Wird von der App gesetzt; der Kern kennt kein Bundle.
+    var appVersion: String?
+
+    static var platformName: String {
+        #if os(iOS)
+        return "ios"
+        #elseif os(macOS)
+        return "macos"
+        #elseif os(Android)
+        return "android"
+        #else
+        return "unknown"
+        #endif
     }
 }

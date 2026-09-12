@@ -46,15 +46,42 @@
     "CalendarPayload": ["upcoming", "recent", "fetchedAt"]
   },
   "library": {
-    "schemaVersion": 5,
+    "schemaVersion": 6,
     "progressIdentity": "provider + normalized episodePath",
     "scope": "all|aniworld|serienstream|kdrama",
-    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope", "favoriteSource", "favoriteAddedAt", "modifiedAt"],
-    "migration": "Ältere Datensätze werden beim Laden normalisiert; Provider und Pfade werden ergänzt und doppelte Fortschrittseinträge anhand updatedAt zusammengeführt. Ab v5 trägt die Merkliste mit favoriteAddedAt einen Merkzeitpunkt je Slug (Millisekunden seit 1970); fehlt er, wird er beim Laden aus der Reihenfolge von favorites abgeleitet — der erste Eintrag gilt als der jüngste, und abgeleitete Werte liegen unterhalb aller bekannten."
+    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope", "favoriteSource", "favoriteAddedAt", "modifiedAt", "sync"],
+    "migration": "Ältere Datensätze werden beim Laden normalisiert; Provider und Pfade werden ergänzt und doppelte Fortschrittseinträge anhand updatedAt zusammengeführt. Ab v5 trägt die Merkliste mit favoriteAddedAt einen Merkzeitpunkt je Slug (Millisekunden seit 1970); fehlt er, wird er beim Laden aus der Reihenfolge von favorites abgeleitet — der erste Eintrag gilt als der jüngste, und abgeleitete Werte liegen unterhalb aller bekannten. Ab v6 trägt jede Datei einen sync-Block mit Gerätekennung und Änderungsmarken; fehlt er, wird er beim Laden ergänzt — die Merkliste aus favoriteAddedAt, die Einstellungen mit dem modifiedAt der Datei als festgeschriebenem Zeitstempel."
   },
   "sync": {
+    "cloud": "Google Drive, ausschließlich im versteckten appDataFolder (Scope drive.appdata). Kein anderer Cloud-Speicher, kein eigener Server, kein Proxy.",
+    "formatVersion": 1,
+    "file": "nori-sync-v1-<deviceId>.json — jedes Gerät schreibt nur seine eigene Datei und verändert nie die eines anderen.",
+    "maxSnapshotBytes": 2097152,
     "providerInterface": ["name", "load", "save"],
-    "behavior": "Ein neuerer Fremdstand gewinnt beim manuellen Abgleich und wird anschließend lokal sowie beim Anbieter gespeichert."
+    "snapshotStoreInterface": ["name", "list", "download", "upload"],
+    "meta": ["formatVersion", "deviceId", "platform", "appVersion", "generatedAt", "historyClearedAt", "progressClearedAt", "preferences", "favorites", "recentsRemoved"],
+    "syncedPreferences": ["langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope"],
+    "keys": {
+      "favorite": "provider|slug",
+      "recent": "provider|slug",
+      "progress": "provider|normalizedEpisodePath"
+    },
+    "behavior": "Pull, Merge, Push — nie Push vor Pull. Alle Gerätedateien lesen, zusammenführen, lokal anwenden, danach die eigene Datei schreiben.",
+    "conflict": {
+      "order": "Je Eintrag gewinnt der größere Zeitstempel; bei Gleichstand die lexikographisch größere deviceId.",
+      "favorites": "FavoriteMark mit isFavorite; false ist ein Grabstein und wird von einem älteren true nicht aufgehoben.",
+      "progress": "Größeres updatedAt gewinnt. Einträge mit updatedAt <= progressClearedAt fallen weg.",
+      "recents": "Größeres viewedAt gewinnt, höchstens 100 Einträge. Einträge mit viewedAt <= historyClearedAt oder <= recentsRemoved[key] fallen weg.",
+      "preferences": "Je Einstellung entscheidet ihr eigener Zeitstempel; der Wert kommt aus derselben Datei.",
+      "clockSkew": "Zeitstempel über now + 24 h gelten als kaputte Uhr und werden auf now gesetzt; negative und nicht-endliche auf 0.",
+      "determinism": "merge(A,B,C) == merge(C,A,B). Gemeinsame Fälle in config/sync-fixtures.json, geprüft von Swift und TypeScript."
+    },
+    "scheduler": {
+      "debounceMs": 4000,
+      "playbackIntervalMs": 25000,
+      "foregroundPollMs": 30000,
+      "immediate": ["Pause", "Player verlassen", "Episode beendet", "Hintergrund", "Merkliste geändert", "manueller Abgleich"]
+    }
   },
   "tmdb": {
     "note": "Gilt für beide Kerne: native/NoriCore/Sources/NoriCore/TMDB*.swift und shared/nori-core/src/tmdb.ts. Die Testreihen benutzen absichtlich dieselben Fälle.",
