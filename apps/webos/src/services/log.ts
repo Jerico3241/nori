@@ -9,7 +9,9 @@
 const PREFIX = "[Nori:webOS]";
 const verbose = import.meta.env.DEV || localStorage.getItem("nori.debug") === "1";
 
-type Scope = "nav" | "focus" | "playback" | "resolver" | "hls" | "hoster" | "progress" | "data" | "app";
+type Scope =
+  | "nav" | "focus" | "playback" | "resolver" | "hls" | "hoster" | "progress"
+  | "data" | "tmdb" | "app";
 
 export function log(scope: Scope, ...parts: unknown[]): void {
   if (!verbose) return;

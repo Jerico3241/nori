@@ -8,8 +8,8 @@
 
 import {
   continueWatching as coreContinueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
-  findProgress, findProgressByEpisode, nextPlay as coreNextPlay, rememberRecent,
-  seasonStats as coreSeasonStats, upsertProgress,
+  findProgress, findProgressByEpisode, mergeLibraries, nextPlay as coreNextPlay,
+  rememberRecent, seasonStats as coreSeasonStats, upsertProgress,
   type CatalogProvider, type Episode, type LibraryScope, type LibraryState, type WatchProgress,
 } from "@nori/core";
 import {
@@ -43,7 +43,14 @@ interface LibraryContextValue {
   clearHistory(): void;
   clearProgress(): void;
   exportJSON(): string;
-  importJSON(raw: string): void;
+  /**
+   * Einen fremden Stand **dazunehmen**, nicht ersetzen.
+   *
+   * Die Regel dazu steht im Kern (`mergeLibraries`), damit ein künftiger
+   * Abgleichdienst dieselbe benutzt. Wirft bei ungültigem JSON — der Aufrufer
+   * muss das anzeigen, statt stillschweigend nichts zu tun.
+   */
+  importJSON(raw: string): { favorites: number; progress: number };
 }
 
 const LibraryContext = createContext<LibraryContextValue | null>(null);
@@ -127,8 +134,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     clearProgress: () => patch((current) => ({ ...current, progress: {} })),
     exportJSON: () => JSON.stringify(encodeLibrary(state), null, 2),
     importJSON: (raw) => {
-      const decoded = decodeLibrary(JSON.parse(raw));
-      setState({ ...decoded, modifiedAt: Date.now() });
+      const decoded = decodeLibrary(JSON.parse(raw) as unknown);
+      // Zusammenführen und nicht ersetzen: eine eingelesene Datei von letzter
+      // Woche darf den Fortschritt von heute Abend nicht löschen.
+      const merged = mergeLibraries(state, decoded);
+      setState({ ...merged, modifiedAt: Date.now() });
+      log("data", "Bibliothek zusammengeführt",
+        `${merged.favorites.length} gemerkt`,
+        `${Object.keys(merged.progress).length} Folgen`);
+      return {
+        favorites: merged.favorites.length,
+        progress: Object.keys(merged.progress).length,
+      };
     },
   }), [state, patch]);
 

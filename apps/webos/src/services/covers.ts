@@ -1,31 +1,45 @@
-// Cover-Beschaffung.
+// Bildbeschaffung: welches Bild zu einem Titel gehört und woher es kommt.
 //
-// Warum das nötig ist: die Katalogseiten beider Quellen sind reine Titellisten
-// ohne Bilder — die Adresse des Covers steht nur auf der Detailseite, und sie
-// enthält einen Zufallsanteil, lässt sich also nicht aus dem Slug bilden. Der
-// Swift-Kern löst das mit `CoverIndex`: Detailseite bei Bedarf nachladen,
-// höchstens vier gleichzeitig, Ergebnis dauerhaft ablegen. Hier steht dasselbe
-// Verfahren.
+// ## Zwei Quellen, eine Reihenfolge
 //
-// Optional kommt TMDB dazu (Backdrops und Folgenbilder). Ohne Schlüssel fragt
-// Nori TMDB gar nicht erst an und zeigt die Cover der Quellen — ein gültiger
-// Zustand, kein Fehler.
+// 1. **TMDB**, wenn es einen sicheren Treffer gibt. Poster, Breitbild und
+//    Schriftzug in Auflösungen, die auf einem Fernseher tragen.
+// 2. **Das Cover der Quelle.** Es ist immer das richtige — AniWorld und
+//    Serienstream liefern es zur Serie aus —, aber klein und ohne Breitbild.
+// 3. **Der Ersatz aus dem Titel.** Kein Loch im Raster.
+//
+// Diese Reihenfolge ist die aus der Aufgabenstellung, und sie gilt in **beide**
+// Richtungen: TMDB darf vorhandene gute Quelldaten nie durch leere
+// TMDB-Werte ersetzen. Deshalb wird nirgends „TMDB hat geantwortet" mit „TMDB
+// hat etwas" verwechselt — ein Treffer ohne Poster liefert kein Poster, und
+// dann steht das Cover der Quelle.
+//
+// ## Warum die Quellcover überhaupt nachgeladen werden müssen
+//
+// Die Katalogseiten beider Quellen sind reine Titellisten ohne Bilder — die
+// Adresse des Covers steht nur auf der Detailseite, und sie enthält einen
+// Zufallsanteil, lässt sich also nicht aus dem Slug bilden. Der Swift-Kern löst
+// das mit `CoverIndex`: Detailseite bei Bedarf nachladen, höchstens vier
+// gleichzeitig, Ergebnis dauerhaft ablegen. Hier steht dasselbe Verfahren.
 
 import { NoriClient, type CatalogProvider, type NoriGateway } from "@nori/core";
 import { log, warn } from "./log";
+import { tmdb } from "./tmdb";
 
-const STORE_KEY = "nori.covers.v1";
+const STORE_KEY = "nori.covers.v2";
 const MAX_ENTRIES = 3000;
 const MAX_CONCURRENT = 4;
+/** Ein Fehlschlag wird eine Stunde lang nicht wiederholt. */
+const MISS_MAX_AGE = 3_600_000;
 
 interface CoverStore {
+  version: number;
   source: Record<string, string>;
-  backdrop: Record<string, string>;
   missing: Record<string, number>;
 }
 
 function emptyStore(): CoverStore {
-  return { source: {}, backdrop: {}, missing: {} };
+  return { version: 2, source: {}, missing: {} };
 }
 
 function loadStore(): CoverStore {
@@ -33,9 +47,10 @@ function loadStore(): CoverStore {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return emptyStore();
     const parsed = JSON.parse(raw) as Partial<CoverStore>;
+    if (parsed.version !== 2) return emptyStore();
     return {
+      version: 2,
       source: parsed.source ?? {},
-      backdrop: parsed.backdrop ?? {},
       missing: parsed.missing ?? {},
     };
   } catch {
@@ -43,17 +58,45 @@ function loadStore(): CoverStore {
   }
 }
 
-/** Woher ein Cover stammt — für die Kachel unerheblich, für die Fehlersuche nicht. */
+/** Woher ein Bild stammt — für die Kachel unerheblich, für die Fehlersuche nicht. */
 export type CoverKind = "source" | "tmdb";
 
-export interface CoverResult {
-  url: string;
-  kind: CoverKind;
+/** Was ein Titel an Text und Zahlen beisteuert, sobald TMDB ihn kennt. */
+export interface TitleDetails {
+  tmdbID: number | null;
+  overview: string;
+  /** TMDBs Zehnerskala; die Oberfläche rechnet auf Sterne um. */
+  rating: number | null;
+  votes: number | null;
+  logo: string | null;
+  backdrop: string | null;
+  poster: string | null;
 }
+
+export const NO_DETAILS: TitleDetails = {
+  tmdbID: null,
+  overview: "",
+  rating: null,
+  votes: null,
+  logo: null,
+  backdrop: null,
+  poster: null,
+};
 
 type Listener = (slug: string) => void;
 
-class CoverIndex {
+export interface ArtworkRequest {
+  slug: string;
+  provider: CatalogProvider;
+  /** Der Titel, wie die Quelle ihn führt. Ohne ihn geht keine TMDB-Suche. */
+  title?: string;
+  /** Alternativtitel der Quelle — der Grund, warum Eindeutschungen treffen. */
+  alts?: string[];
+  /** Erscheinungsjahr laut Quelle, sofern bekannt. Trennt Neuverfilmungen. */
+  year?: number | null;
+}
+
+class ArtworkIndex {
   private store = loadStore();
   private inflight = new Map<string, Promise<string | null>>();
   private queue: (() => void)[] = [];
@@ -61,11 +104,18 @@ class CoverIndex {
   private saveTimer: number | null = null;
   private listeners = new Set<Listener>();
   private gateway: NoriGateway | null = null;
-  private tmdbKey = "";
+  private unsubscribeTmdb: (() => void) | null = null;
 
-  configure(gateway: NoriGateway, tmdbKey: string): void {
+  configure(gateway: NoriGateway): void {
     this.gateway = gateway;
-    this.tmdbKey = tmdbKey.trim();
+    if (this.unsubscribeTmdb) return;
+    // Ein TMDB-Treffer, der nach dem Rendern eintrifft, muss die Kachel
+    // erreichen. Ohne diese Weitergabe stünde dort bis zum nächsten
+    // Seitenwechsel weiter das Quellcover.
+    this.unsubscribeTmdb = tmdb.subscribe((key) => {
+      const slug = key.split("|")[1] ?? key;
+      this.notify(slug);
+    });
   }
 
   subscribe(listener: Listener): () => void {
@@ -73,27 +123,91 @@ class CoverIndex {
     return () => this.listeners.delete(listener);
   }
 
-  /** Bereits bekannte Adresse, ohne etwas anzustoßen. */
+  private key(slug: string, provider: CatalogProvider): string {
+    return `${provider}|${slug}`;
+  }
+
+  /**
+   * Das beste bekannte Poster, ohne etwas anzustoßen.
+   *
+   * TMDB vor Quelle: das Quellcover ist 220 px breit, auf einer 218 px breiten
+   * Kachel eines 4K-Panels sichtbar weich.
+   */
   cached(slug: string, provider: CatalogProvider): string | null {
+    return tmdb.art(slug, provider)?.poster
+      ?? this.store.source[this.key(slug, provider)]
+      ?? null;
+  }
+
+  /** Nur das Cover der Quelle. Für den Rückfall, wenn ein TMDB-Bild scheitert. */
+  sourceCover(slug: string, provider: CatalogProvider): string | null {
     return this.store.source[this.key(slug, provider)] ?? null;
   }
 
   backdrop(slug: string, provider: CatalogProvider): string | null {
-    return this.store.backdrop[this.key(slug, provider)] ?? null;
+    return tmdb.art(slug, provider)?.backdrop ?? null;
+  }
+
+  logo(slug: string, provider: CatalogProvider): string | null {
+    return tmdb.art(slug, provider)?.logo ?? null;
+  }
+
+  /** Text und Zahlen von TMDB, soweit vorhanden. Ohne Abruf. */
+  details(slug: string, provider: CatalogProvider): TitleDetails {
+    const art = tmdb.art(slug, provider);
+    if (!art) return NO_DETAILS;
+    return {
+      tmdbID: art.tmdbID,
+      overview: art.overview,
+      rating: art.rating,
+      votes: art.votes,
+      logo: art.logo,
+      backdrop: art.backdrop,
+      poster: art.poster,
+    };
   }
 
   /**
-   * Cover besorgen. Mehrfache Aufrufe für denselben Titel führen zu einem
-   * Abruf; mehr als vier laufen nie gleichzeitig.
+   * Bilder besorgen.
+   *
+   * Startet beides: die TMDB-Suche (wenn ein Titel bekannt ist) und das
+   * Nachladen des Quellcovers. Nicht „TMDB und nur wenn das scheitert die
+   * Quelle" — die TMDB-Suche kann Sekunden brauchen, und in der Zeit soll die
+   * Kachel schon das Quellcover zeigen statt eines Buchstabens.
+   *
+   * Gibt das beste Poster zurück, das am Ende vorliegt.
    */
-  async ensure(slug: string, provider: CatalogProvider): Promise<string | null> {
+  async ensure(request: ArtworkRequest): Promise<string | null> {
+    const known = this.cached(request.slug, request.provider);
+    const tmdbTask = request.title
+      ? tmdb.ensureArt({
+        slug: request.slug,
+        title: request.title,
+        alternates: request.alts,
+        provider: request.provider,
+        expectedYear: request.year ?? null,
+      }).catch(() => null)
+      : Promise.resolve(null);
+
+    const sourceTask = this.ensureSourceCover(request.slug, request.provider);
+    const [art, source] = await Promise.all([tmdbTask, sourceTask]);
+    return art?.poster ?? source ?? known;
+  }
+
+  /**
+   * Das Cover der Quelle über die Detailseite beschaffen.
+   *
+   * Kostet eine Seite pro Titel, aber nur einmal: das Ergebnis liegt danach im
+   * `localStorage` und übersteht den Neustart.
+   */
+  async ensureSourceCover(slug: string, provider: CatalogProvider): Promise<string | null> {
     const key = this.key(slug, provider);
     const known = this.store.source[key];
     if (known) return known;
     const failedAt = this.store.missing[key];
-    // Ein Fehlschlag wird eine Stunde lang nicht wiederholt: sonst rennt jede
-    // Rückkehr auf die Startseite erneut gegen dieselbe leere Seite.
-    if (failedAt && Date.now() - failedAt < 3_600_000) return null;
+    // Sonst rennt jede Rückkehr auf die Startseite erneut gegen dieselbe
+    // leere Seite.
+    if (failedAt && Date.now() - failedAt < MISS_MAX_AGE) return null;
     const running = this.inflight.get(key);
     if (running) return running;
 
@@ -125,41 +239,42 @@ class CoverIndex {
     return task;
   }
 
-  /** Backdrop über TMDB, wenn ein Schlüssel eingetragen ist. */
-  async ensureBackdrop(slug: string, title: string, provider: CatalogProvider): Promise<string | null> {
-    if (!this.tmdbKey) return null;
-    const key = this.key(slug, provider);
-    const known = this.store.backdrop[key];
-    if (known) return known;
-    try {
-      const type = provider === "aniworld" ? "tv" : "tv";
-      const search = new URL(`https://api.themoviedb.org/3/search/${type}`);
-      search.searchParams.set("api_key", this.tmdbKey);
-      search.searchParams.set("query", title);
-      search.searchParams.set("language", "de-DE");
-      const res = await fetch(search.toString());
-      if (!res.ok) return null;
-      const body = (await res.json()) as { results?: { backdrop_path?: string | null }[] };
-      const path = body.results?.find((row) => row.backdrop_path)?.backdrop_path;
-      if (!path) return null;
-      const url = `https://image.tmdb.org/t/p/w1280${path}`;
-      this.store.backdrop[key] = url;
-      this.save();
-      this.notify(slug);
-      return url;
-    } catch (cause) {
-      warn("data", "TMDB nicht erreichbar", (cause as Error)?.message);
-      return null;
-    }
+  /** Das Breitbild, notfalls über eine TMDB-Suche. */
+  async ensureBackdrop(request: ArtworkRequest): Promise<string | null> {
+    if (!request.title) return this.backdrop(request.slug, request.provider);
+    const art = await tmdb.ensureArt({
+      slug: request.slug,
+      title: request.title,
+      alternates: request.alts,
+      provider: request.provider,
+      expectedYear: request.year ?? null,
+    }).catch(() => null);
+    return art?.backdrop ?? null;
   }
 
+  /** Den Schriftzug, notfalls nachgeladen. Nur wo er auch gezeigt wird. */
+  async ensureLogo(request: ArtworkRequest): Promise<string | null> {
+    if (!request.title) return this.logo(request.slug, request.provider);
+    return tmdb.ensureLogo({
+      slug: request.slug,
+      title: request.title,
+      alternates: request.alts,
+      provider: request.provider,
+    }).catch(() => null);
+  }
+
+  /**
+   * Alles verwerfen — Quellcover **und** TMDB.
+   *
+   * In den Einstellungen als „Bildspeicher leeren". Wer das drückt, hat ein
+   * falsches Bild gesehen; dann muss auch die TMDB-Zuordnung weg, nicht nur
+   * das Bild darüber.
+   */
   clear(): void {
     this.store = emptyStore();
     this.save();
-  }
-
-  private key(slug: string, provider: CatalogProvider): string {
-    return `${provider}|${slug}`;
+    tmdb.clear();
+    this.notify("*");
   }
 
   private notify(slug: string): void {
@@ -211,4 +326,4 @@ class CoverIndex {
   }
 }
 
-export const covers = new CoverIndex();
+export const covers = new ArtworkIndex();

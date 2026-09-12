@@ -5,6 +5,12 @@
 // Explore und Suche arbeiten auf denselben Listen, statt jede für sich
 // nachzuladen. Das ist auf einem Fernseher kein Feinschliff — jede zusätzliche
 // Katalogseite sind hunderte Kilobyte HTML, die geparst werden wollen.
+//
+// Hier wird außerdem entschieden, **welchen Weg TMDB nimmt**. Die Einstellung
+// nennt einen Wunsch („über den Server"), erreichbar ist aber nur, was auch
+// eingerichtet ist. Diese Umrechnung steht an einer Stelle, damit nicht jede
+// Ansicht sie selbst anstellt — und damit die Einstellungen anzeigen können,
+// was tatsächlich gilt.
 
 import {
   scopeIncludesItem, type CalendarPayload, type CatalogItem, type CatalogProvider,
@@ -13,9 +19,10 @@ import {
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
 } from "react";
-import { createGateway } from "../services/gateway";
+import { createGateway, normalizeServerUrl } from "../services/gateway";
 import { covers } from "../services/covers";
 import { log } from "../services/log";
+import { tmdb, type TmdbMode } from "../services/tmdb";
 import { useLibrary } from "./library";
 import { useSettings } from "./settings";
 
@@ -25,22 +32,87 @@ interface CatalogSlice {
   error: string | null;
 }
 
+/** Welcher TMDB-Weg gilt, und warum nicht der gewünschte. */
+export interface TmdbRoute {
+  /** Was eingestellt ist. */
+  wanted: TmdbMode;
+  /** Was tatsächlich benutzt wird. */
+  effective: TmdbMode;
+  /** Deutscher Satz für die Einstellungen; leer, wenn beides übereinstimmt. */
+  note: string;
+}
+
 interface DataContextValue {
   gateway: NoriGateway;
   /** Katalog einer Quelle; stößt das Laden an, wenn er noch nicht da ist. */
   catalog(provider: CatalogProvider): CatalogSlice;
-  /** Beide Kataloge, gefiltert nach dem eingestellten Bereich. */
+  /**
+   * Beide Kataloge, gefiltert nach dem eingestellten Bereich.
+   *
+   * Gibt bei gleichem Stand **dasselbe Objekt** zurück, nicht ein gleiches.
+   * Das ist keine Feinheit: Eine Ansicht, die daraus mit `useMemo` etwas
+   * ableitet — der Katalogindex der Detailseite etwa —, rechnet sonst bei
+   * jedem Rendern neu, und wenn sie dabei Zustand setzt, rendert sie endlos.
+   * Genau das ist passiert: die Detailseite lief in eine Schleife, und der
+   * Fernseher reagierte auf keine Taste mehr.
+   */
   scopedCatalog(): CatalogSlice;
   reloadCatalog(provider: CatalogProvider): void;
   series(provider: CatalogProvider, slug: string, season?: string | null): Promise<SeriesDetail>;
   watch(provider: CatalogProvider, path: string): Promise<WatchInfo>;
   calendar(provider: CatalogProvider, force?: boolean): Promise<CalendarPayload>;
   online: boolean;
+  tmdbRoute: TmdbRoute;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
 
 const EMPTY: CatalogSlice = { items: [], status: "idle", error: null };
+
+/**
+ * Aus Wunsch und Einrichtung den tatsächlichen TMDB-Weg bestimmen.
+ *
+ * Die beiden Fälle, die sonst stillschweigend nichts täten:
+ *
+ * - „über den Server", aber es ist kein Server eingetragen (der Fernseher
+ *   arbeitet direkt an den Quellen). Dann greift der eigene Schlüssel, sofern
+ *   einer eingetragen ist.
+ * - „direkt", aber kein Schlüssel. Dann gibt es kein TMDB — und die
+ *   Einstellungen sagen das, statt einen Weg zu behaupten.
+ */
+export function resolveTmdbRoute(input: {
+  wanted: TmdbMode;
+  serverUrl: string;
+  key: string;
+}): TmdbRoute {
+  const hasServer = Boolean(input.serverUrl);
+  const hasKey = Boolean(input.key.trim());
+
+  if (input.wanted === "off") return { wanted: "off", effective: "off", note: "" };
+
+  if (input.wanted === "server") {
+    if (hasServer) return { wanted: "server", effective: "server", note: "" };
+    if (hasKey) {
+      return {
+        wanted: "server",
+        effective: "direct",
+        note: "Kein Nori-Server eingetragen — Nori fragt TMDB mit dem eigenen Schlüssel.",
+      };
+    }
+    return {
+      wanted: "server",
+      effective: "off",
+      note: "Kein Nori-Server und kein eigener Schlüssel — Nori zeigt die Cover der Quellen.",
+    };
+  }
+
+  if (hasKey) return { wanted: "direct", effective: "direct", note: "" };
+  return {
+    wanted: "direct",
+    effective: "off",
+    note: "Kein Schlüssel eingetragen — Nori zeigt die Cover der Quellen.",
+  };
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
@@ -53,9 +125,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(() => navigator.onLine !== false);
   const pending = useRef(new Set<string>());
 
+  const serverBase = useMemo(
+    () => (settings.transport === "server" ? normalizeServerUrl(settings.serverUrl) : ""),
+    [settings.transport, settings.serverUrl],
+  );
+
+  const tmdbRoute = useMemo(
+    () => resolveTmdbRoute({
+      wanted: settings.tmdbMode,
+      serverUrl: serverBase,
+      key: settings.tmdbKey,
+    }),
+    [settings.tmdbMode, serverBase, settings.tmdbKey],
+  );
+
   useEffect(() => {
-    covers.configure(gateway, settings.tmdbKey);
-  }, [gateway, settings.tmdbKey]);
+    tmdb.configure({
+      mode: tmdbRoute.effective,
+      key: settings.tmdbKey,
+      serverUrl: serverBase,
+    });
+  }, [tmdbRoute.effective, settings.tmdbKey, serverBase]);
+
+  useEffect(() => {
+    covers.configure(gateway);
+  }, [gateway]);
 
   // Ein Wechsel des Zugangs macht alle geladenen Listen ungültig.
   useEffect(() => {
@@ -115,13 +209,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return slice;
   }, [slices, load]);
 
-  const scopedCatalog = useCallback((): CatalogSlice => {
-    const wanted: CatalogProvider[] = library.scope === "all"
+  /** Welche Quellen der eingestellte Bereich braucht. */
+  const wanted = useMemo<CatalogProvider[]>(
+    () => (library.scope === "all"
       ? ["aniworld", "serienstream"]
       : library.scope === "aniworld"
         ? ["aniworld"]
-        : ["serienstream"];
-    const parts = wanted.map((provider) => catalog(provider));
+        : ["serienstream"]),
+    [library.scope],
+  );
+
+  // Das Laden anstoßen gehört in einen Effekt, nicht in die Rechnung darunter:
+  // eine `useMemo`, die dabei Zustand setzt, ist ein Rendern im Rendern.
+  useEffect(() => {
+    for (const provider of wanted) load(provider, false);
+  }, [wanted, load]);
+
+  const scoped = useMemo<CatalogSlice>(() => {
+    const parts = wanted.map((provider) => slices[provider] ?? { ...EMPTY, status: "loading" as const });
     const items = parts.flatMap((part) => part.items)
       .filter((item) => scopeIncludesItem(library.scope, item));
     const error = parts.find((part) => part.status === "error")?.error ?? null;
@@ -133,7 +238,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? "error"
           : "idle";
     return { items, status, error };
-  }, [catalog, library.scope]);
+  }, [slices, wanted, library.scope]);
+
+  const scopedCatalog = useCallback(() => scoped, [scoped]);
 
   const value = useMemo<DataContextValue>(() => ({
     gateway,
@@ -144,7 +251,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     watch: (provider, path) => gateway.watch(provider, path),
     calendar: (provider, force) => gateway.calendar(provider, force),
     online,
-  }), [gateway, catalog, scopedCatalog, load, online]);
+    tmdbRoute,
+  }), [gateway, catalog, scopedCatalog, load, online, tmdbRoute]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

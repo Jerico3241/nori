@@ -18,7 +18,7 @@
 // Kern, der direkte im Fernseher, der andere im Server.
 
 import {
-  DirectGateway, FetchHttpClient, NoriError,
+  DirectGateway, FetchHttpClient, NoriError, isTMDBImage,
   type CalendarPayload, type CatalogProvider, type CatalogResult, type NoriGateway,
   type PlaySource, type ResolveRequest, type SeriesDetail, type WatchInfo,
 } from "@nori/core";
@@ -109,8 +109,14 @@ class HttpGateway implements NoriGateway {
   }
 
   imageURL(url: string): string {
-    // Cover kommen von den Quellen selbst; über den Server geleitet umgeht das
-    // sowohl Herkunftsprüfungen als auch Hotlink-Sperren.
+    // TMDB-Bilder gehen den kurzen Weg: sie verlangen keinen `Referer`, haben
+    // keine Hotlink-Sperre und liefern die passenden Kopfzeilen für eine
+    // fremde Herkunft. Über den Server geleitet wären sie nur ein Umweg — und
+    // eine Last für den Server, die niemand braucht.
+    if (isTMDBImage(url)) return url;
+    // Cover der Quellen dagegen kommen nur mit passender Kopfzeile; über den
+    // Server geleitet umgeht das sowohl Herkunftsprüfungen als auch
+    // Hotlink-Sperren.
     return `${this.base}/api/image?u=${encodeURIComponent(url)}`;
   }
 }
@@ -144,13 +150,41 @@ export function createGateway(config: GatewayConfig): NoriGateway {
   return gateway;
 }
 
-/** Ist der eingetragene Server erreichbar? Für die Einstellungen. */
-export async function pingServer(serverUrl: string): Promise<string> {
+/** Was ein Nori-Server über sich sagt. */
+export interface ServerInfo {
+  version: string;
+  /** Hat der Server einen TMDB-Schlüssel? Entscheidet über den TMDB-Weg. */
+  tmdb: boolean;
+  tmdbCacheEntries: number;
+}
+
+/**
+ * Ist der eingetragene Server erreichbar, und was kann er?
+ *
+ * Die Auskunft über TMDB ist der Grund, warum hier mehr als „ja" zurückkommt:
+ * ohne sie müsste der Fernseher einen TMDB-Abruf wagen, um zu erfahren, ob er
+ * einen wagen kann — und bei einem alten Server ohne `/api/tmdb` wäre das
+ * Ergebnis „nicht erreichbar" statt „kann das nicht".
+ */
+export async function pingServer(serverUrl: string): Promise<ServerInfo> {
   const base = normalizeServerUrl(serverUrl);
   if (!base) throw NoriError.network("Keine gültige Adresse");
-  const res = await fetch(`${base}/api/health`, { headers: { Accept: "application/json" } });
+  let res: Response;
+  try {
+    res = await fetch(`${base}/api/health`, { headers: { Accept: "application/json" } });
+  } catch (cause) {
+    throw NoriError.network((cause as Error)?.message ?? "keine Verbindung");
+  }
   if (!res.ok) throw NoriError.network(`HTTP ${res.status}`);
-  const body = (await res.json()) as { name?: string; version?: string };
+  const body = (await res.json().catch(() => ({}))) as {
+    name?: string;
+    version?: string;
+    features?: { tmdb?: boolean; tmdbCacheEntries?: number };
+  };
   if (body.name !== "nori-api") throw NoriError.network("Antwort stammt nicht von einem Nori-Server");
-  return body.version ?? "unbekannt";
+  return {
+    version: body.version ?? "unbekannt",
+    tmdb: body.features?.tmdb === true,
+    tmdbCacheEntries: body.features?.tmdbCacheEntries ?? 0,
+  };
 }

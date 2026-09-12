@@ -9,6 +9,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from "react";
 import type { TransportMode } from "../services/gateway";
+import type { TmdbMode } from "../services/tmdb";
 import { warn } from "../services/log";
 
 const STORAGE_KEY = "nori.webos.settings";
@@ -22,7 +23,20 @@ export interface DeviceSettings {
   seekStep: number;
   /** Sekunden Countdown vor der nächsten Folge. */
   autoplayCountdown: number;
-  /** TMDB-Schlüssel für Backdrops und Folgenbilder; leer heißt: nur Quellcover. */
+  /**
+   * Woher die TMDB-Daten kommen.
+   *
+   *   „server"  — der Nori-Server hält den Schlüssel. Der empfohlene Weg: ein
+   *               Schlüssel statt einer je Gerät, ein Zwischenspeicher für
+   *               alle Fernseher, eine Ratenbegrenzung statt mehrerer.
+   *   „direct"  — dieser Fernseher fragt TMDB selbst, mit eigenem Schlüssel.
+   *               Der Rückfall, wenn kein Server läuft oder der keinen
+   *               Schlüssel hat.
+   *   „aus"     — keine TMDB-Daten. Ein gültiger Zustand: Nori zeigt dann die
+   *               Cover und Texte der Quellen.
+   */
+  tmdbMode: TmdbMode;
+  /** Nur für den direkten Weg. Leer heißt: nur Quelldaten. */
   tmdbKey: string;
   /** Weiche Flächen kosten auf älteren Panels Bilder pro Sekunde. */
   reduceEffects: boolean;
@@ -35,6 +49,7 @@ const DEFAULTS: DeviceSettings = {
   controlsTimeout: 4,
   seekStep: 10,
   autoplayCountdown: 10,
+  tmdbMode: "server",
   tmdbKey: "",
   reduceEffects: false,
   debug: false,
@@ -53,7 +68,14 @@ function read(): DeviceSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<DeviceSettings>;
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    // Ein Stand von vor dem Serverweg kennt `tmdbMode` nicht. Wer dort einen
+    // Schlüssel eingetragen hat, meinte damit „direkt" — die Voreinstellung
+    // „server" würde ihm den Schlüssel stillschweigend abschalten.
+    if (parsed.tmdbMode === undefined) {
+      merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : DEFAULTS.tmdbMode;
+    }
+    return merged;
   } catch (cause) {
     warn("app", "Einstellungen nicht lesbar", cause);
     return DEFAULTS;

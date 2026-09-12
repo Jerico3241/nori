@@ -59,3 +59,54 @@ export function keepAwake(active: boolean): () => void {
     void handle?.release().catch(() => undefined);
   };
 }
+
+/**
+ * Kennt dieser Browser `gap` in einem Flex-Container?
+ *
+ * ## Warum das geprüft werden muss
+ *
+ * webOS 6 fährt Chrome 79. Dort gibt es `gap` **nur im Raster**, nicht im
+ * Flex-Layout — das kam erst mit Chrome 84. Noris Oberfläche benutzt es an gut
+ * vierzig Stellen: Reihen, Knopfzeilen, Chips, die Bedienung im Player. Ohne
+ * Abstand klebt dort alles aneinander, und zwar genau auf dem ältesten Gerät,
+ * das Nori unterstützen soll.
+ *
+ * Das lässt sich nicht übersetzen und nicht über `@supports` erfragen:
+ * `@supports (gap: 1px)` ist in Chrome 79 **wahr**, weil es Rasterabstände
+ * kennt. Ein Feature-Query würde also das Falsche sagen.
+ *
+ * Deshalb wird gemessen: zwei Kästen in einem Flex-Container übereinander,
+ * dazwischen ein Pixel Abstand. Kommt die Höhe 1 zurück, wirkt `row-gap`.
+ *
+ * Das Ergebnis landet als `data-flex-gap` am Wurzelelement; das Stylesheet
+ * hängt daran seinen Rückfall über Ränder. Dieselbe Stelle trägt schon
+ * `data-effects` und `data-nav`.
+ */
+export function supportsFlexGap(): boolean {
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.display = "flex";
+  probe.style.flexDirection = "column";
+  probe.style.rowGap = "1px";
+  probe.appendChild(document.createElement("div"));
+  probe.appendChild(document.createElement("div"));
+  document.body.appendChild(probe);
+  const height = probe.scrollHeight;
+  probe.parentNode?.removeChild(probe);
+  return height === 1;
+}
+
+/** Das Messergebnis am Dokument anschreiben. Einmal beim Start. */
+export function markFlexGapSupport(): boolean {
+  let supported = true;
+  try {
+    supported = supportsFlexGap();
+  } catch {
+    // Im Zweifel annehmen, dass es geht: der Rückfall über Ränder ist auf
+    // einem modernen Panel sonst ein doppelter Abstand.
+    supported = true;
+  }
+  document.documentElement.dataset.flexGap = supported ? "yes" : "no";
+  return supported;
+}

@@ -1,12 +1,37 @@
 /*
  * Nori-Farben und -Größen für den Fernseher.
  *
- * Die Palette ist die der Apple-Apps: sehr dunkler Grund (#05060a, derselbe
- * Wert, den auch die Windows-Hülle setzt) und das warme Nori-Orange als Akzent
- * (#f47521 — der AccentColor der Assets im Dunkelmodus). Kein Blau: das wäre
- * die Handschrift einer anderen App.
+ * ## Die Palette
  *
- * Alle Maße hängen an der Wurzelschriftgröße, und die hängt an der Breite des
+ * Sie ist die der Apple-Apps, Wert für Wert aus
+ * `native/Nori-iOS/Sources/UI/Theme.swift` übernommen:
+ *
+ *     bg        #05060a   fastschwarz mit einem Hauch Blau
+ *     surface   #0c0e14   Karten, Leisten, Eingabefelder
+ *     elevated  #141822   das, was auf einer Karte liegt
+ *     text      #eef1f6   Fließtext
+ *     muted     #8b93a7   Nebenangaben
+ *     accent    #d7deea   sehr helles Neutral — der Hauptakzent
+ *     highlight #78c5ff   Signalblau für „ist gerade aktiv"
+ *     star      #ffe07a   nur Bewertungen
+ *
+ * Der Hauptakzent ist **kein Farbton**, sondern ein sehr helles Grau. Das ist
+ * die eigentliche Entscheidung dahinter: Auf Kacheln liegen ständig fremde
+ * Farben (Artwork), und ein gefärbter Akzent streitet mit jedem zweiten Cover.
+ * Ein Hellgrau streitet mit keinem.
+ *
+ * Deshalb gibt es daneben `--highlight`: Weiß auf Fastschwarz sagt „hier ist
+ * etwas", aber nicht „das ist gerade an". Für Fokus, Spulen und aktive
+ * Zustände braucht es ein Signal, und das ist blau.
+ *
+ * Frühere Stände dieser Datei trugen ein warmes Orange (#f47521) als
+ * Hauptfarbe. Das ist nicht Noris Farbe — es war die Handschrift einer anderen
+ * Streaming-App. Wer hier einen Farbton einführt, prüft ihn gegen
+ * `Theme.swift`.
+ *
+ * ## Die Maße
+ *
+ * Alle hängen an der Wurzelschriftgröße, und die hängt an der Breite des
  * Bildschirms. Bei 1920 px ist 1rem = 16 px; bei 1280 px skaliert dasselbe
  * Layout mit, statt zu brechen. Deshalb steht unten kein einziges px-Maß für
  * etwas, das größer als ein Rand ist.
@@ -16,19 +41,29 @@
   color-scheme: dark;
 
   --bg: #05060a;
-  --bg-raised: #0a0d14;
+  --bg-raised: #080a11;
   --surface: #0c0e14;
-  --surface-hover: #161a26;
-  --elevated: #141826;
+  --surface-hover: #171b26;
+  --elevated: #141822;
   --text: #eef1f6;
   --muted: #8b93a7;
-  --line: rgba(255, 255, 255, 0.09);
+  --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.16);
 
-  --accent: #f47521;
-  --accent-soft: rgba(244, 117, 33, 0.16);
-  --accent-ink: #1a0c02;
-  --focus: #ffb066;
+  /* Der Hauptakzent: helles Neutral, dunkle Schrift darauf. */
+  --accent: #d7deea;
+  --accent-soft: rgba(215, 222, 234, 0.14);
+  --accent-ink: #05060a;
+
+  /* Das Signal: aktiv, fokussiert, gerade in Bewegung. */
+  --highlight: #78c5ff;
+  --highlight-soft: rgba(120, 197, 255, 0.18);
+  --focus: #78c5ff;
+  --focus-glow: rgba(120, 197, 255, 0.22);
+
+  /* Nur Bewertungen. Sonst nirgends ein warmer Ton. */
+  --star: #ffe07a;
+
   --danger: #ff6b5e;
   --ok: #4bd78c;
 
@@ -101,6 +136,9 @@ button {
  * je nach Untergrund verschwindet: ein Ring auf hellem Artwork, eine Skalierung
  * bei kleinen Elementen. Nie nur über Farbe, das wäre für rot-grün-schwache
  * Augen kein Zustand.
+ *
+ * Der Ring ist blau und nicht weiß: eine ausgewählte Kachel ist hell umrandet
+ * (`--accent`), und ein weißer Fokusring daneben wäre derselbe Zustand.
  */
 .spottable:focus,
 .spottable.spotlight-focus,
@@ -108,7 +146,26 @@ input.spottable:focus {
   z-index: 5;
   outline: 0.25rem solid var(--focus);
   outline-offset: 0.25rem;
-  box-shadow: 0 0 0 0.5rem rgba(244, 117, 33, 0.18), var(--shadow-card);
+  box-shadow: 0 0 0 0.5rem var(--focus-glow), var(--shadow-card);
+}
+
+/*
+ * Fokus auf einer hellen Fläche.
+ *
+ * Ein blauer Ring um einen fast weißen Knopf ist kaum zu sehen — und genau
+ * diese Knöpfe sind die wichtigsten: „Abspielen", die gewählte Staffel, der
+ * aktive Filter. Deshalb dort umgekehrt: dunkler Ring direkt an der Fläche,
+ * blauer Ring außen. Der Zustand bleibt blau kodiert, nur die Reihenfolge
+ * dreht sich.
+ */
+.spottable.selected:focus,
+.spottable.selected.spotlight-focus,
+.primary.spottable:focus,
+.primary.spotlight-focus,
+.season-trigger button.spottable:focus,
+.season-trigger button.spotlight-focus {
+  outline-color: var(--bg);
+  box-shadow: 0 0 0 0.5rem var(--focus), var(--shadow-card);
 }
 
 .spottable {
@@ -120,11 +177,34 @@ input.spottable:focus {
   transition-duration: 170ms;
 }
 
-/* Ältere Panels: weiche Flächen kosten dort Bilder pro Sekunde. */
+/*
+ * Ältere Panels: weiche Flächen kosten dort Bilder pro Sekunde.
+ *
+ * `backdrop-filter` ist der teuerste Posten — er zwingt das Panel, für jede
+ * Fläche darunter neu zu rechnen. Danach kommen die Übergänge: auf einem
+ * 2019er Modell ruckelt eine Fokusbewegung sichtbarer, als sie hilft.
+ */
 :root[data-effects="reduced"] .glass,
 :root[data-effects="reduced"] .player-panel,
+:root[data-effects="reduced"] .season-sheet,
 :root[data-effects="reduced"] .scope-tabs {
   backdrop-filter: none;
+}
+
+:root[data-effects="reduced"] .spottable {
+  transition: none;
+}
+
+:root[data-effects="reduced"] .media-card.spottable:focus,
+:root[data-effects="reduced"] .media-card.spotlight-focus,
+:root[data-effects="reduced"] .episode-card.spottable:focus,
+:root[data-effects="reduced"] .episode-card.spotlight-focus {
+  transform: none;
+}
+
+:root[data-effects="reduced"] .skeleton .skeleton-block,
+:root[data-effects="reduced"] .skeleton-line {
+  animation: none;
 }
 
 /* Kaltstart, bevor React gerendert hat. */
@@ -136,7 +216,7 @@ input.spottable:focus {
   width: 100%;
   height: 100%;
   gap: 1.5rem;
-  background: radial-gradient(circle at 50% 40%, rgba(244, 117, 33, 0.12), transparent 30%), #05060a;
+  background: radial-gradient(circle at 50% 40%, rgba(120, 197, 255, 0.08), transparent 34%), #05060a;
   color: #8b93a7;
 }
 

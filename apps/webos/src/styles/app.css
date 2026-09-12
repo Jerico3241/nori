@@ -7,7 +7,7 @@
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(circle at 82% -6%, rgba(244, 117, 33, 0.09), transparent 34%),
+    radial-gradient(circle at 82% -6%, rgba(120, 197, 255, 0.07), transparent 34%),
     var(--bg);
 }
 
@@ -31,6 +31,23 @@
 
 .app-shell.playing .app-main {
   grid-column: 1;
+}
+
+/*
+ * Ausgeklappte Leiste: die Seite dahinter tritt zurück.
+ *
+ * Siehe `Sidebar.tsx`. Kein Verschieben, keine Unschärfe — nur Deckkraft. Das
+ * ist der billigste Weg, den ein altes Panel noch flüssig zeichnet, und er
+ * beantwortet die Frage „ist der Text abgeschnitten oder liegt etwas davor?"
+ * eindeutig.
+ */
+:root[data-nav="open"] .app-main {
+  opacity: 0.38;
+  transition: opacity var(--focus-out);
+}
+
+.app-main {
+  transition: opacity var(--focus-out);
 }
 
 /* ---- Seitenleiste ------------------------------------------------------ */
@@ -83,11 +100,23 @@
   flex: 0 0 auto;
   width: 3.5rem;
   height: 3.5rem;
-  background: linear-gradient(150deg, var(--accent), #c1490d);
+  overflow: hidden;
+  background: var(--elevated);
+  border: 1px solid var(--line);
   border-radius: 1.05rem;
-  color: var(--accent-ink);
-  font-size: 2rem;
-  font-weight: 800;
+}
+
+/*
+ * Das Symbol aus `public/` und kein nachgezeichnetes „N".
+ *
+ * Vorher stand hier ein Buchstabe auf einer orangen Fläche — auf jeder anderen
+ * Nori-Plattform steht das Torii unter dem Schriftzug. Zwei Marken für eine
+ * App, und die auf dem größten Bildschirm war die falsche.
+ */
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .brand-word {
@@ -190,9 +219,16 @@
   letter-spacing: -0.03em;
 }
 
+/*
+ * Die Zeile über dem Titel („ANIWORLD").
+ *
+ * Gedämpft und nicht im Hauptakzent: Sie ordnet ein, sie ist nicht die
+ * Auskunft. In Hellgrau stand sie fast so kräftig da wie der Titel darunter
+ * und stritt mit ihm um den Blick.
+ */
 .eyebrow {
   display: inline-block;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -267,7 +303,7 @@
 .scope-tabs button.selected small,
 .season-selector button.selected small,
 .chip-grid button.selected small {
-  color: rgba(26, 12, 2, 0.7);
+  color: rgba(5, 6, 10, 0.62);
 }
 
 button.spottable:focus,
@@ -288,9 +324,17 @@ button[aria-disabled="true"] {
 
 /* ---- Hero -------------------------------------------------------------- */
 
+/*
+ * Die Höhe ist eine Entscheidung, kein Maß.
+ *
+ * 44 rem sind bei 1080p 704 px — knapp zwei Drittel des Bildes. Weniger, und
+ * von einem 16:9-Breitbild bleibt ein Streifen, in dem selten das steht, worum
+ * es geht. Mehr, und die erste Reihe verschwindet: dass es unterhalb
+ * weitergeht, muss beim Öffnen sichtbar sein.
+ */
 .hero {
   position: relative;
-  height: 40.625rem;   /* 650 px bei 1080p */
+  height: 44rem;   /* 704 px bei 1080p */
   overflow: hidden;
 }
 
@@ -337,6 +381,25 @@ button[aria-disabled="true"] {
   line-height: 1.02;
 }
 
+/*
+ * Der freigestellte Schriftzug von TMDB.
+ *
+ * Höhe statt Breite begrenzt: die Logos sind unterschiedlich breit, aber als
+ * Schriftzug ähnlich hoch. Über die Breite skaliert wäre ein breites Logo
+ * winzig und ein schmales riesig. `max-width` bleibt als Fangnetz.
+ */
+.hero-logo,
+.details-logo {
+  display: block;
+  max-width: 38rem;
+  max-height: 11rem;
+  margin: 0.75rem 0 0.875rem;
+  object-fit: contain;
+  object-position: left bottom;
+  /* Ein helles Logo auf hellem Artwork braucht eine Kante. */
+  filter: drop-shadow(0 0.25rem 1rem rgba(0, 0, 0, 0.65));
+}
+
 .hero-meta {
   display: flex;
   flex-wrap: wrap;
@@ -363,6 +426,41 @@ button[aria-disabled="true"] {
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+/*
+ * Der Fortschrittsbalken im Kopfbereich.
+ *
+ * Er steht über den Knöpfen und nicht darunter: der Knopf heißt „Fortsetzen",
+ * und die Frage „wie weit war ich" gehört davor, nicht dahinter.
+ */
+.hero-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 34rem;
+  margin: 0 0 1.5rem;
+}
+
+.hero-progress-bar {
+  display: block;
+  width: 100%;
+  height: 0.375rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.hero-progress-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.hero-progress small {
+  color: var(--muted);
+  font-size: 1.0625rem;
 }
 
 .button-row {
@@ -408,7 +506,7 @@ button[aria-disabled="true"] {
 .primary.spotlight-focus,
 .button-row button.primary.spottable:focus,
 .button-row button.primary.spotlight-focus {
-  background: #ff8b3d;
+  background: #ffffff;
   color: var(--accent-ink);
 }
 
@@ -463,6 +561,24 @@ button[aria-disabled="true"] {
 .rail-count {
   color: var(--muted);
   font-size: 1.125rem;
+}
+
+/*
+ * Warum die Reihe so heißt.
+ *
+ * Nur wo es etwas erklärt: „Aus deinem Verlauf" unter „Für dich",
+ * „Reihenfolge der Quelle" unter „Neu im Katalog". Eine Reihe, die ihren Namen
+ * von selbst erklärt, bekommt keine — sonst steht unter jeder Überschrift eine
+ * zweite Überschrift.
+ */
+.rail-note {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 1.0625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-track {
@@ -566,6 +682,51 @@ button[aria-disabled="true"] {
   background: var(--accent);
 }
 
+/* ---- Bewertung --------------------------------------------------------- */
+
+/*
+ * Der warme Ton ist die einzige Stelle, an der Nori einen benutzt. Er gehört
+ * zur Bewertung, nicht zur App — siehe `NoriTheme.star`.
+ */
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--star);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rating-star {
+  width: 1.1875rem;
+  height: 1.1875rem;
+}
+
+.hero-meta .rating {
+  font-size: 1.1875rem;
+}
+
+/*
+ * Im Bild, oben rechts, und nicht unter dem Titel.
+ *
+ * Unter dem Titel verschöbe sie die Kachelhöhe, sobald eine Kachel keine
+ * Bewertung hat — und in einer Reihe hat etwa die Hälfte keine.
+ */
+.media-rating {
+  position: absolute;
+  z-index: 2;
+  top: 0.625rem;
+  right: 0.625rem;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.4375rem;
+  background: rgba(5, 6, 10, 0.78);
+  border-radius: 0.5rem;
+}
+
+.media-rating .rating {
+  font-size: 1rem;
+}
+
 .media-title {
   display: -webkit-box;
   overflow: hidden;
@@ -582,6 +743,128 @@ button[aria-disabled="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- Breitformat-Kachel (Folgen) --------------------------------------- */
+
+/*
+ * Für „Weiterschauen" und „Neue Episoden".
+ *
+ * Breiter als ein Poster, weil sie eine Folge zeigt und nicht eine Serie: das
+ * Standbild sagt, was kommt, der Balken, wo man steht. Die Breite ist an die
+ * Posterbreite gekoppelt, damit die Reihen untereinander ein Raster bilden
+ * statt jede ihr eigenes.
+ */
+.wide-card {
+  display: flex;
+  flex: 0 0 calc(var(--poster-w) * 1.62);
+  flex-direction: column;
+  gap: 0.625rem;
+  width: calc(var(--poster-w) * 1.62);
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: var(--radius-card);
+  text-align: left;
+}
+
+.wide-card.spottable:focus,
+.wide-card.spotlight-focus {
+  transform: translateY(-0.4375rem) scale(1.02);
+}
+
+.wide-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: linear-gradient(150deg, #171d2a, #0a0d14);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+@supports not (aspect-ratio: 16 / 9) {
+  .wide-art { height: calc(var(--poster-w) * 1.62 * 0.5625); }
+}
+
+.wide-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wide-play {
+  position: absolute;
+  z-index: 2;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  background: rgba(5, 6, 10, 0.72);
+  border-radius: 50%;
+  color: #fff;
+  opacity: 0;
+  transition: opacity var(--focus-out);
+}
+
+.wide-card.spottable:focus .wide-play,
+.wide-card.spotlight-focus .wide-play {
+  opacity: 1;
+}
+
+.wide-play .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.wide-progress {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0.375rem;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.wide-progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.wide-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.wide-copy strong {
+  overflow: hidden;
+  font-size: 1.1875rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wide-copy small {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wide-copy small.muted {
+  color: var(--muted);
+  font-size: 0.9375rem;
 }
 
 .media-grid {
@@ -664,15 +947,36 @@ button[aria-disabled="true"] {
   padding-right: 0;
 }
 
+/*
+ * Der Kopfbereich der Detailseite.
+ *
+ * 38 rem Bild, und der Text liegt **darin** statt darunter. Der vorherige
+ * Stand zeigte 30 rem Bild und schob eine Posterkachel mit −12 rem darüber;
+ * auf dem Fernseher las sich das als Bruch mitten im Bild, und vom Breitbild
+ * blieb ein Streifen. Die negative Marge unten ist deshalb groß genug, dass
+ * Poster und Text ganz im Bild stehen.
+ */
 .page.details .details-backdrop {
   position: relative;
-  height: 30rem;
+  height: 38rem;
+}
+
+/*
+ * Der Verlauf auf der Detailseite ist bodenlastig, nicht seitlich: Der Text
+ * steht hier unten über der ganzen Breite, nicht links. Ohne die dritte Stufe
+ * bei 100 % endet das Bild als Kante quer über den Bildschirm.
+ */
+.page.details .hero-vignette {
+  background:
+    linear-gradient(0deg, var(--bg) 0%, rgba(5, 6, 10, 0.96) 22%, rgba(5, 6, 10, 0.55) 52%, rgba(5, 6, 10, 0.12) 78%),
+    linear-gradient(90deg, rgba(5, 6, 10, 0.78) 0%, rgba(5, 6, 10, 0.25) 48%, rgba(5, 6, 10, 0.45) 100%);
 }
 
 .details-head {
   display: flex;
   gap: 2.5rem;
-  margin-top: -12rem;
+  align-items: flex-end;
+  margin-top: -27rem;
   padding: 0 var(--safe-x);
   position: relative;
   z-index: 2;
@@ -689,8 +993,9 @@ button[aria-disabled="true"] {
 
 .details-copy {
   min-width: 0;
+  max-width: 62rem;
   flex: 1;
-  padding-top: 6rem;
+  padding-bottom: 0.5rem;
 }
 
 .details-copy h1 {
@@ -737,6 +1042,133 @@ button[aria-disabled="true"] {
 
 .season-selector button {
   scroll-snap-align: start;
+}
+
+/*
+ * Ab neun Staffeln: ein Knopf statt einer Leiste.
+ *
+ * Warum überhaupt: Detektiv Conan hat bei AniWorld über dreißig Staffeln. Als
+ * waagerechte Leiste heißt das dreißigmal „rechts" durch eine Leiste, die sich
+ * unter dem Fokus wegscrollt — und derselbe Weg zurück.
+ */
+.season-trigger {
+  display: flex;
+}
+
+.season-trigger button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--accent-ink);
+  font-size: 1.125rem;
+  font-weight: 650;
+}
+
+.season-trigger button .icon {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.season-trigger button small {
+  color: rgba(5, 6, 10, 0.62);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.season-shade {
+  position: fixed;
+  z-index: 49;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  animation: shade-in 0.18s ease-out both;
+}
+
+/*
+ * Das Auswahlraster.
+ *
+ * `position: fixed` und nicht `absolute`: die Detailseite scrollt, und ein
+ * Overlay, das mitscrollt, wäre bei Staffel 30 halb außerhalb des Bildes.
+ */
+.season-sheet {
+  position: fixed;
+  z-index: 50;
+  top: 50%;
+  left: 50%;
+  width: min(72rem, calc(100% - 2 * var(--safe-x)));
+  max-height: calc(100% - 2 * var(--safe-y));
+  padding: 2.5rem 2.75rem 2rem;
+  overflow-y: auto;
+  background: rgba(10, 12, 18, 0.97);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  transform: translate(-50%, -50%);
+  scrollbar-width: none;
+  animation: sheet-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.season-sheet::-webkit-scrollbar {
+  width: 0;
+}
+
+.season-sheet > div > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.75rem;
+}
+
+.season-sheet h2 {
+  margin: 0;
+  font-size: 2.125rem;
+  font-weight: 750;
+}
+
+.season-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.875rem;
+}
+
+.season-grid button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-height: 5rem;
+  padding: 0.875rem 1.25rem;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  text-align: left;
+}
+
+.season-grid button.selected {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+.season-name {
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+.season-grid button small {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.season-grid button.selected small {
+  color: rgba(5, 6, 10, 0.62);
+}
+
+@keyframes sheet-in {
+  from { transform: translate(-50%, -48%); opacity: 0; }
+  to { transform: translate(-50%, -50%); opacity: 1; }
 }
 
 /* ---- Folgen ------------------------------------------------------------ */
@@ -793,6 +1225,20 @@ button[aria-disabled="true"] {
   font-weight: 800;
 }
 
+/* Über einem Standbild: lesbar statt groß. */
+.episode-number.on-art {
+  position: absolute;
+  top: 0.625rem;
+  left: 0.625rem;
+  padding: 0.125rem 0.5rem;
+  background: rgba(5, 6, 10, 0.78);
+  border-radius: 0.5rem;
+  color: var(--text);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .episode-play,
 .episode-done {
   position: absolute;
@@ -818,9 +1264,10 @@ button[aria-disabled="true"] {
   opacity: 1;
 }
 
+/* Oben rechts, weil oben links jetzt die Nummer sitzt. */
 .episode-done {
   top: 0.75rem;
-  left: 0.75rem;
+  right: 0.75rem;
   width: 2.25rem;
   height: 2.25rem;
   background: var(--ok);
@@ -848,28 +1295,72 @@ button[aria-disabled="true"] {
   background: var(--accent);
 }
 
+/*
+ * Die Textseite der Folgenkachel.
+ *
+ * Die Größen sind die Untergrenze für drei Meter Abstand: Titel 1.25 rem
+ * (20 px), Beschreibung 1.0625 rem (17 px), Fußzeile 1 rem (16 px). Kleiner
+ * wird hier nichts, auch wenn dann eine Zeile weniger passt — eine Kachel, auf
+ * der man den Titel erraten muss, hat keine Angabe gewonnen.
+ */
 .episode-copy {
   display: flex;
+  min-height: 9.5rem;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.875rem 1rem 1.125rem;
+  gap: 0.375rem;
+  padding: 1rem 1.125rem 1.25rem;
 }
 
 .episode-copy strong {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 650;
+  line-height: 1.28;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.episode-copy small {
+/* Die Nummer vor dem Titel, gedämpft: sie ordnet ein, sie ist nicht der Titel. */
+.episode-index {
+  margin-right: 0.4375rem;
   color: var(--muted);
-  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
 }
 
-.episode-card.done .episode-copy small {
+/*
+ * Zwei Zeilen, nicht mehr.
+ *
+ * Nicht aus Platznot — die Kachel hätte Platz für vier —, sondern weil eine
+ * Folgenbeschreibung die nächste verrät: TMDB schreibt dort regelmäßig, wie
+ * die Folge ausgeht.
+ */
+.episode-overview {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #b9c2d1;
+  font-size: 1.0625rem;
+  line-height: 1.38;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.episode-footnote {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-state {
+  margin-top: auto;
+  color: var(--highlight);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.episode-state.done {
   color: var(--ok);
 }
 
@@ -897,9 +1388,12 @@ button[aria-disabled="true"] {
 .search-bar input {
   flex: 1;
   min-width: 0;
-  padding: 0.75rem 0;
+  padding: 0.75rem 1rem;
   background: transparent;
   border: 0;
+  /* Damit der Fokusring der Form der Leiste folgt und nicht als Rechteck
+     über den runden Rand hinausragt. */
+  border-radius: 999px;
   font-size: 1.5rem;
   outline: none;
 }
@@ -953,8 +1447,17 @@ button[aria-disabled="true"] {
   font-size: 1.625rem;
 }
 
-.calendar-list {
+/*
+ * Nicht über die ganze Breite.
+ *
+ * Eine Zeile mit Uhrzeit, Bild und zwei Textzeilen füllt bei 1920 px ein
+ * Drittel und lässt zwei Drittel leer. Der Fokusring einer solchen Zeile ist
+ * dann ein Rahmen um Leere, und das Auge sucht rechts nach dem, was fehlt.
+ */
+.calendar-list,
+.history-list {
   display: flex;
+  max-width: 96rem;
   flex-direction: column;
   gap: 0.75rem;
 }
@@ -1008,13 +1511,29 @@ button[aria-disabled="true"] {
   font-size: 1.0625rem;
 }
 
-/* ---- Verlauf ----------------------------------------------------------- */
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+/* Der Folgentitel: eine Zugabe, deshalb eine Stufe leiser als die Zeile darüber. */
+.calendar-episode {
+  overflow: hidden;
+  color: #b9c2d1;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+/*
+ * Die Vorschaubilder in Kalender und Verlauf sind 16:9, nicht 2:3.
+ *
+ * Beide zeigen eine **Folge**. Ein Standbild im Hochformat zu beschneiden
+ * heißt, die Bildmitte zu verlieren — und genau dort steht bei einem
+ * 16:9-Standbild das Motiv.
+ */
+.history-art {
+  flex: 0 0 10.5rem;
+  width: 10.5rem;
+  height: 5.9rem;
+}
+
+/* ---- Verlauf ----------------------------------------------------------- */
 
 .history-progress {
   display: block;
@@ -1179,6 +1698,18 @@ button[aria-disabled="true"] {
   transform: translateX(1.625rem);
 }
 
+/*
+ * „Ähnliche Titel" am Fuß der Detailseite.
+ *
+ * Die Reihe bringt ihre eigenen Seitenränder mit (`.rail-track` hat
+ * `padding: … var(--safe-x)`), die Detailseite aber auch — deshalb hier keine
+ * zusätzlichen, sonst stünde die Reihe doppelt eingerückt.
+ */
+.details-similar {
+  margin-top: 1rem;
+  padding-bottom: 2rem;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -1186,7 +1717,104 @@ button[aria-disabled="true"] {
   padding: 1.5rem 0 3rem;
 }
 
+/*
+ * Ohne Kopfbereich beginnt die erste Reihe nicht unter dem Bildrand.
+ *
+ * Die negative Marge holt die Reihe in den Verlauf des Kopfbereichs. Gibt es
+ * keinen — kein Titel mit Breitbild —, wäre sie ein abgeschnittener Anfang.
+ */
+.home-rails.no-hero {
+  margin-top: 0;
+  padding-top: var(--safe-y);
+}
+
 .page-indicator {
   color: var(--muted);
   font-size: 1.125rem;
 }
+
+/* ---- Rückfall ohne Flex-Abstände -------------------------------------- */
+
+/*
+ * webOS 6 fährt Chrome 79, und dort gibt es `gap` **nur im Raster**, nicht im
+ * Flex-Layout — das kam erst mit Chrome 84. Ohne Rückfall klebt dort alles
+ * aneinander: Kacheln in den Reihen, Chips in den Einstellungen, die Knöpfe im
+ * Player.
+ *
+ * Erkannt wird das zur Laufzeit (`supportsFlexGap` in `services/webos.ts`) und
+ * nicht über `@supports`: `@supports (gap: 1px)` ist in Chrome 79 **wahr**,
+ * weil es Rasterabstände kennt. Ein Feature-Query würde das Falsche sagen.
+ *
+ * Alles hier hängt an `[data-flex-gap="no"]` und kann deshalb auf einem
+ * neueren Panel nichts verstellen — dort steht „yes", und kein Selektor
+ * greift. Die Regeln benutzen `> * + *`, setzen den Rand also **zwischen** die
+ * Kinder und nicht hinter das letzte; bei umbrechenden Zeilen tragen die
+ * Kinder ihren Rand selbst und der Container zieht ihn unten wieder ab.
+ *
+ * Das Raster (`.media-grid`, `.episode-grid`, `.season-grid`,
+ * `.episode-numbers`) braucht keinen Rückfall: Rasterabstände kennt Chrome 79.
+ *
+ * **Nicht auf einem webOS-6-Gerät geprüft.** Hier steht, was dort greifen
+ * soll; ob die Abstände bis auf das Pixel denen eines neueren Panels
+ * entsprechen, entscheidet sich erst dort.
+ */
+
+/* Waagerecht, eine Zeile. */
+:root[data-flex-gap="no"] .rail-track > * + * { margin-left: var(--rail-gap); }
+:root[data-flex-gap="no"] .rail > header > * + * { margin-left: 1rem; }
+:root[data-flex-gap="no"] .scope-tabs > * + *,
+:root[data-flex-gap="no"] .season-selector > * + * { margin-left: 0.75rem; }
+:root[data-flex-gap="no"] .keypad-row > * + * { margin-left: 0.625rem; }
+:root[data-flex-gap="no"] .transport-row > * + *,
+:root[data-flex-gap="no"] .pagination > * + * { margin-left: 1.25rem; }
+:root[data-flex-gap="no"] .player-actions > * + * { margin-left: 1rem; }
+:root[data-flex-gap="no"] .player-top > * + * { margin-left: 1.75rem; }
+:root[data-flex-gap="no"] .hero-pages > * + * { margin-left: 0.625rem; }
+:root[data-flex-gap="no"] .field-row > * + * { margin-left: 0.75rem; }
+:root[data-flex-gap="no"] .search-bar > * + * { margin-left: 1rem; }
+:root[data-flex-gap="no"] .brand > * + * { margin-left: 0.875rem; }
+:root[data-flex-gap="no"] .nav-link > * + * { margin-left: 1rem; }
+:root[data-flex-gap="no"] .switch > * + * { margin-left: 0.875rem; }
+:root[data-flex-gap="no"] .calendar-item > * + *,
+:root[data-flex-gap="no"] .history-item > * + * { margin-left: 1.25rem; }
+:root[data-flex-gap="no"] .rating > * + * { margin-left: 0.3125rem; }
+:root[data-flex-gap="no"] .details-head > * + * { margin-left: 2.5rem; }
+
+/* Senkrecht. */
+:root[data-flex-gap="no"] .side-nav > * + * { margin-top: 2rem; }
+:root[data-flex-gap="no"] .nav-links > * + * { margin-top: 0.625rem; }
+:root[data-flex-gap="no"] .keypad > * + * { margin-top: 0.625rem; }
+:root[data-flex-gap="no"] .calendar-list > * + *,
+:root[data-flex-gap="no"] .history-list > * + *,
+:root[data-flex-gap="no"] .choice-list > * + * { margin-top: 0.75rem; }
+:root[data-flex-gap="no"] .media-card > * + *,
+:root[data-flex-gap="no"] .wide-card > * + * { margin-top: 0.625rem; }
+:root[data-flex-gap="no"] .wide-copy > * + * { margin-top: 0.125rem; }
+:root[data-flex-gap="no"] .episode-copy > * + * { margin-top: 0.375rem; }
+:root[data-flex-gap="no"] .calendar-copy > * + *,
+:root[data-flex-gap="no"] .history-copy > * + *,
+:root[data-flex-gap="no"] .settings-label > * + * { margin-top: 0.25rem; }
+:root[data-flex-gap="no"] .player-controls > * + * { margin-top: 0.75rem; }
+:root[data-flex-gap="no"] .player-title > * + * { margin-top: 0.25rem; }
+:root[data-flex-gap="no"] .hero-progress > * + * { margin-top: 0.5rem; }
+:root[data-flex-gap="no"] .boot-splash > * + * { margin-top: 1.5rem; }
+:root[data-flex-gap="no"] .player-status > * + * { margin-top: 1rem; }
+
+/*
+ * Umbrechende Zeilen.
+ *
+ * Hier trägt jedes Kind seinen Rand nach rechts und unten; der Container zieht
+ * die untere Zeile wieder ab, damit unter der letzten Zeile kein zusätzlicher
+ * Abstand entsteht.
+ */
+:root[data-flex-gap="no"] .button-row { margin-bottom: -1rem; }
+:root[data-flex-gap="no"] .button-row > * { margin: 0 1rem 1rem 0; }
+:root[data-flex-gap="no"] .chip-grid { margin-bottom: -0.625rem; }
+:root[data-flex-gap="no"] .chip-grid > * { margin: 0 0.625rem 0.625rem 0; }
+:root[data-flex-gap="no"] .filter-row > * { margin: 0 0.75rem 0 0; }
+:root[data-flex-gap="no"] .page-head { margin-bottom: 0.25rem; }
+:root[data-flex-gap="no"] .page-head > * { margin: 0 2rem 1.5rem 0; }
+:root[data-flex-gap="no"] .episode-heading { margin-bottom: 0; }
+:root[data-flex-gap="no"] .episode-heading > * { margin: 0 2rem 1.5rem 0; }
+:root[data-flex-gap="no"] .hero-meta > * { margin: 0 0.75rem 0 0; }
+:root[data-flex-gap="no"] .settings-row > * { margin: 0 2rem 0 0; }
