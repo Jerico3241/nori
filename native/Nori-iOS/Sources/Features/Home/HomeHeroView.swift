@@ -316,6 +316,10 @@ struct HomeHeroView: View {
         details = await CoverIndex.shared.detailsLoading(
             slug: candidate.title.slug,
             title: candidate.title.title,
+            // Dieselben Alternativtitel, die schon das Logo bekommt. Dass die
+            // Cover-Suche sie nicht bekam, war der Grund, warum der
+            // Kopfbereich mitunter ein Logo hatte, aber kein Breitbild.
+            alternates: candidate.title.alts,
             kind: candidate.title.provider
         )
         // Ohne TMDB-Treffer hätte der Kopfbereich weder Breitbild noch Poster
