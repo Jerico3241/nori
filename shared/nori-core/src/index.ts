@@ -10,6 +10,7 @@ export * from "./http.js";
 export * from "./dom.js";
 export * from "./client.js";
 export * from "./library.js";
+export * from "./sync.js";
 export * from "./gateway.js";
 export * from "./hoster/safety.js";
 export * from "./hoster/sites.js";
