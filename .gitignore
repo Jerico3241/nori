@@ -10,6 +10,7 @@ __pycache__/
 *.iml
 
 # Xcode
+native/*/build/
 xcuserdata/
 DerivedData/
 *.xcuserstate
