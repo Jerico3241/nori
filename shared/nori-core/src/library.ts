@@ -374,3 +374,91 @@ export function rememberRecent(
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+
+/**
+ * Zwei Bibliotheksstände zusammenführen.
+ *
+ * ## Warum das hier steht und nicht in einem Abgleichdienst
+ *
+ * `LibrarySyncProvider` (siehe `docs/synchronisation.md`) kann nur zwei Dinge:
+ * eine Datei ablegen und sie wieder holen. Was danach passiert — welcher Stand
+ * gewinnt —, ist keine Frage des Anbieters, sondern eine Regel des
+ * Datenmodells. Sie gehört deshalb in den Kern und muss für jeden künftigen
+ * Anbieter (Google Drive, Dropbox, WebDAV) dieselbe sein.
+ *
+ * Zugleich ist das die Regel für „Bibliothek einlesen" in den Einstellungen
+ * des Fernsehers. Ein Einlesen, das den lokalen Stand **ersetzt**, löscht
+ * stillschweigend alles, was nur hier stand — ein Fortschritt von heute
+ * Abend, wenn die eingelesene Datei von letzter Woche ist.
+ *
+ * ## Die Regeln
+ *
+ * - **Fortschritt**: je Folge gewinnt der jüngere `updatedAt`. Feinabgleich
+ *   innerhalb einer Folge gibt es nicht — zwei Positionen in derselben Folge
+ *   sind kein Konflikt, sondern zwei Zeitpunkte.
+ * - **Merkliste**: Vereinigung, sortiert nach Merkzeitpunkt, das Jüngste
+ *   vorn. Ein Eintrag, der nur auf einer Seite steht, bleibt. Löschungen
+ *   wandern also **nicht** mit — dafür bräuchte das Schema Grabsteine. Bis
+ *   die es gibt, ist ein zu viel gemerkter Titel der harmlosere Fehler.
+ * - **Titel und Verlauf**: Vereinigung, der jüngere Eintrag gewinnt.
+ * - **Einstellungen** (Sprache, Hoster, Resume, Autoplay, Tempo, Quelle,
+ *   Bereich): der Stand mit dem jüngeren `modifiedAt` gewinnt, und zwar
+ *   vollständig. Ein Mischen einzelner Schalter ergäbe eine Einstellung, die
+ *   auf keinem Gerät jemals so gesetzt wurde.
+ */
+export function mergeLibraries(local: LibraryState, remote: LibraryState): LibraryState {
+  const remoteIsNewer = remote.modifiedAt > local.modifiedAt;
+  const preferred = remoteIsNewer ? remote : local;
+
+  const progress: Record<string, WatchProgress> = { ...local.progress };
+  for (const [key, item] of Object.entries(remote.progress)) {
+    const existing = progress[key];
+    if (!existing || item.updatedAt > existing.updatedAt) progress[key] = item;
+  }
+
+  const favoriteAddedAt: Record<string, number> = { ...local.favoriteAddedAt };
+  for (const [slug, stamp] of Object.entries(remote.favoriteAddedAt)) {
+    const existing = favoriteAddedAt[slug];
+    if (existing === undefined || stamp > existing) favoriteAddedAt[slug] = stamp;
+  }
+
+  const favoriteSlugs = new Set([...local.favorites, ...remote.favorites]);
+  const favorites = Array.from(favoriteSlugs)
+    .sort((a, b) => (favoriteAddedAt[b] ?? 0) - (favoriteAddedAt[a] ?? 0)
+      || a.localeCompare(b));
+
+  const favoriteSource: Record<string, CatalogProvider> = { ...remote.favoriteSource, ...local.favoriteSource };
+  const titles: Record<string, string> = { ...remote.titles, ...local.titles };
+  // Ein Titel, der lokal nur als Slug bekannt ist, darf einen echten Titel
+  // von der anderen Seite nicht verdrängen.
+  for (const [slug, title] of Object.entries(remote.titles)) {
+    if (!titles[slug] || titles[slug] === slug) titles[slug] = title;
+  }
+
+  const recentsBySlug = new Map<string, RecentItem>();
+  for (const item of [...local.recents, ...remote.recents]) {
+    const existing = recentsBySlug.get(item.slug);
+    if (!existing || item.viewedAt > existing.viewedAt) recentsBySlug.set(item.slug, item);
+  }
+  const recents = Array.from(recentsBySlug.values())
+    .sort((a, b) => b.viewedAt - a.viewedAt)
+    .slice(0, 100);
+
+  return {
+    favorites,
+    favoriteSource,
+    favoriteAddedAt: backfillAddedAt(favoriteAddedAt, favorites),
+    titles,
+    progress,
+    recents,
+    langPref: preferred.langPref,
+    hosterPref: preferred.hosterPref,
+    resumeEnabled: preferred.resumeEnabled,
+    preferredQuality: preferred.preferredQuality,
+    autoplayNext: preferred.autoplayNext,
+    playbackSpeed: preferred.playbackSpeed,
+    provider: preferred.provider,
+    scope: preferred.scope,
+    modifiedAt: Math.max(local.modifiedAt, remote.modifiedAt),
+  };
+}

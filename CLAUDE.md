@@ -94,7 +94,7 @@ webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
 
 ## Datenmodell
 
-`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v4**.
+`LibraryStore.schemaVersion` ist die technische Source of Truth für das Bibliotheksschema. Aktuell: **v5**.
 
 `config/contract.json` muss denselben Schemawert dokumentieren. Änderungen an `WatchProgress` oder der gespeicherten `Bag` brauchen eine rückwärtskompatible Migration; neue Felder möglichst optional halten.
 

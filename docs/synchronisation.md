@@ -1,7 +1,7 @@
 # Bibliothek zwischen Geräten abgleichen
 
 Merkliste, Verlauf, Fortschritt und Einstellungen liegen in einer einzigen
-Datei: `~/Library/Application Support/Nori/library.json`, Schema v4, mit einem
+Datei: `~/Library/Application Support/Nori/library.json`, Schema v5, mit einem
 Zeitstempel `modifiedAt`. Ein Abgleich muss deshalb nur zwei Dinge können —
 die Datei irgendwo ablegen und sie wieder holen. Genau das verlangt
 `LibrarySyncProvider`:
@@ -17,6 +17,30 @@ protocol LibrarySyncProvider: AnyObject, Sendable {
 Der neuere Zeitstempel gewinnt. Kein Feldabgleich, kein Konfliktdialog: bei
 einer Bibliothek, die eine Person auf ihren eigenen Geräten führt, wäre das
 Aufwand ohne Gegenwert.
+
+## Was nach dem Holen passiert
+
+Das ist **keine** Frage des Anbieters, sondern eine Regel des Datenmodells —
+und sie liegt deshalb im Kern, nicht in einem Abgleichdienst:
+`mergeLibraries` in `shared/nori-core/src/library.ts` (TypeScript-Seite; die
+Swift-Seite zieht nach, wenn dort ein Anbieter entsteht).
+
+- **Fortschritt**: je Folge gewinnt der jüngere `updatedAt`.
+- **Merkliste**: Vereinigung, sortiert nach `favoriteAddedAt`. Löschungen
+  wandern **nicht** mit — dafür bräuchte das Schema Grabsteine. Bis die es
+  gibt, ist ein zu viel gemerkter Titel der harmlosere Fehler.
+- **Titel und Verlauf**: Vereinigung, der jüngere Eintrag gewinnt.
+- **Einstellungen**: vollständig aus dem Stand mit dem jüngeren `modifiedAt`.
+  Ein Mischen einzelner Schalter ergäbe eine Einstellung, die auf keinem Gerät
+  jemals so gesetzt wurde.
+
+Die wichtigste Folge davon: **ein leerer oder alter Fremdstand löscht nichts.**
+Genau das ist der Fehler, den ein Abgleich machen kann und der nicht
+rückgängig zu machen ist.
+
+Die webOS-App benutzt dieselbe Funktion schon heute für „Bibliothek einlesen"
+in den Einstellungen — ein Einlesen, das den lokalen Stand ersetzt, löscht
+stillschweigend alles, was nur auf diesem Gerät stand.
 
 ## Warum iCloud draußen ist
 
