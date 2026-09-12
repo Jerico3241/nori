@@ -202,8 +202,17 @@ private struct SyncSettingsTab: View {
                     // sei. Das war zutreffend und trotzdem eine Sackgasse: wer
                     // die App fertig bekommt, hat keine Build-Einstellung und
                     // damit keinen Weg, sich jemals anzumelden.
-                    TextField("123456-abc.apps.googleusercontent.com", text: $clientDraft)
-                        .textFieldStyle(.roundedBorder)
+                    // `prompt:` und nicht das erste Argument: in einem `Form`
+                    // rendert macOS die Zeichenkette aus `TextField(_:text:)`
+                    // als **Beschriftung** links daneben. Der Beispielwert
+                    // stand damit zweizeilig neben einem leeren Feld und sah
+                    // aus wie ein bereits eingetragener Wert.
+                    TextField(
+                        "Client-ID",
+                        text: $clientDraft,
+                        prompt: Text(verbatim: "123456-abc.apps.googleusercontent.com")
+                    )
+                    .textFieldStyle(.roundedBorder)
                     HStack {
                         Button("Client-ID sichern") {
                             if let problem = sync.saveClientId(clientDraft) {
