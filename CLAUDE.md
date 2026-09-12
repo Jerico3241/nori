@@ -95,8 +95,23 @@ webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
 - Oberflächentexte, README und Commit-Nachrichten sind deutsch.
 - Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- App-Versionen stammen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
+- App-Versionen stammen auf den Apple-Plattformen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
 - `config/contract.json` enthält keine App-Version.
+
+### Versionsnummer bei webOS
+
+Jedes neue installierbare webOS-Paket braucht eine **höhere** Nummer. Es dürfen
+niemals zwei unterschiedliche `.ipk` mit derselben Version entstehen: auf dem
+Fernseher installiert steht dann eine Fassung, die sich von außen nicht mehr von
+der anderen unterscheiden lässt, und ein Fehlerbericht dazu ist nicht mehr
+zuzuordnen.
+
+Gleich stehen müssen `apps/webos/appinfo.json`, `apps/webos/package.json`,
+`shared/nori-core/package.json`, `services/nori-api/package.json`,
+`API_VERSION` in `services/nori-api/src/server.ts` und ein Abschnitt
+`[webOS <version>]` in `CHANGELOG.md` samt der Übersicht am Dateianfang.
+`tools/check-webos-package.py` prüft das, einschließlich der Version **im
+gebauten `.ipk`**.
 
 ## Datenmodell
 
