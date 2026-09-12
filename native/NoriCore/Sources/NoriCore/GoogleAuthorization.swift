@@ -243,3 +243,31 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
         try await GoogleOAuth.revoke(token: tokens.refreshToken ?? tokens.accessToken, transport: transport)
     }
 }
+
+extension GoogleOAuthConfiguration {
+    /// Die Client-ID aus der `Info.plist`.
+    ///
+    /// Wie der TMDB-Schlüssel: nicht im Quelltext, sondern über eine
+    /// Build-Einstellung. Eine Client-ID ist zwar kein Geheimnis — sie steht in
+    /// jeder Anmeldeadresse —, aber sie gehört zum Google-Cloud-Projekt des
+    /// Betreibers und nicht in ein Repository.
+    ///
+    /// Fehlt die Build-Einstellung, bleibt in der `Info.plist` der unaufgelöste
+    /// Platzhalter `$(…)` stehen. Der ist keine Client-ID, und die Oberfläche
+    /// sagt dann „nicht eingerichtet" statt eine Anmeldung anzubieten, die
+    /// sicher scheitert.
+    static func fromBundle(key: String = "GoogleClientID") -> GoogleOAuthConfiguration? {
+        let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String
+        guard let raw, !raw.isEmpty, !raw.hasPrefix("$(") else { return nil }
+        return GoogleOAuthConfiguration(clientId: raw, redirectURI: "")
+    }
+
+    /// Das umgedrehte Client-Kürzel, wie iOS es als Rückleitungsschema
+    /// erwartet: aus `1234-abc.apps.googleusercontent.com` wird
+    /// `com.googleusercontent.apps.1234-abc`.
+    var reversedClientId: String? {
+        let suffix = ".apps.googleusercontent.com"
+        guard clientId.hasSuffix(suffix) else { return nil }
+        return "com.googleusercontent.apps." + String(clientId.dropLast(suffix.count))
+    }
+}

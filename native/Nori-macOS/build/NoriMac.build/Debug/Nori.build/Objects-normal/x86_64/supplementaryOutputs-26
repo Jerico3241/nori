@@ -1,0 +1,23 @@
+{
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/CatalogView.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CatalogView.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CatalogView.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CatalogView.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CatalogView.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CatalogView.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/SeriesView.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/SeriesView.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/SeriesView.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/SeriesView.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/SeriesView.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/SeriesView.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/WatchlistView.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/WatchlistView.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/WatchlistView.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/WatchlistView.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/WatchlistView.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/WatchlistView.swiftdeps"
+  }
+}

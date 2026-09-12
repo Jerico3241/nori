@@ -1,0 +1,23 @@
+{
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/Models.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Models.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Models.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Models.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Models.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Models.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/NoriApp.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriApp.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriApp.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriApp.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriApp.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriApp.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/Theme.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Theme.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Theme.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Theme.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Theme.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/Theme.swiftdeps"
+  }
+}

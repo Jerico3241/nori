@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 // Der Ablauf eines Abgleichs. Was wann geholt, gerechnet und geschrieben wird.
 //
@@ -68,7 +69,11 @@ protocol SyncBookkeeping: AnyObject {
     func setSyncValue(_ value: String?, forKey key: String)
 }
 
+/// `@Observable`, weil die Einstellungen den Zustand zeigen. Ohne das müsste
+/// die Oberfläche pollen, um einen laufenden Abgleich von einem fertigen zu
+/// unterscheiden.
 @MainActor
+@Observable
 final class LibrarySyncEngine {
     /// Bündelung normaler Änderungen: Merkliste, Einstellungen, Verlauf.
     static let debounce: Double = 4
@@ -114,6 +119,10 @@ final class LibrarySyncEngine {
         self.bookkeeping = bookkeeping
         self.clock = clock
     }
+
+    /// Nur für die Anmeldung, die außerhalb der Engine läuft — sonst setzt den
+    /// Zustand ausschließlich `run()`.
+    func setStatus(_ next: LibrarySyncStatus) { status = next }
 
     var providerName: String? { snapshotStore?.name }
     var isConnected: Bool { snapshotStore != nil }

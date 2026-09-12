@@ -1,0 +1,23 @@
+{
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/CategoriesView.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CategoriesView.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CategoriesView.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CategoriesView.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CategoriesView.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/CategoriesView.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/NoriDesign.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriDesign.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriDesign.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriDesign.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriDesign.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriDesign.swiftdeps"
+  },
+  "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/Nori/NoriGlass.swift" : {
+    "const-values" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriGlass.swiftconstvalues",
+    "dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriGlass.d",
+    "diagnostics" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriGlass.dia",
+    "object" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriGlass.o",
+    "swift-dependencies" : "/Users/salvatorebonfissuto/code/nori/.claude/worktrees/nori-homepage-rebuild-d04a01/native/Nori-macOS/build/NoriMac.build/Debug/Nori.build/Objects-normal/x86_64/NoriGlass.swiftdeps"
+  }
+}
