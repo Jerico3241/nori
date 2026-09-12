@@ -131,7 +131,23 @@ Ein URL-Schema muss **nicht** in die `Info.plist`:
 
 ### webOS
 
-Vite-Variablen beim Bauen:
+Ebenfalls zwei Wege, und auch hier ist der erste der wichtigere.
+
+**Am Fernseher eintragen.** *Einstellungen → Synchronisation*. Dort stehen zwei
+Felder: Client-ID und Client-Secret. Wer ein fertiges `.ipk` installiert, hat
+keine Build-Variable — ohne diesen Weg gäbe es auf dem Fernseher keine
+Möglichkeit, sich jemals anzumelden.
+
+Geprüft wird wie auf Apple, dass die Client-ID auf
+`.apps.googleusercontent.com` endet, und beim Secret, dass es nicht leer ist
+und keinen Leerraum enthält (der kommt beim Einfügen aus einer Zwischenablage
+gern mit).
+
+Die Client-ID wird danach angezeigt — sie ist kein Geheimnis, und sie zu sehen
+ist der einzige Weg zu bemerken, dass beim Einfügen etwas verrutscht ist. Das
+Secret wird **nicht** angezeigt.
+
+**Beim Bauen setzen.** Vite-Variablen:
 
 ```bash
 VITE_NORI_GOOGLE_TV_CLIENT_ID=1234-xyz.apps.googleusercontent.com \
@@ -140,6 +156,16 @@ npm --prefix apps/webos run build
 ```
 
 Am besten über eine `apps/webos/.env.local` — die steht in `.gitignore`.
+
+Eingetragene Werte haben Vorrang vor denen aus dem Build, und „Zugangsdaten
+entfernen" räumt beide wieder weg und trennt das Gerät gleich mit: die Tokens
+gehören zu genau diesen Zugangsdaten und wären danach wertlos.
+
+**Wo sie liegen.** Im privaten Speicher der App — von anderen Apps nicht
+lesbar, aber **nicht verschlüsselt**. Für das Secret gilt damit dasselbe wie
+für die Tokens (Abschnitt 4). Schlimmer als die Lage ohnehin schon ist wird es
+dadurch nicht: ein beim Bauen gesetztes Secret liegt im `.ipk` und damit
+ebenso offen.
 
 ### Was öffentlich ist und was nicht
 
