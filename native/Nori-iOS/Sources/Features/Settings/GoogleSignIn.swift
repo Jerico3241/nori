@@ -54,11 +54,26 @@ final class WebAuthenticationSignInPresenter: NSObject, GoogleSignInPresenter, @
                 }
             }
             session.presentationContextProvider = self
-            // Ohne das trägt die Anmeldung die Cookies aus Safari — wer dort
-            // angemeldet ist, käme ohne Rückfrage durch. Für eine Verbindung,
-            // die dauerhaft Zugriff bekommt, soll die Frage tatsächlich
-            // gestellt werden.
-            session.prefersEphemeralWebBrowserSession = true
+            // **Nicht** `prefersEphemeralWebBrowserSession`.
+            //
+            // Vorher stand hier `true`. Das war gut gemeint — die Anmeldung
+            // lief ohne die Cookies aus Safari, und die Zustimmung wurde
+            // tatsächlich gestellt. Der Preis dafür war, dass der Nutzer sein
+            // Google-Passwort eingeben musste, auf einem Telefon, das bei
+            // Google angemeldet ist. Das ist der Schritt, an dem eine
+            // Einrichtung abgebrochen wird.
+            //
+            // Mit der geteilten Sitzung sieht er stattdessen die Kontoauswahl
+            // und bestätigt einmal. Dass die Frage gestellt wird, hängt nicht
+            // an der Sitzung, sondern an `prompt=consent` in der
+            // Anmeldeadresse (siehe `GoogleOAuth.authorizationURL`) — und das
+            // bleibt.
+            //
+            // Sicherheit kostet das nicht: der Autorisierungscode ist durch
+            // PKCE gebunden, die Antwort durch `state` geprüft, und die
+            // Anmeldung läuft ohnehin in Safari und nicht in einer WebView, die
+            // Nori einsehen könnte.
+            session.prefersEphemeralWebBrowserSession = false
             self.session = session
             if !session.start() {
                 continuation.resume(throwing: GoogleOAuthError.transport("Die Anmeldung ließ sich nicht öffnen."))

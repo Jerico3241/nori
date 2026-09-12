@@ -17,6 +17,7 @@ import { LIBRARY_SCHEMA_VERSION, LIBRARY_SCOPES, PLAYBACK_SPEEDS, SCOPES } from 
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { DeviceSignInDialog, relativeTime } from "../components/DeviceSignIn";
 import { Icon } from "../components/Icon";
 import { Menu, type MenuOption } from "../components/Overlay";
 import { Screen } from "../components/Screen";
@@ -86,11 +87,16 @@ export function MorePage() {
 
         <section className="setting-card" aria-label="Synchronisierung">
           <h3>Synchronisierung</h3>
-          <Info label="Google Drive" hint="Merkliste, Verlauf, Fortschritt und Einstellungen — keine Videos" value={syncStatusLabel(sync)} tone={sync.status === "idle" ? "ok" : sync.status === "error" ? "error" : "idle"} />
-          {sync.isConfigured && sync.status !== "disconnected" && sync.status !== "authorizing" ? (
-            <Row area="sync" id="set-sync-now" label="Jetzt synchronisieren" hint={sync.lastSuccessfulSync ? `Zuletzt ${new Date(sync.lastSuccessfulSync).toLocaleString("de-DE")}` : "Noch nicht abgeglichen"} value="" chevron onClick={() => sync.syncNow()} />
-          ) : null}
-          <Row area="sync" id="set-sync" label={sync.isConfigured && sync.status !== "disconnected" ? "Abgleich verwalten" : "Einrichten"} hint="Anmeldung über einen Code auf dem Smartphone" value="" chevron onClick={() => navigate("/mehr/abgleich")} />
+          <Info label="Google Drive" hint="Merkliste, Verlauf, Fortschritt und Einstellungen — keine Videos" value={syncStatusLabel(sync)} tone={sync.status === "idle" ? "ok" : sync.status === "error" || sync.needsReauthorization ? "error" : "idle"} />
+          {/* Die Anmeldung ist ein Knopf — direkt hier, ohne Umweg über eine Unterseite. */}
+          {!sync.isConfigured ? null : sync.needsReauthorization ? (
+            <Row area="sync" id="set-sync-connect" label="Erneut anmelden" hint="Die Berechtigung gilt nicht mehr" value="" chevron onClick={() => sync.connect()} />
+          ) : sync.status === "disconnected" || sync.status === "authorizing" ? (
+            <Row area="sync" id="set-sync-connect" label="Mit Google Drive verbinden" hint="Anmeldung per QR-Code auf dem Smartphone" value="" chevron onClick={() => sync.connect()} />
+          ) : (
+            <Row area="sync" id="set-sync-now" label="Jetzt synchronisieren" hint={sync.lastSuccessfulSync ? `Zuletzt ${relativeTime(sync.lastSuccessfulSync)}` : "Noch nicht abgeglichen"} value="" chevron onClick={() => sync.syncNow()} />
+          )}
+          <Row area="sync" id="set-sync" label="Abgleich verwalten" hint={sync.isConfigured ? "Trennen, Zugriff widerrufen, Zustand" : "Diese Fassung wurde ohne Google-Abgleich gebaut"} value="" chevron onClick={() => navigate("/mehr/abgleich")} />
         </section>
 
         <section className="setting-card" aria-label="Nori">
@@ -100,9 +106,12 @@ export function MorePage() {
           <Row area="nori" id="set-diagnose" label="Diagnose" hint="Quellen, TMDB, Drive, Player, Speicher prüfen" value="" chevron onClick={() => navigate("/mehr/diagnose")} />
           <Row area="nori" id="set-history" label="Verlauf" hint={`${Object.keys(library.state.progress).length} Folgen mit Fortschritt`} value="" chevron onClick={() => navigate("/mehr/verlauf")} />
           <Row area="nori" id="set-data" label="Daten" hint="Bibliothek ausgeben, einlesen, zurücksetzen" value="" chevron onClick={() => navigate("/mehr/daten")} />
+          <Toggle area="nori" id="set-debug" label="Diagnoseprotokoll" hint="Protokoll mit [Nori:webOS] und Diagnose des Google-Zugangs" value={settings.debug} onChange={(value) => update({ debug: value })} />
           <Info label="Version" hint={`Bibliotheksschema v${LIBRARY_SCHEMA_VERSION}`} value={__NORI_WEBOS_VERSION__} tone="idle" />
         </section>
       </div>
+
+      {sync.pending ? <DeviceSignInDialog /> : null}
 
       <Menu open={menu === "lang"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bevorzugte Sprache" id="menu-lang" value={library.state.langPref} options={LANGUAGES} onPick={(value) => library.setPreference({ langPref: value })} />
       <Menu open={menu === "hoster"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bevorzugter Hoster" id="menu-hoster" value={HOSTERS.find((name) => name.toLowerCase() === library.state.hosterPref.toLowerCase()) ?? null} options={HOSTERS.map((name) => ({ value: name, label: name }))} onPick={(value) => library.setPreference({ hosterPref: value })} />

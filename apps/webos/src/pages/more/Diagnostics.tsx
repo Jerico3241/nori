@@ -175,7 +175,10 @@ export function DiagnosticsPage() {
           ))}
           <Info
             label="Google Drive"
-            hint={sync.isConfigured ? `Abgleich ${sync.lastSuccessfulSync ? `zuletzt ${new Date(sync.lastSuccessfulSync).toLocaleString("de-DE")}` : "noch nie gelaufen"}` : "Keine Zugangsdaten hinterlegt"}
+            hint={sync.isConfigured
+              ? `Abgleich ${sync.lastSuccessfulSync ? `zuletzt ${new Date(sync.lastSuccessfulSync).toLocaleString("de-DE")}` : "noch nie gelaufen"}`
+                + ` · Zugang ${sync.diagnostics.origin === "build" ? "aus dem Build" : "aus einer früheren Fassung"}`
+              : "Diese Fassung wurde ohne Google-Abgleich gebaut"}
             value={syncStatusLabel(sync)}
             tone={driveTone}
           />

@@ -960,19 +960,17 @@ try {
   check("TMDB: Treffer über Alternativtitel ausgewiesen", connection.includes("über Alternativtitel"), connection.slice(0, 120));
   check("TMDB: Weg Nori-Server", connection.includes("Nori-Server"));
 
+  // Ohne Google-Zugang im Build: ein Satz, kein Eingabefeld.
   await goto(page, "#/mehr/abgleich", 1800);
   const syncState = await page.evaluate(() => ({
     status: Array.from(document.querySelectorAll(".status-pill")).map((n) => n.textContent),
-    fields: Array.from(document.querySelectorAll("input")).map((n) => n.getAttribute("aria-label")),
+    fields: document.querySelectorAll(".screen input").length,
+    text: document.querySelector(".screen")?.textContent ?? "",
   }));
-  check("Abgleich: „nicht eingerichtet“ ohne Zugangsdaten", syncState.status.includes("nicht eingerichtet"), syncState.status.join(", "));
-  check("Abgleich: Client-ID und Secret abfragbar", syncState.fields.includes("Google-Client-ID") && syncState.fields.includes("Google-Client-Secret"));
-  await page.fill('input[aria-label="Google-Client-ID"]', "kein-google-client");
-  await page.fill('input[aria-label="Google-Client-Secret"]', "zu-kurz");
-  await focusKey(page, "credentials-save");
-  await remote(page, "ok", 500);
-  check("Falsche Client-ID beanstandet und nicht gespeichert",
-    Boolean(await page.$(".card-note[role=alert]")) && !(await page.evaluate(() => localStorage.getItem("nori.google.clientId"))));
+  check("Abgleich ohne Google-Zugang im Build: „nicht verfügbar“", syncState.status.includes("nicht verfügbar"), syncState.status.join(", "));
+  check("Abgleich: kein Eingabefeld für Client-ID oder Secret", syncState.fields === 0, `${syncState.fields} Felder`);
+  check("Abgleich: kein Knopf, der Zugangsdaten annimmt", !/Zugangsdaten sichern|client_secret|GOCSPX/.test(syncState.text));
+  check("Abgleich: Nori läuft ohne Netz vollständig weiter", syncState.text.includes("Ohne Netz funktioniert Nori vollständig weiter"));
 
   await goto(page, "#/mehr/daten", 1400);
   check(`Daten: Schema v${LIBRARY_SCHEMA_VERSION}`, ((await page.textContent(".screen")) ?? "").includes(`v${LIBRARY_SCHEMA_VERSION}`));
@@ -1010,6 +1008,155 @@ try {
   const way = await fresh.evaluate(() => Array.from(document.querySelectorAll(".card-note")).map((n) => n.textContent ?? "").find((t) => t.startsWith("Weg:")) ?? "");
   check("Ohne Einstellungen ist TMDB mit dem mitgelieferten Schlüssel eingerichtet", way.includes("mitgelieferter Schlüssel"), way.slice(0, 100));
   await fresh.close();
+
+  // --- 10b. Google Drive verbinden --------------------------------------------------------
+  //
+  // Mit abgefangenen Google-Endpunkten. Eingerichtet wird über den Weg, den auch
+  // ein Update einer älteren Fassung nimmt: Zugangsdaten im Speicher des Geräts.
+  // Eine echte Anmeldung bei Google prüft das nicht — die hängt an einem Konto.
+  section("Google Drive verbinden");
+  const oauth = await newTvPage(browser, 1920, 1080);
+  const oauthLog = [];
+  oauth.on("console", (msg) => oauthLog.push(msg.text()));
+  oauth.on("pageerror", (err) => oauthLog.push(`pageerror: ${err.message}`));
+  await oauth.route("https://api.themoviedb.org/**", (route) => route.abort("failed"));
+  const DEVICE_CODE = "NORI-TEST-DEVICE-CODE";
+  const USER_CODE = "WDXR-KQPF";
+  const VERIFY = "https://www.google.com/device";
+  let tokenCalls = 0;
+  let grantAccess = false;
+  let codeLifetime = 900;
+  await oauth.route("https://oauth2.googleapis.com/device/code", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      device_code: DEVICE_CODE, user_code: USER_CODE, verification_url: VERIFY, verification_uri: VERIFY,
+      verification_uri_complete: `${VERIFY}?user_code=${USER_CODE}`, expires_in: codeLifetime, interval: 1,
+    }),
+  }));
+  await oauth.route("https://oauth2.googleapis.com/token", (route) => {
+    tokenCalls += 1;
+    if (!grantAccess) {
+      return route.fulfill({ status: 428, contentType: "application/json", body: JSON.stringify({ error: "authorization_pending" }) });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ access_token: "test-access", refresh_token: "test-refresh", expires_in: 3600, scope: "https://www.googleapis.com/auth/drive.appdata" }),
+    });
+  });
+  await oauth.route("https://www.googleapis.com/drive/v3/files**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ files: [] }) }));
+  await oauth.route("https://www.googleapis.com/upload/drive/v3/files**", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ id: "test-file", modifiedTime: "2026-09-12T12:00:00.000Z", size: "42" }),
+  }));
+  await oauth.addInitScript(() => {
+    localStorage.setItem("nori.google.clientId", "123456-test.apps.googleusercontent.com");
+    localStorage.setItem("nori.google.clientSecret", "TEST-ONLY-not-a-real-secret");
+  });
+
+  // Aus Mehr: der Knopf steht direkt in der Karte.
+  await oauth.goto(`${BASE}/#/mehr`, { waitUntil: "domcontentloaded" });
+  await oauth.waitForTimeout(3000);
+  await focusKey(oauth, "set-sync-connect");
+  check("Mehr: „Mit Google Drive verbinden“ ist ein Knopf in der Karte", ((await oauth.textContent('[data-focus-key="set-sync-connect"]').catch(() => "")) ?? "").includes("Mit Google Drive verbinden"));
+  await remote(oauth, "ok", 1000);
+  check("Mehr: der Knopf öffnet den Gerätedialog", Boolean(await oauth.$(".device-dialog")));
+  await remote(oauth, "back", 700);
+  check("Zurück schließt den Dialog, Mehr bleibt, Fokus zurück auf dem Knopf",
+    !(await oauth.$(".device-dialog")) && oauth.url().endsWith("#/mehr") && (await focused(oauth))?.key === "set-sync-connect",
+    (await focused(oauth))?.key ?? "-");
+
+  await goto(oauth, "#/mehr/abgleich", 1800);
+  const configured = await oauth.evaluate(() => document.querySelector(".screen")?.textContent ?? "");
+  check("Übernommene Zugangsdaten werden weiterbenutzt", configured.includes("nicht verbunden"), configured.slice(0, 120));
+  check("Mit Diagnoseprotokoll: Herkunft benannt, Secret nicht", configured.includes("aus einer früheren Fassung übernommen") && !configured.includes("TEST-ONLY"));
+  check("Abgleich: Startfokus auf „Mit Google Drive verbinden“", (await focused(oauth))?.key === "connect", (await focused(oauth))?.key ?? "-");
+  await remote(oauth, "ok", 1000);
+  const deviceDialog = await oauth.evaluate(() => {
+    const panel = document.querySelector(".device-dialog");
+    if (!panel) return null;
+    const svg = panel.querySelector("svg.qr");
+    const box = panel.getBoundingClientRect();
+    return {
+      code: panel.querySelector(".device-value")?.textContent?.trim() ?? "",
+      url: panel.querySelector(".device-url")?.textContent?.trim() ?? "",
+      hint: panel.querySelector(".device-hint")?.textContent?.trim() ?? "",
+      modules: ((svg?.querySelector("path")?.getAttribute("d") ?? "").match(/M/g) ?? []).length,
+      qrSide: Math.round(svg?.getBoundingClientRect().width ?? 0),
+      inside: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+      focusInside: panel.contains(document.activeElement),
+    };
+  });
+  check("Gerätedialog: Code von Google", deviceDialog?.code === USER_CODE, deviceDialog?.code ?? "kein Dialog");
+  check("Gerätedialog: Adresse ohne Schema", deviceDialog?.url === "www.google.com/device", deviceDialog?.url ?? "-");
+  check("Gerätedialog: QR-Code gezeichnet und groß genug (≥ 300 px)", (deviceDialog?.modules ?? 0) > 150 && (deviceDialog?.qrSide ?? 0) >= 300, `${deviceDialog?.modules} Module, ${deviceDialog?.qrSide} px`);
+  check("Gerätedialog: Restlaufzeit", /Der Code gilt noch \d+:\d\d Minuten/.test(deviceDialog?.hint ?? ""), deviceDialog?.hint ?? "-");
+  check("Gerätedialog passt ins Bild, Fokus darin", deviceDialog?.inside === true && deviceDialog?.focusInside === true);
+  await shot(oauth, "27-abgleich-geraetecode");
+  await stress(oauth, "Gerätedialog: Fokus bleibt eingesperrt", ["left", "right", "up", "down", "down"]);
+  await remote(oauth, "back", 700);
+  check("Zurück bricht ab, Fokus zurück auf „Verbinden“", !(await oauth.$(".device-dialog")) && (await focused(oauth))?.key === "connect", (await focused(oauth))?.key ?? "-");
+
+  grantAccess = true;
+  const callsBefore = tokenCalls;
+  await remote(oauth, "ok", 4500);
+  const connectedState = await oauth.evaluate(() => ({
+    dialog: Boolean(document.querySelector(".device-dialog")),
+    keys: Array.from(document.querySelectorAll(".screen .spottable")).map((n) => n.getAttribute("data-focus-key")),
+    tokens: Boolean(localStorage.getItem("nori.google.tokens")),
+  }));
+  check("Nach der Zustimmung schließt der Dialog von selbst", !connectedState.dialog && tokenCalls > callsBefore, `${tokenCalls} Abrufe`);
+  check("Verbunden: Abgleichen, Trennen, Widerrufen", ["sync-now", "disconnect", "revoke"].every((k) => connectedState.keys.includes(k)), connectedState.keys.join(", "));
+  check("Die Berechtigung liegt im Speicher des Geräts", connectedState.tokens);
+  check("Nach dem Verbinden bleibt der Fokus erhalten", Boolean(await focused(oauth)));
+  await shot(oauth, "28-abgleich-verbunden");
+  const leaked = oauthLog.filter((line) => /test-access|test-refresh|TEST-ONLY-not-a-real-secret|NORI-TEST-DEVICE-CODE/.test(line));
+  check("Kein Token und kein Secret im Protokoll", leaked.length === 0, leaked.slice(0, 2).join(" | "));
+
+  await oauth.reload({ waitUntil: "domcontentloaded" });
+  await oauth.waitForTimeout(3000);
+  await goto(oauth, "#/mehr/abgleich", 1500);
+  check("Nach dem Neustart verbunden, ohne erneute Anmeldung",
+    !(await oauth.$(".device-dialog")) && Boolean(await oauth.$('[data-focus-key="sync-now"]')));
+
+  // Abgelaufener Code: ein Satz und ein neuer Code auf einen Druck.
+  await oauth.evaluate(() => localStorage.removeItem("nori.google.tokens"));
+  grantAccess = false;
+  codeLifetime = 1;
+  await oauth.reload({ waitUntil: "domcontentloaded" });
+  await oauth.waitForTimeout(2500);
+  await goto(oauth, "#/mehr/abgleich", 1500);
+  await focusKey(oauth, "connect");
+  await remote(oauth, "ok", 3500);
+  const expiredView = await oauth.evaluate(() => ({
+    text: document.querySelector(".device-dialog")?.textContent ?? "",
+    focus: document.activeElement?.getAttribute("data-focus-key"),
+  }));
+  check("Abgelaufener Code in einem Satz, ohne OAuth-Fehlertext",
+    expiredView.text.includes("Der Anmeldecode ist abgelaufen.") && !/expired_token|invalid_grant|authorization_pending/.test(expiredView.text),
+    expiredView.text.slice(0, 80));
+  check("Fokus auf „Neuen Code erzeugen“", expiredView.focus === "device-retry", expiredView.focus ?? "-");
+  await shot(oauth, "29-abgleich-code-abgelaufen");
+  await oauth.close();
+
+  // Ohne Diagnoseschalter ist von OAuth nichts zu sehen.
+  const quiet = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await quiet.route("https://api.themoviedb.org/**", (route) => route.abort("failed"));
+  await quiet.addInitScript((base) => {
+    localStorage.setItem("nori.webos.settings", JSON.stringify({
+      transport: "server", serverUrl: base, controlsTimeout: 4, seekStep: 10,
+      autoplayCountdown: 3, tmdbMode: "server", tmdbKey: "", reduceEffects: false, debug: false,
+    }));
+    localStorage.setItem("nori.google.clientId", "123456-test.apps.googleusercontent.com");
+    localStorage.setItem("nori.google.clientSecret", "TEST-ONLY-not-a-real-secret");
+  }, BASE);
+  await quiet.goto(`${BASE}/#/mehr/abgleich`, { waitUntil: "domcontentloaded" });
+  await quiet.waitForTimeout(2500);
+  const quietText = await quiet.evaluate(() => document.querySelector(".screen")?.textContent ?? "");
+  check("Ohne Diagnoseprotokoll keine Client-ID auf dem Bildschirm", quietText.length > 0 && !/Client-ID|Client-Secret|appdata/.test(quietText), quietText.slice(0, 120));
+  check("Der Knopf zum Anmelden steht trotzdem", quietText.includes("Mit Google Drive verbinden"));
+  await quiet.close();
 
   // --- 11. 4K ---------------------------------------------------------------------------
   section("3840 × 2160");

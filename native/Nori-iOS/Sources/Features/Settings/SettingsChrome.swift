@@ -337,6 +337,9 @@ struct SettingsSyncCard: View {
         /// und gehen nicht verloren.
         case offline(name: String, lastRun: Date?)
         case failed(name: String, message: String)
+        /// Die Berechtigung bei Google gilt nicht mehr. Kein Fehler — es fehlt
+        /// eine Anmeldung, und genau die bietet die Seite darunter an.
+        case needsReauth(name: String)
         /// In der Cloud liegt ein Stand, den diese Fassung nicht kennt.
         case needsUpdate(name: String)
 
@@ -345,7 +348,7 @@ struct SettingsSyncCard: View {
             case .notConfigured: return "Abgleich"
             case .disconnected(let name), .authorizing(let name), .idle(let name, _),
                  .running(let name), .offline(let name, _), .failed(let name, _),
-                 .needsUpdate(let name):
+                 .needsReauth(let name), .needsUpdate(let name):
                 return name
             }
         }
@@ -359,6 +362,7 @@ struct SettingsSyncCard: View {
             case .running: return "Läuft"
             case .offline: return "Offline"
             case .failed: return "Fehler"
+            case .needsReauth: return "Anmeldung nötig"
             case .needsUpdate: return "Update nötig"
             }
         }
@@ -371,6 +375,7 @@ struct SettingsSyncCard: View {
             case .running: return "arrow.triangle.2.circlepath"
             case .offline: return "bolt.horizontal.icloud"
             case .failed: return "exclamationmark.icloud"
+            case .needsReauth: return "person.badge.key"
             case .needsUpdate: return "arrow.up.circle"
             }
         }
@@ -379,7 +384,7 @@ struct SettingsSyncCard: View {
             switch self {
             case .notConfigured, .disconnected, .authorizing, .running: return .blue
             case .idle(_, let lastRun): return lastRun == nil ? .blue : .green
-            case .offline, .needsUpdate: return .orange
+            case .offline, .needsUpdate, .needsReauth: return .orange
             case .failed: return .red
             }
         }
@@ -404,6 +409,8 @@ struct SettingsSyncCard: View {
                 return "Ohne Netz. Zuletzt " + lastRun.formatted(.relative(presentation: .named)) + "."
             case .failed(_, let message):
                 return message
+            case .needsReauth:
+                return "Google Drive muss erneut verbunden werden."
             case .needsUpdate:
                 return "In der Cloud liegt ein neuerer Stand. Bitte Nori aktualisieren."
             }

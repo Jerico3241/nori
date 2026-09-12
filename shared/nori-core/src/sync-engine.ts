@@ -15,6 +15,7 @@
 import { LIBRARY_SCHEMA_VERSION, type LibraryBag } from "./library.js";
 import { LIBRARY_SYNC_LIMITS, mergeLibrarySnapshots } from "./sync.js";
 import { DriveError, GoogleDriveClient, isSnapshot, snapshotName } from "./google/drive.js";
+import { GoogleAuthError } from "./google/auth.js";
 
 /** Was der Abgleich gerade tut. Gleiches Modell wie im Swift-Kern. */
 export type LibrarySyncStatus =
@@ -25,6 +26,16 @@ export type LibrarySyncStatus =
   /** Kein Netz. Kein Fehler, sondern ein Zustand — die Änderungen liegen lokal. */
   | "offline"
   | "error"
+  /**
+   * Die Berechtigung bei Google gilt nicht mehr — widerrufen, Passwort
+   * geändert, zu lange nicht benutzt.
+   *
+   * Ein eigener Zustand und kein Fehler: es ist nichts kaputt, es fehlt nur
+   * eine Anmeldung. Die Oberfläche kann deshalb „Erneut anmelden" anbieten
+   * statt einen technischen Text zu zeigen, hinter dem niemand eine Handlung
+   * erkennt.
+   */
+  | "needsReauthorization"
   /** In der Cloud liegt ein Stand, den diese Fassung noch nicht kennt. */
   | "unsupportedRemoteVersion";
 
@@ -369,11 +380,21 @@ export class LibrarySyncEngine {
   }
 
   private apply(cause: unknown): void {
+    // Eine abgelaufene Berechtigung kommt aus der Autorisierungsschicht und
+    // nicht als `DriveError` — sie fällt an, bevor überhaupt eine Anfrage
+    // hinausgeht. Ohne diesen Zweig landete sie unten bei „offline", und die
+    // Oberfläche hätte gewartet, statt eine Anmeldung anzubieten.
+    if (cause instanceof GoogleAuthError
+      && (cause.kind === "notAuthorized" || cause.kind === "noRefreshToken")) {
+      this.lastError = null;
+      this.setStatus("needsReauthorization");
+      return;
+    }
     if (cause instanceof DriveError) {
       switch (cause.kind) {
         case "notAuthorized":
-          this.lastError = "Die Verbindung zu Google ist abgelaufen. Bitte neu verbinden.";
-          this.setStatus("error");
+          this.lastError = null;
+          this.setStatus("needsReauthorization");
           return;
         case "forbidden":
           this.lastError = `Google hat den Zugriff abgelehnt${cause.message ? ` (${cause.message})` : ""}.`;

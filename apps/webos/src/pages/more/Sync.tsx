@@ -4,21 +4,26 @@
 // Videos. Jedes Gerät schreibt nur seine eigene Datei im versteckten
 // `appDataFolder`; die Regeln stehen in `docs/synchronisation.md`.
 //
-// Die Anmeldung läuft über den Gerätecode: der Fernseher zeigt Adresse und
-// Code, eingegeben wird auf dem Smartphone. Die Fernbedienung tippt keine
-// Zugangsdaten.
+// **Die Anmeldung ist ein Knopf.** Client-ID und Client-Secret kommen aus dem
+// Build und sind keine Einstellung: sie mit einer Fernbedienung über eine
+// Bildschirmtastatur einzugeben war keine Einrichtung, sondern eine Hürde.
+// Fehlen sie, sagt die Seite das in einem Satz. Welche Werte ein Paket benutzt,
+// steht nur mit eingeschaltetem „Diagnoseprotokoll" da, und das Secret auch
+// dann nicht.
 //
 // „Dieses Gerät trennen" und „Google-Zugriff widerrufen" sind zwei Dinge. Das
-// Zweite betrifft alle Geräte am Konto und fragt deshalb vorher — in einem
-// Dialog der App, nicht über `window.confirm`, das auf einem Fernseher nicht
-// zuverlässig bedienbar ist.
+// Zweite betrifft alle Geräte am Konto und fragt vorher — in einem Dialog der
+// App, nicht über `window.confirm`, das auf einem Fernseher nicht zuverlässig
+// bedienbar ist.
 
 import { useEffect, useState } from "react";
 
+import { DeviceSignInDialog, relativeTime } from "../../components/DeviceSignIn";
 import { Dialog } from "../../components/Overlay";
 import { Screen } from "../../components/Screen";
-import { rememberFocus, restoreFocusSoon } from "../../navigation/focusMemory";
+import { restoreFocusSoon } from "../../navigation/focusMemory";
 import { SpotButton } from "../../navigation/Spot";
+import { useSettings } from "../../state/settings";
 import { syncStatusLabel, useSync } from "../../state/sync";
 import { Info } from "../More";
 
@@ -26,84 +31,42 @@ const ROUTE = "more-sync";
 
 export function SyncPage() {
   const sync = useSync();
-  const [clientIdDraft, setClientIdDraft] = useState("");
-  const [clientSecretDraft, setClientSecretDraft] = useState("");
-  const [credentialsNote, setCredentialsNote] = useState<string | null>(null);
+  const { settings } = useSettings();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["sync"], { initial: ".setting-card .spottable", ready: true }), []);
 
-  const tone = sync.status === "idle" ? "ok" : sync.status === "error" ? "error" : "idle";
+  const tone = sync.status === "idle" ? "ok"
+    : sync.status === "error" || sync.needsReauthorization ? "error" : "idle";
+  const connected = sync.isConfigured && !sync.needsReauthorization
+    && sync.status !== "disconnected" && sync.status !== "authorizing";
 
   return (
     <Screen route={ROUTE} eyebrow="Mehr" title="Abgleich" className="more-sub">
       <div className="settings-grid single">
         <section className="setting-card" aria-label="Google Drive">
           <h3>Google Drive</h3>
-          <Info label="Zustand" hint="Merkliste, Verlauf, Fortschritt und Einstellungen — keine Videos" value={syncStatusLabel(sync)} tone={tone} />
-          {sync.lastSuccessfulSync ? (
-            <Info label="Zuletzt abgeglichen" value={new Date(sync.lastSuccessfulSync).toLocaleString("de-DE")} tone="idle" />
+          <p className="card-note">
+            Merkliste, Verlauf, Fortschritt und Einstellungen mit iPhone, iPad und Mac teilen —
+            keine Videos. Ohne Netz funktioniert Nori vollständig weiter.
+          </p>
+          <Info label="Zustand" value={syncStatusLabel(sync)} tone={tone} />
+          {connected && sync.lastSuccessfulSync ? (
+            <Info label="Letzte Synchronisierung" value={relativeTime(sync.lastSuccessfulSync)} tone="idle" />
           ) : null}
 
           {!sync.isConfigured ? (
-            <>
-              <p className="card-note">
-                Für die Anmeldung braucht Nori die Zugangsdaten eines eigenen Google-Cloud-Projekts
-                (OAuth-Client vom Typ „Fernseher und Geräte mit eingeschränkter Eingabe“). Die
-                Schritte stehen in docs/google-drive-sync.md. Ohne Abgleich bleibt die Bibliothek
-                vollständig auf diesem Fernseher.
-              </p>
-              <label className="field">
-                <span>Google-Client-ID</span>
-                <input
-                  className="spottable text-field"
-                  data-focus-key="client-id"
-                  type="text"
-                  value={clientIdDraft}
-                  placeholder="123456-abc.apps.googleusercontent.com"
-                  aria-label="Google-Client-ID"
-                  onFocus={() => rememberFocus(ROUTE, "sync", "client-id")}
-                  onChange={(event) => setClientIdDraft(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Client-Secret — liegt unverschlüsselt im Speicher dieser App</span>
-                <input
-                  className="spottable text-field"
-                  data-focus-key="client-secret"
-                  type="password"
-                  value={clientSecretDraft}
-                  placeholder="GOCSPX-…"
-                  aria-label="Google-Client-Secret"
-                  onFocus={() => rememberFocus(ROUTE, "sync", "client-secret")}
-                  onChange={(event) => setClientSecretDraft(event.target.value)}
-                />
-              </label>
-              <div className="card-actions">
-                <SpotButton
-                  className="hero-btn primary"
-                  focusRoute={ROUTE}
-                  focusArea="sync"
-                  focusKey="credentials-save"
-                  onClick={() => {
-                    const problem = sync.saveCredentials(clientIdDraft, clientSecretDraft);
-                    setCredentialsNote(problem);
-                    if (!problem) {
-                      setClientIdDraft("");
-                      setClientSecretDraft("");
-                    }
-                  }}
-                >
-                  Zugangsdaten sichern
-                </SpotButton>
-              </div>
-              {credentialsNote ? <p className="card-note strong" role="alert">{credentialsNote}</p> : null}
-            </>
-          ) : sync.pending ? (
-            <DeviceCode />
+            <p className="card-note strong">
+              Diese Nori-Fassung wurde ohne Google-Abgleich gebaut. Merkliste, Verlauf und
+              Fortschritt funktionieren vollständig weiter — sie bleiben auf diesem Fernseher.
+            </p>
           ) : (
             <div className="card-actions">
-              {sync.status === "disconnected" ? (
+              {sync.needsReauthorization ? (
+                <SpotButton className="hero-btn primary" focusRoute={ROUTE} focusArea="sync" focusKey="reconnect" onClick={() => sync.connect()}>
+                  Erneut anmelden
+                </SpotButton>
+              ) : sync.status === "disconnected" || sync.status === "authorizing" ? (
                 <SpotButton className="hero-btn primary" focusRoute={ROUTE} focusArea="sync" focusKey="connect" onClick={() => sync.connect()}>
                   Mit Google Drive verbinden
                 </SpotButton>
@@ -120,23 +83,40 @@ export function SyncPage() {
                   </SpotButton>
                 </>
               )}
-              {sync.credentialsFromDevice ? (
-                <SpotButton className="hero-btn" focusRoute={ROUTE} focusArea="sync" focusKey="credentials-clear" onClick={() => sync.clearCredentials()}>
-                  Zugangsdaten entfernen
-                </SpotButton>
-              ) : null}
             </div>
           )}
 
+          {sync.needsReauthorization ? <p className="card-note strong">Google Drive muss erneut verbunden werden.</p> : null}
           {sync.message ? <p className="card-note strong" role="alert">{sync.message}</p> : null}
           {sync.lastWarning ? <p className="card-note">{sync.lastWarning}</p> : null}
+
+          {/* Nur mit dem Diagnoseschalter. Das Client-Secret steht hier nicht, auch
+              nicht verkürzt — dass es vorhanden ist, reicht als Auskunft. */}
+          {settings.debug ? (
+            <>
+              <p className="card-note">
+                Client-ID: {sync.diagnostics.clientId || "—"} ·{" "}
+                {sync.diagnostics.origin === "build" ? "aus dem Build"
+                  : sync.diagnostics.origin === "migrated" ? "aus einer früheren Fassung übernommen"
+                    : "fehlt"} · Client-Secret: {sync.diagnostics.hasSecret ? "vorhanden" : "fehlt"} · Bereich: nur
+                drive.appdata
+              </p>
+              {sync.diagnostics.origin === "migrated" ? (
+                <div className="card-actions">
+                  <SpotButton className="hero-btn" focusRoute={ROUTE} focusArea="sync" focusKey="credentials-clear" onClick={() => sync.forgetMigratedCredentials()}>
+                    Übernommene Zugangsdaten verwerfen
+                  </SpotButton>
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </section>
       </div>
 
       <Dialog open={confirmRevoke} onClose={() => setConfirmRevoke(false)} eyebrow="Abgleich" title="Google-Zugriff widerrufen?" id="revoke" initial='[data-focus-key="revoke-cancel"]'>
         <p className="dialog-text">
-          Damit verlieren alle Geräte an diesem Google-Konto den Zugriff — auch iPhone und Mac.
-          Die Bibliothek auf diesem Fernseher bleibt erhalten.
+          Dadurch kann Nori auf deinen Geräten nicht mehr auf die Google-Drive-Synchronisierung
+          zugreifen — auch iPhone und Mac nicht. Deine lokale Bibliothek bleibt erhalten.
         </p>
         <div className="dialog-actions">
           <SpotButton className="hero-btn" focusKey="revoke-cancel" onClick={() => setConfirmRevoke(false)}>
@@ -154,43 +134,8 @@ export function SyncPage() {
           </SpotButton>
         </div>
       </Dialog>
+
+      {sync.pending ? <DeviceSignInDialog /> : null}
     </Screen>
-  );
-}
-
-/** Der Gerätefluss, so groß, dass man ihn vom Sofa aus lesen kann. */
-function DeviceCode() {
-  const sync = useSync();
-  const [remaining, setRemaining] = useState(0);
-  const expiresAt = sync.pending?.expiresAt ?? 0;
-
-  useEffect(() => {
-    if (!expiresAt) return undefined;
-    const tick = () => setRemaining(Math.max(0, Math.round((expiresAt - Date.now()) / 1000)));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [expiresAt]);
-
-  if (!sync.pending) return null;
-  const minutes = Math.floor(remaining / 60);
-  const seconds = String(remaining % 60).padStart(2, "0");
-
-  return (
-    <div className="device-code">
-      <p className="card-note strong">Öffne diese Adresse auf deinem Smartphone oder Computer und gib den Code ein:</p>
-      <p className="device-code-url">{sync.pending.verificationUrl}</p>
-      <p className="device-code-value">{sync.pending.userCode}</p>
-      <p className="card-note">
-        {remaining > 0
-          ? `Der Code gilt noch ${minutes}:${seconds} Minuten. Nori wartet auf deine Bestätigung …`
-          : "Der Code ist abgelaufen. Bitte neu beginnen."}
-      </p>
-      <div className="card-actions">
-        <SpotButton className="hero-btn" focusRoute={ROUTE} focusArea="sync" focusKey="cancel" onClick={() => sync.cancelConnect()}>
-          Abbrechen
-        </SpotButton>
-      </div>
-    </div>
   );
 }

@@ -183,7 +183,7 @@ Zugeordnete Kennungen liegen versioniert im `localStorage`
 (`nori.tmdb.titles.v2` und Nachbarn). Ändert sich die Zuordnung, wird die
 Fassungsnummer erhöht und der alte Stand beim ersten Start verworfen — sonst
 bliebe ein falscher Treffer für immer stehen. Von Hand geht dasselbe über
-*Einstellungen → TMDB → Bildspeicher leeren*.
+*Mehr → Verbindung & TMDB → Bildspeicher leeren*.
 
 ## Voraussetzungen
 
@@ -266,7 +266,7 @@ entspricht der Zurück-Taste der Fernbedienung.
    Ohne Gerätenamen wird das voreingestellte Gerät benutzt; alternativ
    `NORI_WEBOS_DEVICE=tv` setzen.
 
-5. **Nori einrichten**: beim ersten Start unter *Einstellungen → Verbindung*
+5. **Nori einrichten**: beim ersten Start unter *Mehr → Verbindung & TMDB*
    die Adresse des Nori-Servers eintragen, etwa `http://192.168.1.20:8730`, und
    auf **Prüfen** gehen. Fernseher und Server müssen im selben Netz sein. Die
    Antwort sagt zugleich, welchen TMDB-Schlüssel der Server benutzt.
@@ -282,7 +282,7 @@ node tools/webos-cli.mjs log tv
 ```
 
 Im Protokoll trägt alles von Nori das Präfix `[Nori:webOS]`. Ausführlich wird
-es erst, wenn in den Einstellungen *Diagnoseprotokoll* eingeschaltet ist —
+es erst, wenn unter *Mehr → Diagnoseprotokoll* eingeschaltet ist —
 sonst bleiben nur Warnungen und Fehler übrig. Der Bereich `[tmdb]` nennt jeden
 Treffer samt Kennung, jede Staffelzuordnung samt Güte und Versatz und jede
 Zuordnung, die abgelehnt wurde.
@@ -412,13 +412,68 @@ in der Praxis schiefgehen: ein Titel, dessen TMDB-Name mit dem Quelltitel
 nichts gemeinsam hat; eine Staffel mit versetzter Folgenzählung; ein Titel, den
 TMDB gar nicht führt.
 
+## Mit Google Drive verbinden
+
+*Mehr → Synchronisierung → „Mit Google Drive verbinden"*. Danach ein
+eigener Bildschirm, kein Absatz in der Liste:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Google Drive verbinden                              │
+│                                                      │
+│  ███████████    Scanne den QR-Code mit deinem        │
+│  ██ ▄▄▄▄▄ ██    Smartphone.                          │
+│  ██ █████ ██                                         │
+│  ███████████    Oder öffne am Telefon                │
+│                 www.google.com/device                │
+│                 und gib diesen Code ein              │
+│                 WDXR-KQPF                            │
+│                                                      │
+│  Nori wartet auf deine Anmeldung …                   │
+│  Der Code gilt noch 14:32 Minuten.                   │
+│                                                      │
+│  [ Abbrechen ]                                       │
+└──────────────────────────────────────────────────────┘
+```
+
+Der QR-Code ist 22 rem im Quadrat — 328 px auf 1080p, 431 px auf einem
+4K-Panel — mit weissem Grund und dem von der Norm verlangten Rand von vier
+Modulen. `shape-rendering="crispEdges"` ist dabei nicht Kosmetik: ohne das
+glättet der Browser die Kanten, und bei einem Modul von wenigen Bildpunkten
+verschwimmen hell und dunkel ineinander. Der Gerätecode steht in 4 rem
+(64 px auf 1080p), mit Sperrsatz und Tabellenziffern — er wird abgetippt.
+
+Gerechnet wird der Code **im Gerät** (`shared/nori-core/src/qr.ts`), nie bei
+einem Dienst im Netz: die Adresse gehört zu einer laufenden Anmeldung. Enthalten
+ist `verification_uri_complete`, wenn Google eine liefert — dann steckt der Code
+schon darin —, sonst genau `verification_uri`. Selbst zusammengesetzt wird
+nichts.
+
+Der Dialog sperrt den Fokus ein (`restrict="self-only"`), „Zurück" bricht ab und
+gibt den Fokus an die Abgleich-Reihe zurück. Läuft der Code ab, steht dort ein
+Satz und ein Knopf für einen neuen; der Fokus wandert dabei auf diesen Knopf,
+weil „Abbrechen" der eine ist, der nicht weiterhilft.
+
+**Eingerichtet wird am Fernseher nichts.** Client-ID und Client-Secret kommen
+aus dem Build (`VITE_NORI_GOOGLE_TV_CLIENT_ID`,
+`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`, am besten über eine nicht eingecheckte
+`apps/webos/.env.local`). Die Eingabefelder, die dafür bis 1.3.1 in den
+Einstellungen standen, sind weg: ein 40-stelliges Secret mit der Fernbedienung
+über eine Bildschirmtastatur einzugeben war keine Einrichtung, sondern eine
+Hürde. Am Entwicklerschalter *Diagnoseprotokoll* hängt eine Zeile mit Client-ID,
+Herkunft und der Auskunft, **ob** ein Secret vorliegt — nie welches.
+
+Durchspielen lässt sich das alles ohne Google-Konto: der Fernbedienungslauf
+fängt Googles Endpunkte ab (`npm run test:tv`, Bildschirmfotos in
+`test-shots/22b…22d`).
+
 ## Bekannte Einschränkungen
 
 - **Der Abgleich über Google Drive ist nicht auf einem Fernseher geprüft.** Er
-  ist gebaut (Einstellungen → Abgleich, Anmeldung über den Gerätecode) und die
-  Zusammenführungsregel ist in beiden Kernen gegen dieselben Fälle geprüft
-  (`config/sync-fixtures.json`); der Ablauf über ein echtes Google-Konto und
-  zwei echte Geräte ist es nicht. Siehe `docs/google-drive-sync.md`.
+  ist gebaut und die Zusammenführungsregel ist in beiden Kernen gegen dieselben
+  Fälle geprüft (`config/sync-fixtures.json`); der Ablauf über ein echtes
+  Google-Konto und zwei echte Geräte ist es nicht. Siehe
+  `docs/google-drive-sync.md`.
 - **Ohne Drive bleibt die Bibliothek im `localStorage`** des Fernsehers. Das
   Format ist dasselbe wie in der `library.json` von iPhone und Mac, und
   „Bibliothek einlesen" **führt zusammen statt zu ersetzen**

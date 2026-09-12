@@ -211,17 +211,55 @@ Was fehlt, sind vier kleine Klassen, und alle vier können nur in der
 Android-App liegen — im geteilten Kern wären sie auf Apple toter Code, genau
 wie `Security` und `ImageIO` weiter oben:
 
-1. **`GoogleTokenStore`** über den aktuell empfohlenen Android-Weg für
-   Zugangsdaten. `KeychainTokenStore` gibt außerhalb von Apple nichts zurück.
-2. **`GoogleSignInPresenter`** über den Authorization-Client von Google
-   Identity Services. **Kein Firebase** — Drive braucht es nicht.
+1. **`GoogleTokenStore`** über `EncryptedSharedPreferences` mit einem Schlüssel
+   aus dem **Android-Keystore**. `KeychainTokenStore` gibt außerhalb von Apple
+   nichts zurück (`#if canImport(Security)`), und `SharedPreferences` allein ist
+   für einen Auffrischungstoken der falsche Ort.
+2. **`GoogleSignInPresenter`** über Googles **Authorization API**
+   (`com.google.android.gms:play-services-auth`): ein `AuthorizationRequest`
+   mit `setRequestedScopes(listOf(Scope("https://www.googleapis.com/auth/drive.appdata")))`
+   und `requestOfflineAccess(serverClientId)`, gestartet über den
+   `PendingIntent` aus `AuthorizationResult`.
+
+   Der **Credential Manager** ist dafür ausdrücklich nicht der richtige
+   Baustein: er beantwortet „wer ist das?", nicht „darf Nori an den
+   App-Ordner?". Für den Drive-Zugriff braucht es eine Autorisierung, keine
+   Authentifizierung. **Kein Firebase** — Drive braucht es nicht. **Kein
+   eingebetteter Browser** — Google lehnt Anmeldungen in einer WebView ab.
 3. **`SyncBookkeeping`** über `SharedPreferences`.
 4. Der Aufruf von `GoogleDriveSync` aus der Compose-Oberfläche und die Anbindung
    an den Lebenszyklus.
 
-Dazu kommt ein OAuth-Client vom Typ *Android* im selben Google-Cloud-Projekt,
-mit Paketname und SHA-1-Fingerabdruck des Signaturschlüssels
-(`docs/google-drive-sync.md`).
+Dazu kommen **zwei** Dinge in der Google Cloud, beide im selben Projekt wie die
+übrigen Clients (`docs/google-drive-sync.md`):
+
+- ein OAuth-Client vom Typ **Android** mit Paketname und SHA-1-Fingerabdruck
+  des Signaturschlüssels,
+- ein OAuth-Client vom Typ **Web**, dessen Client-ID an
+  `requestOfflineAccess(serverClientId)` geht. Ohne sie gibt Google keinen
+  Auffrischungstoken heraus, und die Verbindung hielte eine Stunde — dasselbe,
+  was `GoogleAuthorization.signIn` auf Apple mit `noRefreshToken` abfängt.
+
+Und eine Build-Einstellung: die Client-IDs gehören **nicht** in den Quelltext.
+Der Weg ist derselbe wie `GOOGLE_CLIENT_ID` auf Apple — ein `buildConfigField`
+aus einer nicht eingecheckten `local.properties`.
+
+### Wie die Oberfläche aussehen soll
+
+Dieselbe wie überall sonst, und das ist der Punkt:
+
+```text
+Einstellungen → Synchronisation → [ Mit Google anmelden ]
+        ↓
+Kontoauswahl von Google, einmal bestätigen
+        ↓
+verbunden — [ Jetzt synchronisieren ]  [ Dieses Gerät trennen ]
+```
+
+**Kein Feld für eine Client-ID, keine Tokens, keine technischen Einstellungen.**
+Gilt die Berechtigung nicht mehr, steht dort „Google Drive muss erneut verbunden
+werden" und ein Knopf — der Zustand heißt im Kern `needsReauthorization` und ist
+schon da.
 
 Die Arbeit liegt damit in der Compose-App und nicht im Abgleich. **Solange diese
 vier Klassen fehlen, gibt es auf Android keinen Abgleich**, und nichts in diesem

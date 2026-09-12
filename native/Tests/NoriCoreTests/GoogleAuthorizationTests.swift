@@ -255,6 +255,60 @@ final class GoogleClientIDTests: XCTestCase {
             for: ".apps.googleusercontent.com"))
     }
 
+    // MARK: - Woher die Client-ID kommt
+
+    /// Der Normalfall: aus dem Build.
+    ///
+    /// Ein Eingabefeld gibt es nicht mehr. Es war ein Feld für einen Wert, den
+    /// niemand hat, der die App nur benutzt — und eine Anmeldung, die erst
+    /// nach einem Besuch in der Google Cloud Console möglich war.
+    func testTheClientIdComesFromTheBuild() {
+        let decision = GoogleClientIDStore.resolve(
+            build: "123456-abc.apps.googleusercontent.com", stored: nil)
+        XCTAssertEqual(decision?.clientId, "123456-abc.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.origin, .build)
+        XCTAssertEqual(decision?.cleanUpStored, false)
+    }
+
+    /// Ohne Build-Einstellung gibt es nichts anzubieten — und kein Eingabefeld.
+    func testWithoutABuildSettingThereIsNoClientId() {
+        XCTAssertNil(GoogleClientIDStore.resolve(build: nil, stored: nil))
+        XCTAssertNil(GoogleClientIDStore.resolve(build: "", stored: ""))
+    }
+
+    /// Wer schon verbunden ist, bleibt es.
+    ///
+    /// Die Tokens im Schlüsselbund sind zu der von Hand eingetragenen
+    /// Client-ID ausgestellt. Würde sie jetzt ignoriert, wäre die Verbindung
+    /// nach dem Update weg — ohne Grund und ohne Meldung.
+    func testAnEnteredClientIdKeepsWorkingAfterTheUpdate() {
+        let decision = GoogleClientIDStore.resolve(
+            build: "neu-aus-dem-build.apps.googleusercontent.com",
+            stored: "alt-von-hand.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.clientId, "alt-von-hand.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.origin, .migrated)
+        XCTAssertEqual(decision?.cleanUpStored, false,
+                       "Der Wert, zu dem die Tokens gehören, wurde weggeräumt")
+    }
+
+    /// Und ohne Build-Einstellung gilt er erst recht.
+    func testAnEnteredClientIdAlsoWorksWithoutABuildSetting() {
+        let decision = GoogleClientIDStore.resolve(
+            build: nil, stored: "alt-von-hand.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.clientId, "alt-von-hand.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.origin, .migrated)
+    }
+
+    /// Zweimal derselbe Wert: einer reicht, und der aus dem Build ist der
+    /// bessere.
+    func testADuplicateEntryIsTidiedAway() {
+        let decision = GoogleClientIDStore.resolve(
+            build: "123456-abc.apps.googleusercontent.com",
+            stored: "123456-abc.apps.googleusercontent.com")
+        XCTAssertEqual(decision?.origin, .build)
+        XCTAssertEqual(decision?.cleanUpStored, true)
+    }
+
     /// Aus der Client-ID entsteht die Rückleitungsadresse für iOS. Genau
     /// deshalb muss die Form stimmen.
     func testTheRedirectSchemeIsDerivedFromTheClientId() {

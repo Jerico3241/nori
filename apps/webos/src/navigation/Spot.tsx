@@ -116,18 +116,29 @@ export function SpotArea({ restrict = "self-first", spotlightId, children, ...re
  * Wiederholt, bis `document.activeElement` tatsächlich im Bereich liegt: ein
  * Overlay, das im selben Bild erst eingehängt wird, hat beim ersten Versuch
  * manchmal noch keine Größe.
+ *
+ * `force` verlangt genau das Element aus `selector`, auch wenn der Fokus schon
+ * irgendwo im Bereich steht. Ohne das tat der Aufruf nichts, sobald irgendein
+ * Knopf des Overlays den Fokus hatte — und genau der Fall tritt auf, wenn sich
+ * der **Inhalt** eines Overlays ändert: läuft der Anmeldecode ab, erscheint
+ * „Neuen Code erzeugen", der Fokus stand aber noch auf „Abbrechen", dem einen
+ * Knopf, der dann nicht weiterhilft.
  */
 export function focusWithin(
   root: HTMLElement | null,
   selector = ".spottable",
   attempts = 20,
+  force = false,
 ): () => void {
   let cancelled = false;
   const tick = (left: number) => {
     if (cancelled || !root) return;
-    if (root.contains(document.activeElement)) return;
     const preferred = root.querySelector<HTMLElement>(selector);
-    const target = isUsable(preferred) ? preferred : focusables(root)[0];
+    const target = isUsable(preferred) ? preferred : force ? null : focusables(root)[0];
+    const arrived = force
+      ? target !== null && document.activeElement === target
+      : root.contains(document.activeElement);
+    if (arrived) return;
     if (target && focusElement(target, { instant: true })) return;
     if (left > 0) window.setTimeout(() => tick(left - 1), 50);
   };

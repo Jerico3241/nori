@@ -14,6 +14,9 @@ export * from "./sync.js";
 export * from "./sync-engine.js";
 export * from "./google/drive.js";
 export * from "./google/auth.js";
+// Nur der Fernseher braucht ihn — dort gibt es keinen Browser, in dem sich
+// jemand anmelden könnte, und keine Tastatur für eine Adresse.
+export * from "./qr.js";
 export * from "./gateway.js";
 export * from "./hoster/safety.js";
 export * from "./hoster/sites.js";

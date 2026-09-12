@@ -17,10 +17,10 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.19.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.15.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| iOS / iPadOS | **1.21.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.16.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **2.0.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **2.0.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -140,13 +140,32 @@ Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
 - Fortschritt wird nach Provider und normalisiertem Episodenpfad getrennt gespeichert
 - Migration älterer lokaler Bibliotheksstände
 
-Aktuelles Library-Schema: **v4**. Die maßgebliche Implementierung ist `LibraryStore.schemaVersion`; der kanonische Contract unter `config/contract.json` muss denselben Stand ausweisen.
+Aktuelles Library-Schema: **v6**. Die maßgebliche Implementierung ist `LibraryStore.schemaVersion`; der kanonische Contract unter `config/contract.json` muss denselben Stand ausweisen.
 
 ### Synchronisation
 
-Der gemeinsame Core enthält mit `LibrarySyncProvider` eine schmale Abstraktion für externe Synchronisationsziele. Ein Anbieter muss lediglich einen Stand laden und speichern können. Dadurch können beispielsweise Google Drive, Dropbox oder WebDAV angebunden werden, ohne `LibraryStore` erneut umzubauen.
+Abgeglichen wird über **Google Drive**, ausschließlich im versteckten `appDataFolder`. Jedes Gerät schreibt nur seine eigene Datei und liest die aller anderen; der Ablauf ist immer Pull → Merge → Push. Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy.
 
-Aktuell ist **kein Cloud-Anbieter fest in den Core verdrahtet**. Ohne eingerichteten Provider arbeitet Nori ausschließlich mit der lokalen `library.json`.
+**Für den Nutzer ist das ein Knopf:**
+
+```text
+Einstellungen → Synchronisation → [ Mit Google anmelden ]
+```
+
+Danach zeigt die Seite den Zustand, „Jetzt synchronisieren" und „Dieses Gerät trennen". Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind **keine** Benutzereinstellungen und stehen nicht in der Oberfläche — wer Nori benutzt, muss über OAuth nichts wissen.
+
+| Plattform | Anmeldung |
+| --- | --- |
+| iOS / iPadOS | Authorization Code + PKCE über `ASWebAuthenticationSession` |
+| macOS | Authorization Code + PKCE, Systembrowser + Loopback auf `127.0.0.1` |
+| webOS | Device Authorization Grant (RFC 8628) mit QR-Code und großem Gerätecode |
+| Android | vorbereitet, noch nicht umgesetzt — `docs/android.md` |
+
+Angefordert wird genau ein Bereich: `https://www.googleapis.com/auth/drive.appdata`. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
+
+**Für den, der Nori baut**, sind die OAuth-Client-IDs Build-Einstellungen (`GOOGLE_CLIENT_ID` auf Apple, `VITE_NORI_GOOGLE_TV_CLIENT_ID` und `VITE_NORI_GOOGLE_TV_CLIENT_SECRET` auf webOS). Die Einrichtung steht in **[docs/google-drive-sync.md](docs/google-drive-sync.md)**, die Begründungen in **[docs/synchronisation.md](docs/synchronisation.md)**.
+
+`LibrarySyncProvider` — eine Datei ablegen, eine Datei holen — bleibt als Abstraktion im Core bestehen. Der Mehrgeräte-Abgleich benutzt daneben `LibrarySnapshotStore`; umgesetzt ist davon genau einer, `GoogleDriveSnapshotStore`.
 
 ## Kanonischer Contract
 
