@@ -1,10 +1,13 @@
 // Verlauf: zuletzt Gesehenes mit Fortschritt, direkt fortsetzbar.
 
-import { providerFromPath, progressPercent, formatClock } from "@nori/core";
+import {
+  providerFromPath, progressPercent, formatClock, type CatalogProvider,
+} from "@nori/core";
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PosterImage } from "../components/PosterImage";
+import { tmdb } from "../services/tmdb";
 import { EmptyState } from "../components/States";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotArea, SpotButton } from "../navigation/Spot";
@@ -73,17 +76,25 @@ export function HistoryPage() {
                 )}
               >
                 <span className="history-art">
+                  {/*
+                    Das Standbild der Folge, wenn TMDB es schon kennt — hier
+                    ohne Abruf: der Verlauf kann sechzig Einträge lang sein,
+                    und sechzig Suchen beim Öffnen einer Liste sind zu viel.
+                    Was auf der Detailseite geladen wurde, steht hier.
+                  */}
                   <PosterImage
                     slug={item.slug}
                     provider={provider}
                     title={item.title || item.slug}
+                    src={tmdb.cachedSeason(item.slug, provider, item.season)?.episodes[item.episode]?.still}
+                    passive
                   />
                 </span>
                 <span className="history-copy">
                   <strong>{item.title || item.slug}</strong>
                   <small>
                     Staffel {item.season} · Folge {item.episode}
-                    {item.germanTitle ? ` · ${item.germanTitle}` : ""}
+                    {episodeLabel(item.slug, provider, item.season, item.episode, item.germanTitle)}
                   </small>
                   <span className="history-progress">
                     <i style={{ width: `${percent}%` }} />
@@ -103,4 +114,23 @@ export function HistoryPage() {
       )}
     </div>
   );
+}
+
+/**
+ * Der Folgentitel hinter der Nummer.
+ *
+ * Die Quelle zuerst, TMDB als Lückenfüller: bei AniWorld heißt eine Folge oft
+ * nur „Folge 7", und dann ist der TMDB-Titel die einzige Auskunft. Umgekehrt
+ * nie — der Titel der Quelle ist der, unter dem die Folge dort läuft.
+ */
+function episodeLabel(
+  slug: string,
+  provider: CatalogProvider,
+  season: string,
+  episode: number,
+  germanTitle: string,
+): string {
+  if (germanTitle) return ` · ${germanTitle}`;
+  const fromTmdb = tmdb.cachedSeason(slug, provider, season)?.episodes[episode]?.title;
+  return fromTmdb ? ` · ${fromTmdb}` : "";
 }

@@ -94,6 +94,46 @@ export function SpotArea({ restrict = "self-first", children, ...rest }: SpotAre
 }
 
 /**
+ * Den Fokus in einen Bereich setzen und **nachprüfen, dass er dort ankam**.
+ *
+ * Das Nachprüfen ist der Punkt. Vorher wurde `Spotlight.focus(target)`
+ * einmal aufgerufen und der Versuch als erledigt betrachtet, sobald ein
+ * Element gefunden war. Spotlight nimmt den Fokus aber nicht immer an — ein
+ * Container, der im selben Bild erst eingehängt wurde, ist ihm noch nicht
+ * bekannt, und der Aufruf tut dann schlicht nichts. Auf dem Fernseher stand
+ * der Fokus danach weiter auf dem Knopf **hinter** dem Overlay: sichtbar war
+ * das Auswahlraster, bedient wurde die Seite darunter.
+ *
+ * Deshalb wird wiederholt, bis `document.activeElement` tatsächlich im Bereich
+ * liegt — und als letzter Ausweg `focus()` am Element selbst aufgerufen.
+ */
+export function focusWithin(
+  root: HTMLElement | null,
+  selector = ".spottable",
+  attempts = 20,
+): () => void {
+  let cancelled = false;
+  const tick = (left: number) => {
+    if (cancelled || !root) return;
+    if (root.contains(document.activeElement)) return;
+    const target = root.querySelector<HTMLElement>(selector)
+      ?? root.querySelector<HTMLElement>(".spottable");
+    if (target) {
+      Spotlight.focus(target);
+      // Wenn Spotlight nicht angesprungen ist: von Hand. Das ist kein
+      // Umgehen — Spotlight liest den Fokus des Dokuments und zieht nach.
+      if (!root.contains(document.activeElement)) target.focus();
+      if (root.contains(document.activeElement)) return;
+    }
+    if (left > 0) window.setTimeout(() => tick(left - 1), 50);
+  };
+  window.setTimeout(() => tick(attempts), 0);
+  return () => {
+    cancelled = true;
+  };
+}
+
+/**
  * Fokus beim Einhängen in diesen Bereich setzen — für Drawer, Modale und den
  * Player, wo der Fokus nicht dort bleiben darf, wo er vorher war.
  */
@@ -101,20 +141,7 @@ export function useAutoFocus(active: boolean, selector = ".spottable"): React.Re
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!active) return;
-    let cancelled = false;
-    const tick = (left: number) => {
-      if (cancelled || !ref.current) return;
-      const target = ref.current.querySelector<HTMLElement>(selector);
-      if (target) {
-        Spotlight.focus(target);
-        return;
-      }
-      if (left > 0) window.setTimeout(() => tick(left - 1), 50);
-    };
-    window.setTimeout(() => tick(10), 0);
-    return () => {
-      cancelled = true;
-    };
+    return focusWithin(ref.current, selector);
   }, [active, selector]);
   return ref;
 }

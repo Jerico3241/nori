@@ -14,16 +14,27 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { handleTmdb, seasonCountFor } from "./mock-tmdb.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = resolve(HERE, "..");
 const DIST = join(APP, "dist");
 const PORT = Number(process.env.NORI_MOCK_PORT ?? 8799);
 
+/*
+ * Die Titelliste ist nicht beliebig.
+ *
+ * Die ersten sind die, die der TMDB-Nachbau kennt — damit die Zuordnung
+ * tatsächlich geprüft wird und nicht nur der leere Fall. „Barakamon" und die
+ * übrigen kennt er **nicht**: ein Titel ohne TMDB-Eintrag muss ohne Bild und
+ * ohne Fehler dastehen, und dieser Fall gehört in denselben Lauf.
+ */
 const TITLES = [
-  "Frieren", "One Piece", "Vinland Saga", "Bocchi the Rock", "Steins Gate",
-  "Mushishi", "Monster", "Dexter", "Breaking Bad", "Dark", "Fringe", "The Wire",
-  "Chainsaw Man", "Jujutsu Kaisen", "Ranking of Kings", "Odd Taxi", "Pluto",
-  "Kaiji", "Hyouka", "Barakamon", "Sakamoto Days", "Dandadan", "Apothecary",
+  "Frieren", "One Piece", "Vinland Saga", "Jujutsu Kaisen", "Dandadan",
+  "Detektiv Conan", "Pluto", "Monster", "Dark", "Breaking Bad",
+  "Bocchi the Rock", "Steins Gate", "Mushishi", "Dexter", "Fringe", "The Wire",
+  "Chainsaw Man", "Ranking of Kings", "Odd Taxi",
+  "Kaiji", "Hyouka", "Barakamon", "Sakamoto Days", "Apothecary",
   "Blue Lock", "Oshi no Ko", "Spy Family", "Made in Abyss", "Dorohedoro",
 ];
 const GENRES = ["Action", "Drama", "Abenteuer", "Comedy", "Mystery", "K-Drama"];
@@ -47,6 +58,22 @@ function catalog(provider) {
 function series(provider, slug, season) {
   const active = season ?? "1";
   const prefix = provider === "aniworld" ? "/anime/stream" : "/serie";
+  // Staffelzahl wie im TMDB-Nachbau, mindestens zwei plus „Filme". Detektiv
+  // Conan bekommt damit dreißig — der Fall, für den es das Auswahlraster gibt.
+  const count = Math.max(2, seasonCountFor(slug));
+  const seasons = [
+    ...Array.from({ length: count }, (_, i) => ({ id: String(i + 1), label: `Staffel ${i + 1}` })),
+    { id: "filme", label: "Filme" },
+  ];
+  /*
+   * Folgentitel ohne eigenen Namen bei Staffel 2.
+   *
+   * Absicht: Bei AniWorld heißt eine Folge oft nur „Folge 7". Dann ist der
+   * TMDB-Titel die einzige Auskunft — und die Versatzerkennung hat nichts zum
+   * Vergleichen, muss also bei Nummer bleiben. Staffel 1 trägt dagegen echte
+   * Titel, damit der Versatz dort erkannt wird.
+   */
+  const named = active === "1";
   return {
     slug,
     title: slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -57,15 +84,11 @@ function series(provider, slug, season) {
     coverPath: "/cover.png",
     yearStart: "2021", yearEnd: "2024", fsk: "12", imdb: "tt1234567",
     genres: ["Action", "Drama"],
-    seasons: [
-      { id: "1", label: "Staffel 1" },
-      { id: "2", label: "Staffel 2" },
-      { id: "filme", label: "Filme" },
-    ],
+    seasons,
     activeSeason: active,
     episodes: Array.from({ length: 12 }, (_, i) => ({
       number: i + 1,
-      germanTitle: `Folge ${i + 1} — Der Anfang`,
+      germanTitle: named ? EPISODE_TITLES[i % EPISODE_TITLES.length] : `Folge ${i + 1}`,
       englishTitle: `Episode ${i + 1}`,
       path: `${prefix}/${slug}/staffel-${active}/episode-${i + 1}`,
       hosters: ["VOE", "Vidmoly"],
@@ -73,6 +96,14 @@ function series(provider, slug, season) {
     })),
   };
 }
+
+/** Dieselben Titel, die der TMDB-Nachbau führt — damit der Versatz auffällt. */
+const EPISODE_TITLES = [
+  "Das Ende der Reise", "Es hat sich nichts geändert", "Die Zauberin der Asche",
+  "Der Mann des Nordens", "Zwei Brüder im Kampf", "Dämmerung der Menschheit",
+  "Vergeltungsschlacht", "Der lange Weg zurück", "Was bleibt", "Die Prüfung",
+  "Ein Versprechen", "Der letzte Sommer",
+];
 
 function watch(path) {
   return {
@@ -166,7 +197,20 @@ createServer(async (req, res) => {
 
   if (parts[0] === "api") {
     switch (parts[1]) {
-      case "health": return json({ name: "nori-api", version: "mock" });
+      case "health":
+        return json({
+          name: "nori-api",
+          version: "mock",
+          providers: ["aniworld", "serienstream"],
+          features: { tmdb: true, tmdbCacheEntries: 0 },
+        });
+      case "tmdb": {
+        // Derselbe Weg wie beim echten Dienst: der Pfad dahinter ist der
+        // TMDB-Pfad, den Schlüssel hält der Server.
+        const body = handleTmdb(parts.slice(2).join("/"), url.searchParams);
+        if (!body) return json({ error: "TMDB-Pfad nicht freigegeben", kind: "notFound" }, 404);
+        return json(body);
+      }
       case "catalog": return json(catalog(parts[2]));
       case "series": return json(series(parts[2], decodeURIComponent(parts[3]), url.searchParams.get("season")));
       case "watch": return json(watch(url.searchParams.get("path")));
@@ -179,6 +223,18 @@ createServer(async (req, res) => {
         for await (const chunk of req) body += chunk;
         const parsed = JSON.parse(body || "{}");
         const pick = parsed.pick ?? { name: "VOE", lang: parsed.preferredLang ?? "DE" };
+        /*
+         * Ein Pfad mit „kaputt" liefert einen Hosterfehler.
+         *
+         * Dafür gibt es keinen anderen Weg: Der Fehlerzustand des Players ist
+         * der wichtigste Zustand überhaupt — ohne ihn bleibt auf dem Fernseher
+         * eine schwarze Fläche stehen, und die sieht aus wie ein Absturz. Er
+         * muss also in denselben Lauf, und dazu muss sich ein Fehlschlag
+         * bestellen lassen.
+         */
+        if (String(parsed.episodePath ?? "").includes("kaputt")) {
+          return json({ error: "Kein Hoster lieferte einen Stream.", kind: "hoster" }, 502);
+        }
         return json({
           kind: "mp4",
           url: `http://127.0.0.1:${PORT}/clip.wav`,

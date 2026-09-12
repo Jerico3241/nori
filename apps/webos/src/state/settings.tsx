@@ -9,6 +9,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from "react";
 import type { TransportMode } from "../services/gateway";
+import type { TmdbMode } from "../services/tmdb";
 import { warn } from "../services/log";
 
 const STORAGE_KEY = "nori.webos.settings";
@@ -22,7 +23,23 @@ export interface DeviceSettings {
   seekStep: number;
   /** Sekunden Countdown vor der nächsten Folge. */
   autoplayCountdown: number;
-  /** TMDB-Schlüssel für Backdrops und Folgenbilder; leer heißt: nur Quellcover. */
+  /**
+   * Woher die TMDB-Daten kommen.
+   *
+   *   „server"  — der Nori-Server hält den Schlüssel. Der empfohlene Weg: ein
+   *               Schlüssel statt einer je Gerät, ein Zwischenspeicher für
+   *               alle Fernseher, eine Ratenbegrenzung statt mehrerer.
+   *   „direct"  — dieser Fernseher fragt TMDB selbst. Ohne eingetragenen
+   *               Schlüssel mit dem mitgelieferten; einzurichten ist also
+   *               nichts.
+   *   „aus"     — keine TMDB-Daten. Ein gültiger Zustand: Nori zeigt dann die
+   *               Cover und Texte der Quellen. Nur, wenn jemand es wählt.
+   */
+  tmdbMode: TmdbMode;
+  /**
+   * Ein **eigener** Schlüssel für den direkten Weg. Leer heißt: der
+   * mitgelieferte aus dem Kern (`BUILT_IN_TMDB_KEY`) — nicht „kein TMDB".
+   */
   tmdbKey: string;
   /** Weiche Flächen kosten auf älteren Panels Bilder pro Sekunde. */
   reduceEffects: boolean;
@@ -35,6 +52,7 @@ const DEFAULTS: DeviceSettings = {
   controlsTimeout: 4,
   seekStep: 10,
   autoplayCountdown: 10,
+  tmdbMode: "server",
   tmdbKey: "",
   reduceEffects: false,
   debug: false,
@@ -53,7 +71,14 @@ function read(): DeviceSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<DeviceSettings>;
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    // Ein Stand von vor dem Serverweg kennt `tmdbMode` nicht. Wer dort einen
+    // eigenen Schlüssel eingetragen hat, meinte damit „dieser Fernseher" — die
+    // Voreinstellung „server" würde ihn stillschweigend übergehen.
+    if (parsed.tmdbMode === undefined) {
+      merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : DEFAULTS.tmdbMode;
+    }
+    return merged;
   } catch (cause) {
     warn("app", "Einstellungen nicht lesbar", cause);
     return DEFAULTS;

@@ -31,6 +31,41 @@ function stubEnactLess() {
 }
 
 /**
+ * Aus den Verweisen in `index.html` klassische Skript-Angaben machen.
+ *
+ * Zwei Änderungen, beide für `file://`:
+ *
+ * `type="module"` → `defer`. Das Bündel ist ein klassisches Skript, und ein
+ * Modul würde von einer `file://`-Seite ohnehin nicht laden (siehe unten bei
+ * `format: "iife"`).
+ *
+ * `crossorigin` weg.
+ *
+ * Vite setzt es an jedes Skript und jedes Stylesheet. Über HTTP ist das
+ * harmlos; von `file://` geladen macht es aus einem gleichartigen Abruf einen
+ * mit Herkunftsprüfung — und die scheitert dort, weil eine `file://`-Seite die
+ * Herkunft `null` hat. Auf dem Fernseher wäre das ein schwarzer Bildschirm
+ * ohne Fehlermeldung.
+ *
+ * Für den Entwicklungsstand über HTTP ändert das Entfernen nichts: Dateien aus
+ * demselben Ursprung brauchen keine Herkunftsprüfung.
+ */
+function classicScriptTags() {
+  return {
+    name: "nori-classic-script-tags",
+    transformIndexHtml(html: string) {
+      return html
+        // Das Bündel ist ein klassisches Skript (`format: "iife"`), kein
+        // Modul. `defer` statt `type="module"`, weil ein klassisches Skript im
+        // Kopf sonst vor dem `<body>` läuft — und `getElementById("root")`
+        // dann `null` liefert.
+        .replace(/\s+type="module"/g, " defer")
+        .replace(/\s+crossorigin(="[^"]*")?/g, "");
+    },
+  };
+}
+
+/**
  * `appinfo.json` gehört neben `package.json`, nicht nach `public/`: es
  * beschreibt das Paket, nicht die Webseite. In den Bauordner muss es trotzdem,
  * weil webOS es dort erwartet.
@@ -46,20 +81,45 @@ function copyAppInfo() {
 
 export default defineConfig(({ command }) => ({
   base: "./",
-  plugins: [stubEnactLess(), react(), copyAppInfo()],
+  plugins: [stubEnactLess(), react(), classicScriptTags(), copyAppInfo()],
   build: {
     target: ["chrome79"],
     outDir: "dist",
     assetsDir: "assets",
     sourcemap: false,
-    chunkSizeWarningLimit: 800,
+    chunkSizeWarningLimit: 1600,
+    /*
+     * Ein klassisches Bündel, kein ES-Modul.
+     *
+     * Das ist die wichtigste Bauentscheidung dieser Datei. Ein webOS-Paket
+     * wird von `file:///usr/palm/applications/tv.nori.app/index.html` geladen,
+     * und Chromium lädt von dort **keine** ES-Module: ein
+     * `<script type="module" src="./assets/index.js">` scheitert an der
+     * Herkunftsprüfung, weil eine `file://`-Seite die Herkunft `null` hat. Auf
+     * dem Fernseher bliebe der Bildschirm schwarz — ohne Fehlermeldung, weil
+     * das Skript nie läuft, das die Fehler melden würde.
+     *
+     * `iife` erzeugt stattdessen ein einziges klassisches Skript. Das kostet
+     * die aufgeteilten Bündel (React, Spotlight und hls.js liegen dann mit
+     * drin), und das ist hier kein Verlust: Die Dateien liegen auf dem Gerät,
+     * nicht im Netz — es gibt keine Übertragung, die sich parallelisieren
+     * ließe. `modulePreload` entfällt aus demselben Grund.
+     */
+    modulePreload: false,
+    /*
+     * Eine CSS-Datei statt CSS im Skript.
+     *
+     * Bei einem einzigen Bündel legt Vite die Stile sonst **in** das Skript
+     * und setzt sie zur Laufzeit. Der Startbildschirm in `index.html` ist aber
+     * genau für den Moment davor da: bis das Skript läuft, sähe der Fernseher
+     * einen unformatierten Absatz auf Weiß statt des Nori-Symbols auf
+     * Fastschwarz.
+     */
+    cssCodeSplit: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ["react", "react-dom", "react-router-dom"],
-          spotlight: ["@enact/spotlight"],
-          hls: ["hls.js"],
-        },
+        format: "iife",
+        inlineDynamicImports: true,
       },
     },
   },

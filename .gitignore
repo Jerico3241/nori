@@ -10,6 +10,7 @@ __pycache__/
 *.iml
 
 # Xcode
+native/*/build/
 xcuserdata/
 DerivedData/
 *.xcuserstate
@@ -45,7 +46,10 @@ Nori.exe
 # webOS (apps/webos)
 *.ipk
 apps/webos/dist/
+apps/webos/test-shots/
 shared/nori-core/dist/
+services/nori-api/dist/
+services/nori-api/dist-test/
 
 # Ausgabeordner von `xcodebuild`.
 #

@@ -45,16 +45,59 @@ export function restoreFocus(route: string, areas: string[]): boolean {
     const node = document.querySelector<HTMLElement>(selector);
     if (node && isVisible(node)) {
       log("focus", "wiederhergestellt", route, area, key);
-      Spotlight.focus(node);
-      return true;
+      return takeFocus(node);
     }
   }
-  const first = document.querySelector<HTMLElement>(".spottable");
-  if (first && isVisible(first)) {
-    Spotlight.focus(first);
-    return true;
-  }
+  const first = firstSpottable();
+  if (first) return takeFocus(first);
   return false;
+}
+
+/**
+ * Fokus setzen und **nachprüfen, dass er angekommen ist**.
+ *
+ * `Spotlight.focus` nimmt ihn nicht immer an: Ein Container, der im selben
+ * Bild neu eingehängt wurde, ist Spotlight noch nicht bekannt, und der Aufruf
+ * tut dann schlicht nichts — ohne es zu sagen. Genau das trat auf, als ein
+ * Katalogabruf mitten im Betrieb wegfiel: die Reihen wurden neu gezeichnet,
+ * der Fokus lag danach auf `body`, und der Fernseher reagierte auf keine
+ * Taste mehr.
+ *
+ * `element.focus()` als Rückfall ist kein Umgehen von Spotlight — es liest den
+ * Fokus des Dokuments und zieht nach.
+ */
+function takeFocus(node: HTMLElement): boolean {
+  Spotlight.focus(node);
+  if (document.activeElement === node) return true;
+  node.focus();
+  return document.activeElement === node;
+}
+
+/**
+ * Das erste sinnvoll fokussierbare Element — Inhalt vor Rahmen.
+ *
+ * Der Unterschied ist bei jedem Kaltstart zu sehen: Die Seitenleiste steht im
+ * Dokument vor dem Inhalt, und ein `querySelector(".spottable")` fand deshalb
+ * immer sie. Nori begann also mit fokussierter Seitenleiste — die klappt bei
+ * Fokus auf und verdeckte den halben Kopfbereich, bevor überhaupt eine Taste
+ * gedrückt war. Auf einem Fernseher ist der erste Bildschirm aber das, was man
+ * am längsten ansieht.
+ *
+ * Deshalb zuerst im Hauptbereich suchen und nur dann im ganzen Dokument. Die
+ * Seitenleiste bleibt über „links" erreichbar, sie ist nur nicht mehr der
+ * Anfang.
+ */
+function firstSpottable(): HTMLElement | null {
+  const roots: ParentNode[] = [];
+  const main = document.querySelector(".app-main");
+  if (main) roots.push(main);
+  roots.push(document);
+  for (const root of roots) {
+    for (const node of Array.from(root.querySelectorAll<HTMLElement>(".spottable"))) {
+      if (isVisible(node)) return node;
+    }
+  }
+  return null;
 }
 
 /**
@@ -82,14 +125,16 @@ export function restoreFocusSoon(route: string, areas: string[], attempts = 12):
 
 /** Nichts fokussiert? Dann irgendetwas Sichtbares fokussieren. */
 export function ensureFocus(): void {
-  const current = Spotlight.getCurrent();
-  if (current && document.contains(current) && isVisible(current)) return;
-  const candidates = Array.from(document.querySelectorAll<HTMLElement>(".spottable"));
-  const target = candidates.find(isVisible);
-  if (target) {
-    log("focus", "Notfokus gesetzt");
-    Spotlight.focus(target);
+  const current = document.activeElement;
+  if (current instanceof HTMLElement
+    && current !== document.body
+    && document.contains(current)
+    && isVisible(current)) {
+    return;
   }
+  const target = firstSpottable();
+  if (!target) return;
+  if (takeFocus(target)) log("focus", "Notfokus gesetzt");
 }
 
 function isVisible(node: HTMLElement): boolean {

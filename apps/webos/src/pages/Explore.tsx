@@ -8,6 +8,7 @@ import { scopeIncludesItem, type CatalogItem } from "@nori/core";
 import { useEffect, useMemo, useState } from "react";
 
 import { MediaCard } from "../components/MediaCard";
+import { covers } from "../services/covers";
 import { ScopeTabs } from "../components/ScopeTabs";
 import { EmptyState, ErrorState, GridSkeleton } from "../components/States";
 import { restoreFocusSoon } from "../navigation/focusMemory";
@@ -142,17 +143,7 @@ export function ExplorePage() {
           </p>
           <SpotArea className="media-grid" spotlightId={`explore-grid-${page}`}>
             {visible.map((item, index) => (
-              <MediaCard
-                key={`${item.provider}|${item.slug}`}
-                slug={item.slug}
-                title={item.title}
-                provider={item.provider ?? "aniworld"}
-                subtitle={item.genres[0] ?? undefined}
-                focusRoute={ROUTE}
-                focusArea="grid"
-                focusKey={`grid-${item.provider}-${item.slug}`}
-                eager={index < 12}
-              />
+              <CatalogCard key={`${item.provider}|${item.slug}`} item={item} index={index} />
             ))}
           </SpotArea>
           {pages > 1 ? (
@@ -183,5 +174,33 @@ export function ExplorePage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Eine Katalogkachel.
+ *
+ * `alts` gehen mit an die Kachel: Sie entscheiden über den TMDB-Treffer.
+ * AniWorld führt „Dämonenjäger", TMDB „Demon Slayer" — verbunden sind die
+ * beiden allein über den Alternativtitel, und ohne ihn bliebe die Kachel beim
+ * kleinen Quellcover.
+ */
+function CatalogCard({ item, index }: { item: CatalogItem; index: number }) {
+  const provider = item.provider ?? "aniworld";
+  const details = covers.details(item.slug, provider);
+  return (
+    <MediaCard
+      slug={item.slug}
+      title={item.title}
+      provider={provider}
+      alts={item.alts}
+      subtitle={item.genres[0] ?? undefined}
+      rating={details.rating}
+      votes={details.votes}
+      focusRoute={ROUTE}
+      focusArea="grid"
+      focusKey={`grid-${provider}-${item.slug}`}
+      eager={index < 12}
+    />
   );
 }

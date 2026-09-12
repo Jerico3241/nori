@@ -9,10 +9,11 @@
 // ohnehin schon im Speicher, und eine Anfrage je Tastendruck wäre auf einem
 // Fernseher spürbar langsamer als eine Filterung von zwanzigtausend Titeln.
 
-import { scopeIncludesItem, type CatalogItem } from "@nori/core";
+import { normalizeTitle, scopeIncludesItem, type CatalogItem } from "@nori/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { MediaCard } from "../components/MediaCard";
+import { covers } from "../services/covers";
 import { ScopeTabs } from "../components/ScopeTabs";
 import { EmptyState, GridSkeleton } from "../components/States";
 import { useDebounced } from "../hooks/useDebounced";
@@ -41,17 +42,22 @@ export function SearchPage() {
   }, []);
 
   const results = useMemo(() => {
-    const needle = debounced.trim().toLowerCase();
+    // `normalizeTitle` aus dem Kern statt `toLowerCase`: Es faltet zusätzlich
+    // Akzente, Umlaute, Breitschrift und Satzzeichen. Das ist auf einem
+    // Fernseher der Unterschied zwischen „findet den Titel" und „findet ihn
+    // nicht" — die Bildschirmtastatur hat kein Ä, und „Damonenjager" muss
+    // „Dämonenjäger" treffen.
+    const needle = normalizeTitle(debounced.trim());
     if (needle.length < 2) return [] as CatalogItem[];
     const scored: { item: CatalogItem; score: number }[] = [];
     for (const item of catalog.items) {
       if (!scopeIncludesItem(state.scope, item)) continue;
-      const title = item.title.toLowerCase();
+      const title = normalizeTitle(item.title);
       let score = -1;
       if (title === needle) score = 0;
       else if (title.startsWith(needle)) score = 1;
       else if (title.includes(needle)) score = 2;
-      else if (item.alts.some((alt) => alt.toLowerCase().includes(needle))) score = 3;
+      else if (item.alts.some((alt) => normalizeTitle(alt).includes(needle))) score = 3;
       if (score < 0) continue;
       scored.push({ item, score });
       if (scored.length > 600) break;
@@ -149,21 +155,32 @@ export function SearchPage() {
           <p className="result-count">{results.length} Treffer für „{debounced}“</p>
           <SpotArea className="media-grid" spotlightId="search-results">
             {results.map((item, index) => (
-              <MediaCard
-                key={`${item.provider}|${item.slug}`}
-                slug={item.slug}
-                title={item.title}
-                provider={item.provider ?? "aniworld"}
-                subtitle={item.genres[0] ?? undefined}
-                focusRoute={ROUTE}
-                focusArea="results"
-                focusKey={`result-${item.provider}-${item.slug}`}
-                eager={index < 12}
-              />
+              <ResultCard key={`${item.provider}|${item.slug}`} item={item} index={index} />
             ))}
           </SpotArea>
         </>
       )}
     </div>
+  );
+}
+
+/** Ein Treffer. `alts` gehen mit — sie entscheiden über den TMDB-Treffer. */
+function ResultCard({ item, index }: { item: CatalogItem; index: number }) {
+  const provider = item.provider ?? "aniworld";
+  const details = covers.details(item.slug, provider);
+  return (
+    <MediaCard
+      slug={item.slug}
+      title={item.title}
+      provider={provider}
+      alts={item.alts}
+      subtitle={item.genres[0] ?? undefined}
+      rating={details.rating}
+      votes={details.votes}
+      focusRoute={ROUTE}
+      focusArea="results"
+      focusKey={`result-${provider}-${item.slug}`}
+      eager={index < 12}
+    />
   );
 }

@@ -84,7 +84,7 @@
     }
   },
   "tmdb": {
-    "note": "Gilt für beide Kerne: native/NoriCore/Sources/NoriCore/TMDB*.swift und shared/nori-core/src/tmdb.ts. Die Testreihen benutzen absichtlich dieselben Fälle.",
+    "note": "Gilt für beide Kerne: native/NoriCore/Sources/NoriCore/TMDB*.swift und shared/nori-core/src/tmdb/. Die Testreihen benutzen absichtlich dieselben Fälle.",
     "imageHost": "https://image.tmdb.org/t/p/",
     "imageSizes": {
       "posterThumb": "w185",

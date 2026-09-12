@@ -13,7 +13,11 @@
     "webos:install": "npm --prefix apps/webos run webos:install",
     "webos:launch": "npm --prefix apps/webos run webos:launch",
     "webos:inspect": "npm --prefix apps/webos run webos:inspect",
+    "webos:mock": "npm --prefix apps/webos run mock",
+    "webos:test": "npm --prefix apps/webos run test:tv",
+    "webos:check": "python3 tools/check-webos-package.py",
     "api": "npm --prefix services/nori-api run dev",
-    "core:test": "npm --prefix shared/nori-core test"
+    "core:test": "npm --prefix shared/nori-core test",
+    "api:test": "npm --prefix services/nori-api test"
   }
 }

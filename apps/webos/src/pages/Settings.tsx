@@ -2,18 +2,32 @@
 //
 // Aufgeteilt nach dem, was sie betreffen: Wiedergabe und Sprache gehören zum
 // gemeinsamen Nori-Datenmodell und stehen damit auch auf iPhone und Mac;
-// Verbindung und Bild betreffen nur diesen Fernseher.
+// Verbindung, TMDB und Bild betreffen nur diesen Fernseher.
+//
+// Jede Eingabe ist eine Knopfreihe, kein Auswahlfeld — ein Dropdown lässt sich
+// mit einer Fernbedienung nur mit Mühe bedienen, weil es den Fokus in eine
+// Liste entführt, die man nicht sieht. Die beiden Textfelder (Serveradresse,
+// eigener TMDB-Schlüssel) sind die Ausnahme; dort öffnet webOS seine eigene
+// Tastatur. Beide sind optional: Nori bringt einen TMDB-Schlüssel mit, und
+// ohne Server arbeitet der Fernseher direkt an den Quellen.
 
 import { LIBRARY_SCHEMA_VERSION, PLAYBACK_SPEEDS, type CatalogProvider } from "@nori/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotArea, SpotButton } from "../navigation/Spot";
-import { pingServer } from "../services/gateway";
+import { pingServer, type ServerInfo } from "../services/gateway";
 import { covers } from "../services/covers";
+import { tmdb, type TmdbMode } from "../services/tmdb";
+import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
 import { syncStatusLabel, useSync } from "../state/sync";
 import { useSettings } from "../state/settings";
+
+/** „1 Folge", „2 Folgen". Eine Zahl mit falschem Plural liest sich wie ein Fehler. */
+function folgen(count: number): string {
+  return count === 1 ? "1 Folge" : `${count} Folgen`;
+}
 
 const ROUTE = "settings";
 const LANGS: { value: string; label: string }[] = [
@@ -22,14 +36,34 @@ const LANGS: { value: string; label: string }[] = [
   { value: "EN", label: "Englisch" },
 ];
 const HOSTERS = ["VOE", "Vidmoly", "Vidoza", "Lulustream", "Speedfiles", "Filemoon", "Doodstream"];
+const TMDB_MODES: { value: TmdbMode; label: string }[] = [
+  { value: "server", label: "Über den Nori-Server" },
+  { value: "direct", label: "Dieser Fernseher" },
+  { value: "off", label: "Aus" },
+];
+
+/** Die Befunde des TMDB-Clients als deutsche Sätze. */
+const STATUS_TEXT: Record<string, string> = {
+  ok: "antwortet",
+  noKey: "nicht eingerichtet",
+  unauthorized: "Schlüssel abgelehnt (401/403)",
+  notFound: "Eintrag dort nicht vorhanden (404)",
+  rateLimited: "zu viele Anfragen (429) — Nori wartet",
+  unavailable: "nicht erreichbar",
+};
 
 export function SettingsPage() {
   const { settings, update, reset } = useSettings();
+  const { tmdbRoute } = useData();
   const library = useLibrary();
   const sync = useSync();
   const [serverDraft, setServerDraft] = useState(settings.serverUrl);
   const [ping, setPing] = useState<string | null>(null);
+  const [server, setServer] = useState<ServerInfo | null>(null);
   const [tmdbDraft, setTmdbDraft] = useState(settings.tmdbKey);
+  const [dataNote, setDataNote] = useState<string | null>(null);
+  // Hochgezählt, damit die Diagnosezeile nach dem Leeren neu gelesen wird.
+  const [tick, setTick] = useState(0);
   const [clientIdDraft, setClientIdDraft] = useState("");
   const [clientSecretDraft, setClientSecretDraft] = useState("");
   const [credentialsNote, setCredentialsNote] = useState<string | null>(null);
@@ -39,13 +73,24 @@ export function SettingsPage() {
   const testServer = useCallback(async () => {
     setPing("wird geprüft …");
     try {
-      const version = await pingServer(serverDraft);
+      const info = await pingServer(serverDraft);
       update({ serverUrl: serverDraft, transport: "server" });
-      setPing(`erreichbar (Version ${version})`);
+      setServer(info);
+      setPing(
+        `erreichbar (Version ${info.version})`
+        + (info.tmdb
+          ? ` · TMDB mit ${info.tmdbKey === "own" ? "eigenem" : "mitgeliefertem"} Schlüssel, `
+            + `${info.tmdbCacheEntries} Antworten gespeichert`
+          : " · ohne TMDB"),
+      );
     } catch (cause) {
+      setServer(null);
       setPing((cause as Error)?.message ?? "nicht erreichbar");
     }
   }, [serverDraft, update]);
+
+  const diagnostics = tmdb.diagnostics();
+  void tick;
 
   return (
     <div className="page settings">
@@ -199,6 +244,14 @@ export function SettingsPage() {
               Direkt vom Fernseher
             </SpotButton>
           </SpotArea>
+          {settings.transport === "direct" ? (
+            <p className="field-note">
+              Direkt heißt: der Fernseher ruft AniWorld und Serienstream selbst ab. Das
+              kommt ohne Einrichtung aus, hängt aber davon ab, dass webOS der App fremde
+              Abrufe erlaubt und der Hoster ohne Referer ausliefert — ein Rückfall, kein
+              Ersatz.
+            </p>
+          ) : null}
         </Row>
 
         <Row label="Serveradresse" hint="Zum Beispiel http://192.168.1.20:8730">
@@ -246,38 +299,127 @@ export function SettingsPage() {
 
       <section className="settings-section">
         <header>
-          <h2>Bild und Leistung</h2>
+          <h2>TMDB</h2>
           <p>
-            Ohne TMDB-Schlüssel zeigt Nori die Cover von AniWorld und Serienstream.
-            Das ist ein gültiger Zustand, kein Fehler.
+            TMDB liefert Poster, Hintergrundbilder, Schriftzüge, Beschreibungen,
+            Bewertungen, Folgentitel und Folgenbilder — und die Signale, aus denen
+            „Neu &amp; beliebt" und „Für dich" entstehen. Ein Schlüssel ist
+            mitgeliefert; hier ist nichts einzurichten. Wer einen eigenen einträgt,
+            benutzt seinen eigenen — das trennt die Ratenbegrenzung von der
+            geteilten Kennung.
           </p>
         </header>
 
-        <Row label="TMDB-Schlüssel" hint="Optional. Liefert Hintergrundbilder für Startseite und Detailseite.">
-          <div className="field-row">
-            <input
-              className="spottable"
-              type="password"
-              value={tmdbDraft}
-              placeholder="leer lassen für Quellcover"
-              aria-label="TMDB-Schlüssel"
-              onChange={(event) => setTmdbDraft(event.target.value)}
-              onBlur={() => update({ tmdbKey: tmdbDraft })}
-            />
+        <Row
+          label="Woher die Daten kommen"
+          hint="Über den Server gilt der Zwischenspeicher für alle Geräte gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Fernseher ausgeschöpft."
+        >
+          <SpotArea className="chip-grid" spotlightId="set-tmdb-mode">
+            {TMDB_MODES.map((mode) => (
+              <SpotButton
+                key={mode.value}
+                className={settings.tmdbMode === mode.value ? "selected" : ""}
+                aria-pressed={settings.tmdbMode === mode.value}
+                focusRoute={ROUTE}
+                focusArea="images"
+                focusKey={`tmdb-${mode.value}`}
+                onClick={() => update({ tmdbMode: mode.value })}
+              >
+                {mode.label}
+              </SpotButton>
+            ))}
+          </SpotArea>
+          {tmdbRoute.note ? <p className="field-note">{tmdbRoute.note}</p> : null}
+          {settings.tmdbMode === "server" && server && !server.tmdb ? (
+            <p className="field-note">
+              Der geprüfte Server kann kein TMDB. Auf dem Server
+              <code> NORI_TMDB_KEY</code> setzen — oder hier „Dieser Fernseher" wählen.
+            </p>
+          ) : null}
+        </Row>
+
+        {settings.tmdbMode === "direct" ? (
+          <Row
+            label="Eigener TMDB-Schlüssel"
+            hint="Optional. Leer heißt: der mitgelieferte Schlüssel. Ein eigener v3-Schlüssel von themoviedb.org bleibt auf diesem Fernseher."
+          >
+            <div className="field-row">
+              <input
+                className="spottable"
+                type="password"
+                value={tmdbDraft}
+                placeholder="leer lassen für den mitgelieferten"
+                aria-label="Eigener TMDB-Schlüssel"
+                onChange={(event) => setTmdbDraft(event.target.value)}
+                onBlur={() => update({ tmdbKey: tmdbDraft })}
+              />
+              {tmdbDraft ? (
+                <SpotButton
+                  focusRoute={ROUTE}
+                  focusArea="images"
+                  focusKey="tmdb-key-clear"
+                  onClick={() => {
+                    setTmdbDraft("");
+                    update({ tmdbKey: "" });
+                  }}
+                >
+                  Löschen
+                </SpotButton>
+              ) : null}
+            </div>
+          </Row>
+        ) : null}
+
+        <Row label="Zustand" hint="Was Nori bisher zuordnen konnte. Hilft, wenn ein Titel das falsche Bild zeigt.">
+          <p className="field-note">
+            {diagnostics.available
+              ? `Weg: ${tmdbRoute.effective === "server"
+                ? "Nori-Server"
+                : `dieser Fernseher, ${diagnostics.keyOrigin === "own" ? "eigener" : "mitgelieferter"} Schlüssel`}`
+              : "Weg: aus"}
+            {diagnostics.lastStatus
+              ? ` · TMDB ${STATUS_TEXT[diagnostics.lastStatus] ?? diagnostics.lastStatus}`
+              : ""}
+            {` · ${diagnostics.titles} Titel zugeordnet`}
+            {diagnostics.viaAlternates > 0 ? ` (${diagnostics.viaAlternates} über Alternativtitel)` : ""}
+            {` · ${diagnostics.seasons} Staffeln · ${diagnostics.misses} ohne Treffer`}
+          </p>
+          <SpotArea className="filter-row" spotlightId="set-tmdb-cache">
+            <SpotButton
+              focusRoute={ROUTE}
+              focusArea="images"
+              focusKey="tmdb-retry"
+              onClick={() => {
+                tmdb.retryMisses();
+                setTick((value) => value + 1);
+              }}
+            >
+              Erneut nach fehlenden suchen
+            </SpotButton>
             <SpotButton
               focusRoute={ROUTE}
               focusArea="images"
               focusKey="covers-clear"
-              onClick={() => covers.clear()}
+              onClick={() => {
+                covers.clear();
+                setTick((value) => value + 1);
+              }}
             >
               Bildspeicher leeren
             </SpotButton>
-          </div>
+          </SpotArea>
         </Row>
+      </section>
+
+      <section className="settings-section">
+        <header>
+          <h2>Bild und Leistung</h2>
+          <p>Was auf älteren Panels Bilder pro Sekunde kostet, lässt sich hier abschalten.</p>
+        </header>
 
         <Toggle
           label="Weiche Flächen reduzieren"
-          hint="Weniger Unschärfe und Schatten. Auf älteren Panels merklich flüssiger."
+          hint="Weniger Unschärfe, Schatten und Bewegung. Auf älteren Panels merklich flüssiger."
           value={settings.reduceEffects}
           focusKey="effects"
           onChange={(value) => update({ reduceEffects: value })}
@@ -285,7 +427,7 @@ export function SettingsPage() {
 
         <Toggle
           label="Diagnoseprotokoll"
-          hint="Schreibt Navigation, Auflösung und Wiedergabe mit [Nori:webOS] in die Konsole."
+          hint="Schreibt Navigation, Auflösung, TMDB und Wiedergabe mit [Nori:webOS] in die Konsole."
           value={settings.debug}
           focusKey="debug"
           onChange={(value) => update({ debug: value })}
@@ -448,11 +590,13 @@ export function SettingsPage() {
             focusArea="data"
             focusKey="export"
             onClick={() => {
-              // Kein Download: der Fernseher hat keinen Dateimanager. Der Stand
-              // landet in der Konsole, wo ihn der Web-Inspector abholen kann.
+              // Kein Download: der Fernseher hat keinen Dateimanager, und
+              // webOS blockt einen Download aus einer `file://`-App ohnehin.
+              // Der Stand landet in der Konsole, wo ihn der Web-Inspector
+              // abholen kann.
               // eslint-disable-next-line no-console
               console.log("[Nori:webOS] library.json\n", library.exportJSON());
-              window.alert("Der Bibliotheksstand steht im Web-Inspector-Protokoll.");
+              setDataNote("Der Bibliotheksstand steht im Web-Inspector-Protokoll.");
             }}
           >
             Bibliothek ausgeben
@@ -460,8 +604,34 @@ export function SettingsPage() {
           <SpotButton
             focusRoute={ROUTE}
             focusArea="data"
+            focusKey="import"
+            onClick={() => {
+              // `prompt` ist auf webOS die einzige Eingabe, die ohne eigene
+              // Tastatur auskommt — und ein eingelesener Stand wird
+              // zusammengeführt, nie ersetzt.
+              const raw = window.prompt("Bibliothek einlesen (JSON einfügen)");
+              if (!raw) return;
+              try {
+                const result = library.importJSON(raw);
+                setDataNote(
+                  `Zusammengeführt: ${result.favorites} auf der Merkliste, `
+                  + `${folgen(result.progress)} mit Fortschritt. Nichts wurde gelöscht.`,
+                );
+              } catch (cause) {
+                setDataNote(`Nicht lesbar: ${(cause as Error)?.message ?? "ungültiges JSON"}`);
+              }
+            }}
+          >
+            Bibliothek einlesen
+          </SpotButton>
+          <SpotButton
+            focusRoute={ROUTE}
+            focusArea="data"
             focusKey="clear-history"
-            onClick={() => library.clearHistory()}
+            onClick={() => {
+              library.clearHistory();
+              setDataNote("Verlauf geleert. Fortschritt und Merkliste bleiben.");
+            }}
           >
             Verlauf leeren
           </SpotButton>
@@ -469,14 +639,24 @@ export function SettingsPage() {
             focusRoute={ROUTE}
             focusArea="data"
             focusKey="reset"
-            onClick={() => reset()}
+            onClick={() => {
+              reset();
+              setDataNote("Geräteeinstellungen zurückgesetzt. Die Bibliothek ist unberührt.");
+            }}
           >
             Geräteeinstellungen zurücksetzen
           </SpotButton>
         </SpotArea>
+        {dataNote ? <p className="field-note">{dataNote}</p> : null}
         <p className="field-note">
           Bibliotheksschema v{LIBRARY_SCHEMA_VERSION} · {library.state.favorites.length} auf der
-          Merkliste · {Object.keys(library.state.progress).length} Folgen mit Fortschritt
+          Merkliste · {folgen(Object.keys(library.state.progress).length)} mit Fortschritt
+        </p>
+        <p className="field-note">
+          Ohne Google Drive bleibt die Bibliothek im Speicher dieses Fernsehers. Das
+          Format ist dasselbe wie in der <code>library.json</code> von iPhone und Mac —
+          ein Stand lässt sich also auch von Hand übernehmen, und beim Einlesen wird
+          zusammengeführt statt ersetzt.
         </p>
       </section>
     </div>

@@ -5,7 +5,340 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.15.0**, iOS/iPadOS **1.20.0**,
-Windows **1.8.0**, LG webOS **1.0.0**.
+Windows **1.8.0**, LG webOS **1.3.0**.
+
+## [webOS 1.3.0] — 2026-09-12
+
+Die Zusammenführung von 1.2.0 mit dem Stand auf `main`. Beide Seiten hatten
+gleichzeitig an TMDB gearbeitet, und `main` hat dabei den Abgleich über Google
+Drive und Bibliotheksschema v6 bekommen. Eine neue Nummer, weil ein anderes
+Paket entsteht: derselbe Stand unter derselben Version wäre der Fehler, den man
+auf einem Fernseher nicht mehr auseinanderhalten kann.
+
+### Hinzugefügt
+
+- **Abgleich über Google Drive** auf dem Fernseher — aus `main` übernommen,
+  mitsamt Anmeldung über den Gerätecode (die Fernbedienung tippt keine
+  Zugangsdaten) und Bibliotheksschema **v6** mit Löschmarken. Was daran geprüft
+  ist und was nicht, steht unten.
+
+### Geändert
+
+- **Eine TMDB-Fassung statt zweier.** `main` hatte `shared/nori-core/src/tmdb.ts`
+  bekommen, dieser Zweig `shared/nori-core/src/tmdb/`. Geblieben ist das
+  Verzeichnis; aus der Einzeldatei sind die Teile übernommen, die dort besser
+  waren:
+  - „The Final Season" räumt nicht mehr zu „… the" ab — der bestimmte Artikel
+    gehört **in** den Ausdruck und nicht in eine zweite Zeile danach.
+  - Ein Logo **ohne** Sprachkennzeichen steht jetzt vor einem fremdsprachigen
+    statt mit ihm auf einer Stufe, und bei gleicher Bewertung entscheidet
+    `vote_count`.
+  - Eine bereits vollständige Bildadresse wird nicht noch einmal
+    zusammengesetzt.
+  - Fehlschläge haben zwei Fristen statt einer: **HTTP 404** gilt vierzehn
+    Tage, „gesucht und nichts über der Titelschwelle" nur zwölf Stunden. TMDB
+    wächst, und gerade bei frischen Anime kommt der Eintrag Tage später.
+    Ratenbegrenzung und abgelehnter Schlüssel gelten wie vorher überhaupt nicht
+    als Fehlschlag.
+- **Die Staffelzuordnung folgt jetzt buchstäblich dem Contract.** Sie hatte
+  einen Versatz schon bei **zwei** übereinstimmenden Folgentiteln übernommen,
+  während `config/contract.json` und `TMDBSeasonMap` auf der Swift-Seite drei
+  verlangen, dazu die Hälfte der benennbaren Quellfolgen und keinen zweiten
+  gleich gut belegten Versatz. Jetzt gilt dieselbe Regel in beiden Kernen —
+  drei neue Testfälle grenzen sie ab. Das ist die strengere Fassung: lieber
+  keine Folgendaten als die der falschen Folge.
+- **„Bibliothek einlesen" benutzt `mergeLibrarySnapshots`**, also dieselbe
+  Regel wie der Geräteabgleich, statt einer eigenen. Von Hand eingelesen und
+  über Drive abgeglichen führen damit nicht zu zwei verschiedenen Ergebnissen.
+  Die eigene Gerätekennung bleibt dabei die dieser Installation — übernähme der
+  Fernseher die des Geräts, von dem der Stand stammt, schrieben beide in
+  dieselbe Drive-Datei.
+- **Die Ablage der TMDB-Angaben auf dem Fernseher ist v3.** v2-Stände werden
+  verworfen, weil die Fehlschläge dort keine Frist mittragen. Kostet einmal
+  Nachladen, keine Daten.
+
+### Behoben
+
+- **Aussagen über den Geräteabgleich, die nicht mehr stimmten.** Einstellungen,
+  `docs/webos.md` und der CHANGELOG behaupteten „ein Abgleich zwischen Geräten
+  ist auf keiner Plattform gebaut". Das war vor der Zusammenführung richtig und
+  danach falsch.
+
+### Geprüft
+
+- **Automatisch:** 165 Testfälle im Kern (davon die TMDB-Zuordnung,
+  Staffelversätze, Ranglisten und der Schlüssel), 13 am Nori-Server, 130 Prüfungen
+  im Fernbedienungslauf gegen einen nachgebauten Server — einschließlich Start
+  von `file://`, dem Rückfall für fehlendes Flex-`gap` und der Ablage nach
+  Schema v6.
+- **Nicht geprüft:** der Abgleich über ein echtes Google-Konto und zwei echte
+  Geräte. Die Zusammenführungsregel selbst ist es — in beiden Kernen gegen
+  `config/sync-fixtures.json`. Und wie immer: kein Lauf auf einem echten
+  webOS-Gerät.
+
+## [webOS 1.2.0] — 2026-09-12
+
+Nachtrag zu 1.1.0. Dort war TMDB vollständig eingebaut, aber **einzurichten**:
+Wer keinen Nori-Server und keinen eigenen Schlüssel hatte, sah die kleinen
+Cover der Quellen. Auf einem Fernseher ist das derselbe Zustand wie „geht
+nicht" — dort gibt es keine Tastatur, und einen 32-stelligen Hex-Schlüssel mit
+einer Fernbedienung über eine Bildschirmtastatur einzugeben, macht niemand.
+
+Die Apple-Apps haben dafür längst einen mitgelieferten Schlüssel
+(`TMDBKeyStore.builtIn`, dokumentiert in `CLAUDE.md` und als einzige erlaubte
+Zeile in `tools/check-apple-sources.py`). webOS hatte ihn nicht.
+
+### Geändert
+
+- **Der TMDB-Schlüssel ist mitgeliefert.**
+  `shared/nori-core/src/tmdb/key.ts` hält `BUILT_IN_TMDB_KEY` — denselben, den
+  die Apple-Seite benutzt. Damit ist TMDB auf einem frisch installierten
+  Fernseher sofort da: Poster, Hintergrundbilder, Schriftzüge, Beschreibungen,
+  Bewertungen, Folgentitel, Folgenbilder und die Signale für „Neu & beliebt"
+  und „Für dich". Einzurichten ist nichts.
+- **Der Nori-Server ebenso.** Ohne `NORI_TMDB_KEY` greift derselbe
+  mitgelieferte Schlüssel; ein frisch aufgesetzter Server kann sofort TMDB.
+  `/api/health` sagt in `features.tmdbKey`, ob ein eigener oder der
+  mitgelieferte gilt — den Schlüssel selbst gibt der Dienst nie heraus.
+- **Ein eigener Schlüssel hat weiter Vorrang** und heißt in den Einstellungen
+  jetzt so: „Eigener TMDB-Schlüssel", optional, mit „Löschen" daneben. Der Weg
+  heißt nicht mehr „Eigener Schlüssel", sondern „Dieser Fernseher" — er
+  funktioniert ja ohne einen. Wer einen einträgt, trennt seine
+  Ratenbegrenzung von der geteilten Kennung.
+- **„Aus" ist die einzige Art, TMDB nicht zu benutzen.** Vorher konnte der
+  Zustand „nicht eingerichtet" dasselbe bewirken, ohne dass jemand ihn gewählt
+  hatte. Der Unterschied steht jetzt in den Einstellungen: der Weg nennt
+  entweder „Nori-Server", „dieser Fernseher, mitgelieferter Schlüssel",
+  „dieser Fernseher, eigener Schlüssel" — oder „aus".
+
+### Hinzugefügt
+
+- **`tools/check-webos-package.py` prüft auf Schlüssel im Quelltext.** Dieselbe
+  enge Ausnahme wie auf der Apple-Seite: genau die Zeile mit
+  `BUILT_IN_TMDB_KEY` ist erlaubt, jeder zweite einkompilierte Schlüssel fällt
+  auf — auch einer in derselben Datei. Prüfdateien werden nur auf lange
+  Hex-Zeichenketten gelesen: ein Test, der belegt, dass `api_key` aus einer
+  Anfrage **entfernt** wird, muss so eine Zuweisung enthalten.
+- **Und darauf, dass beide Seiten denselben Schlüssel benutzen.** Zwei Kopien
+  einer Zeichenkette laufen auseinander; läuft diese auseinander, zeigt der
+  Fernseher zu derselben Serie andere Daten als das iPhone — ohne
+  Fehlermeldung, weil beide Schlüssel gültig sind.
+- **Fünf Tests** für die Schlüsselauflösung im Kern (122 gesamt) und einer für
+  den Server (13 gesamt). Der Fernbedienungslauf prüft zusätzlich den Zustand
+  eines frisch installierten Fernsehers: keine Einstellungen, kein Server, kein
+  Schlüssel — und TMDB trotzdem eingerichtet. 130 Prüfungen.
+
+### Warum eine neue Nummer
+
+1.1.0 war nie installiert, aber der CI-Lauf des Pull Requests hat dafür ein
+`.ipk` abgelegt. Ein Paket ist ein Paket: zwei mit derselben Nummer und
+unterschiedlichem Inhalt sind hinterher nicht mehr unterscheidbar, und der
+Fernseher installiert das zweite nicht über das erste.
+
+### Was das bedeutet
+
+Der Schlüssel steckt damit im gebauten `.ipk`, und aus dem lässt er sich
+herausziehen. Das ist die Entscheidung des Betreibers für ein privates
+Repository, dieselbe wie auf iPhone und Mac — aufgeschrieben an der
+Deklaration in `key.ts`. Wird das Repository je öffentlich, ist der Schlüssel
+es auch.
+
+## [webOS 1.1.0] — 2026-09-12
+
+Der zweite Aufschlag für **Nori auf LG-Fernsehern**. Die erste Fassung war
+bedienbar, aber sie sah nicht nach Nori aus und wusste über eine Serie fast
+nichts: Ihr Hauptakzent war ein warmes Orange (`#f47521`), das aus einer
+anderen Streaming-App stammte, ihre Reihe „Beliebt" waren die ersten 24
+Katalogeinträge, und TMDB lieferte genau ein Bild — das Hintergrundbild des
+Kopfbereichs, über den erstbesten Suchtreffer gefunden.
+
+Dieser Stand bringt drei Dinge: die Farben und Maße der Apple-Apps, TMDB
+vollständig über den gemeinsamen Kern, und eine Startseite, deren Reihen ihren
+Namen verdienen.
+
+### Hinzugefügt
+
+- **TMDB im gemeinsamen Kern.** `shared/nori-core/src/tmdb/` ist die
+  TypeScript-Entsprechung von `TMDBMatcher.swift`, `TMDBImages.swift`,
+  `TMDBCatalog.swift` und `HomeFeed.swift`: Titelzuordnung, Bildadressen,
+  Ranglisten, Geschmacksprofil und Abrufweg. Die webOS-App und der Nori-Server
+  benutzen beide diese Dateien — es gibt keine dritte Umsetzung.
+- **TMDB über den Nori-Server** (`/api/tmdb/*`). Der Schlüssel liegt damit an
+  einer Stelle statt auf jedem Fernseher, der Zwischenspeicher gilt für alle
+  Geräte gemeinsam, und TMDBs Ratenbegrenzung wird einmal statt je Gerät
+  ausgeschöpft. Die Pfade sind gegen eine Liste geprüft und nicht
+  durchgereicht; `api_key` aus der Anfrage wird verworfen. Der eigene Schlüssel
+  am Gerät bleibt als Rückfall, und „aus" ist ein gültiger Zustand.
+- **Staffel- und Folgenzuordnung mit Versatzerkennung.** AniWorld und TMDB
+  teilen dieselbe Serie anders auf: „Attack on Titan Final Season" beginnt bei
+  der Quelle wieder bei Folge 1, bei TMDB läuft die Zählung weiter. Nori
+  erkennt den Versatz über die Folgentitel — und zeigt bei unsicherer
+  Zuordnung **keine** Folgendaten statt der Standbilder einer anderen Staffel.
+- **Folgenkacheln mit Inhalt**: Standbild, Nummer, Titel, zwei Zeilen
+  Beschreibung, Laufzeit, Erscheinungsdatum, Sprache, Fortschritt und
+  „Gesehen". Die Beschreibung ist auf zwei Zeilen begrenzt, weil TMDB dort
+  regelmäßig schreibt, wie die Folge ausgeht.
+- **Ein Auswahlraster für die Staffelwahl** ab neun Staffeln. Detektiv Conan
+  hat bei AniWorld über dreißig; als waagerechte Leiste hieß das dreißigmal
+  „rechts" durch eine Leiste, die sich unter dem Fokus wegscrollte. Das Raster
+  ist mit allen vier Richtungen bedienbar, fängt den Fokus ein, öffnet auf der
+  aktiven Staffel und schließt mit Zurück.
+- **„Ähnliche Titel"** auf der Detailseite, aus TMDBs Empfehlungen und
+  Ähnlichkeitsliste — gezeigt wird nur, was Noris Katalog tatsächlich führt.
+  Eine Empfehlung, die sich auswählen lässt und nichts öffnet, ist schlechter
+  als eine Reihe weniger.
+- **Breitformat-Kacheln** für „Weiterschauen" und „Neue Episoden", mit
+  Standbild der Folge, Rest-Laufzeit und Fortschrittsbalken. Beide Reihen
+  zeigen eine Folge, keine Serie — ein 2:3-Poster sagt darüber nichts.
+- **Bewertungen auf den Kacheln**, erst ab fünfzig Stimmen. Sonst stünde 10,0
+  aus zwei Stimmen neben einer weltweit laufenden Serie.
+- **Schriftzüge von TMDB** im Kopfbereich von Startseite und Detailseite; ohne
+  einen steht der Titel als Schrift, und das ist kein Mangel.
+- **„Bibliothek einlesen" führt zusammen statt zu ersetzen.** Ein eingelesener
+  Stand von letzter Woche kann damit den Fortschritt von heute Abend nicht mehr
+  löschen. Die Regel ist dieselbe, die der Geräteabgleich benutzt
+  (`mergeLibrarySnapshots` im Kern) — von Hand eingelesen und über Drive
+  abgeglichen führen also nicht zu zwei verschiedenen Ergebnissen.
+- **TMDB-Diagnose in den Einstellungen**: welcher Weg gilt, was TMDB
+  zuletzt geantwortet hat, wie viele Titel zugeordnet sind, wie viele davon
+  erst über Alternativtitel, wie viele Staffeln abgelegt sind und wie viele
+  Titel ohne Treffer blieben. Dazu „Erneut nach fehlenden suchen", ohne die
+  vorhandenen Bilder zu verlieren.
+- **Tests für den Nori-Server** (`services/nori-api`, bisher keine): die
+  Umschreibung der HLS-Playlisten samt Schlüssel-, Map- und Media-Zeilen, die
+  Pfadliste von `/api/tmdb` und das Entfernen von `api_key` aus der Anfrage.
+  Alle drei sind sicherheitsrelevant und wären sonst nur auf dem Gerät zu
+  merken. `rewriteM3U8` liegt dafür jetzt in `src/playlist.ts` — `server.ts`
+  startet beim Einlesen einen Dienst und ist damit nicht prüfbar.
+- **76 neue Tests** im gemeinsamen Kern (41 → 117) für Titelzuordnung,
+  Staffelmapping, Folgenversatz, Ranglisten, Geschmacksprofil, Abrufwege samt
+  401/404/429/Netzfehler und die Zusammenführung zweier Bibliotheksstände, dazu
+  12 für den Server. Der Fernbedienungslauf wächst von 48 auf 127 Prüfungen,
+  erzeugt 20 Bildschirmfotos und öffnet die gebaute Datei zusätzlich über
+  `file://` — den Weg, den der Fernseher nimmt.
+- **Unbehandelte Fehler landen im Protokoll** (`unhandledrejection`, `error`).
+  Auf einem Fernseher klappt niemand eine Konsole auf; eine abgewiesene Zusage,
+  die niemand abfängt, sah dort aus wie „die Kachel bleibt einfach leer".
+
+### Geändert
+
+- **Die Farben sind Noris Farben.** `#f47521` ist weg. Grund ist
+  `#05060a`, der Hauptakzent ein sehr helles Neutral (`#d7deea`), aktive
+  Zustände und der Fokusring tragen das Signalblau (`#78c5ff`), und der einzige
+  warme Ton im ganzen Bild ist der Stern einer Bewertung (`#ffe07a`) — Wert für
+  Wert aus `native/Nori-iOS/Sources/UI/Theme.swift`.
+- **Der Fokusring auf hellen Flächen** ist innen dunkel und außen blau. Ein
+  blauer Ring um einen fast weißen Knopf war kaum zu sehen, und genau diese
+  Knöpfe sind die wichtigsten.
+- **Die Seitenleiste trägt das App-Symbol**, nicht mehr ein gemaltes „N" auf
+  oranger Fläche. Auf jeder anderen Nori-Plattform steht dort das Torii unter
+  dem Schriftzug.
+- **Die Startseite entsteht aus Signalen.** „Neu & beliebt" rechnet mit TMDBs
+  Wochentrend, Beliebtheit (logarithmisch gedämpft), Aktualität und Bewertung;
+  „Neue Episoden" kommt chronologisch aus Noris eigenem Kalender; „Für dich"
+  aus Verlauf, Fortschritt, Merkliste und TMDBs Empfehlungen. Ohne genug
+  Verlauf heißt die Reihe „Entdecke etwas Neues", und ohne TMDB heißt sie „Neu
+  im Katalog" und sagt dazu, dass die Reihenfolge von der Quelle kommt.
+  `catalog.items.slice(0, 24)` als „beliebt" gibt es nicht mehr.
+- **Der Kopfbereich ist groß** — 44 rem auf der Startseite, 38 rem auf der
+  Detailseite, mit Text **im** Bild statt darunter. Vorher schob eine
+  Posterkachel sich mit −12 rem über ein 30 rem hohes Bild; auf dem Fernseher
+  las sich das als Bruch mitten im Bild.
+- **Der erste Fokus liegt im Inhalt**, nicht in der Seitenleiste. Die stand im
+  Dokument vorn und bekam deshalb jeden Kaltstart — klappte auf und verdeckte
+  den halben Kopfbereich, bevor eine Taste gedrückt war.
+- **TMDB-Bilder gehen den kurzen Weg.** Sie verlangen keinen `Referer` und
+  laufen deshalb nicht mehr über die Bildweiterreichung des Servers. Cover der
+  Quellen weiter schon — die kommen nur mit passender Kopfzeile.
+- **Der Bildspeicher ist versioniert** (`nori.tmdb.*.v2`). Die Zuordnungen des
+  vorherigen Stands entstanden mit dem erstbesten Suchtreffer und sind
+  teilweise falsch; sie werden beim ersten Start verworfen statt weiterbenutzt.
+- **`reduceEffects` schaltet mehr ab**: neben `backdrop-filter` jetzt auch die
+  Fokusübergänge, die Anhebung der Kacheln und das Flimmern der Platzhalter.
+- **Das Paket ist ein klassisches Skript**, kein ES-Modul (`format: "iife"`,
+  `modulePreload: false`, kein `crossorigin`, `type="module"` durch `defer`
+  ersetzt). Das ist die folgenreichste Änderung an der Bauweise: ein
+  webOS-Paket wird von `file://` geladen, und Chromium lädt von dort **keine**
+  ES-Module — die Seite hat die Herkunft `null`. Auf dem Fernseher hätte das
+  einen schwarzen Bildschirm ohne Fehlermeldung bedeutet, weil das Skript, das
+  den Fehler melden würde, nie läuft. Die Stile bleiben eine eigene Datei
+  (`cssCodeSplit: false`), sonst stünde der Startbildschirm unformatiert da.
+- **Abstände ohne Flex-`gap`.** Chrome 79 — die Engine von webOS 6 — kennt
+  `gap` nur im Raster, nicht im Flex-Layout; das kam erst mit Chrome 84. Noris
+  Oberfläche benutzt es an gut vierzig Stellen, und ohne Rückfall klebte dort
+  alles aneinander. Über `@supports` ist das nicht erfragbar (`@supports (gap:
+  1px)` ist dort wahr, weil Rasterabstände existieren), also wird beim Start
+  gemessen und ein Rückfall über Ränder eingeschaltet. Der Fernbedienungslauf
+  prüft, dass er denselben Abstand erzeugt.
+- **Das Prüfskript prüft mehr.** `tools/check-webos-package.py` vergleicht
+  `appinfo.json`, `apps/webos/package.json`, den Paketnamen, die Dateien im
+  Paket und den Changelog; es verlangt Symbole, Splashscreen und
+  `packageinfo.json` im Paket und beanstandet in `dist/index.html` absolute
+  Adressen, `type="module"` und `crossorigin`.
+
+### Behoben
+
+- **Die Detailseite lief in eine Endlosschleife**, sobald sie ähnliche Titel
+  nachlud: `scopedCatalog()` gab bei jedem Aufruf ein neues Feld zurück, ein
+  davon abgeleitetes `useMemo` rechnete deshalb bei jedem Rendern neu, und der
+  Effekt daran setzte wieder Zustand. Der Fernseher reagierte danach auf keine
+  Taste mehr. Der Katalogausschnitt ist jetzt ein stabiles Objekt.
+- **Die Schemaversion stand doppelt.** Die Einstellungen zeigten „v4", der
+  Fernbedienungslauf prüfte auf 4 — der Kern war längst bei v5. Beide lesen die
+  Zahl jetzt aus `LIBRARY_SCHEMA_VERSION`.
+- **Ein gescheitertes TMDB-Bild ließ die Kachel leer.** Jetzt fällt sie eine
+  Stufe tiefer auf das Cover der Quelle und erst dann auf den Buchstaben.
+- **„Bibliothek einlesen" hat den lokalen Stand ersetzt** und damit alles
+  gelöscht, was nur auf diesem Fernseher stand. Es führt jetzt zusammen.
+- **Der Kalender und der Verlauf zeigten Poster im Hochformat** für Folgen. Das
+  sind jetzt 16:9-Standbilder, wo TMDB eines hat.
+- **Die ausgeklappte Seitenleiste schnitt den Seitentitel ab.** Sie liegt über
+  der Seite und schiebt sie absichtlich nicht; sichtbar blieb dadurch aber
+  „auf" statt „Verlauf". Die Seite dahinter tritt jetzt in der Deckkraft
+  zurück — dasselbe Bild liest sich damit als „Menü vorn" statt als
+  abgeschnittener Text.
+- **Die Detailseite behielt die Staffel des zuvor geöffneten Titels.** React
+  Router tauscht bei gleichem Muster nur die Parameter aus; wer bei Detektiv
+  Conan Staffel 7 wählte und dann Frieren öffnete, bekam Frieren „Staffel 7" zu
+  sehen — samt Folgen, die es dort nicht gibt. Dasselbe galt für Bilder,
+  Bewertung und ähnliche Titel.
+- **„3 Staffeln" bei zwei Staffeln und einem Filmabschnitt.** „Filme" steht in
+  derselben Liste, ist aber keine Staffel; gezählt werden jetzt nur die
+  nummerierten.
+- **Die große Folgennummer stand halbdurchsichtig über dem Standbild** und war
+  je nach Bild lesbar oder nicht. Mit Standbild ist sie jetzt ein kleines
+  Schild, ohne eines bleibt sie groß und füllt die leere Kachel.
+
+- **Der Fokus geht nicht mehr verloren.** Bisher wurde nur nach einem
+  Routenwechsel geprüft, ob überhaupt etwas fokussiert ist. Fällt ein
+  Katalogabruf mitten im Betrieb weg, verschwindet aber die Reihe samt dem
+  fokussierten Element — danach lag der Fokus auf `body`, und der Fernseher
+  reagierte auf keine Taste mehr. Jetzt prüft ein Wächter alle 600 ms, und
+  `Spotlight.focus` wird **nachgeprüft** statt nur aufgerufen: Spotlight nimmt
+  den Fokus bei einem gerade eingehängten Container nicht immer an, ohne es zu
+  sagen. Dasselbe galt für Drawer und Auswahlraster, wo sichtbar das Overlay
+  stand und bedient wurde, was dahinter lag.
+- **Die Suche faltet Akzente und Umlaute** (`normalizeTitle` aus dem Kern statt
+  `toLowerCase`). Die Bildschirmtastatur hat kein Ä; „Damonenjager" trifft
+  jetzt „Dämonenjäger".
+
+### Nicht geprüft
+
+- **Auf einem echten LG-Fernseher.** Der Lauf prüft dieselbe gebaute Datei in
+  Chromium bei 1920 × 1080 mit echten LG-Tastencodes — und zusätzlich einmal
+  **über `file://`**, den Weg, den der Fernseher nimmt. Die Wiedergabe eines
+  echten HLS-Streams, das Zusammenspiel mit dem Systemplayer von webOS und das
+  Verhalten der Magic Remote entscheiden sich erst auf dem Gerät.
+- **Mit einem echten TMDB-Schlüssel.** Geprüft ist gegen einen Nachbau, der
+  dieselben Antwortformen liefert — einschließlich der Fälle, die in der Praxis
+  schiefgehen (Name ohne Gemeinsamkeit mit dem Quelltitel, versetzte
+  Folgenzählung, Titel ohne TMDB-Eintrag, 401, 404, 429, Netzfehler).
+- **Der Abgleich über Google Drive.** Er ist in derselben Zusammenführung nach
+  webOS gekommen (eigener Abschnitt weiter unten) und im Fernbedienungslauf nur
+  bis zur Einstellungsseite geprüft: dass der Abschnitt steht, sagt, was fehlt,
+  und bedienbar ist. Der Geräteanmeldecode, der Drive-Abruf und das
+  Zusammenführen über zwei echte Geräte sind hier **nicht** geprüft — die
+  Regel selbst schon, gegen `config/sync-fixtures.json` und in beiden Kernen.
 
 ## [Unveröffentlicht] — TMDB-Metadaten
 
@@ -68,7 +401,7 @@ wurde.
 
 ### Hinzugefügt
 
-- `shared/nori-core/src/tmdb.ts` — die TMDB-Zuordnung als zweiter Kern, mit
+- `shared/nori-core/src/tmdb/` — die TMDB-Zuordnung als zweiter Kern, mit
   denselben Testfällen wie auf der Swift-Seite.
 - Ein `tmdb`-Abschnitt in `config/contract.json`: Bildgrößen, Titelschwelle,
   Suchkette, Sprachreihenfolgen, Logorangfolge, Staffelzuordnung und die Regel,

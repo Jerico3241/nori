@@ -6,7 +6,7 @@ Serie — keine Folgenbilder, keine Folgentexte.
 
 Die Regeln stehen in `config/contract.json` unter `tmdb` und gelten für beide
 Kerne: `native/NoriCore/Sources/NoriCore/TMDB*.swift` und
-`shared/nori-core/src/tmdb.ts`.
+`shared/nori-core/src/tmdb/`.
 
 ## Woher was kommt
 
@@ -21,7 +21,7 @@ Kerne: `native/NoriCore/Sources/NoriCore/TMDB*.swift` und
 
 Folgenbilder stehen in **`still_path`**, nicht in `poster_path` — Folgen haben
 bei TMDB kein Poster. Alle Adressen entstehen in `TMDBImages` bzw.
-`tmdb.imageURL`, nirgends sonst.
+`tmdbImageURL`, nirgends sonst.
 
 ## Die Zuordnung
 
@@ -92,6 +92,22 @@ vollständige Anfrageadresse — die trägt ihn als Abfrageparameter.
 
 ## Schlüssel
 
-`TMDBKeyStore`: Schlüsselbund vor `TMDBAPIKey` aus der Info.plist vor dem
-eingebauten Fallback. Ohne Schlüssel fragt Nori TMDB gar nicht erst und zeigt
-die Cover der Quellen — ein gültiger Zustand, kein Fehler.
+Die Reihenfolge ist auf beiden Seiten dieselbe: ein **eigener** Schlüssel hat
+Vorrang, sonst greift der mitgelieferte.
+
+- Apple: `TMDBKeyStore` — Schlüsselbund vor `TMDBAPIKey` aus der Info.plist vor
+  `TMDBKeyStore.builtIn`.
+- TypeScript: `resolveTmdbKey` in `shared/nori-core/src/tmdb/key.ts` — der
+  eingetragene vor `BUILT_IN_TMDB_KEY`. Am Server ist der eingetragene
+  `NORI_TMDB_KEY`, am Fernseher der aus den Einstellungen.
+
+Beide Seiten benutzen **denselben** mitgelieferten Schlüssel; wird er getauscht,
+gehört er an beiden Stellen getauscht. `tools/check-apple-sources.py` und
+`tools/check-webos-package.py` erlauben je genau diese eine Zeile, und der
+zweite vergleicht zusätzlich, dass die Zeichenketten übereinstimmen — sonst
+zeigte der Fernseher zu derselben Serie andere Daten als das iPhone, und zwar
+ohne Fehlermeldung.
+
+Es gibt damit keinen Zustand „noch kein Schlüssel eingetragen". Wer TMDB nicht
+will, schaltet es ausdrücklich ab; dann zeigt Nori die Cover der Quellen — ein
+gültiger Zustand, kein Fehler.

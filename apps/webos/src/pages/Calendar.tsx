@@ -3,7 +3,7 @@
 // Zwei Ansichten, mehr braucht ein Fernseher nicht: „Heute" und „Woche". Eine
 // Monatsansicht wäre auf drei Metern eine Tabelle mit Text in Streichholzgröße.
 
-import { formatClock, type AiringEntry, type CatalogProvider } from "@nori/core";
+import { PROVIDERS, formatClock, type AiringEntry, type CatalogProvider } from "@nori/core";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, RailSkeleton } from "../components/States";
 import { useAsync } from "../hooks/useAsync";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotArea, SpotButton } from "../navigation/Spot";
+import { tmdb } from "../services/tmdb";
 import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
 
@@ -145,7 +146,23 @@ export function CalendarPage() {
                     <small>
                       Staffel {entry.season} · Folge {entry.episode}
                       {entry.languages.length ? ` · ${entry.languages.join(", ")}` : ""}
+                      {/*
+                        Im Bereich „Alle" laufen beide Quellen zusammen, und
+                        dieselbe Serie steht dort oft zweimal — einmal je
+                        Quelle. Ohne diese Angabe sieht das aus wie ein Fehler
+                        statt wie zwei Einträge.
+                      */}
+                      {state.scope === "all" ? ` · ${PROVIDERS[entry.provider ?? "aniworld"].label}` : ""}
                     </small>
+                    {/*
+                      Der Folgentitel von TMDB, sofern die Serie schon
+                      zugeordnet ist. Ohne Abruf: der Kalender zeigt dutzende
+                      Einträge, und der Titel ist hier eine Zugabe, nicht die
+                      Auskunft.
+                    */}
+                    {episodeTitle(entry) ? (
+                      <small className="calendar-episode">{episodeTitle(entry)}</small>
+                    ) : null}
                   </span>
                 </SpotButton>
               ))}
@@ -166,4 +183,10 @@ function timeOf(ms: number): string {
   } catch {
     return formatClock(0);
   }
+}
+
+/** Der Folgentitel aus dem TMDB-Zwischenspeicher, falls einer dasteht. */
+function episodeTitle(entry: AiringEntry): string | null {
+  const season = tmdb.cachedSeason(entry.slug, entry.provider ?? "aniworld", entry.season);
+  return season?.episodes[entry.episode]?.title ?? null;
 }

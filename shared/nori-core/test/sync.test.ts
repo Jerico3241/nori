@@ -214,3 +214,40 @@ test("Eine kaputte Fremddatei nimmt nur sich selbst mit", () => {
   // unbekannten Zustand.
   assert.ok(lokal.provider === undefined || ["aniworld", "serienstream"].includes(lokal.provider));
 });
+
+test("Ein leerer Fremdstand löscht nichts", () => {
+  // Der Fall aus der webOS-Einstellung „Bibliothek einlesen": jemand wählt
+  // eine leere oder fremde Datei. Ein Einlesen, das den lokalen Stand
+  // **ersetzt**, löscht stillschweigend alles, was nur hier stand — und ein
+  // Abgleichfehler darf erst recht nichts kosten.
+  const lokal: LibraryBag = {
+    version: 6,
+    modifiedAt: 3000,
+    favorites: ["frieren", "dark"],
+    favoriteSource: { frieren: "aniworld", dark: "serienstream" },
+    favoriteAddedAt: { frieren: 2000, dark: 1000 },
+    recents: [{ slug: "frieren", title: "Frieren", viewedAt: 2500, provider: "aniworld" }],
+    titles: { frieren: "Frieren" },
+    progress: {
+      "aniworld|/anime/stream/frieren/staffel-1/episode-1": {
+        slug: "frieren", title: "Frieren", season: "1", episode: 1,
+        episodePath: "/anime/stream/frieren/staffel-1/episode-1",
+        germanTitle: "", englishTitle: "",
+        positionSec: 300, durationSec: 1400, updatedAt: 2500,
+        provider: "aniworld",
+      },
+    },
+  };
+
+  const leer: LibraryBag = {
+    version: 6, modifiedAt: 0, favorites: [], recents: [], titles: {}, progress: {},
+  };
+
+  for (const reihenfolge of [[lokal, leer], [leer, lokal]]) {
+    const merged = mergeLibrarySnapshots(reihenfolge, 4000);
+    assert.deepEqual(merged.favorites.sort(), ["dark", "frieren"]);
+    assert.equal(Object.keys(merged.progress).length, 1);
+    assert.equal(merged.titles.frieren, "Frieren");
+    assert.equal(merged.recents.length, 1);
+  }
+});
