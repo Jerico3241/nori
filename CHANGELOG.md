@@ -4,8 +4,34 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.20.0**, iOS/iPadOS **1.25.0**,
+unterschiedlich schnell bewegen: macOS **1.20.0**, iOS/iPadOS **1.25.1**,
 Windows **1.8.0**, LG webOS **2.2.0**.
+
+## [iOS 1.25.1] — 2026-09-13
+
+Nur ein Paketierungsfehler. Kein App-Code geändert; Google-Drive-Architektur,
+`drive.appdata`, `drive.file`, Merge-Regeln und OAuth-Scopes unverändert.
+
+### Behoben
+
+- **Die IPA 1.25.0 (37) hatte keinen Google-Abgleich.** Unter Synchronisation
+  stand „Nicht eingerichtet — Diese Nori-Fassung wurde ohne Google-Abgleich
+  gebaut". `GoogleClientID` in der `Info.plist` war leer: `Nori.xcconfig`
+  bindet `Google.local.xcconfig` nur optional ein, damit Entwicklungs-Builds
+  ohne Google-Konfiguration möglich bleiben. Im Checkout des CI-Runners gibt es
+  diese Datei nicht, und `Package iOS IPA` stellte sie nicht bereit. Der Lauf
+  war trotzdem grün — nichts prüfte das fertige Paket.
+- Jetzt schreibt `Package iOS IPA` die Konfiguration vor dem Build mit
+  `tools/configure-google-oauth.py --ios` aus
+  `~/.config/nori/secrets/google-ios-client-id` auf dem Runner; fehlt die
+  Datei, bricht der Job ab. Nach dem Build und noch einmal an der entpackten
+  IPA wird geprüft: `GoogleClientID` vorhanden, nicht leer, eine
+  Google-Client-ID, kein Client-Secret im Bündel. Erst dann wird hochgeladen.
+  Im Protokoll steht nur „Google OAuth: configured", nie die ID.
+- `tools/test_configure_google_oauth.py` hält das fest, auch den genauen Fall
+  aus 1.25.0 (Schlüssel vorhanden, Wert leer); er läuft in `Check Apple
+  sources`. Das Quellpaket des Release-Workflows schließt lokale
+  OAuth-Konfigurationen ausdrücklich aus.
 
 ## [iOS 1.25.0] · [macOS 1.20.0] — 2026-09-13
 
