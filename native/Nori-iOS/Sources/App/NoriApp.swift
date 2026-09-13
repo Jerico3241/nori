@@ -6,6 +6,11 @@ struct NoriApp: App {
     @State private var sync: GoogleDriveSync
 
     init() {
+        #if DEBUG
+        // Netzstörungen nachstellen: `-NoriNetworkSimulation offline` usw.
+        // Ohne das Argument geschieht nichts.
+        NoriNetworkSimulation.install()
+        #endif
         let library = LibraryStore()
         // Landet als Metadatum im abgelegten Stand. Nützlich, wenn irgendwann
         // ein Gerät etwas schreibt, das die anderen nicht verstehen.
@@ -167,6 +172,11 @@ struct RootView: View {
                 library.flush()
                 sync.engine.stopPolling()
             }
+        }
+        // Bei knappem Speicher die Bilder im Arbeitsspeicher freigeben. Die
+        // Dateien auf der Platte bleiben — Kacheln kommen ohne Netz zurück.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            Task { await CoverImageLoader.shared.trimMemory() }
         }
     }
 

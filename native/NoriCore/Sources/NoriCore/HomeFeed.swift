@@ -748,6 +748,14 @@ struct HomeFeed {
     /// Weitere Reihen — Trend, Bestbewertetes, Genres. Nur, was sich vom
     /// bereits Gezeigten unterscheidet.
     var extraRows: [HomeRow] = []
+    /// Die Reihenfolge der sichtbaren Abschnitte unter dem Kopfbereich.
+    ///
+    /// Eine Liste statt fester Plätze in der Ansicht: kommt ein Abschnitt erst
+    /// mit dem zweiten Durchgang dazu — „Neue Episoden", sobald der Kalender
+    /// da ist —, darf er nicht zwischen zwei Reihen geschoben werden, die
+    /// schon dastehen. Dann stünde alles darunter plötzlich woanders.
+    /// `HomeFeedStability` hängt ihn deshalb hinten an.
+    var sections: [HomeSection] = []
 
     /// Steht außer dem Kopfbereich überhaupt etwas auf der Seite?
     var hasContent: Bool {
@@ -756,5 +764,174 @@ struct HomeFeed {
             || !newEpisodes.isEmpty
             || !recommendations.isEmpty
             || !extraRows.isEmpty
+    }
+}
+
+// MARK: - Abschnitte
+
+/// Ein Abschnitt der Startseite unter dem Kopfbereich.
+enum HomeSection: Hashable {
+    case continueWatching
+    case newAndPopular
+    case newEpisodes
+    case recommendations
+    /// Eine der weiteren Reihen, benannt nach ihrer Überschrift.
+    case extra(String)
+
+    /// Die vorgesehene Reihenfolge — beim ersten Aufbau und nach einem
+    /// bewussten Aktualisieren.
+    static func canonical(for feed: HomeFeed) -> [HomeSection] {
+        var out: [HomeSection] = []
+        if !feed.continueWatching.isEmpty { out.append(.continueWatching) }
+        if !feed.newAndPopular.isEmpty { out.append(.newAndPopular) }
+        if !feed.newEpisodes.isEmpty { out.append(.newEpisodes) }
+        if !feed.recommendations.isEmpty { out.append(.recommendations) }
+        for row in feed.extraRows where !row.items.isEmpty { out.append(.extra(row.id)) }
+        return out
+    }
+
+    /// Steht der Abschnitt in diesem Feed mit Inhalt?
+    func isVisible(in feed: HomeFeed) -> Bool {
+        switch self {
+        case .continueWatching: return !feed.continueWatching.isEmpty
+        case .newAndPopular: return !feed.newAndPopular.isEmpty
+        case .newEpisodes: return !feed.newEpisodes.isEmpty
+        case .recommendations: return !feed.recommendations.isEmpty
+        case .extra(let id): return feed.extraRows.contains { $0.id == id && !$0.items.isEmpty }
+        }
+    }
+}
+
+// MARK: - Stabile Ordnung
+
+/// Die sichtbare Ordnung der Startseite, während nachkommende Daten eintreffen.
+///
+/// Die Startseite baut sich in zwei Durchgängen: erst aus dem, was ohne Netz
+/// dasteht, dann mit frischen TMDB-Daten und dem Kalender. Der zweite
+/// Durchgang rechnete die Reihen vollständig neu — Karten wanderten innerhalb
+/// einer Reihe, der Kopfbereich zeigte einen anderen Titel, und ein neuer
+/// Abschnitt schob sich zwischen zwei Reihen, während jemand schon scrollte.
+///
+/// Die Regel ist dieselbe wie im Katalog (`CatalogStableOrder`): **nachkommende
+/// Daten ändern Inhalte, nicht die Ordnung.**
+///
+/// - Kopfbereich und Reihen behalten ihre Titel in ihrer Reihenfolge. Die
+///   Daten dahinter — Signale, Bewertung, Abzeichen — kommen frisch.
+/// - Was neu in eine Reihe käme, kommt hinten dazu, und nur, wenn es in keiner
+///   anderen sichtbaren Reihe steht. Länger als die längere der beiden Fassungen
+///   wird eine Reihe dabei nicht.
+/// - Ein Titel, den der Katalog nicht mehr führt, fällt weg; einer, den nur die
+///   Rangliste nicht mehr nennt, bleibt. Ein Titel, der inzwischen in
+///   „Weiterschauen" steht, verlässt Empfehlungen und weitere Reihen — dort
+///   nimmt ihn auch der frische Feed heraus.
+/// - Ein neuer Abschnitt kommt unten dazu.
+/// - „Weiterschauen" kommt aus der eigenen Bibliothek und wird nie
+///   festgehalten: ändert sie sich, ist das die Änderung, die die Reihe
+///   verändern soll. Erscheint sie neu, steht sie oben.
+///
+/// Neu geordnet wird beim bewussten Aktualisieren und beim nächsten Öffnen der
+/// App — dann ruft der Dienst diese Funktion gar nicht erst auf.
+enum HomeFeedStability {
+    static func stabilize(
+        previous: HomeFeed,
+        fresh: HomeFeed,
+        candidates: [String: HomeCandidate]
+    ) -> HomeFeed {
+        var out = HomeFeed()
+        out.continueWatching = fresh.continueWatching
+
+        // Kopfbereich: dieselben Titel in derselben Folge, frische Daten.
+        if previous.hero.isEmpty {
+            out.hero = fresh.hero
+        } else {
+            let kept = previous.hero.compactMap { candidates[$0.id] }
+            out.hero = kept.isEmpty ? fresh.hero : kept
+        }
+
+        // Angefangene Titel stehen in „Weiterschauen" — der frische Feed
+        // nimmt sie aus Empfehlungen und weiteren Reihen, also auch hier.
+        let watching = Set(fresh.continueWatching.map { item in
+            "\((item.provider ?? providerFromPath(item.episodePath)).rawValue)|\(item.slug)"
+        })
+
+        // Was schon sichtbar ist, darf nicht noch einmal angehängt werden.
+        var shown = Set(out.hero.map(\.id))
+        for item in previous.newAndPopular { shown.insert(item.id) }
+        for item in previous.recommendations { shown.insert(item.id) }
+        for row in previous.extraRows { for item in row.items { shown.insert(item.id) } }
+
+        out.newAndPopular = keep(previous.newAndPopular, fresh: fresh.newAndPopular, candidates: candidates, shown: &shown)
+        out.newEpisodes = keepEpisodes(previous.newEpisodes, fresh: fresh.newEpisodes)
+        out.recommendations = keep(previous.recommendations, fresh: fresh.recommendations, candidates: candidates, dropping: watching, shown: &shown)
+        out.recommendationTitle = previous.recommendations.isEmpty ? fresh.recommendationTitle : previous.recommendationTitle
+
+        var rows: [HomeRow] = []
+        for row in previous.extraRows {
+            let freshRow = fresh.extraRows.first { $0.id == row.id }
+            let items = keep(row.items, fresh: freshRow?.items ?? [], candidates: candidates, dropping: watching, shown: &shown)
+            if !items.isEmpty { rows.append(HomeRow(title: row.title, items: items)) }
+        }
+        for row in fresh.extraRows where !previous.extraRows.contains(where: { $0.id == row.id }) {
+            let items = row.items.filter { shown.insert($0.id).inserted }
+            if !items.isEmpty { rows.append(HomeRow(title: row.title, items: items)) }
+        }
+        out.extraRows = rows
+
+        out.sections = sections(previous: previous.sections, stabilized: out)
+        return out
+    }
+
+    /// Eine Reihe: bisherige Titel in bisheriger Folge, Neues hinten.
+    private static func keep(
+        _ previous: [HomeCandidate],
+        fresh: [HomeCandidate],
+        candidates: [String: HomeCandidate],
+        dropping: Set<String> = [],
+        shown: inout Set<String>
+    ) -> [HomeCandidate] {
+        guard !previous.isEmpty else {
+            return fresh.filter { shown.insert($0.id).inserted }
+        }
+        var ids = Set<String>()
+        var out: [HomeCandidate] = []
+        for item in previous where !dropping.contains(item.id) {
+            guard let current = candidates[item.id], ids.insert(item.id).inserted else { continue }
+            out.append(current)
+        }
+        let limit = max(previous.count, fresh.count)
+        for item in fresh where out.count < limit && !ids.contains(item.id) && shown.insert(item.id).inserted {
+            ids.insert(item.id)
+            out.append(item)
+        }
+        return out
+    }
+
+    private static func keepEpisodes(_ previous: [AiringEntry], fresh: [AiringEntry]) -> [AiringEntry] {
+        guard !previous.isEmpty else { return fresh }
+        let current = Dictionary(fresh.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var ids = Set<String>()
+        var out = previous.map { entry -> AiringEntry in
+            ids.insert(entry.id)
+            return current[entry.id] ?? entry
+        }
+        let limit = max(previous.count, fresh.count)
+        for entry in fresh where out.count < limit && ids.insert(entry.id).inserted {
+            out.append(entry)
+        }
+        return out
+    }
+
+    /// Bisher sichtbare Abschnitte in bisheriger Folge, neue unten — außer
+    /// „Weiterschauen", das aus der eigenen Bibliothek kommt und oben steht.
+    private static func sections(previous: [HomeSection], stabilized feed: HomeFeed) -> [HomeSection] {
+        var out = previous.filter { $0.isVisible(in: feed) }
+        for section in HomeSection.canonical(for: feed) where !out.contains(section) {
+            if section == .continueWatching {
+                out.insert(section, at: 0)
+            } else {
+                out.append(section)
+            }
+        }
+        return out
     }
 }

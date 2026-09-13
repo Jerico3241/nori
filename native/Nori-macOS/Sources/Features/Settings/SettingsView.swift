@@ -101,15 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.19.0"
+    static let version = "1.20.0"
 
     static let highlights = [
-        "Der Katalog sucht jetzt wie auf dem iPhone: ohne Akzente, über Alternativtitel und Genres, entprellt und abseits des Hauptthreads — auch bei zehntausend Titeln ohne Stocken.",
-        "Beim ersten Laden stehen Startseite, Katalog, Kategorien, Kalender und Detailseite als Umriss da statt als Rädchen im leeren Fenster.",
-        "Merkliste, „Schau weiter“ und Kalender bemerken jetzt jede Änderung — auch dann, wenn die Anzahl gleich bleibt.",
-        "Während der Wiedergabe zeichnet das Hauptfenster nicht mehr alle fünf Sekunden neu, und der Fortschritt wird gebündelt statt bei jedem Takt auf die Platte geschrieben — sofort beim Schließen und beim Wechsel in ein anderes Programm.",
-        "Cover liegen jetzt auf der Platte: nach einem Neustart und ohne Netz sind sie sofort da.",
-        "Derselbe Wert in den Einstellungen gilt nicht mehr als Änderung und wird nicht erneut nach Google Drive geschrieben.",
+        "Ohne Netz, bei einer Schutzseite oder einem Zeitlimit steht der zuletzt geladene Katalog da, statt dass Startseite, Katalog und Kategorien leer bleiben.",
+        "Der Kopfbereich der Startseite passt sich der Fensterhöhe an: in einem kleinen Fenster ist „Schau weiter“ wieder zu sehen.",
+        "Auf der Detailseite bricht der Abspielknopf in schmalen Fenstern nicht mehr um, und die Staffelauswahl rückt in eine eigene Zeile, statt abgeschnitten zu werden.",
+        "Der Katalog öffnet sich beim zweiten Mal sofort, statt jedes Mal den Suchindex neu zu bauen.",
+        "Das Ladeskelett der Detailseite reserviert den Platz der Beschreibung — die Folgenliste springt beim Eintreffen nicht mehr nach unten.",
+        "Neu unter Einstellungen → Daten: die Größe des Bild-Caches und ein Knopf, um ihn zu leeren.",
     ]
 }
 
@@ -570,6 +570,8 @@ private struct CoverDiagnosticsRow: View {
 private struct PrivacySettingsTab: View {
     @Environment(LibraryStore.self) private var library
     @State private var confirm: String?
+    /// Gemessene Größe des Bild-Caches auf der Platte; `nil`, solange gezählt wird.
+    @State private var imageBytes: Int64?
     @State private var keyDraft = ""
     @State private var keyStored = TMDBKeyStore.isUserProvided
     @State private var keyNote: String?
@@ -640,6 +642,28 @@ private struct PrivacySettingsTab: View {
                     .font(.footnote)
                     .foregroundStyle(NoriTheme.muted)
             }
+
+            Section {
+                LabeledContent("Bild-Cache") {
+                    HStack(spacing: 10) {
+                        Text(imageBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "…")
+                            .foregroundStyle(NoriTheme.muted)
+                            .monospacedDigit()
+                        Button("Leeren") {
+                            Task {
+                                await CoverImageLoader.shared.purge()
+                                imageBytes = await CoverImageLoader.shared.diskBytes()
+                            }
+                        }
+                        .disabled(imageBytes == 0)
+                    }
+                }
+            } footer: {
+                Text("Cover und Breitbilder, die sich jederzeit neu laden lassen — höchstens 256 MB. Merkliste, Verlauf und Fortschritt bleiben unberührt.")
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+            }
+            .task { imageBytes = await CoverImageLoader.shared.diskBytes() }
 
             Section {
                 LabeledContent("Verlauf") {

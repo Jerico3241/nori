@@ -27,6 +27,20 @@ import SwiftUI
 /// erscheinen": kein minutenlanges Ladeskelett, sondern ein vollständiger
 /// erster Aufbau, der sich still verbessert.
 ///
+/// ## Die Ordnung bleibt stehen
+///
+/// Der zweite Durchgang ändert **Inhalte, nicht die Ordnung**. Vorher ersetzte
+/// er den ganzen Feed: Karten wechselten innerhalb einer Reihe die Stelle, der
+/// Kopfbereich zeigte plötzlich einen anderen Titel, und „Neue Episoden"
+/// schob sich zwischen zwei Reihen, während schon gescrollt wurde. Jetzt legt
+/// `HomeFeedStability` den frischen Feed über den sichtbaren. Neu geordnet
+/// wird nur beim ersten Aufbau und beim bewussten Aktualisieren.
+///
+/// Ohne jeden TMDB-Stand von vorhin — erster Start, geleerter Cache — stünden
+/// im ersten Durchgang nur Genre-Reihen; alles, was TMDB bringt, käme darunter.
+/// Dann wartet die Seite im Ladeskelett auf den zweiten Durchgang, höchstens
+/// `coldStartHold` lang.
+///
 /// ## Wenn TMDB ausfällt
 ///
 /// Nichts hier wirft. Ohne Schlüssel, ohne Netz oder bei Ratenbegrenzung
@@ -45,6 +59,14 @@ final class HomeFeedService {
     /// Der erste Durchgang lief noch nie. Unterscheidet „leer, weil nichts
     /// da ist" von „leer, weil noch nicht gerechnet".
     private(set) var ready = false
+    /// Kalter Start: die Seite hält das Ladeskelett, bis der zweite Durchgang
+    /// die Ordnung festlegen kann (siehe oben).
+    private(set) var holding = false
+
+    /// Wie lange ein kalter Start höchstens auf TMDB wartet, bevor er zeigt,
+    /// was ohne Netz dasteht.
+    static let coldStartHold: Duration = .seconds(3)
+    private var holdTask: Task<Void, Never>?
 
     /// Der lokale Stand, wie ihn die Ansicht mitgibt.
     ///
@@ -72,35 +94,64 @@ final class HomeFeedService {
         let key = sourceKey
         if !force, key == lastKey, ready { return }
         lastKey = key
+        holdTask?.cancel()
+        holdTask = nil
+        holding = false
+        // Neu geordnet wird beim ersten Aufbau und beim bewussten
+        // Aktualisieren. Jeder andere Aufbau — ein nachgeladener Katalog, eine
+        // Bibliotheksänderung — hält die Ordnung, die schon dasteht.
+        let reorder = force || !ready
 
-        let titles = catalog.map { HomeTitle($0, fallback: .aniworld) }
-        guard !titles.isEmpty else {
+        guard !catalog.isEmpty else {
             // Ohne Katalog gibt es keine Kacheln — aber „Weiterschauen" steht
             // im gespeicherten Stand und braucht ihn gar nicht.
-            var empty = HomeFeed()
-            empty.continueWatching = local.continueWatching
-            feed = empty
+            feed = Self.watchingOnly(local)
             ready = true
             return
         }
 
-        let index = HomeCatalogIndex(titles)
+        // Titel, Index und beide Aufbauten laufen abseits des Hauptthreads;
+        // hier wird nur veröffentlicht. Gemessen mit dem Time Profiler
+        // (iPad-Simulator, Release, Start mit beiden Katalogen): der Index
+        // allein kostete 435 ms Hauptthread — Normalisieren über reguläre
+        // Ausdrücke für jeden Titel und Alternativtitel —, der ganze Aufbau
+        // rund 700 ms. So lange nahm die Startseite beim Start keine Eingabe an.
+        let prepared = await Task.detached(priority: .userInitiated) {
+            let titles = catalog.map { HomeTitle($0, fallback: .aniworld) }
+            return (titles: titles, index: HomeCatalogIndex(titles))
+        }.value
+        guard !Task.isCancelled else { return }
+        let titles = prepared.titles
+        let index = prepared.index
         let seeds = await Self.seedSignals(titles: titles, local: local)
 
         // --- Durchgang 1: alles, was ohne Netz dasteht.
         let cached = await TMDBCatalog.shared.cachedSignals()
-        feed = Self.assemble(
-            titles: titles,
-            index: index,
-            local: local,
-            trending: cached.trending,
-            others: cached.others,
-            airing: cached.airing,
-            calendar: calendarCache,
-            seedSignals: seeds,
-            recommended: recommendationCache,
-            now: Date()
-        )
+        let firstCalendar = calendarCache
+        let firstRecommended = recommendationCache
+        let first = await Task.detached(priority: .userInitiated) {
+            Self.assemble(
+                titles: titles,
+                index: index,
+                local: local,
+                trending: cached.trending,
+                others: cached.others,
+                airing: cached.airing,
+                calendar: firstCalendar,
+                seedSignals: seeds,
+                recommended: firstRecommended,
+                now: Date()
+            )
+        }.value
+        guard !Task.isCancelled else { return }
+        let cold = cached.trending.isEmpty && cached.others.isEmpty && cached.airing.isEmpty
+        if !reorder {
+            publish(first)
+        } else if cold, !force {
+            hold(fallback: first, local: local)
+        } else {
+            feed = first.feed
+        }
         ready = true
         guard !Task.isCancelled else { return }
 
@@ -127,18 +178,54 @@ final class HomeFeedService {
         recommendationCache = await Self.related(seeds: profile.seeds, index: index)
         guard !Task.isCancelled else { return }
 
-        feed = Self.assemble(
-            titles: titles,
-            index: index,
-            local: local,
-            trending: fresh.trending,
-            others: fresh.others,
-            airing: fresh.airing,
-            calendar: calendarCache,
-            seedSignals: seeds,
-            recommended: recommendationCache,
-            now: Date()
-        )
+        let secondCalendar = calendarCache
+        let secondRecommended = recommendationCache
+        let second = await Task.detached(priority: .userInitiated) {
+            Self.assemble(
+                titles: titles,
+                index: index,
+                local: local,
+                trending: fresh.trending,
+                others: fresh.others,
+                airing: fresh.airing,
+                calendar: secondCalendar,
+                seedSignals: seeds,
+                recommended: secondRecommended,
+                now: Date()
+            )
+        }.value
+        guard !Task.isCancelled else { return }
+        holdTask?.cancel()
+        holdTask = nil
+        holding = false
+        publish(second)
+    }
+
+    /// Legt einen frisch gerechneten Feed über den sichtbaren, ohne dessen
+    /// Ordnung zu ändern.
+    private func publish(_ assembly: Assembly) {
+        feed = HomeFeedStability.stabilize(previous: feed, fresh: assembly.feed, candidates: assembly.candidates)
+    }
+
+    /// Kalter Start: nur „Weiterschauen" steht, der Rest bleibt im Skelett.
+    /// Kommt der zweite Durchgang nicht rechtzeitig, erscheint der erste —
+    /// was TMDB danach bringt, hängt `HomeFeedStability` unten an.
+    private func hold(fallback: Assembly, local: LocalState) {
+        feed = Self.watchingOnly(local)
+        holding = true
+        holdTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.coldStartHold)
+            guard !Task.isCancelled, let self, self.holding else { return }
+            self.holding = false
+            self.publish(fallback)
+        }
+    }
+
+    private static func watchingOnly(_ local: LocalState) -> HomeFeed {
+        var out = HomeFeed()
+        out.continueWatching = local.continueWatching
+        out.sections = HomeSection.canonical(for: out)
+        return out
     }
 
     /// Kalender und Empfehlungen überleben einen Neuaufbau: sie ändern sich
@@ -214,8 +301,17 @@ final class HomeFeedService {
 
     // MARK: - Zusammenbauen
 
-    /// Rein: dieselben Eingaben ergeben denselben Feed.
-    static func assemble(
+    /// Ein gerechneter Feed samt aller Kandidaten, aus denen er gewählt hat —
+    /// `HomeFeedStability` braucht sie, um sichtbare Karten mit frischen Daten
+    /// zu versorgen.
+    struct Assembly {
+        var feed: HomeFeed
+        var candidates: [String: HomeCandidate]
+    }
+
+    /// Rein: dieselben Eingaben ergeben denselben Feed. `nonisolated`, damit
+    /// der Aufbau abseits des Hauptthreads laufen kann.
+    nonisolated static func assemble(
         titles: [HomeTitle],
         index: HomeCatalogIndex,
         local: LocalState,
@@ -226,7 +322,7 @@ final class HomeFeedService {
         seedSignals: [String: TMDBSignals],
         recommended: [Int: Int],
         now: Date
-    ) -> HomeFeed {
+    ) -> Assembly {
         var watched: [String: Double] = [:]
         for item in local.progress {
             let provider = item.provider ?? providerFromPath(item.episodePath)
@@ -313,7 +409,9 @@ final class HomeFeedService {
         used.formUnion(feed.recommendations.map(\.id))
 
         feed.extraRows = extraRows(candidates, titles: titles, used: &used, now: now)
-        return feed
+        feed.sections = HomeSection.canonical(for: feed)
+        let pool = Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return Assembly(feed: feed, candidates: pool)
     }
 
     /// Die zusätzlichen Reihen unter den festen.
@@ -322,7 +420,7 @@ final class HomeFeedService {
     /// Fehler aus. Und nur, was übrig bleibt — eine Trendreihe, die nach dem
     /// Entdoppeln fast leer ist, sagt dasselbe wie „Neu & beliebt" darüber
     /// und entfällt.
-    private static func extraRows(
+    nonisolated private static func extraRows(
         _ candidates: [HomeCandidate],
         titles: [HomeTitle],
         used: inout Set<String>,
@@ -352,7 +450,7 @@ final class HomeFeedService {
     /// Sie sind der Rückfall, der auch ohne TMDB trägt: die Genres stehen im
     /// Katalog der Quelle. Sortiert wird trotzdem nach Punkten, damit in einer
     /// Fantasy-Reihe nicht alphabetisch der Anfang des Katalogs steht.
-    private static func genreRows(
+    nonisolated private static func genreRows(
         _ candidates: [HomeCandidate],
         used: inout Set<String>,
         now: Date,

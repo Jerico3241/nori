@@ -147,6 +147,246 @@ enum TMDBKeyStore {
     }
 }
 
+#if DEBUG
+/// Netzstörungen zum Nachstellen — nur in Debug-Builds.
+///
+/// Gestartet mit `-NoriNetworkSimulation <modus>` (oder der Umgebungsvariable
+/// `NORI_NETWORK_SIMULATION`) laufen alle Abrufe der App durch
+/// `SimulatedNetworkProtocol`. So lässt sich ohne Eingriff in die
+/// Systemeinstellungen prüfen, was die Oberfläche bei fehlendem Netz, einem
+/// hängenden TMDB oder nur einer erreichbaren Quelle zeigt.
+enum NoriNetworkSimulation: String, CaseIterable {
+    /// Nichts ist erreichbar.
+    case offline
+    /// Alles kommt an, aber vier Sekunden später.
+    case slow
+    /// TMDB antwortet nicht, bis das Zeitlimit greift.
+    case tmdbTimeout = "tmdb-timeout"
+    /// AniWorld und Serienstream antworten nicht.
+    case providerTimeout = "provider-timeout"
+    /// Serienstream ist nicht erreichbar.
+    case onlyAniworld = "only-aniworld"
+    /// AniWorld ist nicht erreichbar.
+    case onlySerienstream = "only-serienstream"
+    /// Google ist nicht erreichbar — Anmeldung, Token und Drive.
+    case driveOffline = "drive-offline"
+
+    enum Effect: Equatable {
+        case pass
+        case fail(URLError.Code)
+        case delay(TimeInterval)
+        /// Nicht antworten und nach der Frist mit `timedOut` scheitern.
+        case hang(TimeInterval)
+    }
+
+    static let active: NoriNetworkSimulation? = {
+        let raw = ProcessInfo.processInfo.environment["NORI_NETWORK_SIMULATION"]
+            ?? UserDefaults.standard.string(forKey: "NoriNetworkSimulation")
+        return raw.flatMap(NoriNetworkSimulation.init(rawValue:))
+    }()
+
+    /// Für Tests: ein Modus ohne Startargument.
+    nonisolated(unsafe) static var forced: NoriNetworkSimulation?
+
+    static var current: NoriNetworkSimulation? { forced ?? active }
+
+    /// Die Zwischenspeicher der simulierten Sitzungen.
+    ///
+    /// Übernimmt ein eigenes `URLProtocol` eine Anfrage, schlägt das System
+    /// den Zwischenspeicher der Sitzung nicht mehr selbst nach. Ohne diese
+    /// Liste zeigte „offline" deshalb leere Kacheln, obwohl die Cover auf der
+    /// Platte liegen — strenger als ein echtes Gerät ohne Netz.
+    ///
+    /// Gemerkt wird auch die Richtlinie der Sitzung: `CoverImageLoader` setzt
+    /// „Zwischenspeicher zuerst" an der Sitzung, die einzelne Anfrage trägt
+    /// weiter `.useProtocolCachePolicy`. Nach der Anfrage allein gefragt, kam
+    /// offline deshalb nie etwas aus dem Speicher.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var caches: [(cache: URLCache, policy: URLRequest.CachePolicy)] = []
+
+    static func cachedResponse(for request: URLRequest) -> CachedURLResponse? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        for entry in caches where allowsCache(entry.policy) || allowsCache(request.cachePolicy) {
+            if let hit = entry.cache.cachedResponse(for: request) { return hit }
+        }
+        return allowsCache(request.cachePolicy) ? URLCache.shared.cachedResponse(for: request) : nil
+    }
+
+    static func allowsCache(_ policy: URLRequest.CachePolicy) -> Bool {
+        policy == .returnCacheDataElseLoad || policy == .returnCacheDataDontLoad
+    }
+
+    /// Rein: was mit einer Anfrage an diesen Host geschieht.
+    func effect(host: String) -> Effect {
+        let host = host.lowercased()
+        func matches(_ domains: [String]) -> Bool {
+            domains.contains { host == $0 || host.hasSuffix("." + $0) }
+        }
+        let tmdb = ["themoviedb.org", "tmdb.org"]
+        let aniworld = ["aniworld.to"]
+        let serienstream = ["serienstream.to", "s.to"]
+        let google = ["googleapis.com", "google.com"]
+        switch self {
+        case .offline: return .fail(.notConnectedToInternet)
+        case .slow: return .delay(4)
+        case .tmdbTimeout: return matches(tmdb) ? .hang(12) : .pass
+        case .providerTimeout: return matches(aniworld + serienstream) ? .hang(20) : .pass
+        case .onlyAniworld: return matches(serienstream) ? .fail(.cannotConnectToHost) : .pass
+        case .onlySerienstream: return matches(aniworld) ? .fail(.cannotConnectToHost) : .pass
+        case .driveOffline: return matches(google) ? .fail(.notConnectedToInternet) : .pass
+        }
+    }
+
+    /// Für `URLSession.shared` und alles, was darauf läuft.
+    static func install() {
+        guard current != nil else { return }
+        URLProtocol.registerClass(SimulatedNetworkProtocol.self)
+    }
+
+    /// Für Sitzungen mit eigener Konfiguration — die sehen eine global
+    /// registrierte Klasse nicht.
+    static func configure(_ config: URLSessionConfiguration) {
+        guard current != nil else { return }
+        config.protocolClasses = [SimulatedNetworkProtocol.self] + (config.protocolClasses ?? [])
+        if let cache = config.urlCache {
+            cacheLock.lock()
+            if !caches.contains(where: { $0.cache === cache }) {
+                caches.append((cache, config.requestCachePolicy))
+            }
+            cacheLock.unlock()
+        }
+    }
+}
+
+final class SimulatedNetworkProtocol: URLProtocol, @unchecked Sendable {
+    private static let passedKey = "nori.simulation.passed"
+    /// Leitet durchgelassene Anfragen weiter — ohne diese Klasse, sonst liefe
+    /// jede Anfrage endlos im Kreis.
+    private static let forward = URLSession(configuration: .default)
+
+    private var work: Task<Void, Never>?
+    private var forwarding: URLSessionDataTask?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard let mode = NoriNetworkSimulation.current, let host = request.url?.host,
+              URLProtocol.property(forKey: passedKey, in: request) == nil
+        else { return false }
+        return mode.effect(host: host) != .pass
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let effect = NoriNetworkSimulation.current?.effect(host: request.url?.host ?? "") ?? .pass
+        // Ohne Netz liefert ein echtes Gerät, was im Zwischenspeicher der
+        // Sitzung liegt, sofern die Anfrage das erlaubt — die Cover etwa.
+        // Die Simulation darf nicht strenger sein als die Wirklichkeit, sonst
+        // zeigt sie leere Kacheln, die es ohne Netz gar nicht gäbe.
+        let supplied = NoriNetworkSimulation.allowsCache(request.cachePolicy) ? cachedResponse : nil
+        if effect != .pass, let cached = supplied ?? NoriNetworkSimulation.cachedResponse(for: request) {
+            client?.urlProtocol(self, didReceive: cached.response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: cached.data)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        work = Task { [weak self] in
+            switch effect {
+            case .pass:
+                self?.passThrough()
+            case .fail(let code):
+                self?.fail(code)
+            case .delay(let seconds):
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                self?.passThrough()
+            case .hang(let seconds):
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled else { return }
+                self?.fail(.timedOut)
+            }
+        }
+    }
+
+    override func stopLoading() {
+        work?.cancel()
+        forwarding?.cancel()
+    }
+
+
+    private func fail(_ code: URLError.Code) {
+        client?.urlProtocol(self, didFailWithError: URLError(code))
+    }
+
+    private func passThrough() {
+        guard let marked = (request as NSURLRequest).mutableCopy() as? NSMutableURLRequest else {
+            fail(.unknown)
+            return
+        }
+        URLProtocol.setProperty(true, forKey: Self.passedKey, in: marked)
+        forwarding = Self.forward.dataTask(with: marked as URLRequest) { [weak self] data, response, error in
+            guard let self else { return }
+            if let error {
+                self.client?.urlProtocol(self, didFailWithError: error)
+                return
+            }
+            if let response {
+                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .allowed)
+            }
+            if let data { self.client?.urlProtocol(self, didLoad: data) }
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
+        forwarding?.resume()
+    }
+}
+#endif
+
+/// Der zuletzt vollständig geladene Katalog je Quelle, auf der Platte.
+///
+/// Vorher lag der Katalog nur im Arbeitsspeicher. Ohne Netz, bei einer
+/// Schutzseite oder einem Zeitlimit stand nach einem Neustart deshalb gar
+/// nichts da — Startseite, Katalog und Kategorien leer, obwohl der Stand von
+/// gestern völlig genügt hätte. Jetzt dient die letzte gute Fassung als
+/// Rückfall, wenn das Laden scheitert. Sie ist regenerierbar und liegt
+/// deshalb unter Caches, nicht bei der Bibliothek.
+struct CatalogDiskCache {
+    let directory: URL?
+
+    static let shared = CatalogDiskCache(
+        directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("NoriCatalog", isDirectory: true)
+    )
+
+    /// Unter so vielen Einträgen gilt ein Katalog als unvollständig — dieselbe
+    /// Schwelle wie beim Laden.
+    static let minimumItems = 20
+
+    private func file(for provider: CatalogProvider) -> URL? {
+        directory?.appendingPathComponent("\(provider.rawValue).json")
+    }
+
+    func save(_ result: CatalogResult, provider: CatalogProvider) {
+        guard let directory, let file = file(for: provider),
+              result.items.count >= Self.minimumItems,
+              let data = try? JSONEncoder().encode(result)
+        else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: file, options: .atomic)
+    }
+
+    /// Die abgelegte Fassung, als `source: "cache"` gekennzeichnet — oder
+    /// `nil`, wenn keine da ist oder die Datei nicht mehr lesbar ist.
+    func load(provider: CatalogProvider) -> CatalogResult? {
+        guard let file = file(for: provider),
+              let data = try? Data(contentsOf: file),
+              var result = try? JSONDecoder().decode(CatalogResult.self, from: data),
+              result.items.count >= Self.minimumItems
+        else { return nil }
+        result.source = "cache"
+        return result
+    }
+}
+
 actor AniworldClient {
     static let shared = AniworldClient()
 
@@ -160,11 +400,30 @@ actor AniworldClient {
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
         config.timeoutIntervalForRequest = 20
+        #if DEBUG
+        NoriNetworkSimulation.configure(config)
+        #endif
         session = URLSession(configuration: config)
     }
 
     func getCatalog(provider: CatalogProvider, force: Bool = false) async throws -> CatalogResult {
         if !force, let hit = catalogs[provider], hit.1 > Date() { return hit.0 }
+        do {
+            let result = try await fetchCatalog(provider: provider)
+            catalogs[provider] = (result, Date().addingTimeInterval(30 * 60))
+            CatalogDiskCache.shared.save(result, provider: provider)
+            return result
+        } catch {
+            // Kein Netz, Zeitlimit, Schutzseite: dann der letzte gute Stand.
+            // Nur eine Minute gemerkt — beim nächsten Laden wird es wieder
+            // live versucht.
+            guard !Task.isCancelled, let stored = CatalogDiskCache.shared.load(provider: provider) else { throw error }
+            catalogs[provider] = (stored, Date().addingTimeInterval(60))
+            return stored
+        }
+    }
+
+    private func fetchCatalog(provider: CatalogProvider) async throws -> CatalogResult {
         let html = try await fetchPage(provider.catalogPath, provider: provider)
         var items = provider == .serienstream
             ? try HTML.parseCatalogSerienstream(html)
@@ -176,12 +435,10 @@ actor AniworldClient {
         // Anzahl mitgeben: 0 heißt blockiert oder Markup geändert, eine kleine
         // Zahl heißt, dass der Parser nur noch teilweise greift. Ohne die Zahl
         // war beides dieselbe Meldung.
-        guard items.count >= 20 else {
+        guard items.count >= CatalogDiskCache.minimumItems else {
             throw NoriError.parse("\(provider.label): Katalog unvollständig, nur \(items.count) Einträge gelesen")
         }
-        let result = CatalogResult(items: items, source: "live", fetchedAt: Date().timeIntervalSince1970 * 1000)
-        catalogs[provider] = (result, Date().addingTimeInterval(30 * 60))
-        return result
+        return CatalogResult(items: items, source: "live", fetchedAt: Date().timeIntervalSince1970 * 1000)
     }
 
     func getSeries(provider: CatalogProvider, slug: String, season: String? = nil) async throws -> SeriesDetail {
@@ -374,6 +631,9 @@ actor CoverImageLoader {
         #else
         diskCache = nil
         #endif
+        #if DEBUG
+        NoriNetworkSimulation.configure(config)
+        #endif
         session = URLSession(configuration: config)
     }
 
@@ -549,6 +809,19 @@ actor CoverImageLoader {
         order.removeAll(keepingCapacity: false)
         failed.removeAll(keepingCapacity: false)
         diskCache?.removeAllCachedResponses()
+        #if canImport(ImageIO)
+        DecodedImageCache.shared.removeAll()
+        #endif
+    }
+
+    /// Speicherwarnung: alles aus dem Arbeitsspeicher, was auf der Platte
+    /// ohnehin noch liegt.
+    ///
+    /// Anders als `purge` bleibt der Plattenspeicher stehen — die Kacheln sind
+    /// danach ohne Netz sofort wieder da, nur neu entschlüsselt.
+    func trimMemory() {
+        cache.removeAll(keepingCapacity: false)
+        order.removeAll(keepingCapacity: false)
         #if canImport(ImageIO)
         DecodedImageCache.shared.removeAll()
         #endif

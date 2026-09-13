@@ -113,10 +113,17 @@ enum CatalogDensity: String, CaseIterable, Identifiable {
     /// Auf dem iPhone zwei beziehungsweise drei, wie auf der Vorlage. Auf
     /// einem iPad wächst die **Zahl** und nicht die Kachel: Zwei Poster über
     /// 1300 Punkte wären zwei Plakate, und der Katalog soll übersehbar sein.
+    ///
+    /// Aufgerundet, nicht abgerundet: `maxPosterWidth` ist eine **Obergrenze**.
+    /// Mit `floor` war jede Spalte mindestens so breit wie die Grenze — auf
+    /// einem 13-Zoll-iPad im Hochformat standen vier Poster von 240 Punkten
+    /// nebeneinander, Plakate statt eines Katalogs. Mit `ceil` bleibt jede
+    /// Kachel unter der Grenze; auf dem iPhone ändert sich nichts, dort greift
+    /// ohnehin das Minimum.
     func columns(for width: CGFloat) -> Int {
         let usable = max(width - 2 * CatalogMetrics.screen, 1)
         let minimum = self == .compact ? 3 : 2
-        let fitting = Int(floor((usable + columnSpacing) / (maxPosterWidth + columnSpacing)))
+        let fitting = Int(ceil((usable + columnSpacing) / (maxPosterWidth + columnSpacing)))
         return max(minimum, fitting)
     }
 }

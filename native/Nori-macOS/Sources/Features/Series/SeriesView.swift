@@ -263,32 +263,21 @@ struct SeriesView: View {
                     }
                 }
 
-                HStack(spacing: 10) {
-                    let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
-                    Button {
-                        guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
-                        open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
-                    } label: {
-                        Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
-                            .font(.headline)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 11)
-                            .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .foregroundStyle(NoriTheme.onAccent)
+                // Zweizeilig, wenn die Zeile nicht passt. In einem schmalen
+                // Fenster brach „Abspielen · Folge 1" sonst mitten im Knopf um,
+                // und von der Staffelauswahl blieb „Staff…".
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        playButton(detail)
+                        BookmarkButton(slug: slug, title: detail.title, large: true)
+                        seasonPicker(detail)
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.defaultAction)
-
-                    BookmarkButton(slug: slug, title: detail.title, large: true)
-
-                    if detail.seasons.count > 1 {
-                        Picker("Staffel", selection: seasonBinding) {
-                            ForEach(detail.seasons) { item in
-                                Text(item.label).tag(item.id)
-                            }
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            playButton(detail)
+                            BookmarkButton(slug: slug, title: detail.title, large: true)
                         }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 170)
+                        seasonPicker(detail)
                     }
                 }
             }
@@ -301,6 +290,39 @@ struct SeriesView: View {
         .frame(minHeight: 430, alignment: .bottomLeading)
         .background { headerBackground }
         .clipped()
+    }
+
+    private func playButton(_ detail: SeriesDetail) -> some View {
+        let target = library.nextPlay(slug: slug, season: season, episodes: detail.episodes)
+        return Button {
+            guard let ep = detail.episodes.first(where: { $0.number == target.episode }) else { return }
+            open(series: detail, episode: ep, resumeAt: library.resumeEnabled ? target.resumeAt : 0)
+        } label: {
+            Label(cta(target.kind, episode: target.episode), systemImage: "play.fill")
+                .font(.headline)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 11)
+                .background(NoriTheme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .foregroundStyle(NoriTheme.onAccent)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.defaultAction)
+    }
+
+    @ViewBuilder
+    private func seasonPicker(_ detail: SeriesDetail) -> some View {
+        if detail.seasons.count > 1 {
+            Picker("Staffel", selection: seasonBinding) {
+                ForEach(detail.seasons) { item in
+                    Text(item.label).tag(item.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: 170, alignment: .leading)
+        }
     }
 
     /// Beschreibung links, harte Fakten rechts.
@@ -809,8 +831,12 @@ struct EpisodeRow: View {
 /// Die Detailseite, bevor die Serie da ist.
 ///
 /// Kopfbereich mit Poster und Titel in denselben Maßen wie `header`, darunter
-/// der Platz der Folgenliste. Der Titel kam mit dem Klick und steht deshalb
-/// echt da statt als Balken.
+/// der Platz der Beschreibung und der Folgenliste. Der Titel kam mit dem Klick
+/// und steht deshalb echt da statt als Balken.
+///
+/// Die Beschreibung fehlte hier vorher: beim Eintreffen der Serie schob sie
+/// sich zwischen Kopfbereich und Folgen, und die Liste sprang um ihre Höhe
+/// nach unten.
 private struct SeriesSkeleton: View {
     let title: String
 
@@ -848,6 +874,14 @@ private struct SeriesSkeleton: View {
                 .background {
                     LinearGradient(colors: [NoriTheme.elevated, NoriTheme.bg], startPoint: .top, endPoint: .bottom)
                 }
+
+                Text("Eine Beschreibung über drei Zeilen, damit ihr Platz schon steht, bevor die Serie eingetroffen ist und der Text erscheint.")
+                    .font(.callout)
+                    .lineLimit(3, reservesSpace: true)
+                    .redacted(reason: .placeholder)
+                    .foregroundStyle(NoriTheme.muted.opacity(0.4))
+                    .frame(maxWidth: 620, alignment: .leading)
+                    .padding(.horizontal, NoriLayout.gutter)
 
                 VStack(alignment: .leading, spacing: 10) {
                     NoriSectionHeader("Folgen")
