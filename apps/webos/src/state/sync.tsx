@@ -26,9 +26,18 @@
 // Geräte an diesem Konto zurück. Das Zweite hinter einem unscheinbaren
 // „Abmelden" zu verstecken, wäre die Art Fehler, die jemand erst bemerkt, wenn
 // das iPhone nicht mehr mitkommt.
+//
+// ## Nur der TV-Spiegel
+//
+// Der Fernseher fragt ausschliesslich nach `drive.file` und liest und schreibt
+// nur den sichtbaren TV-Spiegel (Ordner „Nori"). `drive.appdata` lehnt Googles
+// Gerätefluss reproduzierbar mit `invalid_scope` ab — auch für weitere
+// TV-Clients und in einem zweiten Projekt (docs/google-drive-sync.md). Die
+// Daten der Apple-Geräte kommen deshalb über ein iPhone, iPad oder Mac, auf dem
+// „Mit Fernseher teilen" eingeschaltet ist.
 
 import {
-  deviceQrPayload,
+  deviceQrPayload, DRIVE_FILE_SCOPE,
   GoogleAuthError, GoogleDeviceAuthorization, GoogleDriveClient, GoogleDriveSnapshotStore,
   LibrarySyncEngine,
   type DeviceAuthorization, type GoogleDeviceConfiguration, type GoogleTokens,
@@ -43,6 +52,23 @@ import { warn } from "../services/log";
 const TOKEN_KEY = "nori.google.tokens";
 const CLIENT_ID_KEY = "nori.google.clientId";
 const CLIENT_SECRET_KEY = "nori.google.clientSecret";
+
+/** Merkposten des TV-Spiegels — getrennt von `nori.sync.*` des `appDataFolder`. */
+const MIRROR_KEY_PREFIX = "nori.sync.tvMirror";
+/**
+ * Was eine frühere Fassung für den `appDataFolder` gemerkt hat. Der Fernseher
+ * kommt dort nicht mehr hin; eine solche Kennung darf nie im Spiegel landen.
+ */
+const LEGACY_APPDATA_KEYS = ["nori.sync.driveFileId", "nori.sync.accountId", "nori.sync.lastUpload"];
+
+/**
+ * Hat Google `drive.file` erteilt? Google lässt einzelne Bereiche bei der
+ * Zustimmung abwählen. Ohne Angabe gilt ja — Drive meldet es dann selbst.
+ */
+function grantsFileScope(tokens: GoogleTokens | null): boolean {
+  if (!tokens || !tokens.scope) return true;
+  return tokens.scope.split(" ").indexOf(DRIVE_FILE_SCOPE) !== -1;
+}
 
 /**
  * Wo die Tokens liegen.
@@ -166,6 +192,12 @@ export interface SyncContextValue {
   lastSuccessfulSync: number | null;
   lastError: string | null;
   lastWarning: string | null;
+  /**
+   * Verbunden und abgeglichen, aber im Spiegel liegt kein anderes Gerät: kein
+   * iPhone, iPad oder Mac teilt mit dem Fernseher. Dann steht dort, wo es
+   * einzuschalten ist.
+   */
+  tvMirrorMissing: boolean;
   /** Läuft der Gerätefluss gerade? Dann steht hier Adresse, Code und Ablauf. */
   pending: DeviceAuthorization | null;
   /** Die Adresse für den QR-Code — oder leer, solange nichts läuft. */
@@ -230,6 +262,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<DeviceAuthorization | null>(null);
   const [expired, setExpired] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [remoteDeviceCount, setRemoteDeviceCount] = useState<number | null>(null);
 
   // Die laufende Abfrage beim Gerätefluss, damit sie sich abbrechen lässt.
   const abort = useRef<AbortController | null>(null);
@@ -246,10 +279,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // alten geeicht.
   const [credentials, setCredentials] = useState(readCredentials);
 
+  const tokenStore = useMemo(() => new LocalTokenStore(), []);
   const authorization = useMemo(() => new GoogleDeviceAuthorization({
-    configuration: { clientId: credentials.clientId, clientSecret: credentials.clientSecret },
-    tokenStore: new LocalTokenStore(),
-  }), [credentials]);
+    configuration: {
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+      scopes: [DRIVE_FILE_SCOPE],
+    },
+    tokenStore,
+  }), [credentials, tokenStore]);
 
   const engine = useMemo(() => new LibrarySyncEngine({
     host: {
@@ -258,7 +296,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       get deviceId() { return libraryRef.current.state.deviceId; },
     },
     bookkeeping,
+    keyPrefix: MIRROR_KEY_PREFIX,
     onChange: (current) => {
+      setRemoteDeviceCount(current.remoteDeviceCount);
       setStatus(current.status);
       setLastSuccessfulSync(current.lastSuccessfulSync);
       setLastError(current.lastError);
@@ -267,7 +307,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }), []);
 
   const attach = useCallback(() => {
-    const client = new GoogleDriveClient({ authorization });
+    const client = new GoogleDriveClient({ authorization, space: "tvMirror" });
     // `connect` gleicht sofort ab: wer sich gerade angemeldet hat, soll seine
     // Merkliste sehen und nicht erst einen Knopf suchen.
     engine.connect(new GoogleDriveSnapshotStore(client), authorization.accountFingerprint);
@@ -277,10 +317,22 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   // Eine bestehende Verbindung nach dem Start wieder aufnehmen. Hier wird
   // nichts gefragt und kein Code angezeigt: liegen Tokens vor, geht es weiter.
   useEffect(() => {
+    for (const key of LEGACY_APPDATA_KEYS) bookkeeping.set(key, null);
+  }, []);
+
+  useEffect(() => {
     if (!authorization.isConnected) return undefined;
+    // Tokens ohne `drive.file` — etwa aus einer Fassung, die noch nach dem
+    // versteckten Ordner fragte. Mit ihnen käme der Fernseher an den Spiegel
+    // nicht heran; ein Knopf verbindet neu.
+    if (!grantsFileScope(tokenStore.read())) {
+      authorization.disconnectDevice();
+      setMessage("Google Drive muss erneut verbunden werden.");
+      return undefined;
+    }
     attach();
     return () => engine.stopPolling();
-  }, [attach, authorization, engine]);
+  }, [attach, authorization, engine, tokenStore]);
 
   // Änderungen an der Bibliothek melden. Der Zeitplan der Engine entscheidet,
   // wann daraus ein Upload wird.
@@ -319,6 +371,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         // Fernsehers ist über das Netz erreichbar.
         await authorization.pollForTokens(device, { signal: controller.signal });
         setPending(null);
+        if (!grantsFileScope(tokenStore.read())) {
+          authorization.disconnectDevice();
+          engine.setDisconnected();
+          setMessage("Google hat den Zugriff auf die Nori-Dateien nicht erteilt. Bitte erneut verbinden und zustimmen.");
+          return;
+        }
         setMessage(null);
         attach();
       } catch (cause) {
@@ -342,7 +400,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (abort.current === controller) abort.current = null;
       }
     })();
-  }, [attach, authorization, engine]);
+  }, [attach, authorization, engine, tokenStore]);
 
   const cancelConnect = useCallback(() => {
     abort.current?.abort();
@@ -370,10 +428,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SyncContextValue>(() => ({
     isConfigured: authorization.isConfigured,
     status,
-    needsReauthorization: status === "needsReauthorization",
+    // Fehlt `drive.file` — bei Google entzogen oder bei der Zustimmung
+    // abgewählt —, hilft nur neu verbinden. Gezeigt als Anmeldung, nicht als
+    // Fehlertext mit einem Fachbegriff darin.
+    needsReauthorization: status === "needsReauthorization"
+      || (status === "error" && /insufficient|appNotAuthorized/i.test(lastError ?? "")),
     lastSuccessfulSync,
     lastError,
     lastWarning,
+    tvMirrorMissing: lastSuccessfulSync !== null && remoteDeviceCount === 0
+      && (status === "idle" || status === "syncing"),
     pending,
     qrPayload: pending ? deviceQrPayload(pending) : null,
     expired,
@@ -400,8 +464,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       engine.disconnect();
       setMessage(null);
     },
-  }), [authorization, status, lastSuccessfulSync, lastError, lastWarning, pending, expired,
-       message, credentials, connect, cancelConnect, forgetMigratedCredentials, engine]);
+  }), [authorization, status, lastSuccessfulSync, lastError, lastWarning, remoteDeviceCount, pending,
+       expired, message, credentials, connect, cancelConnect, forgetMigratedCredentials, engine]);
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }
@@ -415,6 +479,7 @@ export function useSync(): SyncContextValue {
 /** Was in den Einstellungen als Zustand steht. */
 export function syncStatusLabel(value: SyncContextValue): string {
   if (!value.isConfigured) return "nicht verfügbar";
+  if (value.needsReauthorization) return "Anmeldung nötig";
   switch (value.status) {
     case "disconnected": return "nicht verbunden";
     case "authorizing": return "wird verbunden …";

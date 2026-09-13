@@ -4,11 +4,19 @@ Merkliste, Verlauf, Wiedergabefortschritt und die geteilten Einstellungen
 zwischen iPhone, iPad, Mac und Fernseher. Eine Cloud, ein Konto, kein Server.
 
 ```text
-iOS / iPadOS ─┐
+iOS / iPadOS ─┬──► appDataFolder   drive.appdata, versteckt     immer
 macOS ────────┤
-webOS ────────┼──► Google Drive appDataFolder ◄── dasselbe Google-Konto
-Android ──────┘        (versteckt, je App)
+              └──► Ordner „Nori“   drive.file, sichtbar         nur mit „Mit Fernseher teilen“
+                          ▲
+webOS ────────────────────┘        nur drive.file
+Android ─────────► appDataFolder   (geplant)
 ```
+
+Alles im selben Google-Konto und im selben Cloud-Projekt. Apple bleibt beim
+versteckten `appDataFolder`. Der Fernseher kommt dort nicht hin — Googles
+Gerätefluss lehnt `drive.appdata` ab (Abschnitt 10) — und liest deshalb einen
+**TV-Spiegel**, den ein iPhone, iPad oder Mac nach ausdrücklicher Freigabe
+zusätzlich schreibt. Die Begründung steht in `docs/synchronisation.md`.
 
 Nori bleibt dabei **local-first**. Die Cloud ist ein Kanal zwischen Geräten und
 nie die Voraussetzung: ohne Netz funktioniert alles weiter, und ein
@@ -28,7 +36,17 @@ Verbunden
 Letzte Synchronisierung: vor wenigen Sekunden
 [ Jetzt synchronisieren ]
 [ Dieses Gerät trennen ]
+
+Fernseher
+[ ] Mit Fernseher teilen
+    Merkliste, Verlauf und Fortschritt auch auf dem LG-Fernseher
 ```
+
+Wer einen LG-Fernseher benutzt, schaltet „Mit Fernseher teilen" auf mindestens
+einem iPhone, iPad oder Mac ein. Vorher erklärt ein Dialog, dass Nori dafür eine
+sichtbare Kopie im Ordner „Nori" anlegt und nur auf eigene Dateien zugreift;
+„Weiter zu Google" führt zur Zustimmung. Am Fernseher genügt danach „Mit Google
+Drive verbinden".
 
 Mehr ist nicht zu tun. Client-ID, Client-Secret, Redirect-URI, Access- und
 Refresh-Token sind **keine** Benutzereinstellungen und stehen nicht in der
@@ -53,7 +71,10 @@ wurde ohne Google-Abgleich gebaut" und läuft ansonsten unverändert. Es sind
 
 Ein gemeinsames Projekt ist keine Bequemlichkeit, sondern Bedingung: der
 `appDataFolder` gehört zu **Projekt und Konto**. Vier Projekte hießen vier
-getrennte versteckte Ordner, und die Geräte sähen einander nicht.
+getrennte versteckte Ordner, und die Geräte sähen einander nicht. Für den
+TV-Spiegel gilt dasselbe: `drive.file` erlaubt Dateien, die eine App **desselben
+Projekts** angelegt hat — nur so findet der Fernseher, was der Mac geschrieben
+hat.
 
 ### Schritt für Schritt
 
@@ -69,14 +90,17 @@ getrennte versteckte Ordner, und die Geräte sähen einander nicht.
    Anwendungsname, Support-E-Mail und Kontaktadresse sind Pflicht — sie
    erscheinen dem Nutzer bei der Zustimmung.
 
-4. **Bereich hinzufügen.** Genau einen:
+4. **Bereiche hinzufügen.** Genau zwei:
 
    ```text
    https://www.googleapis.com/auth/drive.appdata
+   https://www.googleapis.com/auth/drive.file
    ```
 
-   Nicht `drive`, nicht `drive.file`, kein `email`, kein `profile`. Für den
-   Abgleich einer Merkliste geht Google niemand etwas an, und was Nori nicht
+   `drive.appdata` ist die Ablage von iPhone, iPad und Mac. `drive.file` braucht
+   der TV-Spiegel: Apple fragt ihn nur nach „Mit Fernseher teilen" an, der
+   Fernseher ausschliesslich. Nicht `drive`, kein `email`, kein `profile`. Für
+   den Abgleich einer Merkliste geht Google niemand etwas an, und was Nori nicht
    anfordert, kann Nori auch nicht verlieren.
 
 5. **Vier Clients anlegen.** *APIs & Dienste → Anmeldedaten → Anmeldedaten
@@ -95,14 +119,14 @@ getrennte versteckte Ordner, und die Geräte sähen einander nicht.
    - **Android:** Paketname und SHA-1-Fingerabdruck des Signaturschlüssels.
      Erst nötig, wenn die Compose-App existiert (siehe Abschnitt 7).
 
-6. **Bereich unter *Google Auth Platform → Data Access* speichern.** Dort muss
-   `drive.appdata` eingetragen **und gespeichert** sein. Siehe Abschnitt 10 zu
-   `invalid_scope` im Gerätefluss.
+6. **Bereiche unter *Google Auth Platform → Data Access* speichern.** Dort
+   müssen `drive.appdata` und `drive.file` eingetragen **und gespeichert** sein.
+   Warum der Fernseher trotzdem nur `drive.file` bekommt: Abschnitt 10.
 
 ### Muss die App überprüft werden?
 
-**Nein.** `drive.appdata` ist bei Google ein **nicht sensibler** Bereich —
-anders als `drive` (Vollzugriff), der als *restricted* gilt und eine
+**Nein.** `drive.appdata` und `drive.file` führt Google als **nicht sensible**
+Bereiche — anders als `drive` (Vollzugriff), der als *restricted* gilt und eine
 Sicherheitsprüfung verlangt.
 
 Das ist ausdrücklich eine Korrektur: `docs/synchronisation.md` behauptete früher,
@@ -315,7 +339,9 @@ lässt sich nicht auflösen. Nori geht auf beiden Plattformen gleich damit um:
    schützen können; die Sicherheit des Flusses hängt an der Zustimmung am
    zweiten Gerät, nicht an diesem Wert.
 3. Er berechtigt zu nichts ohne die ausdrückliche Zustimmung eines Nutzers, und
-   er öffnet nur `drive.appdata`.
+   er öffnet nur, was Nori anfragt: auf dem Mac `drive.appdata` und nach „Mit
+   Fernseher teilen" `drive.file`, am Fernseher nur `drive.file` — also nie
+   mehr als den versteckten App-Ordner und Dateien, die Nori selbst angelegt hat.
 
 Google selbst beschreibt das für installierte Anwendungen so: das Secret eines
 solchen Clients gilt dort nicht als Geheimnis. Wer das nicht tragen will, hat
@@ -448,6 +474,45 @@ OAuth-Fehlertext.
 Der Dialog sperrt den Fokus ein, „Zurück" bricht ab und gibt den Fokus an die
 Abgleich-Reihe zurück.
 
+Der Fernseher fragt ausschliesslich nach `drive.file` und liest nur den
+TV-Spiegel. Verbunden, aber noch ohne Spiegel eines Apple-Geräts, steht dort
+„Noch keine TV-Synchronisation gefunden – Aktiviere auf deinem iPhone, iPad oder
+Mac in Nori unter Synchronisation „Mit Fernseher teilen"." Fehlt `drive.file`,
+heisst der Zustand „Anmeldung nötig".
+
+### „Mit Fernseher teilen" auf iPhone, iPad und Mac
+
+```text
+Einstellungen → Synchronisation → Fernseher → [ Mit Fernseher teilen ]
+        ↓
+Erklärung: sichtbare Kopie im Ordner „Nori", nur eigene Dateien
+[ Weiter zu Google ]   [ Abbrechen ]
+        ↓
+Google: zusätzlicher Zugriff auf von Nori erstellte Dateien
+(include_granted_scopes=true — drive.appdata bleibt erhalten)
+        ↓
+erst jetzt eingeschaltet; der Spiegel gleicht sofort ab
+```
+
+- **Je Gerät.** Die Zustimmung gilt für die Anmeldung dieses Geräts. Andere
+  Geräte bleiben, wie sie sind; Nori schaltet nirgends still mit ein.
+- **Abbrechen** oder `drive.file` bei Google abwählen: der Schalter bleibt aus,
+  nichts wird angelegt.
+- **Entzieht Google den Zugriff später** (Drive antwortet `insufficientScopes`),
+  steht „Zugriff für den Fernseher erlauben" da. Der `appDataFolder` gleicht
+  unabhängig davon weiter ab.
+- **Ausschalten** stoppt nur den Spiegel dieses Geräts. Gelöscht wird nichts —
+  weder die eigene Spiegeldatei noch fremde noch der Ordner.
+- **Dieses Gerät trennen** und **Google-Zugriff widerrufen** schalten die
+  Freigabe auf diesem Gerät mit aus; eine spätere Anmeldung fragt wieder nur
+  nach `drive.appdata`.
+- **Das Relais.** Der Fernseher erfährt Änderungen von iPhone, iPad oder Mac nur
+  über ein Gerät mit Freigabe. Die Oberfläche sagt das ohne Fachbegriffe:
+  mindestens eines davon muss regelmäßig synchronisieren.
+
+Die Diagnose zeigt die erteilten Bereiche und den Zustand des Spiegels (aus,
+Zustimmung fehlt, aktiv) — nie Tokens.
+
 ### Was nirgends vorkommt
 
 - **Out-of-Band.** `urn:ietf:wg:oauth:2.0:oob` — der Weg, bei dem der Nutzer
@@ -555,18 +620,28 @@ Umbauaktion.
 
 ## 5. Was in der Cloud liegt
 
-Im `appDataFolder`, einem versteckten Ordner je App und Konto. Der Nutzer sieht
-ihn in „Meine Ablage" nicht, andere Apps kommen nicht heran, und beim Löschen
-der App verschwindet er mit.
+Zwei Ablagen mit denselben Daten und denselben Regeln:
 
-**Eine Datei je Gerät:**
+| | `appDataFolder` | TV-Spiegel |
+| --- | --- | --- |
+| Bereich | `drive.appdata` | `drive.file` |
+| wer | iPhone, iPad, Mac | Apple nach „Mit Fernseher teilen", Fernseher immer |
+| wo | versteckt, je App und Konto | Ordner „Nori" in „Meine Ablage", sichtbar |
+| Datei je Gerät | `nori-sync-v1-<deviceId>.json` | `nori-tv-sync-v1-<deviceId>.json` |
+| `appProperties` | `app=nori`, `type=library-snapshot`, `syncVersion=1`, `deviceId` | `app=nori`, `type=library-mirror`, `syncVersion=1`, `deviceId`, `mirror=tv` |
+| Merkposten im Gerät | `nori.sync.*` | `nori.sync.tvMirror.*` |
 
-```text
-nori-sync-v1-<deviceId>.json
-```
+Den `appDataFolder` sieht der Nutzer in „Meine Ablage" nicht, andere Apps kommen
+nicht heran, und beim Löschen der App verschwindet er mit. Den Spiegel sieht er:
+der Ordner „Nori" (`appProperties` `app=nori`, `type=mirror-folder`) ist nur
+dafür da. Gefunden werden Spiegeldateien **ausschliesslich** über
+`appProperties` — umbenannt, verschoben oder in einem anderen Ordner bleiben sie
+Teil des Abgleichs. Fehlt der Ordner, legt Nori beim nächsten neuen Schreiben
+einen an; liegen mehrere vor, gilt der älteste. Eine Dateikennung gehört genau
+zu einer Ablage und wird nie in der anderen benutzt.
 
-dazu `appProperties`: `app=nori`, `type=library-snapshot`, `syncVersion=1`,
-`deviceId=…`.
+Der Spiegel ist **keine Migration**. Er wird aus dem zusammengeführten lokalen
+Stand erzeugt; der `appDataFolder` bleibt, wie er ist.
 
 Jedes Gerät schreibt **nur seine eigene Datei** und liest die aller anderen.
 Deshalb gibt es praktisch keine Schreibkonflikte — und deshalb geht nichts
@@ -582,6 +657,22 @@ Hoster-Zwischenstände, Caches und Tokens.
 
 Eine Datei ist auf **2 MiB** begrenzt. Eine normale Bibliothek liegt im
 zweistelligen Kilobyte-Bereich; was darüber liegt, wird gar nicht erst geladen.
+
+**Unverändert wird nicht geschrieben.** Jedes Gerät merkt sich je Ablage
+dauerhaft, welchen Stand (SHA-256), welche Datei und welchen Änderungsstempel es
+zuletzt geschrieben hat. Liegt genau das noch in der Auflistung, entfällt der
+Upload — auch nach einem Neustart.
+
+**Doppelte Dateien eines Geräts** — etwa eine aus dem Papierkorb zurückgeholte
+Spiegeldatei neben ihrer Nachfolgerin — führen nicht zu wechselnden Ständen:
+gelesen wird deterministisch die neueste (`modifiedTime`, dann Kennung), die
+übrigen werden übergangen und nie automatisch gelöscht. Die Warnung im
+Abgleich nennt den Fall. Liegt die **eigene** Datei im Papierkorb, schreibt Nori
+eine neue.
+
+**Keine Ende-zu-Ende-Verschlüsselung.** Der Spiegel ist für den Kontoinhaber
+lesbar wie jede andere seiner Dateien. Verschlüsselung wäre eine mögliche
+spätere Erweiterung und ist nicht Teil dieser Fassung.
 
 ---
 
@@ -699,10 +790,18 @@ Läufe `Build iOS` und `Build macOS`.
    Fortschritt erscheinen.
 4. Auf B etwas ändern, auf A „Jetzt synchronisieren". Erwartung: die Änderung
    kommt an.
-5. In Drive nachsehen: <https://drive.google.com/drive/my-drive> — die
-   Nori-Dateien dürfen dort **nicht** auftauchen. Sie liegen im versteckten
-   Ordner; sichtbar sind sie nur über die API mit
+5. In Drive nachsehen: <https://drive.google.com/drive/my-drive> — ohne „Mit
+   Fernseher teilen" dürfen dort **keine** Nori-Dateien auftauchen. Sie liegen
+   im versteckten Ordner; sichtbar sind sie nur über die API mit
    `spaces=appDataFolder`.
+6. Auf Gerät A „Mit Fernseher teilen" einschalten und bei Google zustimmen.
+   Erwartung: in „Meine Ablage" erscheint der Ordner „Nori" mit
+   `nori-tv-sync-v1-<deviceId>.json`; auf Gerät B ändert sich nichts.
+7. Am Fernseher mit demselben Konto verbinden. Erwartung: der Hinweis „Noch
+   keine TV-Synchronisation gefunden" steht nicht da, Merkliste und Fortschritt
+   von A und B erscheinen. Eine Änderung am Fernseher kommt über A auf B an.
+8. Auf A „Mit Fernseher teilen" ausschalten. Erwartung: nichts in Drive wird
+   gelöscht; der Fernseher behält den letzten Stand.
 
 ---
 
@@ -745,7 +844,10 @@ gelten für jeden Client, der sie so anfragt.
 | `invalid_client` | Client-ID oder Secret falsch, oder falscher Clienttyp | Für webOS muss es ein Client für *Fernseher und Geräte mit eingeschränkter Eingabe* sein. |
 | `accessNotConfigured` | Drive API im Projekt nicht aktiviert | Schritt 2 oben. |
 | `access_denied` beim Zustimmen | Konto nicht als Testnutzer eingetragen | Im Zustimmungsbildschirm ergänzen. |
-| `invalid_scope` | Der Bereich ist für den Clienttyp nicht erlaubt | Der Gerätefluss erlaubt laut Google nur wenige Bereiche; `drive.appdata` gehört dazu. **Offen, siehe unten.** |
+| `invalid_scope` am Fernseher | Googles Gerätefluss lehnt `drive.appdata` ab | Erwartet und umgangen: der Fernseher fragt nur nach `drive.file`. Siehe unten. Tritt es mit `drive.file` auf, fehlt der Bereich unter *Data Access*. |
+| „Noch keine TV-Synchronisation gefunden" | Kein Apple-Gerät teilt mit dem Fernseher | Auf einem iPhone, iPad oder Mac „Mit Fernseher teilen" einschalten. |
+| „Zugriff für den Fernseher erlauben" (Apple), „Anmeldung nötig" (Fernseher) | `drive.file` bei der Zustimmung abgewählt oder entzogen | Den Knopf benutzen und bei Google zustimmen. |
+| Fernseher bleibt auf einem alten Stand | Kein Gerät mit Freigabe gleicht mehr ab | Ein iPhone, iPad oder Mac mit „Mit Fernseher teilen" öffnen. |
 | `client_secret is missing` (macOS) | Build ohne `GOOGLE_CLIENT_SECRET` | `python3 tools/configure-google-oauth.py --macos`, neu bauen. |
 | „Die Anmeldung ließ sich nicht im Schlüsselbund ablegen" | App ohne gültige Signatur, der Schlüsselbund verweigert die Ablage | Signiert bauen (auf dem iPhone: nach dem Signieren installieren). Tokens bekommen absichtlich keinen Rückfall ausserhalb des Schlüsselbunds. |
 | `invalid_grant` beim Erneuern | Zugriff widerrufen, Passwort geändert, lange nicht benutzt | Neu verbinden. Nori räumt den wertlosen Token selbst weg. |
@@ -755,7 +857,7 @@ gelten für jeden Client, der sie so anfragt.
 | QR-Code wird nicht erkannt | Zu weit weg, oder der Fernseher steht sehr schräg | Die Adresse und der Code stehen daneben — beide sind so gross, dass sie sich abtippen lassen. |
 | „neuerer Stand in der Cloud" | Ein anderes Gerät hat mit neuerem Schema geschrieben | Diese Nori-Fassung aktualisieren. Sie lädt bewusst nicht hoch, um nichts wegzuwerfen. |
 | Abgleich bleibt „offline" | Kein Netz, DNS, oder TLS auf dem Fernseher | Lokal ist alles da; beim nächsten Netz geht es weiter. |
-| Zwei Dateien für ein Gerät | Sollte nicht vorkommen | Nori erkennt seine Datei am `deviceId` in `appProperties` wieder. Überzählige lassen sich gefahrlos löschen. |
+| Zwei Dateien für ein Gerät | Eine Datei aus dem Papierkorb zurückgeholt, oder zwei Stände vor der Wiedererkennung | Nori liest die neueste und löscht nichts. Überzählige lassen sich von Hand gefahrlos löschen. |
 
 ### Offen: `drive.appdata` im Gerätefluss
 
@@ -797,11 +899,26 @@ Damit hängt die Ablehnung weder am Client noch am Projekt `nori-508420`. Sie is
 eine Einschränkung des Produktions-Endpunkts für Gerätecodes, die der
 Dokumentation widerspricht.
 
-**Warum Google so entscheidet, ist nicht bekannt.** Bis das geklärt oder eine
-andere Architektur für den Fernseher gewählt ist, bleibt webOS beim
-`appDataFolder` und damit ohne funktionierende Anmeldung; auf `drive.file` wird
-nicht umgestellt — dessen Dateien lägen sichtbar in „Meine Ablage", und iOS und
-macOS sähen sie nicht.
+**Warum Google so entscheidet, ist nicht bekannt.**
+
+**Entscheidung (13. September 2026): das hybride Modell.** Apple bleibt beim
+`appDataFolder`; der Fernseher liest und schreibt ausschliesslich einen
+`drive.file`-Spiegel, den Apple-Geräte nach „Mit Fernseher teilen" zusätzlich
+schreiben (Abschnitte 4 und 5, Begründung in `docs/synchronisation.md`). Vorher
+in einem Proof of Concept mit einem echten Konto geprüft:
+
+| Prüfung | Ergebnis |
+| --- | --- |
+| iOS- und Desktop-Client: `drive.file` nachträglich mit `include_granted_scopes` | erteilt, `drive.appdata` blieb erhalten |
+| Datei vom Mac angelegt, vom TV-Client über `appProperties` gesucht | gefunden — die Berechtigung gilt je Projekt, ohne Dateiauswahl |
+| `drive.file` auf den `appDataFolder` | 403 `insufficientScopes` |
+| Spiegeldatei und Ordner von Hand umbenannt und verschoben | weiter gefunden und abgeglichen |
+| webOS-TV-Simulator schreibt nach Drive | ja |
+| Relais iPhone → Mac → Fernseher und zurück | kam in beiden Richtungen an |
+
+Die frühere Annahme dieses Abschnitts, iOS und macOS sähen `drive.file`-Dateien
+des Fernsehers nicht, war falsch: Dateien eines Projekts sind für alle seine
+Clients mit `drive.file` auffindbar.
 
 ---
 

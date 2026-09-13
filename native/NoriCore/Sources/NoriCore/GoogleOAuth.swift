@@ -137,7 +137,8 @@ enum GoogleOAuth {
         configuration: GoogleOAuthConfiguration,
         pkce: PKCE,
         state: String,
-        loginHint: String? = nil
+        loginHint: String? = nil,
+        includeGrantedScopes: Bool = false
     ) -> URL? {
         guard configuration.isConfigured else { return nil }
         var components = URLComponents(string: authorizationEndpoint)
@@ -167,6 +168,11 @@ enum GoogleOAuth {
             URLQueryItem(name: "prompt", value: "consent"),
         ]
         if let loginHint { items.append(URLQueryItem(name: "login_hint", value: loginHint)) }
+        // Nachträgliche Zustimmung („Mit Fernseher teilen"): das neue Token
+        // trägt die schon erteilten Bereiche mit. Ohne das verlöre `drive.file`
+        // den Zugriff auf den `appDataFolder`. Im Proof of Concept auf iOS und
+        // macOS bestätigt.
+        if includeGrantedScopes { items.append(URLQueryItem(name: "include_granted_scopes", value: "true")) }
         components?.queryItems = items
         return components?.url
     }

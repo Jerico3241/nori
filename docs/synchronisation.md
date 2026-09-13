@@ -5,8 +5,10 @@ liegen in einer Datei je Gerät — auf Apple
 `~/Library/Application Support/Nori/library.json`, auf dem Fernseher unter
 `nori.library` im lokalen Speicher. Schema **v6**.
 
-Abgeglichen wird über **Google Drive**, ausschließlich im versteckten
-`appDataFolder`. Wie das eingerichtet wird und welche Werte der Betreiber
+Abgeglichen wird über **Google Drive**. Apple legt seinen Stand im versteckten
+`appDataFolder` ab (`drive.appdata`). Wer auf einem iPhone, iPad oder Mac „Mit
+Fernseher teilen" einschaltet, bekommt zusätzlich einen sichtbaren Spiegel
+(`drive.file`) — und nur den liest der Fernseher. Wie das eingerichtet wird und welche Werte der Betreiber
 anlegen muss, steht in **[google-drive-sync.md](google-drive-sync.md)**. Diese
 Datei erklärt, warum es so gebaut ist.
 
@@ -193,6 +195,67 @@ Die TypeScript-Engine der webOS-App ist unverändert.
 
 Die Wiedergabe wartet nie auf Drive: der Spieler schreibt lokal, meldet die
 Änderung und läuft weiter.
+
+## Warum der Fernseher einen sichtbaren Spiegel liest
+
+Der naheliegende Weg — alle Geräte im versteckten `appDataFolder` — ist für den
+Fernseher verschlossen. Googles Gerätefluss, der einzige Anmeldeweg ohne
+Browser und Tastatur, lehnt `drive.appdata` mit `invalid_scope` ab. Gemessen,
+nicht vermutet: mit dem TV-Client von Nori, einem zweiten frisch angelegten
+TV-Client und einem Client in einem vollständig neuen Google-Cloud-Projekt,
+sofort und nach 5 und 15 Minuten. Googles Dokumentation sagt etwas anderes;
+maßgeblich ist, was der Endpunkt antwortet.
+
+`drive.file` lässt der Gerätefluss zu. Dieser Bereich erlaubt nur Dateien, die
+Nori selbst angelegt hat — und zwar je **Cloud-Projekt**, nicht je Client. Eine
+Datei, die der Mac mit seinem Desktop-Client anlegt, findet der Fernseher mit
+seinem TV-Client über eine Suche nach `appProperties`, ohne Dateiauswahl. Im
+Proof of Concept mit einem echten Konto bestätigt, ebenso wie die Grenze in die
+andere Richtung: mit `drive.file` bleibt der `appDataFolder` verschlossen (403).
+
+Daraus folgt das hybride Modell:
+
+| Gerät | Bereich | liest und schreibt |
+| --- | --- | --- |
+| iPhone, iPad, Mac ohne Freigabe | `drive.appdata` | `appDataFolder` — wie bisher |
+| iPhone, iPad, Mac mit „Mit Fernseher teilen" | `drive.appdata` und `drive.file` | `appDataFolder` **und** TV-Spiegel |
+| Fernseher | nur `drive.file` | nur den TV-Spiegel |
+
+Ein Apple-Gerät mit Freigabe ist ein **Relais**. Beide Ablagen laufen gegen
+dieselbe lokale Bibliothek; hat die eine den lokalen Stand verändert, stößt sie
+die andere an — entprellt wie jede andere Änderung, ohne eigenen Zeitgeber. Weil
+ein unveränderter Stand nicht geschrieben wird, schaukelt sich dabei nichts
+hoch. Welcher Stand zuletzt geschrieben wurde, merkt sich jedes Gerät je Ablage
+dauerhaft: auch nach einem Neustart wird eine unveränderte Datei nicht neu
+geschrieben. Im Proof of Concept schrieb der Fernseher ohne diese Prüfung seine
+unveränderte Datei 27-mal in 17 Minuten. Die Kehrseite des Relais steht in der
+Oberfläche, ohne Fachbegriffe: mindestens ein solches Gerät muss regelmäßig
+synchronisieren.
+
+**Warum nicht alles auf `drive.file` umziehen.** Der `appDataFolder` funktioniert
+auf Apple, ist unsichtbar und braucht keine zusätzliche Zustimmung. Ihn für alle
+zu ersetzen hieße, jedem Nutzer eine sichtbare Kopie aufzuzwingen, auch ohne
+Fernseher — und bestehende Stände umzuziehen. Beides unterbleibt.
+
+**Warum eine eigene Zustimmung und kein stilles Einschalten.** Der Spiegel liegt
+sichtbar in „Meine Ablage". Das soll niemand zufällig entdecken. Der
+Erklärdialog sagt vorher, was dort liegt und worauf Nori Zugriff bekommt; erst
+nach Googles Zustimmung — mit `include_granted_scopes`, `drive.appdata` bleibt
+erhalten — wird geschrieben, und nur auf diesem Gerät.
+
+**Dieselben Regeln wie im `appDataFolder`.** Eine Datei je Gerät, Pull → Merge →
+Push, keine Master-Datei, dieselben Grabsteine. Erkannt wird nur über
+`appProperties`: Dateien und Ordner lassen sich umbenennen oder verschieben, ohne
+dass der Abgleich bricht. Liegt die eigene Datei im Papierkorb, schreibt Nori
+eine neue, statt eine unauffindbare weiter zu beschreiben. Liegen für ein Gerät
+mehrere Dateien vor, gilt deterministisch die neueste. Gelöscht wird nichts
+automatisch — auch nicht beim Ausschalten.
+
+**Keine Ende-zu-Ende-Verschlüsselung in dieser Fassung.** Der Spiegel ist für
+den Kontoinhaber in Drive lesbar, wie jede andere seiner Dateien. Eine
+Verschlüsselung bräuchte einen Schlüssel, der auf den Fernseher kommt, ohne dass
+ihn jemand mit der Fernbedienung abtippt. Das ist eine mögliche spätere
+Erweiterung, kein Teil dieser Fassung.
 
 ## Warum iCloud draußen ist
 

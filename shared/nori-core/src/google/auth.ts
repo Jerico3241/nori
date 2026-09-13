@@ -479,6 +479,8 @@ export class GoogleDeviceAuthorization {
       const fresh = this.tokensFrom(body);
       // Beim Erneuern schickt Google den Auffrischungstoken nicht erneut mit.
       fresh.refreshToken = fresh.refreshToken ?? refreshToken;
+      // Ohne Bereiche in der Antwort gelten die bisherigen.
+      fresh.scope = fresh.scope ?? tokens?.scope;
       this.store.write(fresh);
       return fresh;
     })();

@@ -53,21 +53,49 @@
     "migration": "Ältere Datensätze werden beim Laden normalisiert; Provider und Pfade werden ergänzt und doppelte Fortschrittseinträge anhand updatedAt zusammengeführt. Ab v5 trägt die Merkliste mit favoriteAddedAt einen Merkzeitpunkt je Slug (Millisekunden seit 1970); fehlt er, wird er beim Laden aus der Reihenfolge von favorites abgeleitet — der erste Eintrag gilt als der jüngste, und abgeleitete Werte liegen unterhalb aller bekannten. Ab v6 trägt jede Datei einen sync-Block mit Gerätekennung und Änderungsmarken; fehlt er, wird er beim Laden ergänzt — die Merkliste aus favoriteAddedAt, die Einstellungen mit dem modifiedAt der Datei als festgeschriebenem Zeitstempel."
   },
   "sync": {
-    "cloud": "Google Drive, ausschließlich im versteckten appDataFolder (Scope drive.appdata). Kein anderer Cloud-Speicher, kein eigener Server, kein Proxy.",
+    "cloud": "Google Drive. Apple verwendet drive.appdata (appDataFolder) als primäre Ablage und zusätzlich drive.file als TV-Spiegel, aber nur nach ausdrücklich aktiviertem „Mit Fernseher teilen“. webOS verwendet ausschließlich den drive.file-Spiegel, weil Googles Gerätefluss drive.appdata reproduzierbar mit invalid_scope ablehnt. Kein anderer Cloud-Speicher, kein eigener Server, kein Proxy.",
     "formatVersion": 1,
-    "file": "nori-sync-v1-<deviceId>.json — jedes Gerät schreibt nur seine eigene Datei und verändert nie die eines anderen.",
+    "file": "nori-sync-v1-<deviceId>.json im appDataFolder, nori-tv-sync-v1-<deviceId>.json im TV-Spiegel — jedes Gerät schreibt je Ablage nur seine eigene Datei und verändert nie die eines anderen. Keine Master-Datei.",
     "maxSnapshotBytes": 2097152,
+    "spaces": {
+      "appData": {
+        "platforms": ["ios", "macos"],
+        "scope": "https://www.googleapis.com/auth/drive.appdata",
+        "location": "appDataFolder, versteckt",
+        "appProperties": { "app": "nori", "type": "library-snapshot", "syncVersion": "1", "deviceId": "<deviceId>" },
+        "file": "nori-sync-v1-<deviceId>.json",
+        "bookkeepingPrefix": "nori.sync"
+      },
+      "tvMirror": {
+        "platforms": ["ios und macos nur nach „Mit Fernseher teilen“", "webos ausschließlich"],
+        "scope": "https://www.googleapis.com/auth/drive.file",
+        "location": "Ordner „Nori“ in „Meine Ablage“, für den Nutzer sichtbar; Ordner mit appProperties app=nori, type=mirror-folder. Der Ordner ist nur UX; bei mehreren gilt der älteste.",
+        "appProperties": { "app": "nori", "type": "library-mirror", "syncVersion": "1", "deviceId": "<deviceId>", "mirror": "tv" },
+        "file": "nori-tv-sync-v1-<deviceId>.json",
+        "query": "appProperties has { key='app' and value='nori' } and appProperties has { key='type' and value='library-mirror' } and trashed=false",
+        "bookkeepingPrefix": "nori.sync.tvMirror"
+      },
+      "identification": "Ausschließlich über appProperties, nie über Name, Ordner oder Pfad. Eine Dateikennung gehört genau zu einer Ablage und wird nie in der anderen benutzt.",
+      "consent": "Apple fragt drive.file erst nach dem Erklärdialog an, zusätzlich zu drive.appdata und mit include_granted_scopes=true. Eingeschaltet wird erst nach Googles Zustimmung, und nur auf diesem Gerät.",
+      "relay": "Ein Apple-Gerät mit Freigabe gleicht beide Ablagen gegen dieselbe lokale Bibliothek ab. Hat eine Ablage den lokalen Stand verändert, stößt sie die andere entprellt an. Mindestens ein solches Gerät muss regelmäßig synchronisieren.",
+      "disable": "Stoppt nur den Spiegel dieses Geräts. Gelöscht wird nichts: keine eigene oder fremde Spiegeldatei, nicht der Ordner, nichts im appDataFolder.",
+      "duplicates": "Mehrere Dateien mit derselben deviceId: deterministisch die neueste lesbare (modifiedTime, dann id); die übrigen werden ignoriert und nie automatisch gelöscht.",
+      "ownFile": "Die gemerkte Kennung nur, wenn sie in der Auflistung noch auftaucht; sonst die neueste Datei mit der eigenen deviceId; sonst eine neue Datei.",
+      "uploadSkip": "SHA-256 des geschriebenen Stands, dauerhaft je Ablage, Gerät und Datei gemerkt. Liegt derselbe Stand mit unverändertem modifiedTime in der Auflistung, wird nicht geschrieben — auch nicht nach einem Neustart.",
+      "migration": "Keine. Der appDataFolder bleibt unverändert und wird nicht ersetzt."
+    },
     "providerInterface": ["name", "load", "save"],
     "snapshotStoreInterface": ["name", "list", "download", "upload"],
     "statuses": ["disconnected", "authorizing", "idle", "syncing", "offline", "error", "needsReauthorization", "unsupportedRemoteVersion"],
     "auth": {
-      "scope": "https://www.googleapis.com/auth/drive.appdata — der einzige angefragte Bereich. Kein drive, kein drive.file, kein email, kein profile, kein openid: der Abgleich braucht keine Profildaten, und was Nori nicht anfordert, kann Nori nicht verlieren.",
+      "scope": "Apple: https://www.googleapis.com/auth/drive.appdata, zusätzlich https://www.googleapis.com/auth/drive.file nur nach „Mit Fernseher teilen“. webOS: ausschließlich https://www.googleapis.com/auth/drive.file. Nie drive, email, profile oder openid: der Abgleich braucht keine Profildaten, und was Nori nicht anfordert, kann Nori nicht verlieren.",
+      "encryption": "Keine Ende-zu-Ende-Verschlüsselung in dieser Fassung. Der TV-Spiegel ist für den Kontoinhaber in Drive lesbar; Verschlüsselung ist eine mögliche spätere Erweiterung.",
       "noProxy": "Jedes Gerät spricht direkt mit Google. Kein eigener Auth-Server, kein OAuth-Proxy, kein Nori-Konto, kein Firebase.",
       "userInput": "Der Nutzer drückt einen Knopf und bestätigt bei Google. Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind keine Benutzereinstellungen und haben in der normalen Oberfläche nichts zu suchen.",
       "flows": {
         "ios": "Authorization Code + PKCE über ASWebAuthenticationSession, Rückleitung über das umgedrehte Client-Kürzel, geteilte Browser-Sitzung (prefersEphemeralWebBrowserSession = false).",
         "macos": "Authorization Code + PKCE im Systembrowser, Rückleitung auf http://127.0.0.1:<vom System vergebener Port>. OAuth-Client vom Typ Desktop-App; client_secret aus der lokalen Build-Einstellung GOOGLE_CLIENT_SECRET.",
-        "webos": "Device Authorization Grant nach RFC 8628 — Googles Fluss für Fernseher und Geräte mit eingeschränkter Eingabe.",
+        "webos": "Device Authorization Grant nach RFC 8628 — Googles Fluss für Fernseher und Geräte mit eingeschränkter Eingabe — mit scope=drive.file.",
         "android": "Authorization Code + PKCE über Googles empfohlenen Android-Weg. Noch nicht umgesetzt, siehe docs/android.md."
       },
       "authorizationParameters": {
@@ -102,11 +130,12 @@
         "apple": "Build-Einstellung GOOGLE_CLIENT_ID, über die Info.plist als GoogleClientID",
         "webos": "VITE_NORI_GOOGLE_TV_CLIENT_ID und VITE_NORI_GOOGLE_TV_CLIENT_SECRET",
         "legacy": "Von Hand eingetragene Werte früherer Fassungen werden weiter gelesen, damit eine bestehende Verbindung hält; stimmen sie mit denen aus dem Build überein, werden sie aufgeräumt. Neu eintragen lässt sich nichts.",
-        "sameProject": "Alle OAuth-Clients gehören zu einem Google-Cloud-Projekt. Der appDataFolder gehört zu Projekt und Konto — vier Projekte hießen vier getrennte versteckte Ordner."
+        "sameProject": "Alle OAuth-Clients gehören zu einem Google-Cloud-Projekt. Der appDataFolder gehört zu Projekt und Konto, drive.file-Berechtigungen ebenso: nur im selben Projekt findet der Fernseher die Spiegeldateien der Apple-Geräte."
       },
       "disconnectVsRevoke": {
         "disconnectDevice": "Löscht die lokalen Tokens. Verändert keine anderen Geräte, löscht nichts in Drive und nichts in der lokalen Bibliothek.",
-        "revokeAccess": "Zieht die OAuth-Berechtigung bei Google zurück und betrifft damit alle Geräte an diesem Konto. Nur nach ausdrücklicher Rückfrage."
+        "revokeAccess": "Zieht die OAuth-Berechtigung bei Google zurück und betrifft damit alle Geräte an diesem Konto. Nur nach ausdrücklicher Rückfrage.",
+        "disableTVMirror": "„Mit Fernseher teilen“ ausschalten stoppt nur den Spiegel dieses Geräts und löscht nichts. Trennen und Widerrufen schalten die Freigabe auf diesem Gerät mit aus."
       }
     },
     "meta": ["formatVersion", "deviceId", "platform", "appVersion", "generatedAt", "historyClearedAt", "progressClearedAt", "preferences", "favorites", "recentsRemoved"],

@@ -101,15 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.17.0"
+    static let version = "1.18.0"
 
     static let highlights = [
-        "Google Drive: Die Anmeldung funktioniert jetzt wirklich. Googles Token-Endpunkt verlangt für den Mac-Client ein Client-Secret; es kommt aus der lokalen Build-Konfiguration und steht nie im Programmcode.",
-        "Nach „Mit Google anmelden“ holt sich Nori selbst wieder nach vorn, und die Browserseite sagt, ob die Anmeldung geklappt hat.",
-        "Der erste Abgleich startet direkt nach der Anmeldung, danach sieht Nori im Vordergrund regelmäßig nach Änderungen der anderen Geräte.",
-        "Ein Abgleich ohne Änderung schreibt nichts mehr nach Google Drive, und ein Wechsel zwischen Programmen löst nicht jedes Mal eine Anfrage aus.",
-        "Die Diagnose unter Einstellungen › Synchronisation zeigt, ob Client-Secret und Anmeldung vorhanden sind — nie die Werte selbst —, dazu letzten Abgleich und letzten Fehler.",
-        "Die OAuth-Eingabefelder sind weg: Anmelden ist ein Knopf (seit 1.16.0).",
+        "Mit Fernseher teilen: Ein neuer Schalter unter Einstellungen › Synchronisation legt nach deiner Zustimmung bei Google eine sichtbare Kopie im Ordner „Nori“ an, die der LG-Fernseher liest. Ohne den Schalter ändert sich nichts.",
+        "Ein Mac mit eingeschalteter Freigabe reicht Änderungen zwischen Fernseher, iPhone und iPad weiter.",
+        "Ausschalten stoppt nur diesen Mac. Gelöscht wird dabei nichts — weder die Kopie noch der Ordner.",
+        "Ein Abgleich ohne Änderung schreibt jetzt auch nach einem Neustart nichts nach Google Drive.",
+        "Liegen für ein Gerät mehrere Dateien vor, nutzt Nori gleichbleibend die neueste.",
+        "Anmeldung auf dem Mac mit Client-Secret aus der Build-Konfiguration (seit 1.17.0).",
     ]
 }
 
@@ -176,6 +176,8 @@ private struct SyncSettingsTab: View {
     @State private var showRevokeConfirmation = false
     /// Zugeklappt. Der Bereich richtet sich an den, der Nori baut.
     @State private var showDiagnostics = false
+    /// Die Erklärung vor „Mit Fernseher teilen" — vor jedem Einschalten.
+    @State private var showTVExplanation = false
 
     var body: some View {
         Form {
@@ -249,6 +251,41 @@ private struct SyncSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // „Mit Fernseher teilen" — je Gerät, und aus, bis jemand es
+            // einschaltet. Ohne den Schalter fragt Nori nur nach dem
+            // versteckten App-Ordner, genau wie vorher.
+            if sync.isConfigured && isConnected {
+                Section {
+                    Toggle(isOn: tvBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mit Fernseher teilen")
+                            Text("Merkliste, Verlauf und Fortschritt auch auf dem LG-Fernseher")
+                                .font(.footnote)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    }
+                    .disabled(sync.isAuthorizing)
+
+                    if sync.tvMirrorState == .needsConsent {
+                        HStack {
+                            Button("Zugriff für den Fernseher erlauben…") { showTVExplanation = true }
+                                .disabled(sync.isAuthorizing)
+                            Spacer()
+                            Text("Google hat ihn nicht erteilt oder zurückgezogen.")
+                                .font(.footnote)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    }
+                } header: {
+                    Text("Fernseher")
+                } footer: {
+                    Text(tvFootnote)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if sync.isConfigured && isConnected {
                 Section {
                     Button("Google-Zugriff widerrufen…", role: .destructive) {
@@ -271,6 +308,12 @@ private struct SyncSettingsTab: View {
         }
         .formStyle(.grouped)
         .task { await sync.restore() }
+        .alert("Mit Fernseher teilen", isPresented: $showTVExplanation) {
+            Button("Weiter zu Google") { Task { await sync.enableTVMirror() } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(GoogleDriveSync.tvMirrorExplanation)
+        }
         .confirmationDialog(
             "Google-Zugriff widerrufen?",
             isPresented: $showRevokeConfirmation
@@ -301,9 +344,16 @@ private struct SyncSettingsTab: View {
                 .textSelection(.enabled)
             LabeledContent("Herkunft", value: originLabel)
                 .font(.footnote)
-            LabeledContent("Bereich", value: GoogleDriveClient.scope)
+            LabeledContent("Bereich", value: scopeText)
                 .font(.footnote)
                 .textSelection(.enabled)
+            LabeledContent("TV-Spiegel", value: mirrorDiagnosticsText)
+                .font(.footnote)
+            if let error = sync.mirrorEngine.lastError {
+                LabeledContent("Letzter Fehler im TV-Spiegel", value: error)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+            }
             // Ob — nie welches. Secret und Tokens stehen hier nicht, auch
             // nicht verkürzt.
             LabeledContent("Client-Secret", value: sync.hasClientSecret ? "vorhanden" : "fehlt")
@@ -346,6 +396,50 @@ private struct SyncSettingsTab: View {
             }
         } header: {
             Text("Diagnose")
+        }
+    }
+
+    /// Der Schalter springt nicht selbst um: eingeschaltet wird erst nach
+    /// Erklärung und Zustimmung. Ausschalten geht sofort und löscht nichts.
+    private var tvBinding: Binding<Bool> {
+        Binding(
+            get: { sync.isTVMirrorEnabled },
+            set: { on in
+                if on { showTVExplanation = true } else { sync.disableTVMirror() }
+            }
+        )
+    }
+
+    /// Der Fernseher kann den versteckten Ordner nicht lesen. Er bekommt
+    /// Änderungen nur über ein Apple-Gerät, das mit ihm teilt.
+    private var tvFootnote: String {
+        let relay = """
+                    Der Fernseher bekommt Änderungen über ein iPhone, iPad oder \
+                    Mac mit eingeschaltetem „Mit Fernseher teilen“. Mindestens eines \
+                    davon muss regelmäßig synchronisieren — also ab und zu geöffnet \
+                    werden.
+                    """
+        return sync.isTVMirrorEnabled
+            ? "Dieser Mac teilt mit dem Fernseher. \(relay)"
+            : "Gilt nur für diesen Mac; andere Geräte schalten es selbst ein. \(relay)"
+    }
+
+    private var scopeText: String {
+        sync.grantedScopes.contains(GoogleDriveClient.fileScope)
+            ? "\(GoogleDriveClient.scope), \(GoogleDriveClient.fileScope)"
+            : GoogleDriveClient.scope
+    }
+
+    private var mirrorDiagnosticsText: String {
+        switch sync.tvMirrorState {
+        case .off: return "aus"
+        case .needsConsent: return "eingeschaltet, Zustimmung fehlt"
+        case .active:
+            let run = sync.mirrorEngine.lastSuccessfulSync.map {
+                Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .standard)
+            } ?? "noch kein Abgleich"
+            let others = sync.mirrorEngine.remoteDeviceCount.map { ", andere Geräte: \($0)" } ?? ""
+            return "aktiv, \(run)\(others)"
         }
     }
 
@@ -397,7 +491,8 @@ private struct SyncSettingsTab: View {
                eigene Datei und liest die der anderen — deshalb geht nichts \
                verloren, wenn zwei Geräte gleichzeitig etwas ändern. Nori sieht \
                dabei weder deinen Namen noch deine E-Mail-Adresse. Ohne Netz \
-               funktioniert Nori vollständig weiter.
+               funktioniert Nori vollständig weiter. Nur mit „Mit Fernseher \
+               teilen“ kommt eine sichtbare Kopie im Ordner „Nori“ dazu.
                """
     }
 }

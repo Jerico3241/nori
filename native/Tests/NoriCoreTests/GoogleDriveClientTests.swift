@@ -274,3 +274,142 @@ final class GoogleDriveClientTests: XCTestCase {
             DriveFile(id: "2", name: "irgendwas.txt", modifiedTime: "", size: 0, deviceId: nil)))
     }
 }
+
+// MARK: - TV-Spiegel
+
+extension GoogleDriveClientTests {
+
+    private func mirrorClient(_ transport: ScriptedTransport) -> GoogleDriveClient {
+        GoogleDriveClient(
+            authorization: CountingAuthorization(), transport: transport, policy: DriveRetryPolicy(),
+            sleep: { _ in }, random: { 0.5 }, space: .tvMirror)
+    }
+
+    private func decoded(_ request: URLRequest) -> String {
+        request.url?.absoluteString.removingPercentEncoding ?? ""
+    }
+
+    func testTheSpacesKeepTheirOwnNamesAndMetadata() {
+        XCTAssertEqual(DriveSpace.appData.fileName(deviceId: "abc"), "nori-sync-v1-abc.json")
+        XCTAssertEqual(DriveSpace.tvMirror.fileName(deviceId: "abc"), "nori-tv-sync-v1-abc.json")
+        XCTAssertNil(DriveSpace.appData.query)
+        let query = DriveSpace.tvMirror.query ?? ""
+        XCTAssertTrue(query.contains("value='library-mirror'"))
+        XCTAssertTrue(query.contains("trashed=false"))
+        XCTAssertFalse(query.contains("name"), "Erkannt wird nie am Namen")
+        XCTAssertFalse(query.contains("parents"), "Erkannt wird nie am Ordner")
+        XCTAssertEqual(DriveSpace.tvMirror.properties(deviceId: "abc"),
+                       ["app": "nori", "type": "library-mirror", "syncVersion": "1", "deviceId": "abc", "mirror": "tv"])
+        XCTAssertEqual(DriveSpace.appData.properties(deviceId: "abc"),
+                       ["app": "nori", "type": "library-snapshot", "syncVersion": "1", "deviceId": "abc"])
+        XCTAssertEqual(GoogleDriveClient.fileScope, "https://www.googleapis.com/auth/drive.file")
+    }
+
+    /// Umbenannt und verschoben: gefunden wird trotzdem, über `appProperties`.
+    func testTheMirrorIsListedByPropertiesOnly() async throws {
+        let body = Data(#"""
+        {"files":[{"id":"m1","name":"Von Hand umbenannt.json","modifiedTime":"2026-09-13T01:00:00.000Z",
+        "size":"10","appProperties":{"app":"nori","type":"library-mirror","deviceId":"mac","mirror":"tv"}}]}
+        """#.utf8)
+        let transport = ScriptedTransport([(200, body)])
+
+        let files = try await mirrorClient(transport).listSnapshots()
+
+        XCTAssertEqual(files.map(\.id), ["m1"])
+        XCTAssertEqual(files.first?.deviceId, "mac")
+        let url = decoded(transport.sent[0])
+        XCTAssertTrue(url.contains("spaces=drive"), url)
+        XCTAssertFalse(url.contains("appDataFolder"), url)
+        XCTAssertTrue(url.contains("value='library-mirror'"), url)
+    }
+
+    func testAMirrorFileGoesIntoTheOldestNoriFolder() async throws {
+        let transport = ScriptedTransport([
+            (200, Data(#"{"files":[{"id":"neuer","createdTime":"2026-09-13T00:00:00.000Z"},{"id":"aelter","createdTime":"2026-09-01T00:00:00.000Z"}]}"#.utf8)),
+            (200, Data(#"{"id":"datei","modifiedTime":"jetzt"}"#.utf8)),
+        ])
+
+        let created = try await mirrorClient(transport)
+            .create(name: DriveSpace.tvMirror.fileName(deviceId: "abc"), deviceId: "abc", content: Data("{}".utf8))
+
+        XCTAssertEqual(created.id, "datei")
+        XCTAssertEqual(transport.sent.count, 2)
+        XCTAssertTrue(decoded(transport.sent[0]).contains("value='mirror-folder'"))
+        let body = String(decoding: transport.sent[1].httpBody ?? Data(), as: UTF8.self)
+        XCTAssertTrue(body.contains("aelter"))
+        XCTAssertFalse(body.contains("neuer"))
+        XCTAssertFalse(body.contains("appDataFolder"), "Eine Spiegeldatei landete im versteckten Ordner")
+        XCTAssertTrue(body.contains("nori-tv-sync-v1-abc.json"))
+        XCTAssertTrue(body.contains("library-mirror"))
+        XCTAssertTrue(body.contains(#""mirror":"tv""#))
+    }
+
+    /// Fehlt der Ordner — gelöscht oder nie angelegt —, legt Nori ihn an.
+    func testAMissingNoriFolderIsCreated() async throws {
+        let transport = ScriptedTransport([
+            (200, Self.emptyList),
+            (200, Data(#"{"id":"ordner"}"#.utf8)),
+            (200, Data(#"{"id":"datei","modifiedTime":"jetzt"}"#.utf8)),
+        ])
+
+        _ = try await mirrorClient(transport)
+            .create(name: DriveSpace.tvMirror.fileName(deviceId: "abc"), deviceId: "abc", content: Data("{}".utf8))
+
+        XCTAssertEqual(transport.sent.count, 3)
+        XCTAssertEqual(transport.sent[1].httpMethod, "POST")
+        let folder = String(decoding: transport.sent[1].httpBody ?? Data(), as: UTF8.self)
+        XCTAssertTrue(folder.contains("vnd.google-apps.folder"))
+        XCTAssertTrue(folder.contains("mirror-folder"))
+        XCTAssertTrue(folder.contains(#""Nori""#))
+        XCTAssertTrue(String(decoding: transport.sent[2].httpBody ?? Data(), as: UTF8.self).contains("ordner"))
+    }
+
+    /// Der Ordner ist nur UX. Scheitert er, wird die Datei trotzdem geschrieben.
+    func testAFailingFolderDoesNotStopTheMirrorFile() async throws {
+        let transport = ScriptedTransport([
+            (403, Data(#"{"error":{"errors":[{"reason":"insufficientPermissions"}]}}"#.utf8)),
+            (200, Data(#"{"id":"datei","modifiedTime":"jetzt"}"#.utf8)),
+        ])
+
+        let created = try await mirrorClient(transport)
+            .create(name: DriveSpace.tvMirror.fileName(deviceId: "abc"), deviceId: "abc", content: Data("{}".utf8))
+
+        XCTAssertEqual(created.id, "datei")
+        XCTAssertEqual(transport.sent.count, 2)
+        XCTAssertFalse(String(decoding: transport.sent[1].httpBody ?? Data(), as: UTF8.self).contains("appDataFolder"))
+    }
+
+    /// Ohne Freigabe fragt der appDataFolder nie nach einem Ordner.
+    func testTheAppDataFolderNeverLooksForAFolder() async throws {
+        let transport = ScriptedTransport([(200, Data(#"{"id":"neu","modifiedTime":"jetzt"}"#.utf8))])
+        _ = try await client(transport, CountingAuthorization())
+            .create(name: "nori-sync-v1-abc.json", deviceId: "abc", content: Data("{}".utf8))
+        XCTAssertEqual(transport.sent.count, 1)
+        XCTAssertFalse(decoded(transport.sent[0]).contains("mirror-folder"))
+    }
+
+    /// Fehlt `drive.file`, antwortet Drive mit 403 — kein zweiter Versuch, und
+    /// der Grund reicht, um die Zustimmung erneut anzubieten.
+    func testAMissingFileScopeIsNotRetried() async {
+        let transport = ScriptedTransport([
+            (403, Data(#"{"error":{"errors":[{"reason":"insufficientScopes"}]}}"#.utf8)),
+            (200, Self.emptyList),
+        ])
+        do {
+            _ = try await mirrorClient(transport).listSnapshots()
+            XCTFail("Erwartet: forbidden")
+        } catch let error as GoogleDriveError {
+            guard case .forbidden(let reason) = error else { return XCTFail("Falscher Fehler: \(error)") }
+            XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: [GoogleDriveClient.fileScope], mirrorError: reason), .needsConsent)
+        } catch {
+            XCTFail("Falscher Fehler: \(error)")
+        }
+        XCTAssertEqual(transport.sent.count, 1)
+    }
+
+    func testTheMirrorBacksOffOnRateLimits() async throws {
+        let transport = ScriptedTransport([(429, Data()), (401, Data()), (200, Self.emptyList)])
+        _ = try await mirrorClient(transport).listSnapshots()
+        XCTAssertEqual(transport.sent.count, 3)
+    }
+}

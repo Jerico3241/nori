@@ -273,6 +273,94 @@ final class GoogleAuthorizationTests: XCTestCase {
     }
 }
 
+// MARK: - Zusätzliche Zustimmung für den Fernseher
+
+extension GoogleAuthorizationTests {
+
+    /// Ohne „Mit Fernseher teilen" genau die bisherige Anfrage.
+    func testAnOrdinarySignInAsksOnlyForAppData() async throws {
+        let transport = CountingTransport()
+        transport.json = #"{"access_token":"at","refresh_token":"rt","expires_in":3600,"scope":"https://www.googleapis.com/auth/drive.appdata"}"#
+        let presenter = FakePresenter()
+        let auth = GoogleAuthorization(
+            configuration: config, tokenStore: MemoryTokenStore(), presenter: presenter,
+            transport: transport, clock: { 0 })
+
+        try await auth.signIn()
+
+        let shown = try XCTUnwrap(presenter.shown).absoluteString
+        XCTAssertFalse(shown.contains("drive.file"))
+        XCTAssertFalse(shown.contains("include_granted_scopes"))
+        let granted = await auth.grantedScopes
+        XCTAssertEqual(granted, [GoogleDriveClient.scope])
+    }
+
+    /// Mit Freigabe: `drive.file` dazu, `drive.appdata` bleibt, und Google
+    /// behält die bisherigen Bereiche.
+    func testTVSharingAddsDriveFileAndKeepsAppData() async throws {
+        let transport = CountingTransport()
+        transport.json = #"{"access_token":"at","refresh_token":"rt","expires_in":3600,"scope":"https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file"}"#
+        let presenter = FakePresenter()
+        let auth = GoogleAuthorization(
+            configuration: config, tokenStore: MemoryTokenStore(), presenter: presenter,
+            transport: transport, clock: { 0 })
+
+        try await auth.signIn(additionalScopes: [GoogleDriveClient.fileScope])
+
+        let shown = try XCTUnwrap(presenter.shown)
+        let items = URLComponents(url: shown, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let scope = items.first { $0.name == "scope" }?.value ?? ""
+        XCTAssertEqual(scope.split(separator: " ").map(String.init), [GoogleDriveClient.scope, GoogleDriveClient.fileScope])
+        XCTAssertEqual(items.first { $0.name == "include_granted_scopes" }?.value, "true")
+        let granted = await auth.grantedScopes
+        XCTAssertEqual(Set(granted), [GoogleDriveClient.scope, GoogleDriveClient.fileScope])
+    }
+
+    func testAScopeThatIsAlreadyRequestedIsNotAddedTwice() async throws {
+        let transport = CountingTransport()
+        transport.json = #"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#
+        let presenter = FakePresenter()
+        let auth = GoogleAuthorization(
+            configuration: config, tokenStore: MemoryTokenStore(), presenter: presenter,
+            transport: transport, clock: { 0 })
+
+        try await auth.signIn(additionalScopes: [GoogleDriveClient.scope])
+
+        let shown = try XCTUnwrap(presenter.shown).absoluteString
+        XCTAssertFalse(shown.contains("include_granted_scopes"))
+    }
+
+    /// Schickt Google beim Erneuern keine Bereiche, gelten die bisherigen —
+    /// sonst stünde „Zustimmung fehlt" nach jeder Stunde da.
+    func testARefreshWithoutScopesKeepsTheGrantedOnes() async throws {
+        let both = "\(GoogleDriveClient.scope) \(GoogleDriveClient.fileScope)"
+        let transport = CountingTransport()
+        let store = MemoryTokenStore(GoogleTokens(accessToken: "alt", refreshToken: "rt", expiresAt: 1_000, scope: both))
+        let auth = GoogleAuthorization(configuration: config, tokenStore: store, transport: transport, clock: { 500_000 })
+
+        _ = try await auth.validAccessToken()
+
+        XCTAssertEqual(store.read()?.scope, both)
+    }
+
+    /// Nennt Google beim Erneuern Bereiche, gelten genau diese — ein entzogener
+    /// fällt damit auf.
+    func testARefreshWithScopesAdoptsThem() async throws {
+        let transport = CountingTransport()
+        transport.json = #"{"access_token":"frisch","expires_in":3600,"scope":"https://www.googleapis.com/auth/drive.appdata"}"#
+        let store = MemoryTokenStore(GoogleTokens(
+            accessToken: "alt", refreshToken: "rt", expiresAt: 1_000,
+            scope: "\(GoogleDriveClient.scope) \(GoogleDriveClient.fileScope)"))
+        let auth = GoogleAuthorization(configuration: config, tokenStore: store, transport: transport, clock: { 500_000 })
+
+        _ = try await auth.validAccessToken()
+
+        XCTAssertEqual(store.read()?.scope, GoogleDriveClient.scope)
+        let granted = await auth.grantedScopes
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: granted, mirrorError: nil), .needsConsent)
+    }
+}
+
 /// Die Prüfung der eingetragenen Client-ID.
 ///
 /// Sie ist keine Förmlichkeit: auf iOS wird aus der Client-ID die

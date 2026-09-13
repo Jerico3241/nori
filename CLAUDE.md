@@ -125,9 +125,20 @@ Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei 
 
 ## Synchronisation
 
-Abgeglichen wird ausschließlich über **Google Drive**, und dort ausschließlich im versteckten `appDataFolder` (Bereich `drive.appdata`). Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
+Abgeglichen wird ausschließlich über **Google Drive**. Apple verwendet `drive.appdata` als primäre Ablage. Für die ausdrücklich aktivierte TV-Synchronisation verwendet Apple zusätzlich `drive.file` als Spiegel. webOS verwendet ausschließlich diesen `drive.file`-Spiegel. Andere Cloud-Anbieter, eigener Server oder Proxy bleiben ausgeschlossen. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
 
-Jedes Gerät schreibt **nur seine eigene Datei** (`nori-sync-v1-<deviceId>.json`) und liest die aller anderen. Ablauf immer **Pull → Merge → Push**, nie andersherum.
+Der Grund für den Spiegel: Googles Gerätefluss für Fernseher (`/device/code`) lehnt `drive.appdata` reproduzierbar mit `invalid_scope` ab — mit mehreren TV-Clients und auch in einem separaten Google-Cloud-Projekt, entgegen Googles Dokumentation. Die Messungen stehen in `docs/google-drive-sync.md`, Abschnitt 10.
+
+Regeln für die zwei Ablagen:
+
+- „Mit Fernseher teilen" wird je Apple-Gerät ausdrücklich eingeschaltet und nie still aktiviert. Ohne den Schalter fragt Apple nur nach `drive.appdata` — keine Verhaltensänderung.
+- Kein Umzug und kein Ersatz des `appDataFolder`. Der Spiegel wird aus dem zusammengeführten lokalen Stand erzeugt.
+- Erkannt wird ausschließlich über `appProperties` (`app=nori`, `type=library-snapshot` bzw. `type=library-mirror`), nie über Name, Ordner oder Pfad. Der Ordner „Nori" ist nur für den Nutzer da.
+- Eine Dateikennung gehört genau zu einer Ablage (Merkposten `nori.sync.*` bzw. `nori.sync.tvMirror.*`) und wird nie in der anderen benutzt.
+- Ausschalten stoppt nur den Spiegel dieses Geräts und löscht nichts in Drive.
+- Keine Ende-zu-Ende-Verschlüsselung in dieser Fassung; sie ist eine mögliche spätere Erweiterung.
+
+Jedes Gerät schreibt je Ablage **nur seine eigene Datei** (`nori-sync-v1-<deviceId>.json`, im Spiegel `nori-tv-sync-v1-<deviceId>.json`) und liest die aller anderen. Ablauf immer **Pull → Merge → Push**, nie andersherum. Eine Master-Datei gibt es nicht.
 
 Die Schichten bleiben getrennt:
 
@@ -173,7 +184,7 @@ Ein zugeklappter Diagnosebereich (auf webOS am Entwicklerschalter) darf Client-I
 
 Was eine ältere Fassung im Gerät hinterlassen hat, wird weiter **gelesen** (Schlüsselbund/`UserDefaults` auf Apple, `localStorage` auf webOS) und hat Vorrang vor dem Build, weil die vorhandenen Tokens dazu gehören. Neu eintragen lässt sich nichts.
 
-Die Flüsse: Authorization Code mit PKCE auf iOS (`ASWebAuthenticationSession`, geteilte Browser-Sitzung) und macOS (Systembrowser + Loopback), Device Authorization Grant nach RFC 8628 auf webOS. Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird ausschließlich `drive.appdata`.
+Die Flüsse: Authorization Code mit PKCE auf iOS (`ASWebAuthenticationSession`, geteilte Browser-Sitzung) und macOS (Systembrowser + Loopback), Device Authorization Grant nach RFC 8628 auf webOS. Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird auf Apple `drive.appdata` und nur nach „Mit Fernseher teilen" zusätzlich `drive.file` (mit `include_granted_scopes`), auf webOS ausschließlich `drive.file`.
 
 Der QR-Code am Fernseher wird **im Gerät** gerechnet (`shared/nori-core/src/qr.ts`, geprüft gegen eine unabhängige Referenz) und enthält `verification_uri_complete`, wenn Google eine liefert, sonst genau `verification_uri`. Eine Adresse mit angehängtem `user_code` selbst zusammenzusetzen ist untersagt.
 

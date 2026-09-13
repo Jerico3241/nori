@@ -17,10 +17,10 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.22.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.17.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| iOS / iPadOS | **1.23.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.18.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **2.0.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **2.1.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -144,7 +144,7 @@ Aktuelles Library-Schema: **v6**. Die maßgebliche Implementierung ist `LibraryS
 
 ### Synchronisation
 
-Abgeglichen wird über **Google Drive**, ausschließlich im versteckten `appDataFolder`. Jedes Gerät schreibt nur seine eigene Datei und liest die aller anderen; der Ablauf ist immer Pull → Merge → Push. Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy.
+Abgeglichen wird über **Google Drive**. Apple nutzt den versteckten `appDataFolder`; mit „Mit Fernseher teilen" legt ein iPhone, iPad oder Mac zusätzlich einen sichtbaren Spiegel im Ordner „Nori" an, und nur den liest der Fernseher. Jedes Gerät schreibt nur seine eigene Datei und liest die aller anderen; der Ablauf ist immer Pull → Merge → Push. Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy.
 
 **Für den Nutzer ist das ein Knopf:**
 
@@ -161,7 +161,7 @@ Danach zeigt die Seite den Zustand, „Jetzt synchronisieren" und „Dieses Ger�
 | webOS | Device Authorization Grant (RFC 8628) mit QR-Code und großem Gerätecode |
 | Android | vorbereitet, noch nicht umgesetzt — `docs/android.md` |
 
-Angefordert wird genau ein Bereich: `https://www.googleapis.com/auth/drive.appdata`. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
+Angefordert wird auf Apple `https://www.googleapis.com/auth/drive.appdata`, zusätzlich `https://www.googleapis.com/auth/drive.file` nur nach „Mit Fernseher teilen". Der Fernseher fragt ausschließlich nach `drive.file`, weil Googles Gerätefluss `drive.appdata` ablehnt. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
 
 **Für den, der Nori baut**, sind die OAuth-Werte lokale Build-Einstellungen, je Plattform getrennt und nie eingecheckt: `GOOGLE_CLIENT_ID` in `native/Nori-iOS/Config/Google.local.xcconfig`, `GOOGLE_CLIENT_ID` und `GOOGLE_CLIENT_SECRET` (Desktop-Client) in `native/Nori-macOS/Config/Google.local.xcconfig`, `VITE_NORI_GOOGLE_TV_CLIENT_ID` und `VITE_NORI_GOOGLE_TV_CLIENT_SECRET` in `apps/webos/.env.local`. Geschrieben und geprüft werden sie mit `tools/configure-google-oauth.py` aus den OAuth-JSON-Dateien unter `~/.config/nori/secrets/`. Die Einrichtung steht in **[docs/google-drive-sync.md](docs/google-drive-sync.md)**, die Begründungen in **[docs/synchronisation.md](docs/synchronisation.md)**.
 

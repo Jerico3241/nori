@@ -155,16 +155,27 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
 
     // MARK: - Anmelden
 
-    func signIn() async throws {
+    /// Die zuletzt erteilten Bereiche — aus Googles Tokenantwort, nie geraten.
+    var grantedScopes: [String] {
+        (tokenStore.read()?.scope ?? "").split(separator: " ").map(String.init)
+    }
+
+    /// Anmelden. `additionalScopes` nur für „Mit Fernseher teilen" — dann mit
+    /// `include_granted_scopes`, damit `drive.appdata` erhalten bleibt. Ohne
+    /// zusätzliche Bereiche ist die Anfrage genau die bisherige.
+    func signIn(additionalScopes: [String] = []) async throws {
         guard configuration.isConfigured else { throw GoogleOAuthError.notConfigured }
         guard let presenter else { throw GoogleOAuthError.notConfigured }
 
         var config = configuration
         config.redirectURI = try await presenter.beginRedirect()
+        let extra = additionalScopes.filter { !configuration.scopes.contains($0) }
+        config.scopes = configuration.scopes + extra
 
         let pkce = GoogleOAuth.makePKCE()
         let state = GoogleOAuth.randomState()
-        guard let url = GoogleOAuth.authorizationURL(configuration: config, pkce: pkce, state: state) else {
+        guard let url = GoogleOAuth.authorizationURL(
+            configuration: config, pkce: pkce, state: state, includeGrantedScopes: !extra.isEmpty) else {
             throw GoogleOAuthError.notConfigured
         }
 
@@ -214,7 +225,11 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
         defer { refreshTask = nil }
 
         do {
-            let fresh = try await task.value
+            var fresh = try await task.value
+            // Schickt Google beim Erneuern keine Bereiche mit, gelten die
+            // bisherigen. Sonst sähe „Mit Fernseher teilen" nach jeder
+            // Erneuerung aus, als fehlte die Zustimmung.
+            if fresh.scope == nil { fresh.scope = tokens.scope }
             tokenStore.write(fresh)
             return fresh.accessToken
         } catch let error as GoogleOAuthError {

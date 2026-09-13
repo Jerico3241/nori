@@ -1,8 +1,12 @@
 // Mehr → Abgleich über Google Drive.
 //
 // Abgeglichen werden Merkliste, Verlauf, Fortschritt und Einstellungen — keine
-// Videos. Jedes Gerät schreibt nur seine eigene Datei im versteckten
-// `appDataFolder`; die Regeln stehen in `docs/synchronisation.md`.
+// Videos. Jedes Gerät schreibt nur seine eigene Datei; der Fernseher liest und
+// schreibt dabei ausschliesslich den sichtbaren TV-Spiegel im Ordner „Nori".
+// Die Regeln stehen in `docs/synchronisation.md`.
+//
+// Liegt dort noch kein iPhone, iPad oder Mac, sagt die Seite in einem Satz, wo
+// „Mit Fernseher teilen" einzuschalten ist — ohne OAuth-Begriffe.
 //
 // **Die Anmeldung ist ein Knopf.** Client-ID und Client-Secret kommen aus dem
 // Build und sind keine Einstellung: sie mit einer Fernbedienung über eine
@@ -89,6 +93,19 @@ export function SyncPage() {
           {sync.needsReauthorization ? <p className="card-note strong">Google Drive muss erneut verbunden werden.</p> : null}
           {sync.message ? <p className="card-note strong" role="alert">{sync.message}</p> : null}
           {sync.lastWarning ? <p className="card-note">{sync.lastWarning}</p> : null}
+          {connected && sync.tvMirrorMissing ? (
+            <p className="card-note strong" role="status">
+              Noch keine TV-Synchronisation gefunden – Aktiviere auf deinem iPhone, iPad oder Mac in Nori
+              unter Synchronisation „Mit Fernseher teilen“.
+            </p>
+          ) : null}
+          {connected ? (
+            <p className="card-note">
+              Nori legt dafür im Ordner „Nori“ in deinem Google Drive eine Datei an. Aktuell bleibt der
+              Fernseher, solange mindestens ein iPhone, iPad oder Mac mit „Mit Fernseher teilen“
+              regelmäßig synchronisiert.
+            </p>
+          ) : null}
 
           {/* Nur mit dem Diagnoseschalter. Das Client-Secret steht hier nicht, auch
               nicht verkürzt — dass es vorhanden ist, reicht als Auskunft. */}
@@ -99,7 +116,7 @@ export function SyncPage() {
                 {sync.diagnostics.origin === "build" ? "aus dem Build"
                   : sync.diagnostics.origin === "migrated" ? "aus einer früheren Fassung übernommen"
                     : "fehlt"} · Client-Secret: {sync.diagnostics.hasSecret ? "vorhanden" : "fehlt"} · Bereich: nur
-                drive.appdata
+                drive.file
               </p>
               {sync.diagnostics.origin === "migrated" ? (
                 <div className="card-actions">

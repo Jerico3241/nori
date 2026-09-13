@@ -4,8 +4,119 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.17.0**, iOS/iPadOS **1.22.0**,
-Windows **1.8.0**, LG webOS **2.0.0**.
+unterschiedlich schnell bewegen: macOS **1.18.0**, iOS/iPadOS **1.23.0**,
+Windows **1.8.0**, LG webOS **2.1.0**.
+
+## [iOS 1.23.0] · [macOS 1.18.0] · [webOS 2.1.0] — 2026-09-13
+
+Google Drive auf dem LG-Fernseher — über einen TV-Spiegel, den iPhone, iPad
+oder Mac nach ausdrücklicher Freigabe zusätzlich schreiben.
+
+### Hintergrund
+
+Googles Gerätefluss für Fernseher lehnt `drive.appdata` reproduzierbar mit
+`invalid_scope` ab: mit mehreren TV-Clients und in einem separaten
+Google-Cloud-Projekt, entgegen der Dokumentation. Der versteckte
+`appDataFolder` ist vom Fernseher aus deshalb nicht erreichbar. Nach einer
+Architekturstudie und einem Proof of Concept mit einem echten Konto gilt das
+hybride Modell; Begründung in `docs/synchronisation.md`, Messungen in
+`docs/google-drive-sync.md`.
+
+### Neu
+
+- **„Mit Fernseher teilen" (iOS/iPadOS, macOS).** Schalter unter
+  Synchronisation → Fernseher, je Gerät, standardmäßig aus. Vor dem Einschalten
+  erklärt ein Dialog, dass Nori eine sichtbare Kopie im Ordner „Nori" anlegt und
+  nur auf eigene Dateien zugreift. Eingeschaltet wird erst nach Googles
+  Zustimmung (`drive.file` mit `include_granted_scopes`; `drive.appdata` bleibt).
+- **TV-Spiegel.** Je Gerät eine Datei `nori-tv-sync-v1-<deviceId>.json`, erkannt
+  ausschließlich über `appProperties` (`type=library-mirror`, `mirror=tv`). Der
+  Ordner „Nori" ist nur für den Nutzer da; Umbenennen und Verschieben brechen den
+  Abgleich nicht. Eine Dateikennung gehört genau zu einer Ablage.
+- **Relais.** Ein Apple-Gerät mit Freigabe gleicht `appDataFolder` und Spiegel
+  gegen dieselbe Bibliothek ab und reicht Änderungen in beide Richtungen weiter,
+  entprellt und ohne zusätzlichen Zeitgeber. Die Oberfläche sagt ohne
+  Fachbegriffe, dass mindestens ein solches Gerät regelmäßig synchronisieren muss.
+- **webOS** fragt ausschließlich nach `drive.file` und liest nur den Spiegel.
+  Ohne Spiegel eines Apple-Geräts steht dort „Noch keine TV-Synchronisation
+  gefunden – Aktiviere auf deinem iPhone, iPad oder Mac in Nori unter
+  Synchronisation „Mit Fernseher teilen"." Fehlt `drive.file`, heißt der Zustand
+  „Anmeldung nötig" statt eines Fehlertexts.
+- **Diagnose (Apple):** erteilte Bereiche, Zustand des Spiegels (aus, Zustimmung
+  fehlt, aktiv) und dessen letzter Fehler. Keine Tokens.
+
+### Behoben
+
+- **Am Fernseher war keine Anmeldung möglich** — Google lehnte den angefragten
+  Bereich `drive.appdata` ab. Jetzt `drive.file`.
+- **Ein Abgleich ohne Änderung schrieb nach einem Neustart wieder.** Der zuletzt
+  geschriebene Stand (SHA-256, Datei, Änderungsstempel) wird jetzt je Ablage und
+  Gerät dauerhaft gemerkt, in Swift und TypeScript.
+- **webOS schrieb seine unveränderte Datei bei jedem Abgleich neu** — im Proof of
+  Concept 27-mal in 17 Minuten. Der TypeScript-Kern prüft jetzt ebenso vor dem
+  Upload; SHA-256 wird ohne `crypto.subtle` gerechnet (webOS 6).
+- **Doppelte Dateien eines Geräts** führen nicht mehr zu wechselnden Ständen:
+  gelesen wird deterministisch die neueste, gelöscht wird nichts.
+- **Eine eigene Datei im Papierkorb** wird nicht weiter beschrieben; Nori legt
+  eine neue an.
+- **Eine erneute Zustimmung** schreibt einen unveränderten Stand nicht noch
+  einmal.
+- **Beim Erneuern eines Tokens ohne Bereichsangabe** gehen die erteilten
+  Bereiche nicht verloren (Apple und webOS).
+
+### Unverändert
+
+- Ohne „Mit Fernseher teilen" fragt Apple nur nach `drive.appdata` und gleicht
+  ausschließlich im `appDataFolder` ab — wie in iOS 1.22.0 und macOS 1.17.0.
+- Kein Umzug des `appDataFolder`, keine automatische Löschung, keine
+  Ende-zu-Ende-Verschlüsselung (mögliche spätere Erweiterung).
+- Auf LG-Hardware ist der Abgleich nicht geprüft.
+
+### Geprüft
+
+- **Swift-Kern:** 452 Tests bestanden. Neu sind 27, darunter: getrennte Ablagen
+  und Merkposten, eine hineingeschmuggelte Dateikennung, Ordner finden, anlegen
+  und fehlend, Erkennung umbenannter Dateien über `appProperties`, Papierkorb,
+  doppelte Dateien, kein Upload nach einem Neustart ohne Änderung, Relais in
+  beide Richtungen mit Grabstein, Meldung an die andere Ablage nur bei
+  Änderung, gleichzeitige Läufe, mehrere Geräte, zusätzliche Zustimmung mit
+  `include_granted_scopes`, fehlender oder entzogener `drive.file` sowie
+  401, 403, 429 und Netzfehler im Spiegel.
+- **TypeScript-Kern:** 211 Tests bestanden, darunter SHA-256 gegen Node — auch
+  ohne `TextEncoder` —, dieselben Spiegel-Fälle wie in Swift, der Gerätecode nur
+  mit `drive.file` und der Erhalt der Bereiche beim Erneuern.
+- **nori-api:** 13 Tests bestanden. `check-apple-sources.py` ohne
+  Auffälligkeiten. `check-webos-package.py` OK, Version 2.1.0 überall gleich,
+  auch im `.ipk`.
+- **Fernbedienungstest webOS:** 264 von 265 bestanden. Der eine Fehlschlag —
+  Fokus im Katalograster, „Chainsaw Man" nach Rechts außerhalb des Bildes — tritt
+  mit denselben Koordinaten schon auf `c0a2c19` auf und betrifft den Abgleich
+  nicht.
+- **Xcode:** Debug- und Release-Builds von iOS 1.23.0 und macOS 1.18.0
+  erfolgreich.
+- **Bundles:** iOS 1.23.0 (35) enthält nur die eigene Client-ID und kein Secret,
+  macOS 1.18.0 (27) nur die eigene Client-ID und das eigene Secret, das
+  webOS-Paket 2.1.0 nur die TV-Client-ID und das TV-Secret. Keine OAuth-JSON in
+  einem Bundle.
+- **Ende-zu-Ende mit einem echten Google-Konto** — iPhone-Simulator mit iOS
+  1.23.0, Mac mit macOS 1.18.0, webOS-TV-Simulator 26 mit webOS 2.1.0:
+  - Das iPhone gleicht nach dem Update ohne neue Anmeldung weiter ab und erkennt
+    seine Datei im `appDataFolder` wieder. Der Mac — ad-hoc signiert, das alte
+    Token im Schlüsselbund ist für ihn nicht lesbar — meldet sich neu an und
+    erkennt ebenfalls seine bisherige Datei wieder.
+  - „Mit Fernseher teilen" nach Googles Zustimmung auf iPhone und Mac
+    eingeschaltet, je mit eigener Spiegeldatei.
+  - Der Fernseher hat nur `drive.file` und keinen Merkposten für den
+    `appDataFolder`; Verlauf und Fortschritt stimmen mit iPhone und Mac überein.
+  - Fernseher → Spiegel → iPhone → `appDataFolder` → Mac mit ausgeschalteter
+    Freigabe: ein Merklisteneintrag kam an.
+  - Mac → `appDataFolder` → iPhone → Spiegel → Fernseher: seine Entfernung kam
+    an, am Fernseher als Grabstein.
+  - Danach vier Minuten ohne Änderung: kein weiterer Upload auf einem der drei
+    Geräte.
+- **Nicht geprüft:** LG-Hardware und webOS 6 auf einem echten Gerät. Dass die
+  Spiegeldatei des Mac nach dem Ausschalten in Drive liegen bleibt, ist nicht in
+  Drive nachgesehen; belegt ist, dass Nori dabei keine Löschanfrage stellt.
 
 ## [iOS 1.22.0] · [macOS 1.17.0] — 2026-09-13
 

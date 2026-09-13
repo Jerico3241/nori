@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.0.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.1.0**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -200,7 +200,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.0.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.1.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -454,6 +454,34 @@ gibt den Fokus an die Abgleich-Reihe zurück. Läuft der Code ab, steht dort ein
 Satz und ein Knopf für einen neuen; der Fokus wandert dabei auf diesen Knopf,
 weil „Abbrechen" der eine ist, der nicht weiterhilft.
 
+### Was der Fernseher liest
+
+Der Fernseher fragt ausschliesslich nach `drive.file` und liest den sichtbaren
+TV-Spiegel im Ordner „Nori" — nie den versteckten `appDataFolder`. Googles
+Gerätefluss lehnt `drive.appdata` reproduzierbar mit `invalid_scope` ab, auch
+für weitere TV-Clients und in einem zweiten Projekt
+(`docs/google-drive-sync.md`, Abschnitt 10).
+
+Die Daten von iPhone, iPad und Mac kommen deshalb über ein Apple-Gerät, auf dem
+unter *Synchronisation* „Mit Fernseher teilen" eingeschaltet ist. Liegt im
+Spiegel noch keines, steht auf der Abgleich-Seite:
+
+> Noch keine TV-Synchronisation gefunden – Aktiviere auf deinem iPhone, iPad
+> oder Mac in Nori unter Synchronisation „Mit Fernseher teilen".
+
+Der Fernseher schreibt nur seine eigene Datei `nori-tv-sync-v1-<deviceId>.json`
+und liest alle anderen Spiegeldateien. Gefunden werden sie über
+`appProperties`, auch wenn jemand sie umbenennt oder verschiebt. Fehlt
+`drive.file` — bei der Zustimmung abgewählt oder später entzogen —, zeigt die
+Seite „Anmeldung nötig" und den Knopf zum erneuten Verbinden. Merkposten einer
+früheren Fassung für den `appDataFolder` räumt die App beim Start weg.
+
+**webOS 6 (Chrome 79).** Der Spiegel braucht keine neuere Browser-API. Den
+geschriebenen Stand vergleicht Nori über SHA-256, selbst gerechnet
+(`shared/nori-core/src/hash.ts`): `crypto.subtle` hat eine `file://`-App nicht
+verlässlich, und für Umgebungen ohne `TextEncoder` gibt es einen Rückfall. Auf
+einem echten Fernseher ist das nicht geprüft.
+
 **Eingerichtet wird am Fernseher nichts.** Client-ID und Client-Secret kommen
 aus dem Build (`VITE_NORI_GOOGLE_TV_CLIENT_ID`,
 `VITE_NORI_GOOGLE_TV_CLIENT_SECRET`, am besten über eine nicht eingecheckte
@@ -470,10 +498,14 @@ fängt Googles Endpunkte ab (`npm run test:tv`, Bildschirmfotos in
 ## Bekannte Einschränkungen
 
 - **Der Abgleich über Google Drive ist nicht auf einem Fernseher geprüft.** Er
-  ist gebaut und die Zusammenführungsregel ist in beiden Kernen gegen dieselben
-  Fälle geprüft (`config/sync-fixtures.json`); der Ablauf über ein echtes
-  Google-Konto und zwei echte Geräte ist es nicht. Siehe
+  ist gebaut, die Zusammenführungsregel ist in beiden Kernen gegen dieselben
+  Fälle geprüft (`config/sync-fixtures.json`), und der Weg über den TV-Spiegel
+  wurde im webOS-TV-Simulator mit einem echten Google-Konto gegen iPhone und
+  Mac durchgespielt. Auf LG-Hardware ist er es nicht. Siehe
   `docs/google-drive-sync.md`.
+- **Der Fernseher bekommt Änderungen nur über ein Apple-Gerät mit „Mit
+  Fernseher teilen".** Ist auf keinem eingeschaltet oder wird keines mehr
+  geöffnet, bleibt der Stand am Fernseher beim letzten Abgleich stehen.
 - **Ohne Drive bleibt die Bibliothek im `localStorage`** des Fernsehers. Das
   Format ist dasselbe wie in der `library.json` von iPhone und Mac, und
   „Bibliothek einlesen" **führt zusammen statt zu ersetzen**
