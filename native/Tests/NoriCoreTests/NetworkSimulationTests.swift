@@ -27,6 +27,20 @@ final class NetworkSimulationTests: XCTestCase {
         XCTAssertEqual(mode.effect(host: "serienstream.to"), .pass)
     }
 
+    func testTMDBSlowDelaysOnlyTMDB() {
+        let mode = NoriNetworkSimulation.tmdbSlow
+        XCTAssertEqual(mode.effect(host: "api.themoviedb.org"), .delay(8))
+        XCTAssertEqual(mode.effect(host: "aniworld.to"), .pass)
+    }
+
+    func testSingleProviderTimeoutsHitOnlyTheirProvider() {
+        XCTAssertEqual(NoriNetworkSimulation.aniworldTimeout.effect(host: "aniworld.to"), .hang(20))
+        XCTAssertEqual(NoriNetworkSimulation.aniworldTimeout.effect(host: "serienstream.to"), .pass)
+        XCTAssertEqual(NoriNetworkSimulation.aniworldTimeout.effect(host: "api.themoviedb.org"), .pass)
+        XCTAssertEqual(NoriNetworkSimulation.serienstreamTimeout.effect(host: "s.to"), .hang(20))
+        XCTAssertEqual(NoriNetworkSimulation.serienstreamTimeout.effect(host: "aniworld.to"), .pass)
+    }
+
     func testProviderTimeoutLeavesTMDBAndGoogleAlone() {
         let mode = NoriNetworkSimulation.providerTimeout
         XCTAssertEqual(mode.effect(host: "aniworld.to"), .hang(20))
@@ -107,6 +121,9 @@ final class NetworkSimulationTests: XCTestCase {
     func testModesParseFromLaunchArgumentSpelling() {
         XCTAssertEqual(NoriNetworkSimulation(rawValue: "tmdb-timeout"), .tmdbTimeout)
         XCTAssertEqual(NoriNetworkSimulation(rawValue: "only-serienstream"), .onlySerienstream)
+        XCTAssertEqual(NoriNetworkSimulation(rawValue: "tmdb-slow"), .tmdbSlow)
+        XCTAssertEqual(NoriNetworkSimulation(rawValue: "aniworld-timeout"), .aniworldTimeout)
+        XCTAssertEqual(NoriNetworkSimulation(rawValue: "serienstream-timeout"), .serienstreamTimeout)
         XCTAssertNil(NoriNetworkSimulation(rawValue: "irgendwas"))
     }
 }

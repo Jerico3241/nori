@@ -41,12 +41,20 @@ struct PlayerMenuButton: UIViewRepresentable {
     /// Feuert, sobald das Menü erscheint — der Player hält die Bedienung
     /// daraufhin offen, statt sie unter dem Menü wegzublenden.
     var onOpen: () -> Void = {}
+    /// Feuert, sobald das Menü wieder zu ist — nach einer Auswahl ebenso wie
+    /// nach einem Tipp daneben.
+    var onClose: () -> Void = {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(items: items, onOpen: onOpen) }
+    func makeCoordinator() -> Coordinator { Coordinator(items: items, onOpen: onOpen, onClose: onClose) }
 
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
+    func makeUIView(context: Context) -> MenuClosingButton {
+        let button = MenuClosingButton(type: .system)
         button.showsMenuAsPrimaryAction = true
+        // Die Einträge in der gelieferten Reihenfolge. Standardmäßig legt
+        // UIKit den ersten Eintrag an den Knopf — öffnet das Menü aus der
+        // unteren Leiste nach oben, stand die Hosterliste damit auf dem Kopf:
+        // der bevorzugte Hoster ganz unten, der schwächste oben.
+        button.preferredMenuElementOrder = .fixed
         button.tintColor = .white
         button.backgroundColor = .clear
         button.setContentHuggingPriority(.required, for: .horizontal)
@@ -68,12 +76,14 @@ struct PlayerMenuButton: UIViewRepresentable {
             DispatchQueue.main.async { coordinator?.onOpen() }
         }
         button.menu = UIMenu(title: menuTitle, children: [deferred])
+        button.onClose = { [weak coordinator] in coordinator?.onClose() }
         return button
     }
 
-    func updateUIView(_ button: UIButton, context: Context) {
+    func updateUIView(_ button: MenuClosingButton, context: Context) {
         context.coordinator.items = items
         context.coordinator.onOpen = onOpen
+        context.coordinator.onClose = onClose
         // Nur die Beschriftung — etwa der Geschwindigkeitswert, der sich
         // ändert, während das Menü zu ist.
         context.coordinator.apply(label, to: button)
@@ -82,11 +92,13 @@ struct PlayerMenuButton: UIViewRepresentable {
     final class Coordinator {
         var items: () -> [PlayerMenuItem]
         var onOpen: () -> Void
+        var onClose: () -> Void
         private var applied: PlayerMenuLabel?
 
-        init(items: @escaping () -> [PlayerMenuItem], onOpen: @escaping () -> Void) {
+        init(items: @escaping () -> [PlayerMenuItem], onOpen: @escaping () -> Void, onClose: @escaping () -> Void) {
             self.items = items
             self.onOpen = onOpen
+            self.onClose = onClose
         }
 
         func apply(_ label: PlayerMenuLabel, to button: UIButton) {
@@ -105,6 +117,30 @@ struct PlayerMenuButton: UIViewRepresentable {
                 button.setTitleColor(.white, for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: size, weight: .semibold)
             }
+        }
+    }
+}
+
+/// Ein Menüknopf, der meldet, wann sein Menü schließt.
+///
+/// Vorher galt „Noris Fenster wird wieder Schlüsselfenster" als Signal. Auf
+/// iPadOS 26 kommt das nach einer Auswahl nicht: das Menü blieb für den Player
+/// offen, und die Bedienung blendete danach während der Wiedergabe nie wieder
+/// aus (gemessen: über 25 Sekunden nach einer Untertitelwahl). Das Ende der
+/// Menü-Interaktion meldet UIKit dagegen verlässlich.
+final class MenuClosingButton: UIButton {
+    var onClose: (() -> Void)?
+
+    override func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction,
+        willEndFor configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
+        if let animator {
+            animator.addCompletion { [weak self] in self?.onClose?() }
+        } else {
+            onClose?()
         }
     }
 }

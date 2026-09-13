@@ -101,15 +101,12 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.20.0"
+    static let version = "1.20.1"
 
     static let highlights = [
-        "Ohne Netz, bei einer Schutzseite oder einem Zeitlimit steht der zuletzt geladene Katalog da, statt dass Startseite, Katalog und Kategorien leer bleiben.",
-        "Der Kopfbereich der Startseite passt sich der Fensterhöhe an: in einem kleinen Fenster ist „Schau weiter“ wieder zu sehen.",
-        "Auf der Detailseite bricht der Abspielknopf in schmalen Fenstern nicht mehr um, und die Staffelauswahl rückt in eine eigene Zeile, statt abgeschnitten zu werden.",
-        "Der Katalog öffnet sich beim zweiten Mal sofort, statt jedes Mal den Suchindex neu zu bauen.",
-        "Das Ladeskelett der Detailseite reserviert den Platz der Beschreibung — die Folgenliste springt beim Eintreffen nicht mehr nach unten.",
-        "Neu unter Einstellungen → Daten: die Größe des Bild-Caches und ein Knopf, um ihn zu leeren.",
+        "Das Öffnen einer Folge brachte Nori unter macOS 27 zum Absturz. Der Player benutzt jetzt direkt die Wiedergabeansicht von AppKit — mit derselben Systemsteuerung.",
+        "Die nächste Folge startet nach dem Countdown wieder. Vorher blieb der Player danach ohne Meldung bei „Folge wird gelesen …“ stehen.",
+        "Scheitert ein Hoster, beginnen „Erneut versuchen“ und „Anderen Hoster“ an der Stelle, an der die Folge stand, statt von vorn.",
     ]
 }
 

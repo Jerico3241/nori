@@ -31,6 +31,10 @@ struct PlayerScreen: View {
     @State private var sleepActivity: NSObjectProtocol?
     @State private var failureObserver: NSObjectProtocol?
     @State private var statusTask: Task<Void, Never>?
+    /// Wo die Wiedergabe steht, wenn gerade kein Player läuft — nach einem
+    /// gescheiterten Start oder Hosterwechsel. Ohne das begannen „Erneut
+    /// versuchen" und „Anderen Hoster" die Folge von vorn.
+    @State private var standingPosition: Double = 0
 
     init(request: PlayerRequest) {
         self.series = request.series
@@ -45,7 +49,7 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
 
             if let player {
-                VideoPlayer(player: player)
+                SystemPlayerView(player: player)
                     .ignoresSafeArea()
             } else if let error {
                 errorView(error)
@@ -230,7 +234,9 @@ struct PlayerScreen: View {
         resumeAt: Double? = nil
     ) async {
         cancelAutoplay()
+        let targetResume = resumeAt ?? currentResumeAt
         clearPlayer(saveCurrent: false)
+        standingPosition = targetResume
         let generation = playbackGeneration
         error = nil
         source = nil
@@ -282,7 +288,6 @@ struct PlayerScreen: View {
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
 
-            let targetResume = resumeAt ?? currentResumeAt
             if targetResume >= 8 {
                 let t = CMTime(seconds: targetResume, preferredTimescale: 600)
                 await av.seek(to: t)
@@ -439,7 +444,16 @@ struct PlayerScreen: View {
                 try? await Task.sleep(for: .seconds(1))
             }
             guard !Task.isCancelled else { return }
-            await playNextEpisode()
+            // Nicht in dieser Aufgabe weiter: `switchEpisode` bricht
+            // `autoplayTask` ab — also genau die Aufgabe, in der es liefe. Der
+            // Abruf der nächsten Folge kam dann abgebrochen zurück, wurde als
+            // veraltet verworfen, und der Player stand ohne Meldung bei
+            // „Folge wird gelesen…" (beobachtet: über zwei Minuten nach dem
+            // Ende von Folge 1). Die neue Folge startet in einer eigenen Aufgabe.
+            await MainActor.run {
+                autoplayTask = nil
+                Task { await playNextEpisode() }
+            }
         }
     }
 
@@ -525,8 +539,9 @@ struct PlayerScreen: View {
     }
 
     func currentPosition() -> Double {
-        let pos = player?.currentTime().seconds ?? 0
-        return pos.isFinite ? pos : 0
+        guard let player else { return standingPosition }
+        let pos = player.currentTime().seconds
+        return pos.isFinite ? pos : standingPosition
     }
 
     /// Verhindert, dass der Bildschirm während der Wiedergabe schlafen geht.
@@ -557,6 +572,9 @@ struct PlayerScreen: View {
         failureObserver = nil
         statusTask?.cancel()
         statusTask = nil
+        if let pos = player?.currentTime().seconds, pos.isFinite, pos > 0 {
+            standingPosition = pos
+        }
         player?.pause()
         player = nil
         endSleepBlock()
@@ -586,3 +604,31 @@ struct PlayerScreen: View {
     }
 }
 
+/// Bild und Systemsteuerung von AVKit — `AVPlayerView` aus AppKit.
+///
+/// Vorher stand hier SwiftUIs `VideoPlayer`. Unter macOS 27 bricht dessen
+/// Typ-Metadaten-Aufbau in `_AVKit_SwiftUI` ab (`getSuperclassMetadata`,
+/// SIGABRT): Nori stürzte beim Öffnen jeder Folge ab, bevor ein Bild kam.
+/// `AVPlayerView` ist dieselbe Systemsteuerung ohne diese SwiftUI-Hülle —
+/// Leiste, Vollbild, Bild in Bild und Tastatur (Leertaste, Pfeiltasten)
+/// bleiben die des Systems.
+private struct SystemPlayerView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .floating
+        view.showsFullScreenToggleButton = true
+        view.allowsPictureInPicturePlayback = true
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        if view.player !== player { view.player = player }
+    }
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player = nil
+    }
+}

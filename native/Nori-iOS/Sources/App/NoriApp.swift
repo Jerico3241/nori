@@ -199,6 +199,36 @@ struct RootView: View {
         loading = allItems.isEmpty
         error = nil
 
+        // Kalter Start: erst der zuletzt geladene Katalog von der Platte, dann
+        // das Netz. Vorher wartete die App auf beide Quellen — bei einem
+        // hängenden Server stand das Ladeskelett, bis das Zeitlimit griff
+        // (gemessen mit `-NoriNetworkSimulation provider-timeout`: über
+        // 20 Sekunden), obwohl der Katalog von gestern auf der Platte lag. Was
+        // das Netz danach liefert, legt sich über diesen Stand; Startseite und
+        // Katalog behalten dabei ihre Ordnung.
+        if allItems.isEmpty {
+            let stored = await Task.detached(priority: .userInitiated) { () -> [CatalogItem] in
+                [CatalogProvider.aniworld, .serienstream].flatMap { CatalogDiskCache.shared.load(provider: $0)?.items ?? [] }
+            }.value
+            if !stored.isEmpty, allItems.isEmpty {
+                let prepared = await CatalogPreparation.prepare(
+                    merged: stored,
+                    previous: allItems,
+                    previousSlugs: scopeSlugs,
+                    scope: library.scope
+                )
+                if prepared.changed {
+                    allItems = prepared.items
+                    catalogRevision &+= 1
+                }
+                if prepared.slugsChanged {
+                    scopeSlugs = prepared.slugs
+                    scopeSlugsRevision &+= 1
+                }
+                loading = false
+            }
+        }
+
         async let anime = Self.fetch(.aniworld)
         async let serien = Self.fetch(.serienstream)
         let results = await [anime, serien]

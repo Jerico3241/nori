@@ -54,6 +54,7 @@ struct PlayerControls: View {
     var onNextEpisode: () -> Void
     var onToggleFill: () -> Void
     var onMenuOpen: () -> Void
+    var onMenuClose: () -> Void
 
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -101,7 +102,8 @@ struct PlayerControls: View {
                     onSubtitle: onSubtitle,
                     onNextEpisode: onNextEpisode,
                     onToggleFill: onToggleFill,
-                    onMenuOpen: onMenuOpen
+                    onMenuOpen: onMenuOpen,
+                    onMenuClose: onMenuClose
                 )
                 .opacity(visible ? 1 : 0)
                 .offset(y: visible ? 0 : 14)
