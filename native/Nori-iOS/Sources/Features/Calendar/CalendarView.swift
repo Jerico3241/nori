@@ -46,6 +46,8 @@ struct CalendarView: View {
 
     private var calendar: Calendar { Calendar.current }
 
+    private static let maxContentWidth: CGFloat = 980
+
     var body: some View {
         NoriGradientScreen {
             VStack(spacing: 14) {
@@ -58,6 +60,12 @@ struct CalendarView: View {
                 content
             }
             .padding(.top, 6)
+            // Auf dem iPad quer liefen die Zeilen über 1376 Punkte: Titel
+            // links, Pfeil ganz rechts, dazwischen eine leere Bahn. Eine Spalte
+            // in Lesebreite, mittig — auf dem iPhone und im iPad-Hochformat
+            // greift die Grenze nicht.
+            .frame(maxWidth: Self.maxContentWidth)
+            .frame(maxWidth: .infinity)
         }
         // Der Kopfbereich bringt Titel und Filter selbst mit; eine zweite
         // Leiste darüber wäre doppelt.

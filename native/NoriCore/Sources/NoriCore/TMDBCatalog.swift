@@ -274,6 +274,20 @@ actor TMDBCatalog {
         return Rows(candidates: out, fetchedAt: Date().timeIntervalSince1970)
     }
 
+    /// Eigene Sitzung mit kurzer Frist.
+    ///
+    /// `URLSession.shared` wartet bis zu 60 Sekunden auf eine Antwort. Hängt
+    /// TMDB, blieb der zweite Durchgang der Startseite so lange offen — je
+    /// Seite einer Liste. TMDB ist eine Verbesserung, kein Grund zu warten.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 12
+        #if DEBUG
+        NoriNetworkSimulation.configure(config)
+        #endif
+        return URLSession(configuration: config)
+    }()
+
     private func page(_ path: String, extra: [URLQueryItem], page: Int) async -> [TMDBCandidate] {
         guard let key else { return [] }
         guard var comps = URLComponents(string: "https://api.themoviedb.org/3/" + path) else { return [] }
@@ -285,7 +299,7 @@ actor TMDBCatalog {
         ] + extra
         guard let url = comps.url else { return [] }
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await Self.session.data(from: url)
             // 429 ist die Ratenbegrenzung, 401 ein ungültiger Schlüssel.
             // Beides ist ein leeres Ergebnis, kein Grund, etwas zu verwerfen.
             if let http = response as? HTTPURLResponse, http.statusCode != 200 { return [] }

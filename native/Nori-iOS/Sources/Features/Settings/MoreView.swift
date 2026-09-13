@@ -55,6 +55,10 @@ struct MoreView: View {
                 }
                 .padding(.top, 6)
                 .padding(.bottom, NoriPanel.bottom)
+                // Auf dem iPad quer liefen die Einstellungszeilen über die
+                // ganze Breite, die Schalter standen weit ab vom Text.
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
             .noriSoftScrollEdges(.bottom)

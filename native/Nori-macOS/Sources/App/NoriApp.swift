@@ -146,6 +146,11 @@ struct NoriApp: App {
     @State private var catalogStore = CatalogStore()
 
     init() {
+        #if DEBUG
+        // Netzstörungen nachstellen: `-NoriNetworkSimulation offline` usw.
+        // Ohne das Argument geschieht nichts.
+        NoriNetworkSimulation.install()
+        #endif
         let library = LibraryStore()
         // Landet als Metadatum im abgelegten Stand. Nützlich, wenn irgendwann
         // ein Gerät etwas schreibt, das die anderen nicht verstehen.
@@ -272,6 +277,9 @@ struct RootView: View {
     @State private var catalog: [CatalogItem] = []
     /// Zählt hoch, wenn sich der Ausschnitt inhaltlich ändert.
     @State private var catalogRevision = 0
+    /// Suchindex des Katalogs — hier statt in `CatalogView`, damit er beim
+    /// Wechsel in der Seitenleiste nicht verloren geht.
+    @State private var catalogModel = MacCatalogModel()
     @State private var error: String?
     @State private var loading = true
     @State private var columns: NavigationSplitViewVisibility = .all
@@ -337,7 +345,7 @@ struct RootView: View {
         case .home:
             HomeView(catalog: catalog, catalogRevision: catalogRevision, loading: loading, error: error, reload: { await load(force: true) })
         case .catalog:
-            CatalogView(catalog: catalog, catalogRevision: catalogRevision, loading: loading, error: error, reload: { await load(force: true) })
+            CatalogView(catalog: catalog, catalogRevision: catalogRevision, loading: loading, error: error, reload: { await load(force: true) }, model: catalogModel)
         case .categories:
             CategoriesView(catalog: catalog, catalogRevision: catalogRevision, loading: loading)
         case .calendar:

@@ -205,6 +205,9 @@ enum HosterResolver {
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
         config.httpCookieStorage = HTTPCookieStorage.shared
+        #if DEBUG
+        NoriNetworkSimulation.configure(config)
+        #endif
         let session = URLSession(configuration: config, delegate: tap, delegateQueue: nil)
         var req = URLRequest(url: url)
         req.setValue(NoriOrigin.ua, forHTTPHeaderField: "User-Agent")

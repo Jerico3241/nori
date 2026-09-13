@@ -111,7 +111,7 @@ struct NoriHomeView: View {
                     // vollem Abschnittsabstand darunter zu beginnen — der
                     // Verlauf endet ohnehin in der Hintergrundfarbe.
                     .padding(.bottom, -14)
-                } else if !service.ready || (loading && catalog.isEmpty) {
+                } else if !service.ready || service.holding || (loading && catalog.isEmpty) {
                     HomeSkeleton(heroHeight: heroHeight, posterWidth: posterWidth)
                 }
 
@@ -125,7 +125,9 @@ struct NoriHomeView: View {
                         .padding(.horizontal, HomeMetrics.screen)
                 }
 
-                sections(posterWidth: posterWidth, landscapeWidth: landscapeWidth)
+                if !service.holding {
+                    sections(posterWidth: posterWidth, landscapeWidth: landscapeWidth)
+                }
 
                 HomeAttribution()
                     .padding(.top, 12)
@@ -141,43 +143,56 @@ struct NoriHomeView: View {
         .refreshable { await refresh() }
     }
 
-    /// Die Reihen, in der festgelegten Reihenfolge.
+    /// Die Reihen, in der Reihenfolge, die der Dienst festgelegt hat.
+    ///
+    /// `feed.sections` statt fester Plätze: kommt ein Abschnitt erst mit dem
+    /// zweiten Durchgang dazu, steht er unten und schiebt nichts Sichtbares
+    /// weg (siehe `HomeFeedStability`).
     ///
     /// Als eigene Teilansicht, weil der Typechecker beim Aufbau als Ganzes
     /// aufgibt — dieselbe Erfahrung wie auf der vorherigen Startseite. Jede
     /// weitere Verschachtelung im `LazyVStack` kostet ihn überproportional
     /// viel; kleine Teilansichten kosten nichts.
-    @ViewBuilder
     private func sections(posterWidth: CGFloat, landscapeWidth: CGFloat) -> some View {
-        ContinueWatchingSection(
-            items: feed.continueWatching,
-            width: landscapeWidth,
-            preparing: preparing,
-            onPlay: resume
-        )
+        ForEach(feed.sections, id: \.self) { section in
+            self.section(section, posterWidth: posterWidth, landscapeWidth: landscapeWidth)
+        }
+    }
 
-        HomePosterSection(
-            title: "Neu & beliebt",
-            items: feed.newAndPopular,
-            width: posterWidth,
-            showsBadges: true
-        )
-
-        NewEpisodesSection(
-            entries: feed.newEpisodes,
-            preparing: preparing,
-            onPlay: start,
-            onCalendar: openCalendar
-        )
-
-        HomePosterSection(
-            title: feed.recommendationTitle,
-            items: feed.recommendations,
-            width: posterWidth
-        )
-
-        ForEach(feed.extraRows) { row in
-            HomePosterSection(title: row.title, items: row.items, width: posterWidth)
+    @ViewBuilder
+    private func section(_ section: HomeSection, posterWidth: CGFloat, landscapeWidth: CGFloat) -> some View {
+        switch section {
+        case .continueWatching:
+            ContinueWatchingSection(
+                items: feed.continueWatching,
+                width: landscapeWidth,
+                preparing: preparing,
+                onPlay: resume
+            )
+        case .newAndPopular:
+            HomePosterSection(
+                title: "Neu & beliebt",
+                items: feed.newAndPopular,
+                width: posterWidth,
+                showsBadges: true
+            )
+        case .newEpisodes:
+            NewEpisodesSection(
+                entries: feed.newEpisodes,
+                preparing: preparing,
+                onPlay: start,
+                onCalendar: openCalendar
+            )
+        case .recommendations:
+            HomePosterSection(
+                title: feed.recommendationTitle,
+                items: feed.recommendations,
+                width: posterWidth
+            )
+        case .extra(let id):
+            if let row = feed.extraRows.first(where: { $0.id == id }) {
+                HomePosterSection(title: row.title, items: row.items, width: posterWidth)
+            }
         }
     }
 

@@ -218,13 +218,35 @@ struct HomeView: View {
 enum NoriLayout {
     static let gutter: CGFloat = 28
     static let cardWidth: CGFloat = 168
+
+    /// Höhe des Kopfbereichs aus der sichtbaren Höhe der Seite.
+    ///
+    /// Vorher fest 460 Punkte. In einem kleinen Fenster (900 × 600) füllte der
+    /// Kopfbereich damit fast die ganze Seite, und von „Schau weiter" war nur
+    /// die Überschrift zu sehen. Jetzt sind es knapp zwei Drittel der
+    /// sichtbaren Höhe, mit 460 als Obergrenze und genug Platz für Titel,
+    /// Beschreibung und Knöpfe als Untergrenze.
+    static func heroHeight(visible: CGFloat) -> CGFloat {
+        min(460, max(360, (visible * 0.62).rounded()))
+    }
+}
+
+extension View {
+    /// Der Kopfbereich in der Höhe, die `NoriLayout.heroHeight` für den
+    /// umgebenden Scrollbereich vorsieht — für Karussell und Ladeskelett
+    /// gleich, damit beim Eintreffen der Daten nichts springt.
+    func noriHeroFrame() -> some View {
+        containerRelativeFrame(.vertical) { length, _ in
+            NoriLayout.heroHeight(visible: length)
+        }
+    }
 }
 
 
 /// Die Startseite, bevor der Katalog da ist.
 ///
-/// Mit den Maßen der echten Abschnitte: Kopfbereich 460 Punkte wie
-/// `HeroCarousel`, darunter zwei Reihen wie `PosterRow`. Vorher stand an
+/// Mit den Maßen der echten Abschnitte: Kopfbereich so hoch wie
+/// `HeroCarousel` (`noriHeroFrame`), darunter zwei Reihen wie `PosterRow`. Vorher stand an
 /// dieser Stelle ein `ProgressView` mitten im leeren Fenster, und beim
 /// Eintreffen der Daten sprang die Seite von einem Rädchen auf ihren Aufbau.
 struct HomeSkeleton: View {
@@ -247,7 +269,7 @@ struct HomeSkeleton: View {
                     .padding(.bottom, 54)
                     .frame(maxWidth: 720, alignment: .leading)
                 }
-                .frame(height: 460)
+                .noriHeroFrame()
 
                 ForEach(0 ..< 2, id: \.self) { _ in
                     VStack(alignment: .leading, spacing: 14) {
@@ -315,7 +337,7 @@ struct HeroCarousel: View {
             .padding(.leading, NoriLayout.gutter)
             .padding(.bottom, 22)
         }
-        .frame(height: 460)
+        .noriHeroFrame()
         .frame(maxWidth: .infinity)
         .clipped()
         .overlay(alignment: .leading) { arrow(-1, symbol: "chevron.left") }

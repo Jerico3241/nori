@@ -4,8 +4,89 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.19.0**, iOS/iPadOS **1.24.0**,
+unterschiedlich schnell bewegen: macOS **1.20.0**, iOS/iPadOS **1.25.0**,
 Windows **1.8.0**, LG webOS **2.2.0**.
+
+## [iOS 1.25.0] · [macOS 1.20.0] — 2026-09-13
+
+Zweiter Qualitätsdurchgang: offene Punkte des ersten und visueller Feinschliff
+auf iPad und Mac. Keine Architekturänderung, keine Änderung an Google Drive,
+OAuth, Merge-Regeln, `drive.appdata`, `drive.file` oder am Bibliotheksschema
+(weiter v6). webOS unverändert (2.2.0).
+
+### Behoben — iOS/iPadOS
+
+- **Die Startseite ordnete sich um, während man schon las.** Der zweite
+  Durchgang mit frischen TMDB-Daten ersetzte den ganzen Feed: Karten wechselten
+  innerhalb einer Reihe die Stelle, der Kopfbereich zeigte plötzlich einen
+  anderen Titel, und „Neue Episoden" schob sich zwischen zwei sichtbare Reihen.
+  Jetzt legt `HomeFeedStability` den frischen Feed über den sichtbaren:
+  Reihen, Karten und Kopfbereich behalten ihre Folge und bekommen nur frische
+  Daten, Neues kommt hinten dazu, ein neuer Abschnitt unten. „Weiterschauen"
+  folgt weiter sofort der Bibliothek. Neu geordnet wird beim ersten Aufbau und
+  beim bewussten Aktualisieren. Ohne jeden TMDB-Stand von vorhin wartet die
+  Seite höchstens drei Sekunden im Ladeskelett, statt TMDB-Reihen unter die
+  Genre-Reihen zu hängen.
+- **Die Startseite blockierte beim Start den Hauptthread.** Gemessen mit dem
+  Time Profiler (iPad-Simulator, Release, beide Kataloge): `HomeFeedService`
+  baute den Titelindex über beide Kataloge auf dem Hauptthread — 435 ms allein
+  fürs Normalisieren der Titel über reguläre Ausdrücke, rund 700 ms für den
+  ganzen Aufbau. Titel, Index und beide Durchgänge laufen jetzt abseits des
+  Hauptthreads; dort wird nur noch veröffentlicht. Nachher, gleiche Messung:
+  528 statt rund 850 ms Hauptthread in den ersten Sekunden, `HomeFeedService`
+  taucht dort nicht mehr auf.
+- **Der iPad-Katalog zeigte Plakate statt eines Rasters.** Die Spaltenzahl
+  wurde abgerundet, jede Kachel war damit mindestens so breit wie ihre
+  Obergrenze: vier Spalten im Hochformat des 13-Zoll-iPads. Jetzt fünf im
+  Hochformat, sieben im Querformat; auf dem iPhone unverändert.
+- **Kalender und Mehr liefen auf dem iPad quer über 1376 Punkte.** Titel links,
+  Pfeil oder Schalter ganz rechts. Beide stehen jetzt in einer mittigen Spalte
+  von höchstens 980 Punkten.
+- **Speicherwarnungen blieben unbeantwortet.** Bei knappem Speicher werden jetzt
+  die Bilder im Arbeitsspeicher freigegeben; die Dateien auf der Platte
+  bleiben, Kacheln kommen ohne Netz zurück.
+
+### Behoben — macOS
+
+- **Im kleinen Fenster bestand die Startseite nur aus dem Kopfbereich.** Er war
+  fest 460 Punkte hoch; bei 900 × 600 blieb von „Schau weiter" nur die
+  Überschrift. Jetzt knapp zwei Drittel der sichtbaren Höhe, zwischen 360 und
+  460 Punkten — für Karussell und Ladeskelett gleich.
+- **Die Detailseite quetschte ihre Knöpfe.** In schmalen Fenstern brach
+  „Abspielen · Folge 1" im Knopf um und die Staffelauswahl wurde zu „Staff…".
+  Passt die Zeile nicht, rückt die Staffelauswahl jetzt in eine eigene Zeile.
+- **Die Folgenliste sprang beim Laden nach unten.** Dem Ladeskelett der
+  Detailseite fehlte der Platz der Beschreibung.
+- **Der Katalog baute bei jedem Öffnen seinen Suchindex neu** — erst
+  Ladeskelett und „0 Titel", dann nach gut einer Sekunde das Raster. Der Index
+  lebt jetzt in der Wurzelansicht und übersteht den Wechsel in der Seitenleiste.
+
+### Behoben — beide Apple-Apps
+
+- **Ohne Netz stand nach einem Neustart nichts da.** Der Katalog lag nur im
+  Arbeitsspeicher. Jetzt wird die letzte vollständige Fassung je Quelle unter
+  Caches abgelegt und dient als Rückfall, wenn das Laden scheitert — kein Netz,
+  Zeitlimit, Schutzseite. Ein halber Katalog wird nie abgelegt.
+- **Ein hängendes TMDB hielt die Startseite bis zu einer Minute offen.** TMDB
+  lief über `URLSession.shared` mit 60 Sekunden Frist je Anfrage; jetzt eine
+  eigene Sitzung mit 12 Sekunden.
+
+### Neu
+
+- macOS: **Einstellungen → Daten → Bild-Cache** zeigt die gemessene Größe auf
+  der Platte und leert ihn auf Knopfdruck. Merkliste, Verlauf und Fortschritt
+  bleiben unberührt.
+- Debug-Builds: **`-NoriNetworkSimulation <modus>`** stellt Netzstörungen nach,
+  ohne die Systemeinstellungen anzufassen — `offline`, `slow`, `tmdb-timeout`,
+  `provider-timeout`, `only-aniworld`, `only-serienstream`, `drive-offline`.
+  Was im Zwischenspeicher liegt, kommt wie auf einem echten Gerät trotzdem an.
+  In Release-Builds existiert der Schalter nicht.
+
+### Tests
+
+- `HomeFeedStabilityTests` (12), `CatalogDiskCacheTests` (5),
+  `NetworkSimulationTests` (10, davon zwei durch eine echte `URLSession`:
+  offline mit und ohne Eintrag im Zwischenspeicher).
 
 ## [iOS 1.24.0] · [macOS 1.19.0] · [webOS 2.2.0] — 2026-09-13
 

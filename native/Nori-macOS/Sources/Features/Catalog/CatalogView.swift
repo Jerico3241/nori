@@ -24,7 +24,11 @@ struct CatalogView: View {
     let reload: () async -> Void
 
     @State private var q = ""
-    @State private var model = MacCatalogModel()
+    /// Kommt von `RootView` und überlebt damit den Wechsel in der
+    /// Seitenleiste. Als `@State` dieser Ansicht wurde der Index bei jedem
+    /// Öffnen des Katalogs neu gebaut — erst Ladeskelett und „0 Titel", dann
+    /// nach gut einer Sekunde das Raster, obwohl sich nichts geändert hatte.
+    let model: MacCatalogModel
     @AppStorage("nori.catalog.layout") private var layoutRaw = NoriViewMode.grid.rawValue
 
     private var layout: NoriViewMode { NoriViewMode(rawValue: layoutRaw) ?? .grid }
@@ -77,6 +81,9 @@ struct CatalogView: View {
             }
         }
         .task(id: catalogRevision) { await model.load(catalog, revision: catalogRevision) }
+        // Das Suchfeld beginnt leer; eine Suche vom letzten Besuch darf dann
+        // nicht weiter die Liste filtern.
+        .onAppear { if !model.appliedQuery.isEmpty { model.search("") } }
         .onChange(of: q) { _, value in model.search(value) }
     }
 
