@@ -88,10 +88,11 @@ hybride Modell; Begründung in `docs/synchronisation.md`, Messungen in
 - **nori-api:** 13 Tests bestanden. `check-apple-sources.py` ohne
   Auffälligkeiten. `check-webos-package.py` OK, Version 2.1.0 überall gleich,
   auch im `.ipk`.
-- **Fernbedienungstest webOS:** 264 von 265 bestanden. Der eine Fehlschlag —
-  Fokus im Katalograster, „Chainsaw Man" nach Rechts außerhalb des Bildes — tritt
-  mit denselben Koordinaten schon auf `c0a2c19` auf und betrifft den Abgleich
-  nicht.
+- **Fernbedienungstest webOS:** 267/267 bestanden, nach Übernahme von webOS
+  2.0.1 aus `main`. Vorher schlug „Katalog Matrix" fehl — ein vorbestehender
+  Fokusfehler im Katalograster, auch auf `main`; behoben in 2.0.1. Alle
+  Abgleich-Prüfungen bestehen (nur `drive.file` im Gerätefluss, nie
+  `appDataFolder`, Spiegel-Kennzeichnung, Hinweis ohne Fachbegriffe).
 - **Xcode:** Debug- und Release-Builds von iOS 1.23.0 und macOS 1.18.0
   erfolgreich.
 - **Bundles:** iOS 1.23.0 (35) enthält nur die eigene Client-ID und kein Secret,
@@ -117,6 +118,49 @@ hybride Modell; Begründung in `docs/synchronisation.md`, Messungen in
 - **Nicht geprüft:** LG-Hardware und webOS 6 auf einem echten Gerät. Dass die
   Spiegeldatei des Mac nach dem Ausschalten in Drive liegen bleibt, ist nicht in
   Drive nachgesehen; belegt ist, dass Nori dabei keine Löschanfrage stellt.
+
+## [webOS 2.0.1] — 2026-09-13
+
+Fokus im Katalog: nach dem Eintreffen von TMDB-Treffern stand die fokussierte
+Karte halb unter dem Bildrand.
+
+### Behoben
+
+- **Die Scrollverankerung des Browsers arbeitete gegen die Navigation.** Kommen
+  TMDB-Treffer an, bewertet `useCatalogView` die Karten gebündelt neu, und das
+  Raster sortiert sich um. Chromium hielt dabei mit `overflow-anchor: auto`
+  einen Knoten oberhalb der fokussierten Karte optisch fest und verschob
+  `scrollTop` selbst um eine Rasterzeile — 538 px auf 1080p —, an
+  `navigation/engine.ts` vorbei und ohne Fokuswechsel, also ohne `reveal`. Die
+  fokussierte Karte stand danach bei 1005–1549 px. Die Bereiche mit
+  `data-scroll-y` und `data-scroll-x` haben jetzt `overflow-anchor: none`; ihre
+  Position bestimmt allein die Navigation. Aufgefallen im Fernbedienungstest
+  („Katalog Matrix", 4. Druck nach Rechts auf „Chainsaw Man"), dort reproduzierbar
+  auf `main`.
+- **Wechselte die fokussierte Karte beim Umsortieren selbst die Zeile, holte sie
+  niemand zurück.** Die Verankerung hatte das zufällig mit abgefangen — ohne sie
+  stand die Karte am Ende des Katalogs bei −81 px. Sichtbar gemacht wurde bisher
+  nur beim Fokuswechsel; `navigation/engine.ts` prüft jetzt nach jeder
+  DOM-Änderung, ob sich das fokussierte Element verschoben hat, und holt es mit
+  demselben `reveal` ins Bild. Ohne Verschiebung passiert nichts, mit Zeiger
+  (Magic Remote) wird nicht gescrollt.
+
+### Geprüft
+
+- **Ursache belegt:** Im protokollierten Lauf sortierte sich das Raster 45 ms nach
+  dem 4. Druck nach Rechts um, 22 ms später änderte der Browser `scrollTop` von
+  949 auf 411 — ohne dass die Navigation scrollte. Mit `overflow-anchor: none`
+  sortierte sich das Raster zum selben Zeitpunkt um, die Seite blieb stehen.
+- **Zwei neue Prüfungen** im Fernbedienungstest stellen die Umsortierung nach:
+  „Katalog umsortiert: Seite bleibt stehen, Fokus vollständig sichtbar" und
+  „… fokussierte Karte wechselt die Zeile und bleibt ganz sichtbar". Ohne Fix
+  schlagen „Katalog Matrix" und die erste fehl; nur mit dem CSS-Teil schlagen die
+  zweite und „unterste Reihe vollständig sichtbar" fehl.
+- **Fernbedienungstest mit vollständigem Fix:** 261/261, zweimal hintereinander,
+  1080p und 4K; keine bestehende Prüfung verändert.
+- TS-Kern 188/188, nori-api 13/13, `check-webos-package.py` OK (2.0.1 überall,
+  auch im `.ipk`).
+- Nicht auf LG-Hardware geprüft.
 
 ## [iOS 1.22.0] · [macOS 1.17.0] — 2026-09-13
 

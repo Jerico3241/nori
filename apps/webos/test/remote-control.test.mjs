@@ -569,6 +569,84 @@ try {
   check("Katalog: unterste Reihe vollständig sichtbar", catBottom.ok, catBottom.reason);
   await shot(page, "06-katalog-letzte-reihe");
 
+  // Sortiert sich das Raster um — im Katalog, sobald TMDB-Treffer eintreffen —,
+  // darf der Browser den Scrollbereich nicht an der Navigation vorbei
+  // verschieben. Nachgestellt wie dort: eine Karte oberhalb des sichtbaren
+  // Bereichs wandert an eine andere Stelle. Mit Scrollverankerung sprang die
+  // Seite dabei um eine Rasterzeile, und die fokussierte Karte hing halb unter
+  // dem Bildrand („Katalog Matrix", 4. Druck nach Rechts).
+  const beforeReorder = (await focused(page))?.key ?? null;
+  const reorder = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+    const grid = document.querySelector(".catalog-grid");
+    const cards = Array.from(grid?.children ?? []);
+    const target = cards[12];
+    if (!target || cards.length < 20) return { ok: false, reason: `nur ${cards.length} Karten` };
+    target.focus({ preventScroll: true });
+    await wait(700);
+    const scroller = target.closest("[data-scroll-y]");
+    const before = scroller.scrollTop;
+    const moved = cards[0];
+    window.__noriReorder = { moved, next: moved.nextSibling };
+    grid.appendChild(moved);
+    await wait(300);
+    return {
+      ok: true, before: Math.round(before), after: Math.round(scroller.scrollTop),
+      key: target.getAttribute("data-focus-key"), stillFocused: document.activeElement === target,
+    };
+  });
+  const reorderVisible = reorder.ok ? await focusVisibility(page) : { ok: false, reason: reorder.reason };
+  await page.evaluate(() => {
+    const { moved, next } = window.__noriReorder ?? {};
+    if (moved) moved.parentElement.insertBefore(moved, next);
+    delete window.__noriReorder;
+  });
+  check("Katalog umsortiert: Seite bleibt stehen, Fokus vollständig sichtbar",
+    reorder.ok && reorder.stillFocused && reorder.before > 0 && Math.abs(reorder.after - reorder.before) < 1 && reorderVisible.ok,
+    reorder.ok
+      ? `scrollTop ${reorder.before} → ${reorder.after} · ${reorder.key}${reorderVisible.ok ? "" : ` · ${reorderVisible.reason}`}`
+      : reorder.reason);
+  // Und wenn die fokussierte Karte selbst die Zeile wechselt: dann muss die
+  // Navigation sie zurückholen — die Scrollverankerung tut es nicht mehr.
+  const shifted = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+    const grid = document.querySelector(".catalog-grid");
+    const cards = Array.from(grid?.children ?? []);
+    const target = cards[10];
+    if (!target || cards.length < 20) return { ok: false, reason: `nur ${cards.length} Karten` };
+    target.blur();
+    target.focus({ preventScroll: true });
+    await wait(700);
+    const moved = cards[0];
+    window.__noriReorder = { moved, next: moved.nextSibling };
+    grid.appendChild(moved);
+    await wait(600);
+    return {
+      ok: true, key: target.getAttribute("data-focus-key"), stillFocused: document.activeElement === target,
+      changedRow: Array.from(grid.children).indexOf(target) === 9,
+    };
+  });
+  const shiftedVisible = shifted.ok ? await focusVisibility(page) : { ok: false, reason: shifted.reason };
+  await page.evaluate(() => {
+    const { moved, next } = window.__noriReorder ?? {};
+    if (moved) moved.parentElement.insertBefore(moved, next);
+    delete window.__noriReorder;
+  });
+  check("Katalog umsortiert: fokussierte Karte wechselt die Zeile und bleibt ganz sichtbar",
+    shifted.ok && shifted.stillFocused && shifted.changedRow && shiftedVisible.ok,
+    shifted.ok ? `${shifted.key} von Reihe 3 nach Reihe 2${shiftedVisible.ok ? "" : ` · ${shiftedVisible.reason}`}` : shifted.reason);
+  await page.waitForTimeout(500);
+  if (beforeReorder) {
+    await page.evaluate((key) => {
+      const node = document.querySelector(`[data-focus-key="${key}"]`);
+      if (node) {
+        node.blur();
+        node.focus({ preventScroll: true });
+      }
+    }, beforeReorder);
+    await page.waitForTimeout(500);
+  }
+
   // Detail aus Reihe 2 und zurück: hoch bis zu den Schnellfiltern, dann
   // zwei Reihen hinunter und eine Karte nach rechts.
   for (let i = 0; i < 20; i += 1) {

@@ -43,6 +43,14 @@ zum Rand und holt die Überschrift einer Reihe mit herein. Overlays sperren den
 Fokus ein und geben ihn beim Schließen an ihren Auslöser zurück. Fokus und
 Scrollstand werden je Ansicht gemerkt.
 
+Die Scrollverankerung des Browsers ist in diesen Bereichen abgeschaltet
+(`overflow-anchor: none` an `data-scroll-y` und `data-scroll-x`). Sortiert sich
+ein Raster um — im Katalog, sobald TMDB-Treffer eintreffen —, verschob Chromium
+sonst selbst die Seite um eine Zeile, ohne dass die Navigation davon erfuhr, und
+die fokussierte Karte stand halb unter dem Bildrand. Verschiebt eine solche
+Änderung das fokussierte Element selbst, holt die Navigation es im nächsten Frame
+zurück ins Bild.
+
 ## Aufbau
 
 ```
