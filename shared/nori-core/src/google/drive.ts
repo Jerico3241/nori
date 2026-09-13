@@ -12,6 +12,43 @@
 import { LIBRARY_SYNC_LIMITS } from "../sync.js";
 
 export const DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+/**
+ * Der sichtbare TV-Spiegel. Auf webOS der **einzige** Bereich: Googles
+ * Gerätefluss lehnt `drive.appdata` reproduzierbar mit `invalid_scope` ab. Auf
+ * Apple nur nach „Mit Fernseher teilen".
+ */
+export const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
+/**
+ * Wo Nori in Drive liest und schreibt — Gegenstück zu `DriveSpace` im
+ * Swift-Kern. Beide Ablagen werden ausschliesslich über `appProperties`
+ * erkannt, nie über Dateiname, Ordner oder Pfad.
+ */
+export type DriveSpace = "appData" | "tvMirror";
+
+export const DRIVE_SPACES: Record<DriveSpace, { visible: boolean; fileType: string; namePrefix: string }> = {
+  appData: { visible: false, fileType: "library-snapshot", namePrefix: "nori-sync" },
+  tvMirror: { visible: true, fileType: "library-mirror", namePrefix: "nori-tv-sync" },
+};
+
+/** Der von Nori angelegte Ordner in „Meine Ablage" — nur für den Nutzer. */
+export const MIRROR_FOLDER_NAME = "Nori";
+export const MIRROR_FOLDER_TYPE = "mirror-folder";
+
+/** Suchausdruck einer Ablage. Der `appDataFolder` wird wie bisher ohne gelistet. */
+export function driveSpaceQuery(space: DriveSpace): string | null {
+  if (!DRIVE_SPACES[space].visible) return null;
+  return "appProperties has { key='app' and value='nori' } and "
+    + `appProperties has { key='type' and value='${DRIVE_SPACES[space].fileType}' } and trashed=false`;
+}
+
+export function driveSpaceProperties(space: DriveSpace, deviceId: string): Record<string, string> {
+  const properties: Record<string, string> = {
+    app: "nori", type: DRIVE_SPACES[space].fileType, syncVersion: "1", deviceId,
+  };
+  if (DRIVE_SPACES[space].visible) properties.mirror = "tv";
+  return properties;
+}
 
 const FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files";
 const UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files";
@@ -71,9 +108,9 @@ export function retryDelay(policy: DriveRetryPolicy, attempt: number, random: nu
   return raw * (1 - policy.jitter + 2 * policy.jitter * random);
 }
 
-/** Der Dateiname eines Gerätestands. */
-export function snapshotName(deviceId: string, formatVersion = 1): string {
-  return `nori-sync-v${formatVersion}-${deviceId}.json`;
+/** Der Dateiname eines Gerätestands. Nur UX — erkannt wird über `appProperties`. */
+export function snapshotName(deviceId: string, formatVersion = 1, space: DriveSpace = "appData"): string {
+  return `${DRIVE_SPACES[space].namePrefix}-v${formatVersion}-${deviceId}.json`;
 }
 
 /**
@@ -101,6 +138,8 @@ export interface GoogleDriveClientOptions {
   /** Nur für Tests — sonst dauerte ein Backoff-Test echte 31 Sekunden. */
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
+  /** Voreinstellung `appData`. Fest je Client — eine Dateikennung wandert nie in die andere Ablage. */
+  space?: DriveSpace;
 }
 
 export class GoogleDriveClient {
@@ -109,8 +148,10 @@ export class GoogleDriveClient {
   private readonly policy: DriveRetryPolicy;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly random: () => number;
+  readonly space: DriveSpace;
 
   constructor(options: GoogleDriveClientOptions) {
+    this.space = options.space ?? "appData";
     this.authorization = options.authorization;
     this.fetchImpl = options.fetchImpl ?? ((...args) => fetch(...args));
     this.policy = options.policy ?? DEFAULT_RETRY_POLICY;
@@ -119,18 +160,21 @@ export class GoogleDriveClient {
   }
 
   /**
-   * Alles, was im `appDataFolder` liegt.
+   * Alle Gerätestände dieser Ablage.
    *
-   * Ohne Suchausdruck: der Ordner gehört ausschließlich Nori. Ein `q=`-Ausdruck
-   * wäre eine zusätzliche Stelle, an der sich Drive-Syntax ändern kann, ohne
-   * etwas dafür zu leisten.
+   * Im `appDataFolder` ohne Suchausdruck: der Ordner gehört ausschließlich
+   * Nori. Im sichtbaren Spiegel über `appProperties` — Name und Ordner kann der
+   * Nutzer ändern.
    */
   async listSnapshots(): Promise<DriveFile[]> {
-    const url = `${FILES_ENDPOINT}?${new URLSearchParams({
-      spaces: "appDataFolder",
+    const params: Record<string, string> = {
+      spaces: DRIVE_SPACES[this.space].visible ? "drive" : "appDataFolder",
       pageSize: "100",
       fields: "files(id,name,modifiedTime,size,appProperties)",
-    })}`;
+    };
+    const query = driveSpaceQuery(this.space);
+    if (query) params.q = query;
+    const url = `${FILES_ENDPOINT}?${new URLSearchParams(params)}`;
     const response = await this.perform(url, { method: "GET" });
     const body = (await response.json()) as { files?: unknown[] };
     if (!Array.isArray(body.files)) throw new DriveError("http", "Verzeichnis nicht lesbar", 200);
@@ -171,11 +215,15 @@ export class GoogleDriveClient {
   /** Eine neue Datei anlegen. */
   async create(name: string, deviceId: string, content: string): Promise<{ id: string; modifiedTime: string }> {
     const boundary = `nori-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
-    const metadata = {
-      name,
-      parents: ["appDataFolder"],
-      appProperties: { app: "nori", type: "library-snapshot", syncVersion: "1", deviceId },
-    };
+    const metadata: Record<string, unknown> = { name, appProperties: driveSpaceProperties(this.space, deviceId) };
+    if (DRIVE_SPACES[this.space].visible) {
+      // Der Ordner ist nur UX. Scheitert er, landet die Datei in „Meine Ablage"
+      // und wird trotzdem gefunden.
+      const folder = await this.mirrorFolder().catch(() => null);
+      if (folder) metadata.parents = [folder];
+    } else {
+      metadata.parents = ["appDataFolder"];
+    }
     const body = [
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}`,
       `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}`,
@@ -191,6 +239,42 @@ export class GoogleDriveClient {
     const parsed = (await response.json()) as { id?: string; modifiedTime?: string };
     if (!parsed.id) throw new DriveError("http", "Antwort ohne Dateikennung", 200);
     return { id: parsed.id, modifiedTime: parsed.modifiedTime ?? "" };
+  }
+
+  /** Der Dateiname eines Gerätestands dieser Ablage. */
+  fileName(deviceId: string): string {
+    return snapshotName(deviceId, 1, this.space);
+  }
+
+  /**
+   * Den sichtbaren Ordner über `appProperties` finden oder anlegen.
+   *
+   * Ohne Zwischenspeicher: angelegt wird nur, wenn ein Gerät noch keine eigene
+   * Datei hat. Ein gemerkter Ordner, den der Nutzer inzwischen in den Papierkorb
+   * gelegt hat, bekäme sonst Dateien, die dort mit ihm verschwinden. Bei
+   * mehreren Ordnern gilt deterministisch der älteste.
+   */
+  async mirrorFolder(): Promise<string> {
+    const q = "appProperties has { key='app' and value='nori' } and "
+      + `appProperties has { key='type' and value='${MIRROR_FOLDER_TYPE}' } and trashed=false`;
+    const found = await this.perform(`${FILES_ENDPOINT}?${new URLSearchParams({ spaces: "drive", q, fields: "files(id,createdTime)" })}`, { method: "GET" });
+    const listed = (await found.json().catch(() => ({}))) as { files?: Array<{ id?: string; createdTime?: string }> };
+    const existing = (listed.files ?? [])
+      .filter((entry): entry is { id: string; createdTime?: string } => typeof entry.id === "string")
+      .sort((a, b) => ((a.createdTime ?? "") + a.id < (b.createdTime ?? "") + b.id ? -1 : 1))[0];
+    if (existing) return existing.id;
+    const created = await this.perform(`${FILES_ENDPOINT}?fields=id`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify({
+        name: MIRROR_FOLDER_NAME,
+        mimeType: "application/vnd.google-apps.folder",
+        appProperties: { app: "nori", type: MIRROR_FOLDER_TYPE },
+      }),
+    });
+    const parsed = (await created.json().catch(() => ({}))) as { id?: string };
+    if (!parsed.id) throw new DriveError("http", "Ordner ohne Kennung", 200);
+    return parsed.id;
   }
 
   /**

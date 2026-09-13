@@ -14,6 +14,7 @@ import {
   clientIdValidationError, clientSecretValidationError, deviceQrPayload,
   GoogleAuthError, GoogleDeviceAuthorization, MemoryTokenStore, tokensAreValid,
 } from "../src/google/auth.js";
+import { DRIVE_FILE_SCOPE } from "../src/google/drive.js";
 
 class ScriptedFetch {
   calls: { url: string; body: URLSearchParams }[] = [];
@@ -497,4 +498,46 @@ test("Widerrufen räumt die Tokens weg, auch wenn Google nicht antwortet", async
   assert.equal(store.read(), null);
   assert.equal(auth.isConnected, false);
   void script;
+});
+
+// --- TV-Spiegel ---------------------------------------------------------------
+//
+// Googles Gerätefluss lehnt `drive.appdata` mit `invalid_scope` ab. Die
+// webOS-App fragt deshalb ausschliesslich nach `drive.file`.
+
+test("Mit drive.file gebaut, fragt der Fernseher genau diesen einen Bereich an", async () => {
+  const script = new ScriptedFetch([{
+    status: 200,
+    body: { device_code: "dc", user_code: "ABCD-EFGH", verification_url: "https://www.google.com/device", expires_in: 1800, interval: 5 },
+  }]);
+  const auth = new GoogleDeviceAuthorization({
+    configuration: { ...config, scopes: [DRIVE_FILE_SCOPE] },
+    tokenStore: new MemoryTokenStore(), fetchImpl: script.fetchImpl, now: () => 1_000_000,
+  });
+
+  await auth.requestDeviceCode();
+
+  assert.equal(script.calls[0].body.get("scope"), "https://www.googleapis.com/auth/drive.file");
+});
+
+test("Eine Erneuerung ohne Bereiche behält die erteilten", async () => {
+  const store = new MemoryTokenStore();
+  store.write({ accessToken: "alt", refreshToken: "rt", expiresAt: 0, scope: DRIVE_FILE_SCOPE });
+  const script = new ScriptedFetch([{ status: 200, body: { access_token: "frisch", expires_in: 3600 } }]);
+
+  const token = await authFor(script, store).validAccessToken();
+
+  assert.equal(token, "frisch");
+  assert.equal(store.read()?.scope, DRIVE_FILE_SCOPE);
+  assert.equal(store.read()?.refreshToken, "rt");
+});
+
+test("Nennt Google beim Erneuern Bereiche, gelten genau diese", async () => {
+  const store = new MemoryTokenStore();
+  store.write({ accessToken: "alt", refreshToken: "rt", expiresAt: 0, scope: DRIVE_FILE_SCOPE });
+  const script = new ScriptedFetch([{ status: 200, body: { access_token: "frisch", expires_in: 3600, scope: "openid" } }]);
+
+  await authFor(script, store).validAccessToken();
+
+  assert.equal(store.read()?.scope, "openid");
 });

@@ -155,16 +155,27 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
 
     // MARK: - Anmelden
 
-    func signIn() async throws {
+    /// Die zuletzt erteilten Bereiche — aus Googles Tokenantwort, nie geraten.
+    var grantedScopes: [String] {
+        (tokenStore.read()?.scope ?? "").split(separator: " ").map(String.init)
+    }
+
+    /// Anmelden. `additionalScopes` nur für „Mit Fernseher teilen" — dann mit
+    /// `include_granted_scopes`, damit `drive.appdata` erhalten bleibt. Ohne
+    /// zusätzliche Bereiche ist die Anfrage genau die bisherige.
+    func signIn(additionalScopes: [String] = []) async throws {
         guard configuration.isConfigured else { throw GoogleOAuthError.notConfigured }
         guard let presenter else { throw GoogleOAuthError.notConfigured }
 
         var config = configuration
         config.redirectURI = try await presenter.beginRedirect()
+        let extra = additionalScopes.filter { !configuration.scopes.contains($0) }
+        config.scopes = configuration.scopes + extra
 
         let pkce = GoogleOAuth.makePKCE()
         let state = GoogleOAuth.randomState()
-        guard let url = GoogleOAuth.authorizationURL(configuration: config, pkce: pkce, state: state) else {
+        guard let url = GoogleOAuth.authorizationURL(
+            configuration: config, pkce: pkce, state: state, includeGrantedScopes: !extra.isEmpty) else {
             throw GoogleOAuthError.notConfigured
         }
 
@@ -178,6 +189,13 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
             throw GoogleOAuthError.noRefreshToken
         }
         tokenStore.write(tokens)
+        // Zurücklesen statt vertrauen. Ein Schlüsselbund, der die Ablage
+        // verweigert — etwa bei einer App ohne Signatur —, meldet das nicht
+        // laut; ohne diese Prüfung sähe die Anmeldung erfolgreich aus und wäre
+        // beim ersten Abgleich wieder weg.
+        guard tokenStore.read()?.refreshToken == tokens.refreshToken else {
+            throw GoogleOAuthError.tokenStorageFailed
+        }
     }
 
     // MARK: - Token
@@ -207,7 +225,11 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
         defer { refreshTask = nil }
 
         do {
-            let fresh = try await task.value
+            var fresh = try await task.value
+            // Schickt Google beim Erneuern keine Bereiche mit, gelten die
+            // bisherigen. Sonst sähe „Mit Fernseher teilen" nach jeder
+            // Erneuerung aus, als fehlte die Zustimmung.
+            if fresh.scope == nil { fresh.scope = tokens.scope }
             tokenStore.write(fresh)
             return fresh.accessToken
         } catch let error as GoogleOAuthError {
@@ -261,12 +283,14 @@ actor GoogleAuthorization: GoogleAuthorizationProvider {
 /// Oberfläche sagt das im Diagnosebereich und bietet kein Feld an, in dem
 /// niemand etwas Sinnvolles eintragen könnte.
 ///
-/// **Was von früher übrig ist, wird weiter gelesen.** Wer schon verbunden ist,
-/// hat seine Tokens zu einer von Hand eingetragenen Client-ID bekommen. Würde
-/// die jetzt ignoriert, wäre die Verbindung nach dem Update weg — ohne Grund
-/// und ohne Meldung. Sie hat deshalb weiter Vorrang, und wenn sie mit der aus
-/// dem Build übereinstimmt, wird die Kopie im Gerät beim nächsten Start
-/// stillschweigend aufgeräumt.
+/// **Was von früher übrig ist, wird nur für eine bestehende Verbindung
+/// weiter gelesen.** Wer schon verbunden ist, hat seine Tokens zu einer von
+/// Hand eingetragenen Client-ID bekommen. Würde die jetzt ignoriert, wäre die
+/// Verbindung nach dem Update weg — ohne Grund und ohne Meldung. Sie hat
+/// deshalb Vorrang, **solange Tokens dazu vorliegen**. Ohne Tokens hält an dem
+/// alten Wert nichts fest: dann gilt wie bei jeder neuen Installation
+/// ausschliesslich der Build, und die Kopie im Gerät wird aufgeräumt — ebenso,
+/// wenn sie mit der aus dem Build übereinstimmt.
 ///
 /// Einen eingebauten Rückfall gibt es hier **nicht**. Beim TMDB-Schlüssel ist
 /// einer vertretbar, weil er nur Bilder holt; eine Google-Client-ID gehört zu
@@ -291,20 +315,45 @@ enum GoogleClientIDStore {
     ///
     /// Bei fehlender Build-Einstellung bleibt in der `Info.plist` der
     /// unaufgelöste Platzhalter `$(…)` stehen — der ist keine Client-ID.
-    static var fromBuild: String? {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "GoogleClientID") as? String
+    static var fromBuild: String? { infoValue("GoogleClientID") }
+
+    /// Das Client-Secret aus dem Build, oder `nil`.
+    ///
+    /// Gesetzt wird es nur auf macOS (`GOOGLE_CLIENT_SECRET`, aus einer nicht
+    /// eingecheckten `Config/Google.local.xcconfig`): der macOS-Client ist vom
+    /// Typ „Desktop-App", und dessen Token-Endpunkt verlangt es. Die
+    /// `Info.plist` von iOS hat den Schlüssel gar nicht.
+    ///
+    /// Nie protokollieren, nie anzeigen.
+    static var secretFromBuild: String? { infoValue("GoogleClientSecret") }
+
+    /// Ein Wert aus der `Info.plist` — ohne unaufgelösten Platzhalter `$(…)`.
+    private static func infoValue(_ key: String) -> String? {
+        let raw = (Bundle.main.object(forInfoDictionaryKey: key) as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let raw, !raw.isEmpty, !raw.hasPrefix("$(") else { return nil }
         return raw
     }
 
+    /// Die Projektnummer vor dem ersten Bindestrich einer Client-ID.
+    ///
+    /// Der `appDataFolder` gehört zu Projekt **und** Konto. Eine übernommene
+    /// Client-ID aus einem anderen Projekt gleicht deshalb in einen anderen
+    /// versteckten Ordner ab — die Diagnose soll das sagen können.
+    static func projectNumber(of clientId: String) -> String? {
+        guard let dash = clientId.firstIndex(of: "-") else { return nil }
+        let number = clientId[..<dash]
+        return number.isEmpty || !number.allSatisfy(\.isNumber) ? nil : String(number)
+    }
+
     /// Die zu verwendende Client-ID samt Herkunft, oder `nil`.
     ///
-    /// Räumt dabei auf: stimmt der alte Wert im Gerät mit dem aus dem Build
-    /// überein, wird er entfernt. Danach gibt es nur noch eine Quelle, und die
-    /// Diagnose zeigt nicht länger „übernommen" für etwas, das inzwischen aus
-    /// dem Build kommt.
-    static func resolved() -> (clientId: String, origin: Origin)? {
-        let decision = resolve(build: fromBuild, stored: readLegacy())
+    /// Räumt dabei auf: ein alter Wert im Gerät, der mit dem aus dem Build
+    /// übereinstimmt oder zu dem keine Tokens mehr gehören, wird entfernt.
+    /// Danach gibt es nur noch eine Quelle, und die Diagnose zeigt nicht
+    /// länger „übernommen" für etwas, das inzwischen aus dem Build kommt.
+    static func resolved(hasTokens: Bool) -> (clientId: String, origin: Origin)? {
+        let decision = resolve(build: fromBuild, stored: readLegacy(), hasTokens: hasTokens)
         if decision?.cleanUpStored == true { forgetLegacy() }
         return decision.map { ($0.clientId, $0.origin) }
     }
@@ -315,17 +364,24 @@ enum GoogleClientIDStore {
     /// Schlüsselbund und in die Voreinstellungen des Entwicklers schreiben
     /// müsste, prüft am Ende die Umgebung und nicht die Regel.
     static func resolve(
-        build: String?,
-        stored: String?
+        build rawBuild: String?,
+        stored: String?,
+        hasTokens: Bool
     ) -> (clientId: String, origin: Origin, cleanUpStored: Bool)? {
+        let build = rawBuild?.isEmpty == false ? rawBuild : nil
         if let stored, !stored.isEmpty {
-            // Der Wert im Gerät hat Vorrang: die vorhandenen Tokens sind zu
-            // ihm ausgestellt. Ihn zu übergehen hiesse, eine bestehende
-            // Verbindung ohne Grund zu beenden.
             if let build, build == stored { return (build, .build, true) }
-            return (stored, .migrated, false)
+            // Der Wert im Gerät hat nur Vorrang, wenn Tokens zu ihm
+            // ausgestellt sind. Ihn dann zu übergehen hiesse, eine bestehende
+            // Verbindung ohne Grund zu beenden — und die Client-ID eines
+            // verbundenen Geräts unkontrolliert auszutauschen.
+            if hasTokens { return (stored, .migrated, false) }
+            // Ohne Tokens verbindet ihn nichts mehr mit diesem Gerät. Dann gilt
+            // wie bei einer neuen Installation ausschliesslich der Build.
+            if let build { return (build, .build, true) }
+            return nil
         }
-        guard let build, !build.isEmpty else { return nil }
+        guard let build else { return nil }
         return (build, .build, false)
     }
 
@@ -396,11 +452,19 @@ enum GoogleClientIDStore {
 }
 
 extension GoogleOAuthConfiguration {
-    /// Die zu verwendende Client-ID: aus dem Build, sonst die migrierte.
-    static func resolved() -> GoogleOAuthConfiguration? {
-        GoogleClientIDStore.resolved().map {
-            GoogleOAuthConfiguration(clientId: $0.clientId, redirectURI: "")
-        }
+    /// Die zu verwendende Konfiguration: Client-ID aus dem Build, sonst die
+    /// migrierte einer bestehenden Verbindung.
+    ///
+    /// Das Secret nur, wenn der Aufrufer es verlangt (macOS) **und** die
+    /// Client-ID aus dem Build stammt — es gehört zu genau diesem Client. Einer
+    /// übernommenen ID ein fremdes Secret mitzugeben, ergäbe `invalid_client`.
+    static func resolved(hasTokens: Bool, includeSecret: Bool) -> (
+        configuration: GoogleOAuthConfiguration, origin: GoogleClientIDStore.Origin
+    )? {
+        guard let client = GoogleClientIDStore.resolved(hasTokens: hasTokens) else { return nil }
+        let secret = includeSecret && client.origin == .build ? GoogleClientIDStore.secretFromBuild : nil
+        return (GoogleOAuthConfiguration(clientId: client.clientId, redirectURI: "", clientSecret: secret),
+                client.origin)
     }
 
     /// Das umgedrehte Client-Kürzel, wie iOS es als Rückleitungsschema

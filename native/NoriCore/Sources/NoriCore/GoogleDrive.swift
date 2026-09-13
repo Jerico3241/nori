@@ -109,8 +109,58 @@ struct DriveRetryPolicy: Sendable {
     }
 }
 
+/// Wo Nori in Drive liest und schreibt.
+///
+/// Zwei Ablagen. Beide werden **ausschliesslich** über `appProperties`
+/// erkannt — nie über Dateiname, Ordner oder Pfad:
+///
+/// - `appData`: der versteckte `appDataFolder` (`drive.appdata`). Die primäre
+///   Ablage der Apple-Apps, unverändert.
+/// - `tvMirror`: der sichtbare Spiegel für Fernseher (`drive.file`). Nur nach
+///   ausdrücklicher Freigabe „Mit Fernseher teilen" auf einem Apple-Gerät.
+///   webOS benutzt ausschliesslich ihn, weil Googles Gerätefluss
+///   `drive.appdata` reproduzierbar mit `invalid_scope` ablehnt.
+///
+/// Warum der Spiegel verschoben oder umbenannt werden darf: `drive.file`
+/// gewährt den Zugriff je Datei und je Cloud-Projekt, nicht je Ort. Im Proof of
+/// Concept fanden iPhone, Mac und Fernseher eine von Hand verschobene und
+/// umbenannte Datei weiterhin über `appProperties`.
+enum DriveSpace: String, Sendable, CaseIterable {
+    case appData
+    case tvMirror
+
+    var isVisible: Bool { self == .tvMirror }
+    var fileType: String { self == .appData ? "library-snapshot" : "library-mirror" }
+    private var namePrefix: String { self == .appData ? "nori-sync" : "nori-tv-sync" }
+
+    /// Der von Nori angelegte Ordner in „Meine Ablage". Nur für den Nutzer.
+    static let folderName = "Nori"
+    static let folderType = "mirror-folder"
+
+    /// Der Suchausdruck. Der `appDataFolder` gehört Nori allein und wird wie
+    /// bisher ohne Ausdruck gelistet — für Nutzer ohne Fernseher ändert sich
+    /// hier nichts.
+    var query: String? {
+        guard isVisible else { return nil }
+        return "appProperties has { key='app' and value='nori' } and "
+            + "appProperties has { key='type' and value='\(fileType)' } and trashed=false"
+    }
+
+    func properties(deviceId: String) -> [String: String] {
+        var result = ["app": "nori", "type": fileType, "syncVersion": "\(librarySyncFormatVersion)", "deviceId": deviceId]
+        if isVisible { result["mirror"] = "tv" }
+        return result
+    }
+
+    func fileName(deviceId: String) -> String {
+        "\(namePrefix)-v\(librarySyncFormatVersion)-\(deviceId).json"
+    }
+}
+
 actor GoogleDriveClient {
     static let scope = "https://www.googleapis.com/auth/drive.appdata"
+    /// Nur für den TV-Spiegel, und nur nach ausdrücklicher Zustimmung.
+    static let fileScope = "https://www.googleapis.com/auth/drive.file"
     private static let filesEndpoint = "https://www.googleapis.com/drive/v3/files"
     private static let uploadEndpoint = "https://www.googleapis.com/upload/drive/v3/files"
 
@@ -119,6 +169,9 @@ actor GoogleDriveClient {
     private let policy: DriveRetryPolicy
     private let sleep: @Sendable (Double) async -> Void
     private let random: @Sendable () -> Double
+    /// In welcher Ablage dieser Client arbeitet. Fest je Client: eine
+    /// Dateikennung aus der einen Ablage kann damit nie in der anderen landen.
+    let space: DriveSpace
 
     /// `sleep` und `random` nur für Tests.
     ///
@@ -131,8 +184,10 @@ actor GoogleDriveClient {
         sleep: @escaping @Sendable (Double) async -> Void = { seconds in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
         },
-        random: @escaping @Sendable () -> Double = { Double.random(in: 0...1) }
+        random: @escaping @Sendable () -> Double = { Double.random(in: 0...1) },
+        space: DriveSpace = .appData
     ) {
+        self.space = space
         self.authorization = authorization
         self.transport = transport
         self.policy = policy
@@ -142,18 +197,20 @@ actor GoogleDriveClient {
 
     // MARK: - Öffentlich
 
-    /// Alles, was im `appDataFolder` liegt.
+    /// Alle Gerätestände dieser Ablage.
     ///
-    /// Ohne Suchausdruck: der Ordner gehört ausschließlich Nori, es liegt dort
-    /// also nichts Fremdes. Ein `q=`-Ausdruck wäre eine zusätzliche Stelle, an
-    /// der sich Drive-Syntax ändern kann, ohne etwas dafür zu leisten.
+    /// Im `appDataFolder` ohne Suchausdruck: der Ordner gehört ausschließlich
+    /// Nori, es liegt dort also nichts Fremdes. Im sichtbaren Spiegel dagegen
+    /// über `appProperties` — Name und Ordner kann der Nutzer ändern.
     func listSnapshots() async throws -> [DriveFile] {
         var components = URLComponents(string: Self.filesEndpoint)!
-        components.queryItems = [
-            URLQueryItem(name: "spaces", value: "appDataFolder"),
+        var items = [
+            URLQueryItem(name: "spaces", value: space.isVisible ? "drive" : "appDataFolder"),
             URLQueryItem(name: "pageSize", value: "100"),
             URLQueryItem(name: "fields", value: "files(id,name,modifiedTime,size,appProperties)"),
         ]
+        if let query = space.query { items.append(URLQueryItem(name: "q", value: query)) }
+        components.queryItems = items
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
         let (data, _) = try await perform(request)
@@ -187,11 +244,17 @@ actor GoogleDriveClient {
     /// nicht von Drive zurückholen, um festzustellen, dass er ihn selbst
     /// geschrieben hat.
     func create(name: String, deviceId: String, content: Data) async throws -> (id: String, modifiedTime: String) {
-        let metadata: [String: Any] = [
+        var metadata: [String: Any] = [
             "name": name,
-            "parents": ["appDataFolder"],
-            "appProperties": Self.properties(deviceId: deviceId),
+            "appProperties": space.properties(deviceId: deviceId),
         ]
+        if space.isVisible {
+            // Der Ordner ist nur UX. Lässt er sich nicht finden oder anlegen,
+            // landet die Datei in „Meine Ablage" und wird trotzdem gefunden.
+            if let folder = try? await mirrorFolder() { metadata["parents"] = [folder] }
+        } else {
+            metadata["parents"] = ["appDataFolder"]
+        }
         var components = URLComponents(string: Self.uploadEndpoint)!
         components.queryItems = [
             URLQueryItem(name: "uploadType", value: "multipart"),
@@ -235,6 +298,55 @@ actor GoogleDriveClient {
         var request = URLRequest(url: URL(string: "\(Self.filesEndpoint)/\(id)")!)
         request.httpMethod = "DELETE"
         _ = try await perform(request)
+    }
+
+    nonisolated func fileName(deviceId: String) -> String { space.fileName(deviceId: deviceId) }
+
+    /// Den sichtbaren Ordner über `appProperties` finden oder anlegen.
+    ///
+    /// Bewusst ohne Zwischenspeicher: angelegt wird nur, wenn ein Gerät noch
+    /// keine eigene Datei hat, also selten. Ein gemerkter Ordner, den der Nutzer
+    /// inzwischen in den Papierkorb gelegt hat, bekäme sonst neue Dateien, die
+    /// mit ihm im Papierkorb landen — und die Suche fände sie nie.
+    ///
+    /// Liegen mehrere Ordner vor (zwei Geräte gleichzeitig), gilt
+    /// deterministisch der älteste. Dateien werden ohnehin nicht über den Ordner
+    /// gefunden.
+    func mirrorFolder() async throws -> String {
+        var components = URLComponents(string: Self.filesEndpoint)!
+        components.queryItems = [
+            URLQueryItem(name: "spaces", value: "drive"),
+            URLQueryItem(name: "q", value: "appProperties has { key='app' and value='nori' } and "
+                + "appProperties has { key='type' and value='\(DriveSpace.folderType)' } and trashed=false"),
+            URLQueryItem(name: "fields", value: "files(id,createdTime)"),
+        ]
+        var list = URLRequest(url: components.url!)
+        list.httpMethod = "GET"
+        let (data, _) = try await perform(list)
+        let folders = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["files"] as? [[String: Any]] ?? []
+        let existing = folders
+            .compactMap { entry -> (id: String, created: String)? in
+                guard let id = entry["id"] as? String else { return nil }
+                return (id, entry["createdTime"] as? String ?? "")
+            }
+            .sorted { ($0.created, $0.id) < ($1.created, $1.id) }
+            .first
+        if let existing { return existing.id }
+
+        var create = URLRequest(url: URL(string: "\(Self.filesEndpoint)?fields=id")!)
+        create.httpMethod = "POST"
+        create.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        create.httpBody = try JSONSerialization.data(withJSONObject: [
+            "name": DriveSpace.folderName,
+            "mimeType": "application/vnd.google-apps.folder",
+            "appProperties": ["app": "nori", "type": DriveSpace.folderType],
+        ])
+        let (created, _) = try await perform(create)
+        guard let object = try JSONSerialization.jsonObject(with: created) as? [String: Any],
+              let id = object["id"] as? String else {
+            throw GoogleDriveError.http(status: 200, message: "Ordner ohne Kennung")
+        }
+        return id
     }
 
     // MARK: - Innereien

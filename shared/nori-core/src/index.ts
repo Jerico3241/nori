@@ -12,6 +12,7 @@ export * from "./client.js";
 export * from "./library.js";
 export * from "./sync.js";
 export * from "./sync-engine.js";
+export * from "./hash.js";
 export * from "./google/drive.js";
 export * from "./google/auth.js";
 // Nur der Fernseher braucht ihn — dort gibt es keinen Browser, in dem sich

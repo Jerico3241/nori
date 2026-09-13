@@ -101,30 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.15.0"
+    static let version = "1.18.0"
 
     static let highlights = [
-        "Die Oberfläche folgt einem gemeinsamen Design-System: dieselben Radien, Abstände und Bewegungskurven in jeder Ansicht.",
-        "Liquid Glass auf macOS 26 und neuer — Karussellpfeile und Merken-Knopf. Abschaltbar unter Einstellungen › Allgemein.",
-        "Kacheln blenden beim ersten Laden auf und stehen danach sofort, statt beim Zurückscrollen erneut aufzublenden.",
-        "„Bewegung reduzieren“ schaltet jetzt überall die Bewegung ab, ohne dass eine Funktion verlorengeht.",
-        "Neuer Bereich „K-Drama“: die koreanischen Serien aus dem Serienstream-Katalog, in Seitenleiste, Katalog und Kalender.",
-        "Der laufende Player behält seine Quelle, auch wenn im Hauptfenster ein Titel der anderen Quelle geöffnet wird.",
-        "AniWorld ist wieder abspielbar — die Weiterleitung ging bisher an die falsche Domain.",
-        "Streams starten zuverlässiger: Der Player schickt jetzt Referer und User-Agent mit.",
-        "Cover werden richtig zugeordnet und dauerhaft gespeichert; fehlt ein TMDB-Treffer, greift das Cover der Quelle.",
-        "Cover lassen sich in der Detailansicht von Hand auswählen.",
-        "Neue Entdecken-Startseite mit Kopfkarussell, „Schau weiter“ und Genre-Zeilen.",
-        "Neuer Bereich „Kategorien“ und „Ähnliche Titel“ auf der Detailseite.",
-        "Wiedergabe läuft in einem eigenen Fenster mit Vollbild und ⌘W.",
-        "TMDB-Schlüssel liegt jetzt im Schlüsselbund statt im Programm — einzutragen unter Einstellungen › Daten.",
-        "Detailseite: der Kopfbereich schneidet den Abspielknopf nicht mehr ab.",
-        "Das Banner zeigt jetzt Empfehlungen statt angefangener Folgen — die stehen darunter in „Schau weiter“.",
-        "Kacheln ohne TMDB-Treffer zeigen jetzt das Cover der Quelle statt eines Buchstabens.",
-        "Anime und Serien stehen in einer gemeinsamen Bibliothek; der Umschalter unten links ist jetzt ein Filter.",
-        "Leere Kacheln: Die Adresse eines Covers trägt einen Zufallsanteil und ließ sich nicht erraten. Nori liest sie jetzt bei Bedarf aus der Detailseite und merkt sie sich dauerhaft.",
-        "Die Folgenliste zeigt Standbild und Beschreibung aus TMDB. Fehlt der deutsche Text, wird die englische Fassung nachgeholt; der Tooltip trägt die vollständige Beschreibung.",
-        "Kalender und Merkliste lassen sich als Raster anzeigen, nicht nur als Liste — umgeschaltet wird in der Fensterleiste, wie im Katalog schon länger.",
+        "Mit Fernseher teilen: Ein neuer Schalter unter Einstellungen › Synchronisation legt nach deiner Zustimmung bei Google eine sichtbare Kopie im Ordner „Nori“ an, die der LG-Fernseher liest. Ohne den Schalter ändert sich nichts.",
+        "Ein Mac mit eingeschalteter Freigabe reicht Änderungen zwischen Fernseher, iPhone und iPad weiter.",
+        "Ausschalten stoppt nur diesen Mac. Gelöscht wird dabei nichts — weder die Kopie noch der Ordner.",
+        "Ein Abgleich ohne Änderung schreibt jetzt auch nach einem Neustart nichts nach Google Drive.",
+        "Liegen für ein Gerät mehrere Dateien vor, nutzt Nori gleichbleibend die neueste.",
+        "Anmeldung auf dem Mac mit Client-Secret aus der Build-Konfiguration (seit 1.17.0).",
     ]
 }
 
@@ -191,6 +176,8 @@ private struct SyncSettingsTab: View {
     @State private var showRevokeConfirmation = false
     /// Zugeklappt. Der Bereich richtet sich an den, der Nori baut.
     @State private var showDiagnostics = false
+    /// Die Erklärung vor „Mit Fernseher teilen" — vor jedem Einschalten.
+    @State private var showTVExplanation = false
 
     var body: some View {
         Form {
@@ -264,6 +251,41 @@ private struct SyncSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // „Mit Fernseher teilen" — je Gerät, und aus, bis jemand es
+            // einschaltet. Ohne den Schalter fragt Nori nur nach dem
+            // versteckten App-Ordner, genau wie vorher.
+            if sync.isConfigured && isConnected {
+                Section {
+                    Toggle(isOn: tvBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mit Fernseher teilen")
+                            Text("Merkliste, Verlauf und Fortschritt auch auf dem LG-Fernseher")
+                                .font(.footnote)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    }
+                    .disabled(sync.isAuthorizing)
+
+                    if sync.tvMirrorState == .needsConsent {
+                        HStack {
+                            Button("Zugriff für den Fernseher erlauben…") { showTVExplanation = true }
+                                .disabled(sync.isAuthorizing)
+                            Spacer()
+                            Text("Google hat ihn nicht erteilt oder zurückgezogen.")
+                                .font(.footnote)
+                                .foregroundStyle(NoriTheme.muted)
+                        }
+                    }
+                } header: {
+                    Text("Fernseher")
+                } footer: {
+                    Text(tvFootnote)
+                        .font(.footnote)
+                        .foregroundStyle(NoriTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if sync.isConfigured && isConnected {
                 Section {
                     Button("Google-Zugriff widerrufen…", role: .destructive) {
@@ -286,6 +308,12 @@ private struct SyncSettingsTab: View {
         }
         .formStyle(.grouped)
         .task { await sync.restore() }
+        .alert("Mit Fernseher teilen", isPresented: $showTVExplanation) {
+            Button("Weiter zu Google") { Task { await sync.enableTVMirror() } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(GoogleDriveSync.tvMirrorExplanation)
+        }
         .confirmationDialog(
             "Google-Zugriff widerrufen?",
             isPresented: $showRevokeConfirmation
@@ -316,13 +344,45 @@ private struct SyncSettingsTab: View {
                 .textSelection(.enabled)
             LabeledContent("Herkunft", value: originLabel)
                 .font(.footnote)
-            LabeledContent("Bereich", value: GoogleDriveClient.scope)
+            LabeledContent("Bereich", value: scopeText)
                 .font(.footnote)
                 .textSelection(.enabled)
+            LabeledContent("TV-Spiegel", value: mirrorDiagnosticsText)
+                .font(.footnote)
+            if let error = sync.mirrorEngine.lastError {
+                LabeledContent("Letzter Fehler im TV-Spiegel", value: error)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+            }
+            // Ob — nie welches. Secret und Tokens stehen hier nicht, auch
+            // nicht verkürzt.
+            LabeledContent("Client-Secret", value: sync.hasClientSecret ? "vorhanden" : "fehlt")
+                .font(.footnote)
+            LabeledContent("Anmeldung im Schlüsselbund", value: sync.hasStoredTokens ? "ja" : "nein")
+                .font(.footnote)
+            LabeledContent("Letzter Abgleich", value: sync.lastSuccessfulSync.map {
+                Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .standard)
+            } ?? "noch keiner")
+                .font(.footnote)
+            if let error = sync.lastError {
+                LabeledContent("Letzter Fehler", value: error)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+            }
+            if sync.migratedClientBelongsToAnotherProject {
+                Text("""
+                     Die übernommene Client-ID gehört zu einem anderen \
+                     Google-Cloud-Projekt als die aus dem Build. Dieser Mac \
+                     gleicht deshalb in einen anderen versteckten Ordner ab.
+                     """)
+                    .font(.footnote)
+                    .foregroundStyle(NoriTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let problem = sync.buildConfigurationProblem {
                 Text("""
-                     \(problem) Erwartet wird die Build-Einstellung \
-                     GOOGLE_CLIENT_ID; die Schritte stehen in \
+                     \(problem) Erwartet werden die Build-Einstellungen \
+                     \(sync.expectedBuildSettings); die Schritte stehen in \
                      docs/google-drive-sync.md.
                      """)
                     .font(.footnote)
@@ -339,6 +399,50 @@ private struct SyncSettingsTab: View {
         }
     }
 
+    /// Der Schalter springt nicht selbst um: eingeschaltet wird erst nach
+    /// Erklärung und Zustimmung. Ausschalten geht sofort und löscht nichts.
+    private var tvBinding: Binding<Bool> {
+        Binding(
+            get: { sync.isTVMirrorEnabled },
+            set: { on in
+                if on { showTVExplanation = true } else { sync.disableTVMirror() }
+            }
+        )
+    }
+
+    /// Der Fernseher kann den versteckten Ordner nicht lesen. Er bekommt
+    /// Änderungen nur über ein Apple-Gerät, das mit ihm teilt.
+    private var tvFootnote: String {
+        let relay = """
+                    Der Fernseher bekommt Änderungen über ein iPhone, iPad oder \
+                    Mac mit eingeschaltetem „Mit Fernseher teilen“. Mindestens eines \
+                    davon muss regelmäßig synchronisieren — also ab und zu geöffnet \
+                    werden.
+                    """
+        return sync.isTVMirrorEnabled
+            ? "Dieser Mac teilt mit dem Fernseher. \(relay)"
+            : "Gilt nur für diesen Mac; andere Geräte schalten es selbst ein. \(relay)"
+    }
+
+    private var scopeText: String {
+        sync.grantedScopes.contains(GoogleDriveClient.fileScope)
+            ? "\(GoogleDriveClient.scope), \(GoogleDriveClient.fileScope)"
+            : GoogleDriveClient.scope
+    }
+
+    private var mirrorDiagnosticsText: String {
+        switch sync.tvMirrorState {
+        case .off: return "aus"
+        case .needsConsent: return "eingeschaltet, Zustimmung fehlt"
+        case .active:
+            let run = sync.mirrorEngine.lastSuccessfulSync.map {
+                Date(timeIntervalSince1970: $0 / 1000).formatted(date: .abbreviated, time: .standard)
+            } ?? "noch kein Abgleich"
+            let others = sync.mirrorEngine.remoteDeviceCount.map { ", andere Geräte: \($0)" } ?? ""
+            return "aktiv, \(run)\(others)"
+        }
+    }
+
     private var originLabel: String {
         switch sync.client?.origin {
         case .build: return "aus dem Build"
@@ -348,8 +452,13 @@ private struct SyncSettingsTab: View {
     }
 
     private var isConnected: Bool {
-        if case .disconnected = sync.status { return false }
-        return sync.isConfigured
+        switch sync.status {
+        // Während der Anmeldung ist noch nichts verbunden. Vorher standen hier
+        // schon „Jetzt synchronisieren" und „Dieses Gerät trennen", solange
+        // der Browser noch offen war.
+        case .disconnected, .authorizing: return false
+        default: return sync.isConfigured
+        }
     }
 
     private var statusText: String {
@@ -382,7 +491,8 @@ private struct SyncSettingsTab: View {
                eigene Datei und liest die der anderen — deshalb geht nichts \
                verloren, wenn zwei Geräte gleichzeitig etwas ändern. Nori sieht \
                dabei weder deinen Namen noch deine E-Mail-Adresse. Ohne Netz \
-               funktioniert Nori vollständig weiter.
+               funktioniert Nori vollständig weiter. Nur mit „Mit Fernseher \
+               teilen“ kommt eine sichtbare Kopie im Ordner „Nori“ dazu.
                """
     }
 }

@@ -1,0 +1,8 @@
+// Vorlage. Als `Google.local.xcconfig` daneben ablegen — die Datei ist nicht
+// eingecheckt — oder schreiben lassen:
+//
+//     python3 tools/configure-google-oauth.py --ios-client-id <ID>
+//
+// Nur der iOS-Client (Typ „iOS", Bundle-ID to.nori.ios). Kein Client-Secret.
+
+GOOGLE_CLIENT_ID = 000000000000-beispiel.apps.googleusercontent.com

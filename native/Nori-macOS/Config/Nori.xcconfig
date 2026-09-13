@@ -1,0 +1,17 @@
+// Build-Einstellungen des macOS-Targets, die nicht im Projekt stehen.
+//
+// GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET kommen aus
+// `Google.local.xcconfig` daneben. Die Datei ist nicht eingecheckt
+// (.gitignore) und wird von `tools/configure-google-oauth.py` aus
+// ~/.config/nori/secrets/google-macos-oauth.json geschrieben; eine Vorlage
+// liegt als `Google.local.xcconfig.example` bei. Fehlt sie, baut Nori
+// trotzdem — nur ohne Google-Abgleich, und die Diagnose sagt warum.
+//
+// Ausschliesslich der macOS-Client (Typ „Desktop-App"). Dessen
+// Token-Endpunkt verlangt ein client_secret; der iOS-Client hat seine eigene
+// Datei unter native/Nori-iOS/Config/ und bekommt keines. Eine gemeinsame
+// Konfiguration gibt es mit Absicht nicht.
+//
+// Auf der Kommandozeile gesetzte Werte haben weiterhin Vorrang.
+
+#include? "Google.local.xcconfig"

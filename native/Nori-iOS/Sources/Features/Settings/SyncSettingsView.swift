@@ -32,6 +32,10 @@ struct SyncSettingsView: View {
     /// Der Diagnosebereich ist standardmässig zu. Er richtet sich an den, der
     /// Nori baut — nicht an den, der sie benutzt.
     @State private var showDiagnostics = false
+    /// Die Erklärung vor „Mit Fernseher teilen". Steht vor jedem Einschalten,
+    /// nicht nur vor dem ersten: danach fragt Google ohnehin nach, und wer den
+    /// Schalter umlegt, soll wissen, wofür.
+    @State private var showTVExplanation = false
 
     var body: some View {
         NoriGradientScreen {
@@ -41,7 +45,10 @@ struct SyncSettingsView: View {
 
                     if sync.isConfigured {
                         connection
-                        if isConnected { advanced }
+                        if isConnected {
+                            television
+                            advanced
+                        }
                     } else {
                         notConfigured
                     }
@@ -57,6 +64,12 @@ struct SyncSettingsView: View {
         .navigationTitle("Synchronisation")
         .navigationBarTitleDisplayMode(.inline)
         .task { await sync.restore() }
+        .alert("Mit Fernseher teilen", isPresented: $showTVExplanation) {
+            Button("Weiter zu Google") { Task { await sync.enableTVMirror() } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(GoogleDriveSync.tvMirrorExplanation)
+        }
         .confirmationDialog(
             "Google-Zugriff widerrufen?",
             isPresented: $showRevokeConfirmation,
@@ -169,6 +182,40 @@ struct SyncSettingsView: View {
         .disabled(sync.isAuthorizing)
     }
 
+    /// „Mit Fernseher teilen" — je Gerät, und aus, bis jemand es einschaltet.
+    ///
+    /// Ohne diesen Schalter fragt Nori nur nach dem versteckten App-Ordner,
+    /// genau wie vorher. Eingeschaltet wird erst nach der Erklärung **und** der
+    /// Zustimmung bei Google; bricht jemand ab, bleibt der Schalter aus.
+    private var television: some View {
+        SettingsGroup(title: "Fernseher", footnote: tvFootnote) {
+            SettingsToggleRow(
+                symbol: "tv",
+                tint: .blue,
+                title: "Mit Fernseher teilen",
+                subtitle: "Merkliste, Verlauf und Fortschritt auch auf dem LG-Fernseher",
+                isOn: tvBinding
+            )
+            .disabled(sync.isAuthorizing)
+
+            if sync.tvMirrorState == .needsConsent {
+                SettingsDivider()
+                SettingsButtonRow(
+                    symbol: "person.badge.key",
+                    tint: .orange,
+                    title: "Zugriff für den Fernseher erlauben",
+                    subtitle: "Google hat ihn nicht erteilt oder zurückgezogen",
+                    action: { showTVExplanation = true }
+                ) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(NoriTheme.muted)
+                }
+                .disabled(sync.isAuthorizing)
+            }
+        }
+    }
+
     private var advanced: some View {
         SettingsGroup(
             title: "Erweitert",
@@ -228,7 +275,9 @@ struct SyncSettingsView: View {
                 """)
                 Text("""
                 Nori sieht dabei weder deinen Namen noch deine E-Mail-Adresse: \
-                gefragt wird ausschliesslich nach dem versteckten App-Ordner.
+                gefragt wird nach dem versteckten App-Ordner — und nur mit „Mit \
+                Fernseher teilen“ zusätzlich nach den Dateien, die Nori selbst \
+                im Ordner „Nori“ anlegt.
                 """)
                 Text("""
                 Ohne Netz funktioniert Nori vollständig weiter. Änderungen \
@@ -275,14 +324,73 @@ struct SyncSettingsView: View {
                     symbol: "lock.shield",
                     tint: .green,
                     title: "Bereich",
-                    subtitle: GoogleDriveClient.scope,
-                    value: "nur appdata"
+                    subtitle: scopeText,
+                    value: hasFileScope ? "appdata + file" : "nur appdata"
                 )
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "tv",
+                    tint: sync.tvMirrorState == .needsConsent ? .orange : .blue,
+                    title: "TV-Spiegel",
+                    subtitle: mirrorDiagnosticsText,
+                    value: mirrorStateLabel
+                )
+                if let error = sync.mirrorEngine.lastError {
+                    SettingsDivider()
+                    SettingsInfoRow(
+                        symbol: "exclamationmark.triangle",
+                        tint: .orange,
+                        title: "Letzter Fehler im TV-Spiegel",
+                        subtitle: error,
+                        value: ""
+                    )
+                }
+                // Ob — nie welche. Tokens stehen hier nicht, auch nicht
+                // verkürzt.
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "key.horizontal",
+                    tint: sync.hasStoredTokens ? .green : .orange,
+                    title: "Anmeldung im Schlüsselbund",
+                    subtitle: "Tokens werden nie angezeigt",
+                    value: sync.hasStoredTokens ? "ja" : "nein"
+                )
+                SettingsDivider()
+                SettingsInfoRow(
+                    symbol: "clock.arrow.circlepath",
+                    tint: .blue,
+                    title: "Letzter Abgleich",
+                    subtitle: lastRunText,
+                    value: ""
+                )
+                if let error = sync.lastError {
+                    SettingsDivider()
+                    SettingsInfoRow(
+                        symbol: "exclamationmark.triangle",
+                        tint: .orange,
+                        title: "Letzter Fehler",
+                        subtitle: error,
+                        value: ""
+                    )
+                }
+                if sync.migratedClientBelongsToAnotherProject {
+                    SettingsDivider()
+                    Text("""
+                    Die übernommene Client-ID gehört zu einem anderen \
+                    Google-Cloud-Projekt als die aus dem Build. Dieses Gerät \
+                    gleicht deshalb in einen anderen versteckten Ordner ab.
+                    """)
+                    .font(.caption2)
+                    .foregroundStyle(NoriTheme.muted)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let problem = sync.buildConfigurationProblem {
                     SettingsDivider()
                     Text("""
                     \(problem) Erwartet wird die Build-Einstellung \
-                    GOOGLE_CLIENT_ID; die Schritte stehen in \
+                    \(sync.expectedBuildSettings); die Schritte stehen in \
                     docs/google-drive-sync.md.
                     """)
                     .font(.caption2)
@@ -314,11 +422,68 @@ struct SyncSettingsView: View {
         }
     }
 
+    // MARK: - Fernseher
+
+    /// Der Schalter springt nicht selbst um: eingeschaltet wird erst nach
+    /// Erklärung und Zustimmung. Ausschalten geht sofort und löscht nichts.
+    private var tvBinding: Binding<Bool> {
+        Binding(
+            get: { sync.isTVMirrorEnabled },
+            set: { on in
+                if on { showTVExplanation = true } else { sync.disableTVMirror() }
+            }
+        )
+    }
+
+    private var deviceName: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    }
+
+    /// Der Fernseher kann `appDataFolder` nicht lesen. Er bekommt Änderungen
+    /// nur über ein Apple-Gerät, das mit ihm teilt — das steht hier ohne
+    /// Fachbegriffe.
+    private var tvFootnote: String {
+        let relay = """
+        Der Fernseher bekommt Änderungen über ein iPhone, iPad oder Mac mit \
+        eingeschaltetem „Mit Fernseher teilen“. Mindestens eines davon muss \
+        regelmäßig synchronisieren — also ab und zu geöffnet werden.
+        """
+        return sync.isTVMirrorEnabled
+            ? "Dieses \(deviceName) teilt mit dem Fernseher. \(relay)"
+            : "Gilt nur für dieses \(deviceName); andere Geräte schalten es selbst ein. \(relay)"
+    }
+
+    private var hasFileScope: Bool { sync.grantedScopes.contains(GoogleDriveClient.fileScope) }
+
+    private var scopeText: String {
+        hasFileScope ? "\(GoogleDriveClient.scope)\n\(GoogleDriveClient.fileScope)" : GoogleDriveClient.scope
+    }
+
+    private var mirrorStateLabel: String {
+        switch sync.tvMirrorState {
+        case .off: return "aus"
+        case .needsConsent: return "Zustimmung fehlt"
+        case .active: return "aktiv"
+        }
+    }
+
+    private var mirrorDiagnosticsText: String {
+        guard sync.tvMirrorState == .active else { return "Nur mit „Mit Fernseher teilen“" }
+        let run = sync.mirrorEngine.lastSuccessfulSync.map {
+            "Zuletzt " + Date(timeIntervalSince1970: $0 / 1000).formatted(.relative(presentation: .named))
+        } ?? "Noch kein Abgleich"
+        let others = sync.mirrorEngine.remoteDeviceCount.map { " · andere Geräte im Spiegel: \($0)" } ?? ""
+        return run + others
+    }
+
     // MARK: - Abgeleitetes
 
     private var isConnected: Bool {
         switch sync.status {
-        case .disconnected: return false
+        // Während der Anmeldung ist noch nichts verbunden — sonst stünden
+        // „Jetzt synchronisieren" und „Trennen" schon da, solange Safari offen
+        // ist.
+        case .disconnected, .authorizing: return false
         default: return true
         }
     }

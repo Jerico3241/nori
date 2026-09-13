@@ -12,18 +12,24 @@ import XCTest
 /// Dateien, jede einem Gerät zugeordnet, jede mit einem Änderungsstempel.
 private final class FakeSnapshotStore: LibrarySnapshotStore, @unchecked Sendable {
     let name = "Testablage"
+    /// Eigene Kennungen je Ablage — sonst fiele eine verwechselte Kennung nicht auf.
+    var idPrefix = "file"
+    /// Im Papierkorb: noch vorhanden, aber von der Suche (`trashed=false`) nicht gefunden.
+    var trashed: Set<String> = []
     var files: [String: (deviceId: String, modifiedTime: Int, data: Data)] = [:]
     var listError: Error?
     var uploadError: Error?
     var downloadError: Error?
     private(set) var uploads = 0
     private(set) var downloads = 0
+    private(set) var lists = 0
     private var clock = 0
     private var nextId = 0
 
     func list() async throws -> [RemoteSnapshotRef] {
+        lists += 1
         if let listError { throw listError }
-        return files.map { id, file in
+        return files.filter { !trashed.contains($0.key) }.map { id, file in
             RemoteSnapshotRef(id: id, deviceId: file.deviceId, modifiedTime: "\(file.modifiedTime)", size: file.data.count)
         }
         .sorted { $0.id < $1.id }
@@ -46,7 +52,7 @@ private final class FakeSnapshotStore: LibrarySnapshotStore, @unchecked Sendable
             return RemoteSnapshotRef(id: fileId, deviceId: deviceId, modifiedTime: "\(clock)", size: data.count)
         }
         nextId += 1
-        let id = "file-\(nextId)"
+        let id = "\(idPrefix)-\(nextId)"
         files[id] = (deviceId, clock, data)
         return RemoteSnapshotRef(id: id, deviceId: deviceId, modifiedTime: "\(clock)", size: data.count)
     }
@@ -451,6 +457,114 @@ final class LibrarySyncEngineTests: XCTestCase {
 
         XCTAssertEqual(remote.downloads, nachErstem, "Ein unveränderter Fremdstand wurde erneut geladen")
     }
+
+    /// Ein Abgleich, der nichts geändert hat, schreibt auch nichts.
+    ///
+    /// Vorher lud jedes Gerät im Vordergrund alle 30 Sekunden seine
+    /// unveränderte Datei hoch. Jeder Upload setzt einen neuen
+    /// Änderungsstempel, und jedes andere Gerät holte die Datei danach erneut —
+    /// für nichts, gegen Googles Kontingent.
+    func testAnUnchangedLibraryIsNotUploadedAgain() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        await sync.run()
+        await sync.run()
+        await sync.run()
+
+        XCTAssertEqual(remote.uploads, 1, "Ein unveränderter Stand wurde erneut hochgeladen")
+        XCTAssertEqual(remote.lists, 3, "Geholt werden muss trotzdem — sonst kämen fremde Änderungen nie an")
+        XCTAssertEqual(sync.status, .idle)
+        XCTAssertNotNil(sync.lastSuccessfulSync)
+
+        // Eine echte Änderung wird selbstverständlich wieder geschrieben.
+        store.toggleFavorite("naruto", title: "Naruto")
+        await sync.run()
+        XCTAssertEqual(remote.uploads, 2)
+    }
+
+    /// Hat ein anderes Gerät etwas geändert, entsteht ein neuer Stand — und der
+    /// wird geschrieben, auch wenn lokal nichts passiert ist.
+    func testAMergedRemoteChangeIsUploaded() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+        await sync.run()
+        XCTAssertEqual(remote.uploads, 1)
+
+        let anderes = makeStore()
+        anderes.toggleFavorite("naruto", title: "Naruto")
+        remote.seed(id: "anderes", deviceId: anderes.deviceId, data: snapshot(anderes.snapshot()))
+        await sync.run()
+
+        XCTAssertEqual(store.favorites, ["naruto"])
+        XCTAssertEqual(remote.uploads, 2, "Der zusammengeführte Stand wurde nicht geschrieben")
+    }
+
+    /// Wurde die eigene Datei zwischendurch anderswo verändert oder gelöscht,
+    /// wird wieder geschrieben — die Abkürzung gilt nur für einen Stand, der
+    /// nachweislich unverändert in der Cloud liegt.
+    func testAnOwnFileChangedElsewhereIsWrittenAgain() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let books = FakeBookkeeping()
+        let sync = engine(store, remote, books)
+        await sync.run()
+
+        let own = books.values["nori.sync.driveFileId"]!
+        remote.files[own] = nil
+        await sync.run()
+
+        // Eine neue Datei statt gar keiner: der Stand liegt wieder in der Cloud.
+        XCTAssertEqual(remote.files.count, 1, "Die gelöschte eigene Datei wurde nicht neu geschrieben")
+        XCTAssertNotEqual(books.values["nori.sync.driveFileId"], own)
+    }
+
+    /// Nach vorn kommen gleicht nicht bei jedem Fensterwechsel ab.
+    func testForegroundIsThrottledUnlessSomethingIsPending() async {
+        final class Clock: @unchecked Sendable {
+            var now: Double = 1_000_000
+        }
+        let clock = Clock()
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = LibrarySyncEngine(store: store, bookkeeping: FakeBookkeeping(), clock: { clock.now })
+        sync.connect(to: remote, startSync: false)
+        await sync.run()
+        XCTAssertEqual(remote.lists, 1)
+
+        clock.now += 5_000
+        sync.syncOnForeground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 1, "Fünf Sekunden nach dem letzten Abgleich wurde erneut gefragt")
+
+        clock.now += LibrarySyncEngine.foregroundPoll * 1000
+        sync.syncOnForeground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 2)
+    }
+
+    /// In den Hintergrund ohne Änderung ist kein Anlass für eine Anfrage.
+    func testBackgroundOnlySyncsPendingChanges() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+        await sync.run()
+
+        sync.syncOnBackground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 1)
+
+        store.toggleFavorite("naruto", title: "Naruto")
+        sync.noteChange()
+        sync.syncOnBackground()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(remote.lists, 2)
+        XCTAssertEqual(remote.uploads, 2)
+    }
 }
 
 // MARK: - Wiedererkennung der eigenen Datei
@@ -479,5 +593,382 @@ extension LibrarySyncEngineTests {
         await sync.run()
 
         XCTAssertEqual(remote.files.count, 1, "Für dasselbe Gerät liegen jetzt zwei Dateien in Drive")
+    }
+}
+
+// MARK: - Zwei Ablagen: appDataFolder und TV-Spiegel
+
+extension LibrarySyncEngineTests {
+
+    private func mirrorEngine(_ store: LibraryStore, _ remote: FakeSnapshotStore, _ books: FakeBookkeeping) -> LibrarySyncEngine {
+        let engine = LibrarySyncEngine(store: store, bookkeeping: books, keyPrefix: GoogleDriveSync.tvMirrorKeyPrefix)
+        engine.connect(to: remote, startSync: false)
+        return engine
+    }
+
+    /// Jede Ablage führt ihre eigenen Merkposten. Eine Dateikennung aus dem
+    /// `appDataFolder` darf nie im Spiegel benutzt werden — und umgekehrt.
+    func testTheSpacesKeepSeparateBookkeeping() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let books = FakeBookkeeping()
+        let cloud = FakeSnapshotStore()
+        cloud.idPrefix = "appdata"
+        let mirror = FakeSnapshotStore()
+        mirror.idPrefix = "mirror"
+        let app = engine(store, cloud, books)
+        let tv = mirrorEngine(store, mirror, books)
+
+        await app.run()
+        await tv.run()
+
+        XCTAssertEqual(books.values["nori.sync.driveFileId"]?.hasPrefix("appdata-"), true)
+        XCTAssertEqual(books.values["nori.sync.tvMirror.driveFileId"]?.hasPrefix("mirror-"), true)
+        XCTAssertNotNil(books.values["nori.sync.lastUpload"])
+        XCTAssertNotNil(books.values["nori.sync.tvMirror.lastUpload"])
+
+        // Ausschalten betrifft nur den Spiegel.
+        tv.disconnect()
+        XCTAssertNil(books.values["nori.sync.tvMirror.driveFileId"])
+        XCTAssertNotNil(books.values["nori.sync.driveFileId"])
+
+        // Selbst eine hineingeschmuggelte Kennung des appDataFolder führt
+        // nicht dorthin.
+        books.values["nori.sync.tvMirror.driveFileId"] = books.values["nori.sync.driveFileId"]
+        tv.connect(to: mirror, startSync: false)
+        store.toggleFavorite("naruto", title: "Naruto")
+        await tv.run()
+
+        XCTAssertEqual(cloud.uploads, 1, "Der Spiegel hat in den appDataFolder geschrieben")
+        XCTAssertEqual(mirror.files.count, 1)
+        XCTAssertTrue(mirror.files.keys.allSatisfy { $0.hasPrefix("mirror-") })
+        XCTAssertEqual(books.values["nori.sync.tvMirror.driveFileId"]?.hasPrefix("mirror-"), true)
+    }
+
+    /// Der zuletzt geschriebene Stand ist gespeichert, nicht nur im
+    /// Arbeitsspeicher: ein Neustart ohne Änderung schreibt nichts.
+    func testAnUnchangedLibraryIsNotWrittenAfterARestart() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let books = FakeBookkeeping()
+
+        await engine(store, remote, books).run()
+        XCTAssertEqual(remote.uploads, 1)
+
+        // Neustart: eine neue Engine mit denselben Merkposten.
+        await engine(store, remote, books).run()
+        XCTAssertEqual(remote.uploads, 1, "Nach dem Neustart wurde der unveränderte Stand erneut geschrieben")
+
+        // Hat jemand die Datei inzwischen verändert, wird wieder geschrieben.
+        let own = books.values["nori.sync.driveFileId"]!
+        remote.seed(id: own, deviceId: store.deviceId, data: remote.files[own]!.data)
+        await engine(store, remote, books).run()
+        XCTAssertEqual(remote.uploads, 2)
+
+        // Und eine echte Änderung sowieso.
+        store.toggleFavorite("naruto", title: "Naruto")
+        await engine(store, remote, books).run()
+        XCTAssertEqual(remote.uploads, 3)
+        XCTAssertEqual(remote.files.count, 1)
+    }
+
+    /// Eine erneute Zustimmung — etwa für „Mit Fernseher teilen" — bringt einen
+    /// neuen Auffrischungstoken und damit einen neuen Kontofingerabdruck. Der
+    /// unveränderte Stand wird deshalb nicht noch einmal geschrieben.
+    func testANewConsentDoesNotRewriteAnUnchangedLibrary() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let sync = LibrarySyncEngine(store: store, bookkeeping: FakeBookkeeping())
+        sync.connect(to: remote, accountId: "fingerabdruck-1", startSync: false)
+        await sync.run()
+
+        sync.connect(to: remote, accountId: "fingerabdruck-2", startSync: false)
+        await sync.run()
+
+        XCTAssertEqual(remote.uploads, 1)
+        XCTAssertEqual(remote.files.count, 1)
+    }
+
+    /// Zwei Dateien mit derselben Gerätekennung: genommen wird deterministisch
+    /// die neueste, die andere nicht geladen und nicht gelöscht.
+    func testDuplicateFilesOfOneDeviceUseTheNewestAndDeleteNothing() async {
+        let older = makeStore()
+        older.toggleFavorite("alt", title: "Alt")
+        let newer = makeStore()
+        newer.toggleFavorite("neu", title: "Neu")
+        let remote = FakeSnapshotStore()
+        // Wie nach einem aus dem Papierkorb zurückgeholten Spiegel.
+        remote.seed(id: "z-alt", deviceId: "mac", data: snapshot(older.snapshot()))
+        remote.seed(id: "a-neu", deviceId: "mac", data: snapshot(newer.snapshot()))
+        let store = makeStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        await sync.run()
+
+        XCTAssertEqual(store.favorites, ["neu"])
+        XCTAssertEqual(remote.downloads, 1, "Die überzählige Datei wurde trotzdem geladen")
+        XCTAssertEqual(remote.files.count, 3, "Nori hat eine Datei gelöscht")
+        XCTAssertEqual(sync.remoteDeviceCount, 1)
+        XCTAssertNotNil(sync.lastWarning)
+    }
+
+    /// Liegen eigene Dateien doppelt vor, wird die neueste beschrieben — und
+    /// keine dritte angelegt.
+    func testDuplicateOwnFilesAreWrittenToTheNewest() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        remote.seed(id: "eigen-alt", deviceId: store.deviceId, data: snapshot(store.snapshot()))
+        remote.seed(id: "eigen-neu", deviceId: store.deviceId, data: snapshot(store.snapshot()))
+        let books = FakeBookkeeping()
+        let sync = engine(store, remote, books)
+        store.toggleFavorite("naruto", title: "Naruto")
+
+        await sync.run()
+
+        XCTAssertEqual(remote.files.count, 2, "Für dasselbe Gerät kam eine dritte Datei dazu")
+        XCTAssertEqual(books.values["nori.sync.driveFileId"], "eigen-neu")
+        XCTAssertEqual(remote.files["eigen-alt"]?.modifiedTime, 1, "Die ältere Datei wurde angefasst")
+    }
+
+    /// Eine in den Papierkorb gelegte eigene Spiegeldatei ließe sich weiter
+    /// beschreiben, aber niemand fände sie. Also eine neue — und die alte bleibt.
+    func testATrashedOwnMirrorFileIsReplacedNotReused() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        remote.idPrefix = "mirror"
+        let books = FakeBookkeeping()
+        let sync = mirrorEngine(store, remote, books)
+        await sync.run()
+        let first = books.values["nori.sync.tvMirror.driveFileId"]!
+
+        remote.trashed.insert(first)
+        await sync.run()
+
+        let second = books.values["nori.sync.tvMirror.driveFileId"]!
+        XCTAssertNotEqual(first, second, "Die Datei im Papierkorb wurde weiter beschrieben")
+        XCTAssertEqual(remote.uploads, 2)
+        XCTAssertNotNil(remote.files[first], "Nori hat die Datei im Papierkorb gelöscht")
+    }
+
+    /// Das Relais: iPhone nur im `appDataFolder`, Fernseher nur im Spiegel, der
+    /// Mac mit Freigabe in beiden. Änderungen kommen in beide Richtungen an,
+    /// Entfernungen als Grabstein.
+    func testChangesAreRelayedBothWaysIncludingRemovals() async {
+        final class Log { var names: [String] = [] }
+        let iphone = makeStore()
+        let mac = makeStore()
+        let tv = makeStore()
+        let cloud = FakeSnapshotStore()
+        cloud.idPrefix = "appdata"
+        let mirror = FakeSnapshotStore()
+        mirror.idPrefix = "mirror"
+        let macBooks = FakeBookkeeping()
+        let log = Log()
+        let iphoneSync = engine(iphone, cloud, FakeBookkeeping())
+        let macApp = engine(mac, cloud, macBooks)
+        let macMirror = mirrorEngine(mac, mirror, macBooks)
+        let tvSync = mirrorEngine(tv, mirror, FakeBookkeeping())
+        macApp.onMergedChange = { log.names.append("zum Spiegel") }
+        macMirror.onMergedChange = { log.names.append("zum appDataFolder") }
+
+        // iPhone → Mac → Fernseher
+        iphone.toggleFavorite("naruto", title: "Naruto")
+        await iphoneSync.run()
+        await macApp.run()
+        XCTAssertEqual(log.names, ["zum Spiegel"], "Der Spiegel erfuhr nichts von der neuen Merkliste")
+        await macMirror.run()
+        await tvSync.run()
+        XCTAssertEqual(tv.favorites, ["naruto"], "Die Merkliste des iPhones kam nicht am Fernseher an")
+
+        // Fernseher → Mac → iPhone
+        try? await Task.sleep(nanoseconds: 5_000_000)
+        tv.toggleFavorite("one-piece", title: "One Piece")
+        await tvSync.run()
+        await macMirror.run()
+        XCTAssertEqual(log.names.last, "zum appDataFolder")
+        await macApp.run()
+        await iphoneSync.run()
+        XCTAssertEqual(Set(iphone.favorites), ["naruto", "one-piece"], "Die Merkliste des Fernsehers kam nicht am iPhone an")
+
+        // Eine Entfernung auf dem iPhone kommt am Fernseher an.
+        try? await Task.sleep(nanoseconds: 5_000_000)
+        iphone.toggleFavorite("naruto", title: "Naruto")
+        await iphoneSync.run()
+        await macApp.run()
+        await macMirror.run()
+        await tvSync.run()
+        XCTAssertEqual(tv.favorites, ["one-piece"], "Die Entfernung kam am Fernseher nicht an")
+
+        // Jede Ablage kennt nur ihre Geräte und ihre Kennungen.
+        XCTAssertEqual(Set(cloud.files.values.map(\.deviceId)), [iphone.deviceId, mac.deviceId])
+        XCTAssertEqual(Set(mirror.files.values.map(\.deviceId)), [mac.deviceId, tv.deviceId])
+        XCTAssertTrue(cloud.files.keys.allSatisfy { $0.hasPrefix("appdata-") })
+        XCTAssertTrue(mirror.files.keys.allSatisfy { $0.hasPrefix("mirror-") })
+        XCTAssertEqual(tvSync.remoteDeviceCount, 1)
+    }
+
+    /// Gemeldet wird nur ein wirklich veränderter Stand. Sonst stießen sich
+    /// beide Ablagen gegenseitig an, ohne dass etwas zu tun wäre.
+    func testOnlyAChangedLibraryNotifiesTheOtherSpace() async {
+        final class Counter { var value = 0 }
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let counter = Counter()
+        let sync = engine(store, remote, FakeBookkeeping())
+        sync.onMergedChange = { counter.value += 1 }
+
+        await sync.run()
+        XCTAssertEqual(counter.value, 0, "Der eigene Stand allein ist keine Änderung")
+
+        let anderes = makeStore()
+        anderes.toggleFavorite("naruto", title: "Naruto")
+        remote.seed(id: "anderes", deviceId: anderes.deviceId, data: snapshot(anderes.snapshot()))
+        await sync.run()
+        XCTAssertEqual(counter.value, 1)
+
+        await sync.run()
+        await sync.run()
+        XCTAssertEqual(counter.value, 1, "Ohne neue Änderung wurde die andere Ablage erneut angestoßen")
+    }
+
+    func testRemoteDeviceCountSeesOtherDevicesOnly() async {
+        let store = makeStore()
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+        XCTAssertNil(sync.remoteDeviceCount)
+
+        await sync.run()
+        XCTAssertEqual(sync.remoteDeviceCount, 0, "Die eigene Datei zählt nicht")
+
+        for name in ["iphone", "ipad", "mac"] {
+            let other = makeStore()
+            other.toggleFavorite(name, title: name)
+            remote.seed(id: name, deviceId: other.deviceId, data: snapshot(other.snapshot()))
+        }
+        await sync.run()
+        XCTAssertEqual(sync.remoteDeviceCount, 3)
+        XCTAssertEqual(Set(store.favorites), ["iphone", "ipad", "mac"])
+    }
+
+    /// Zwei Anstöße zugleich — etwa beide Ablagen melden sich — legen keine
+    /// zweite Datei an.
+    func testTwoRunsAtOnceWriteOneFile() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let remote = FakeSnapshotStore()
+        let sync = engine(store, remote, FakeBookkeeping())
+
+        async let first: Void = sync.run()
+        async let second: Void = sync.run()
+        _ = await (first, second)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(remote.files.count, 1)
+        XCTAssertEqual(remote.uploads, 1)
+    }
+
+    /// Fehler im Spiegel bleiben im Spiegel: der `appDataFolder` gleicht
+    /// weiter ab, und die Bibliothek bleibt unangetastet.
+    func testMirrorErrorsStayInTheMirror() async {
+        let store = makeStore()
+        store.toggleFavorite("one-piece", title: "One Piece")
+        let books = FakeBookkeeping()
+        let cloud = FakeSnapshotStore()
+        let mirror = FakeSnapshotStore()
+        let app = engine(store, cloud, books)
+        let tv = mirrorEngine(store, mirror, books)
+        let file = [GoogleDriveClient.scope, GoogleDriveClient.fileScope]
+
+        mirror.listError = GoogleDriveError.notAuthorized
+        await tv.run()
+        XCTAssertEqual(tv.status, .needsReauthorization)
+
+        // Zustimmung entzogen: die Oberfläche bietet sie erneut an.
+        mirror.listError = GoogleDriveError.forbidden("insufficientScopes")
+        await tv.run()
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: file, mirrorError: tv.lastError), .needsConsent)
+
+        mirror.listError = GoogleDriveError.http(status: 429, message: "Rate Limit")
+        await tv.run()
+        XCTAssertNotEqual(tv.status, .idle)
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: file, mirrorError: tv.lastError), .active,
+                       "Ein Rate Limit ist keine fehlende Zustimmung")
+
+        mirror.listError = GoogleDriveError.transport("Kein Netz")
+        await tv.run()
+        XCTAssertEqual(tv.status, .offline)
+
+        await app.run()
+        XCTAssertEqual(app.status, .idle, "Ein Fehler im Spiegel hat den appDataFolder aufgehalten")
+        XCTAssertEqual(cloud.files.count, 1)
+        XCTAssertEqual(mirror.files.count, 0)
+        XCTAssertEqual(store.favorites, ["one-piece"])
+
+        mirror.listError = nil
+        await tv.run()
+        XCTAssertEqual(tv.status, .idle)
+        XCTAssertEqual(mirror.files.count, 1)
+    }
+
+    func testTVSharingStateFollowsSwitchScopeAndErrors() {
+        let both = [GoogleDriveClient.scope, GoogleDriveClient.fileScope]
+        XCTAssertEqual(TVMirrorState.resolve(enabled: false, grantedScopes: both, mirrorError: nil), .off,
+                       "Ohne Schalter kein Spiegel, auch wenn die Zustimmung da ist")
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: [GoogleDriveClient.scope], mirrorError: nil), .needsConsent)
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: both, mirrorError: "insufficientScopes"), .needsConsent)
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: both, mirrorError: "Kein Netz"), .active)
+        XCTAssertEqual(TVMirrorState.resolve(enabled: true, grantedScopes: both, mirrorError: nil), .active)
+    }
+
+    /// Ohne Schalter ändert sich nichts — und eingeschaltet wird nur auf diesem
+    /// Gerät, nie heimlich.
+    func testTVSharingIsOffUntilSwitchedOnOnThisDevice() async {
+        let suite = "nori-tv-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let sync = GoogleDriveSync(
+            store: makeStore(), makePresenter: { _ in nil }, tokenStore: MemoryTokenStore(),
+            bookkeeping: FakeBookkeeping(), defaults: defaults)
+        XCTAssertFalse(sync.isTVMirrorEnabled)
+        XCTAssertEqual(sync.tvMirrorState, .off)
+        XCTAssertFalse(sync.mirrorEngine.isConnected)
+
+        // Ohne Anmeldung lässt sich nichts einschalten.
+        await sync.enableTVMirror()
+        XCTAssertFalse(sync.isTVMirrorEnabled)
+        XCTAssertFalse(defaults.bool(forKey: GoogleDriveSync.tvMirrorEnabledKey))
+
+        // Eingeschaltet, aber Google hat den Bereich (noch) nicht erteilt.
+        defaults.set(true, forKey: GoogleDriveSync.tvMirrorEnabledKey)
+        let again = GoogleDriveSync(
+            store: makeStore(), makePresenter: { _ in nil }, tokenStore: MemoryTokenStore(),
+            bookkeeping: FakeBookkeeping(), defaults: defaults)
+        XCTAssertTrue(again.isTVMirrorEnabled)
+        XCTAssertEqual(again.tvMirrorState, .needsConsent)
+        XCTAssertFalse(again.mirrorEngine.isConnected)
+        XCTAssertNotNil(again.engine.onMergedChange)
+        XCTAssertNotNil(again.mirrorEngine.onMergedChange)
+
+        again.disableTVMirror()
+        XCTAssertFalse(again.isTVMirrorEnabled)
+        XCTAssertFalse(defaults.bool(forKey: GoogleDriveSync.tvMirrorEnabledKey))
+    }
+
+    func testTheReadingOrderDoesNotDependOnDrive() {
+        let refs = [
+            RemoteSnapshotRef(id: "b", deviceId: "mac", modifiedTime: "2026-09-13T10:00:00.000Z", size: 1),
+            RemoteSnapshotRef(id: "a", deviceId: "mac", modifiedTime: "2026-09-13T11:00:00.000Z", size: 1),
+            RemoteSnapshotRef(id: "c", deviceId: "iphone", modifiedTime: "2026-09-13T09:00:00.000Z", size: 1),
+            RemoteSnapshotRef(id: "d", deviceId: "mac", modifiedTime: "2026-09-13T11:00:00.000Z", size: 1),
+        ]
+        let expected = [["c"], ["d", "a", "b"]]
+        XCTAssertEqual(LibrarySyncEngine.candidateGroups(refs).map { $0.map(\.id) }, expected)
+        XCTAssertEqual(LibrarySyncEngine.candidateGroups(Array(refs.reversed())).map { $0.map(\.id) }, expected)
     }
 }

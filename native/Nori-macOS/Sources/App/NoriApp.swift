@@ -1,3 +1,4 @@
+import AppKit
 import Observation
 import SwiftUI
 
@@ -135,9 +136,13 @@ struct NoriApp: App {
         _library = State(initialValue: library)
         // Der Loopback-Server hängt nicht an der Client-ID, wohl aber daran,
         // dass überhaupt eine hinterlegt ist. Gebaut wird er deshalb erst,
-        // wenn eine feststeht — aus der Build-Einstellung oder aus den
-        // Einstellungen.
-        _sync = State(initialValue: GoogleDriveSync(store: library) { _ in
+        // wenn eine feststeht.
+        //
+        // `requiresClientSecret`: der macOS-Client ist vom Typ „Desktop-App",
+        // und Googles Token-Endpunkt verlangt dafür ein client_secret — beim
+        // Tausch und beim Erneuern. Es kommt aus GOOGLE_CLIENT_SECRET in der
+        // nicht eingecheckten Config/Google.local.xcconfig.
+        _sync = State(initialValue: GoogleDriveSync(store: library, requiresClientSecret: true) { _ in
             LoopbackSignInPresenter()
         })
     }
@@ -149,13 +154,19 @@ struct NoriApp: App {
                 .environment(sync)
                 .environment(playerHost)
                 .environment(catalogStore)
-                // Eine bestehende Verbindung wieder aufnehmen und danach im
-                // Vordergrund regelmäßig nach fremden Änderungen sehen. Hier
+                // Eine bestehende Verbindung wieder aufnehmen; die Anbindung
+                // startet danach selbst den Zeitgeber für den Vordergrund. Hier
                 // wird nichts gefragt: liegen Tokens im Schlüsselbund, geht es
                 // weiter, sonst bleibt es bei „nicht verbunden".
-                .task {
-                    await sync.restore()
-                    sync.engine.startPolling()
+                .task { await sync.restore() }
+                // Vordergrund und Hintergrund wie auf iOS. Ein Mac wechselt
+                // dutzendfach am Tag zwischen Programmen; ob sich ein Abgleich
+                // lohnt, entscheidet die Engine, nicht jeder Fensterwechsel.
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    sync.appDidBecomeActive()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    sync.appDidEnterBackground()
                 }
         }
         .defaultSize(width: 1180, height: 780)

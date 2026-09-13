@@ -1104,14 +1104,23 @@ try {
   let tokenCalls = 0;
   let grantAccess = false;
   let codeLifetime = 900;
-  await oauth.route("https://oauth2.googleapis.com/device/code", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({
-      device_code: DEVICE_CODE, user_code: USER_CODE, verification_url: VERIFY, verification_uri: VERIFY,
-      verification_uri_complete: `${VERIFY}?user_code=${USER_CODE}`, expires_in: codeLifetime, interval: 1,
-    }),
-  }));
+  // Was der Fernseher bei Google und Drive anfragt — nur Bereiche, Adressen und
+  // Metadaten, nie ein Token.
+  const deviceScopes = [];
+  const driveRequests = [];
+  const uploadBodies = [];
+  let mirrorFiles = [];
+  await oauth.route("https://oauth2.googleapis.com/device/code", (route) => {
+    deviceScopes.push(new URLSearchParams(route.request().postData() ?? "").get("scope"));
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        device_code: DEVICE_CODE, user_code: USER_CODE, verification_url: VERIFY, verification_uri: VERIFY,
+        verification_uri_complete: `${VERIFY}?user_code=${USER_CODE}`, expires_in: codeLifetime, interval: 1,
+      }),
+    });
+  });
   await oauth.route("https://oauth2.googleapis.com/token", (route) => {
     tokenCalls += 1;
     if (!grantAccess) {
@@ -1120,14 +1129,28 @@ try {
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ access_token: "test-access", refresh_token: "test-refresh", expires_in: 3600, scope: "https://www.googleapis.com/auth/drive.appdata" }),
+      body: JSON.stringify({ access_token: "test-access", refresh_token: "test-refresh", expires_in: 3600, scope: "https://www.googleapis.com/auth/drive.file" }),
     });
   });
-  await oauth.route("https://www.googleapis.com/drive/v3/files**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ files: [] }) }));
-  await oauth.route("https://www.googleapis.com/upload/drive/v3/files**", (route) => route.fulfill({
-    status: 200, contentType: "application/json", body: JSON.stringify({ id: "test-file", modifiedTime: "2026-09-12T12:00:00.000Z", size: "42" }),
-  }));
+  await oauth.route("https://www.googleapis.com/drive/v3/files**", (route) => {
+    const request = route.request();
+    driveRequests.push(`${request.method()} ${request.url()}`);
+    if (request.method() === "POST") {
+      // Der Ordner „Nori“.
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "test-folder" }) });
+    }
+    if (request.url().includes("alt=media")) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: 6 }) });
+    }
+    const files = decodeURIComponent(request.url()).includes("library-mirror") ? mirrorFiles : [];
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ files }) });
+  });
+  await oauth.route("https://www.googleapis.com/upload/drive/v3/files**", (route) => {
+    uploadBodies.push(route.request().postData() ?? "");
+    return route.fulfill({
+      status: 200, contentType: "application/json", body: JSON.stringify({ id: "test-file", modifiedTime: "2026-09-12T12:00:00.000Z", size: "42" }),
+    });
+  });
   await oauth.addInitScript(() => {
     localStorage.setItem("nori.google.clientId", "123456-test.apps.googleusercontent.com");
     localStorage.setItem("nori.google.clientSecret", "TEST-ONLY-not-a-real-secret");
@@ -1188,9 +1211,32 @@ try {
   check("Verbunden: Abgleichen, Trennen, Widerrufen", ["sync-now", "disconnect", "revoke"].every((k) => connectedState.keys.includes(k)), connectedState.keys.join(", "));
   check("Die Berechtigung liegt im Speicher des Geräts", connectedState.tokens);
   check("Nach dem Verbinden bleibt der Fokus erhalten", Boolean(await focused(oauth)));
+  const mirrorView = await oauth.evaluate(() => document.querySelector(".screen")?.textContent ?? "");
+  check("Gerätefluss fragt ausschließlich nach drive.file",
+    deviceScopes.length > 0 && deviceScopes.every((scope) => scope === "https://www.googleapis.com/auth/drive.file"), deviceScopes.join(" | "));
+  check("Drive nur im sichtbaren Spiegel, nie im appDataFolder",
+    driveRequests.length > 0 && driveRequests.every((line) => !line.includes("appDataFolder")), driveRequests.slice(0, 3).join(" | "));
+  check("Die eigene Datei ist als TV-Spiegel gekennzeichnet",
+    uploadBodies.some((body) => body.includes('"mirror":"tv"') && body.includes("nori-tv-sync-v1-") && body.includes('"library-mirror"') && !body.includes("appDataFolder")),
+    uploadBodies.length ? uploadBodies[0].slice(0, 160) : "kein Upload");
+  check("Ohne Apple-Gerät mit Freigabe: Hinweis, wo es einzuschalten ist",
+    mirrorView.includes("Noch keine TV-Synchronisation gefunden") && mirrorView.includes("„Mit Fernseher teilen“"), mirrorView.slice(0, 200));
+  check("Kein OAuth-Fachbegriff außerhalb der Diagnose",
+    !/drive\.file|appdata|scope|OAuth|Token/i.test(mirrorView.split("Client-ID:")[0]), mirrorView.split("Client-ID:")[0].slice(-160));
   await shot(oauth, "28-abgleich-verbunden");
   const leaked = oauthLog.filter((line) => /test-access|test-refresh|TEST-ONLY-not-a-real-secret|NORI-TEST-DEVICE-CODE/.test(line));
   check("Kein Token und kein Secret im Protokoll", leaked.length === 0, leaked.slice(0, 2).join(" | "));
+
+  // Ein Mac teilt jetzt mit dem Fernseher: der Hinweis verschwindet.
+  mirrorFiles = [{
+    id: "mac-mirror", name: "nori-tv-sync-v1-mac.json", modifiedTime: "2026-09-12T12:05:00.000Z", size: "12",
+    appProperties: { app: "nori", type: "library-mirror", syncVersion: "1", deviceId: "mac", mirror: "tv" },
+  }];
+  await focusKey(oauth, "sync-now");
+  await remote(oauth, "ok", 2500);
+  const relayed = await oauth.evaluate(() => document.querySelector(".screen")?.textContent ?? "");
+  check("Mit dem Spiegel eines Apple-Geräts verschwindet der Hinweis",
+    !relayed.includes("Noch keine TV-Synchronisation gefunden"), relayed.slice(0, 200));
 
   await oauth.reload({ waitUntil: "domcontentloaded" });
   await oauth.waitForTimeout(3000);

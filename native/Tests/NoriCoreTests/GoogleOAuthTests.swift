@@ -159,6 +159,35 @@ final class GoogleOAuthTests: XCTestCase {
         XCTAssertEqual(tokens.accessToken, "neu")
         XCTAssertEqual(tokens.refreshToken, "rt")
         XCTAssertTrue(reply.form.contains("grant_type=refresh_token"))
+        XCTAssertFalse(reply.form.contains("client_secret"), "Der iOS-Client hat kein Secret")
+    }
+
+    /// Der macOS-Client ist vom Typ „Desktop-App". Googles Token-Endpunkt
+    /// antwortet dort ohne Secret mit `client_secret is missing` — beim Tausch
+    /// und beim Erneuern. Gemessen am echten Endpunkt, deshalb geprüft an
+    /// beiden Stellen.
+    func testTheDesktopClientSendsItsSecretOnExchangeAndRefresh() async throws {
+        var desktop = config
+        desktop.clientSecret = "nur-ein-testwert"
+
+        let exchange = Reply(json: #"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#)
+        _ = try await GoogleOAuth.exchange(
+            code: "4/abc", configuration: desktop, pkce: GoogleOAuth.makePKCE(), transport: exchange, now: 0)
+        XCTAssertTrue(exchange.form.contains("client_secret=nur-ein-testwert"))
+
+        let refresh = Reply(json: #"{"access_token":"neu","expires_in":3599}"#)
+        _ = try await GoogleOAuth.refresh(
+            refreshToken: "rt", configuration: desktop, transport: refresh, now: 0)
+        XCTAssertTrue(refresh.form.contains("client_secret=nur-ein-testwert"))
+    }
+
+    /// Ein leeres Secret ist keines und wird nicht als leeres Feld geschickt.
+    func testAnEmptySecretIsNotSent() async throws {
+        var leer = config
+        leer.clientSecret = ""
+        let reply = Reply(json: #"{"access_token":"neu","expires_in":3599}"#)
+        _ = try await GoogleOAuth.refresh(refreshToken: "rt", configuration: leer, transport: reply, now: 0)
+        XCTAssertFalse(reply.form.contains("client_secret"))
     }
 
     func testServerErrorsAreReported() async {

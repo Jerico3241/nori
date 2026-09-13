@@ -1,0 +1,12 @@
+// Vorlage. Als `Google.local.xcconfig` daneben ablegen — die Datei ist nicht
+// eingecheckt — oder aus der OAuth-JSON des Desktop-Clients schreiben lassen:
+//
+//     python3 tools/configure-google-oauth.py
+//
+// (liest ~/.config/nori/secrets/google-macos-oauth.json)
+//
+// Nur der macOS-Client (Typ „Desktop-App"). Den echten Secret-Wert nie in eine
+// eingecheckte Datei schreiben.
+
+GOOGLE_CLIENT_ID = 000000000000-beispiel.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET = <aus der OAuth-JSON, nie einchecken>

@@ -1,0 +1,17 @@
+// Build-Einstellungen des iOS-Targets, die nicht im Projekt stehen.
+//
+// GOOGLE_CLIENT_ID kommt aus `Google.local.xcconfig` daneben. Die Datei ist
+// nicht eingecheckt (.gitignore) und wird von
+// `tools/configure-google-oauth.py` geschrieben; eine Vorlage liegt als
+// `Google.local.xcconfig.example` bei. Fehlt sie, baut Nori trotzdem — nur ohne
+// Google-Abgleich, und die Diagnose sagt warum.
+//
+// Ausschliesslich der iOS-Client (Typ „iOS", Bundle-ID to.nori.ios). Der
+// macOS-Client hat seine eigene Datei unter native/Nori-macOS/Config/; eine
+// gemeinsame Konfiguration gibt es mit Absicht nicht, damit keine Plattform
+// die Client-ID der anderen erbt. Ein Client-Secret gibt es auf iOS nicht.
+//
+// Auf der Kommandozeile gesetzte Werte (`xcodebuild GOOGLE_CLIENT_ID=…`) haben
+// weiterhin Vorrang.
+
+#include? "Google.local.xcconfig"

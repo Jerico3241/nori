@@ -94,8 +94,13 @@ final class LibrarySyncEngine {
     /// Wie oft im Vordergrund nach fremden Änderungen gesehen wird.
     static let foregroundPoll: Double = 30
 
-    private static let fileIdKey = "nori.sync.driveFileId"
-    private static let accountKey = "nori.sync.accountId"
+    /// Merkposten je Ablage. Die `appData`-Engine behält die bisherigen
+    /// Schlüssel (`nori.sync.*`), der TV-Spiegel bekommt eigene
+    /// (`nori.sync.tvMirror.*`). Eine Dateikennung aus der einen Ablage kann so
+    /// nie in der anderen benutzt werden.
+    private let fileIdKey: String
+    private let accountKey: String
+    private let lastUploadKey: String
 
     private let store: LibraryStore
     private let bookkeeping: SyncBookkeeping
@@ -115,6 +120,51 @@ final class LibrarySyncEngine {
     private var debounceTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var lastUploadAt: Double = 0
+    /// Wann zuletzt ein Abgleich begonnen hat — erfolgreich oder nicht.
+    private var lastAttemptAt: Double = 0
+    /// Was dieses Gerät zuletzt selbst geschrieben hat — **dauerhaft**, je
+    /// Ablage, Gerät und Datei.
+    ///
+    /// Damit ein Abgleich, der nichts geändert hat, auch nichts schreibt. Ohne
+    /// das lud jedes Gerät im Vordergrund alle 30 Sekunden seine unveränderte
+    /// Datei hoch, und jedes andere Gerät holte sie danach erneut. Nur im
+    /// Arbeitsspeicher gemerkt, kostete jeder App-Neustart einen überflüssigen
+    /// Upload je Ablage (im Proof of Concept gemessen).
+    struct UploadRecord: Codable, Equatable {
+        var deviceId: String
+        var fileId: String
+        var modifiedTime: String
+        /// SHA-256 der geschriebenen Bytes, Base64URL.
+        var digest: String
+    }
+
+    @ObservationIgnored
+    private var lastUpload: UploadRecord? {
+        get {
+            bookkeeping.syncValue(forKey: lastUploadKey)
+                .flatMap { try? JSONDecoder().decode(UploadRecord.self, from: Data($0.utf8)) }
+        }
+        set {
+            let raw = newValue.flatMap { (try? JSONEncoder().encode($0)).map { String(decoding: $0, as: UTF8.self) } }
+            bookkeeping.setSyncValue(raw, forKey: lastUploadKey)
+        }
+    }
+
+    /// Wie viele **andere** Geräte beim letzten Holen in dieser Ablage lagen.
+    /// `nil` vor dem ersten Holen. Für den Hinweis am Fernseher, dass noch kein
+    /// Apple-Gerät „Mit Fernseher teilen" eingeschaltet hat.
+    private(set) var remoteDeviceCount: Int?
+
+    /// Hat das Zusammenführen den lokalen Stand verändert?
+    ///
+    /// Der TV-Spiegel läuft als zweite Engine auf derselben Bibliothek. Übernimmt
+    /// eine Engine neue Daten, muss die andere davon erfahren — sonst wandert
+    /// eine Änderung vom Fernseher erst beim nächsten Abfragetakt in den
+    /// `appDataFolder`. Die Meldung geht über `noteChange` und damit durch die
+    /// übliche Entprellung; eine Schleife entsteht nicht, weil ein Abgleich ohne
+    /// neue Daten weder schreibt noch meldet.
+    @ObservationIgnored
+    var onMergedChange: (@MainActor () -> Void)?
     /// Was schon einmal heruntergeladen wurde, nach Dateikennung.
     /// Unveränderte Dateien werden nicht erneut geholt.
     private var cache: [String: (modifiedTime: String, data: LibraryData)] = [:]
@@ -122,8 +172,12 @@ final class LibrarySyncEngine {
     init(
         store: LibraryStore,
         bookkeeping: SyncBookkeeping,
+        keyPrefix: String = "nori.sync",
         clock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 * 1000 }
     ) {
+        self.fileIdKey = keyPrefix + ".driveFileId"
+        self.accountKey = keyPrefix + ".accountId"
+        self.lastUploadKey = keyPrefix + ".lastUpload"
         self.store = store
         self.bookkeeping = bookkeeping
         self.clock = clock
@@ -145,12 +199,17 @@ final class LibrarySyncEngine {
     /// können, statt nebenher zu laufen. Die App lässt es bei `true` — sonst
     /// wäre genau die Reihenfolge verletzt, um die es hier geht.
     func connect(to store: LibrarySnapshotStore, accountId: String? = nil, startSync: Bool = true) {
-        if let accountId, bookkeeping.syncValue(forKey: Self.accountKey) != accountId {
+        if let accountId, bookkeeping.syncValue(forKey: accountKey) != accountId {
             // Anderes Google-Konto: ein anderer Sync-Raum. Die gemerkte
             // Dateikennung zeigt auf eine Datei, die es dort nicht gibt.
-            bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
-            bookkeeping.setSyncValue(accountId, forKey: Self.accountKey)
+            bookkeeping.setSyncValue(nil, forKey: fileIdKey)
+            bookkeeping.setSyncValue(accountId, forKey: accountKey)
             cache = [:]
+            // `lastUpload` bleibt: er greift nur für eine Kennung, die in der
+            // Auflistung auftaucht, und Drive-Kennungen sind eindeutig. Nach
+            // einer erneuten Zustimmung — etwa für „Mit Fernseher teilen",
+            // die einen neuen Auffrischungstoken bringt — entfällt so ein
+            // überflüssiger Upload.
         }
         snapshotStore = store
         status = .idle
@@ -168,7 +227,8 @@ final class LibrarySyncEngine {
         stopPolling()
         snapshotStore = nil
         cache = [:]
-        bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
+        lastUpload = nil
+        bookkeeping.setSyncValue(nil, forKey: fileIdKey)
         status = .disconnected
         lastError = nil
         lastWarning = nil
@@ -197,6 +257,29 @@ final class LibrarySyncEngine {
         debounceTask?.cancel()
         debounceTask = nil
         Task { await run() }
+    }
+
+    /// Die App kommt nach vorn.
+    ///
+    /// Sofort abgleichen — aber nicht bei jedem Fensterwechsel. Auf dem Mac
+    /// wird eine App dutzendfach am Tag aktiv; lag der letzte Versuch weniger
+    /// als ein Abfragetakt zurück und ist lokal nichts offen, gibt es nichts
+    /// Neues zu holen, das der Zeitgeber nicht ohnehin gleich holt.
+    func syncOnForeground() {
+        guard snapshotStore != nil else { return }
+        let elapsed = (clock() - lastAttemptAt) / 1000
+        guard hasPendingChanges || lastAttemptAt == 0 || elapsed >= Self.foregroundPoll else { return }
+        syncNow()
+    }
+
+    /// Die App geht in den Hintergrund.
+    ///
+    /// Der letzte verlässliche Moment — aber nur, wenn es etwas zu schreiben
+    /// gibt. Ein Gang in den Hintergrund ohne Änderung ist kein Anlass für
+    /// eine Anfrage.
+    func syncOnBackground() {
+        guard snapshotStore != nil, hasPendingChanges || debounceTask != nil else { return }
+        syncNow()
     }
 
     /// Im Vordergrund regelmäßig nach fremden Änderungen sehen.
@@ -255,24 +338,45 @@ final class LibrarySyncEngine {
         }
 
         status = .syncing
+        lastAttemptAt = clock()
         do {
+            // Sortierte Schlüssel, damit derselbe Stand dieselben Bytes ergibt
+            // und sich „unverändert" überhaupt feststellen lässt.
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+
             let pulled = try await pullAndMerge(from: remote)
             guard let pulled else { return }  // Status ist bereits gesetzt
+            let before = try? encoder.encode(store.snapshot())
             store.applyMerged(pulled.merged)
 
             // Der eigene Stand wird **nach** dem Anwenden gebildet. Sonst
             // fehlte darin genau das, was gerade zusammengeführt wurde.
             let own = store.snapshot()
-            let payload = try JSONEncoder().encode(own)
+            let payload = try encoder.encode(own)
             guard payload.count <= LibrarySyncLimits.maxSnapshotBytes else {
                 throw GoogleDriveError.tooLarge(payload.count)
             }
-            let written = try await upload(payload, to: remote, known: pulled.refs)
-            bookkeeping.setSyncValue(written.id, forKey: Self.fileIdKey)
-            // Der eigene Stand ist damit bekannt. Ohne diesen Eintrag lädt der
-            // nächste Abgleich die gerade selbst geschriebene Datei wieder
-            // herunter — jedes Mal, für nichts.
-            cache[written.id] = (written.modifiedTime, own)
+            if before != payload { onMergedChange?() }
+
+            let digest = base64URL(sha256(Array(payload)))
+            let target = ownFile(in: pulled.refs)
+            if let last = lastUpload, let target,
+               last.digest == digest, last.deviceId == store.deviceId, last.fileId == target,
+               pulled.refs.contains(where: { $0.id == target && $0.modifiedTime == last.modifiedTime }) {
+                // Derselbe Stand liegt schon unverändert in der Cloud. Nichts
+                // zu schreiben — geholt und zusammengeführt wurde trotzdem.
+                bookkeeping.setSyncValue(target, forKey: fileIdKey)
+            } else {
+                let written = try await upload(payload, to: remote, fileId: target)
+                bookkeeping.setSyncValue(written.id, forKey: fileIdKey)
+                // Der eigene Stand ist damit bekannt. Ohne diesen Eintrag lädt
+                // der nächste Abgleich die gerade selbst geschriebene Datei
+                // wieder herunter — jedes Mal, für nichts.
+                cache[written.id] = (written.modifiedTime, own)
+                lastUpload = UploadRecord(deviceId: store.deviceId, fileId: written.id,
+                                          modifiedTime: written.modifiedTime, digest: digest)
+            }
 
             lastUploadAt = clock()
             lastSuccessfulSync = lastUploadAt
@@ -307,40 +411,55 @@ final class LibrarySyncEngine {
         var warning: String?
         var fresh: [String: (modifiedTime: String, data: LibraryData)] = [:]
 
-        for ref in refs {
-            if let cached = cache[ref.id], cached.modifiedTime == ref.modifiedTime {
-                fresh[ref.id] = cached
-                snapshots.append(cached.data)
-                continue
+        remoteDeviceCount = Set(refs.compactMap(\.deviceId).filter { $0 != store.deviceId }).count
+        let groups = Self.candidateGroups(refs)
+        let duplicates = groups.reduce(0) { $0 + max(0, $1.count - 1) }
+
+        groups: for group in groups {
+            // Eine Gruppe ist ein Gerät. Mehrere Dateien mit derselben
+            // Gerätekennung entstehen, wenn jemand eine gelöschte Spiegeldatei
+            // aus dem Papierkorb zurückholt, nachdem Nori sie neu angelegt hat.
+            // Genommen wird die neueste lesbare; die übrigen bleiben liegen und
+            // werden nicht gelöscht.
+            for ref in group {
+                if let cached = cache[ref.id], cached.modifiedTime == ref.modifiedTime {
+                    fresh[ref.id] = cached
+                    snapshots.append(cached.data)
+                    continue groups
+                }
+                guard ref.size <= LibrarySyncLimits.maxSnapshotBytes else {
+                    warning = "Ein Gerätestand ist unerwartet groß (\(ref.size) Bytes) und wurde übergangen."
+                    continue
+                }
+                let data: Data
+                do {
+                    data = try await remote.download(ref)
+                } catch let error as GoogleDriveError where error == .notFound {
+                    // Zwischen Auflisten und Holen gelöscht. Kein Fehler.
+                    continue
+                }
+                guard let decoded = try? JSONDecoder().decode(LibraryData.self, from: data) else {
+                    // Eine unlesbare Fremddatei nimmt nur sich selbst mit. Den
+                    // lokalen Stand mit ihr zu überschreiben wäre der teuerste
+                    // denkbare Fehler.
+                    warning = "Ein Gerätestand war nicht lesbar und wurde übergangen."
+                    continue
+                }
+                if (decoded.version ?? 1) > LibraryStore.schemaVersion {
+                    // Eine neuere App hat hier geschrieben. Diese Version würde
+                    // beim Hochladen Felder wegwerfen, die sie nicht kennt — also
+                    // wird gar nicht hochgeladen.
+                    status = .unsupportedRemoteVersion
+                    lastError = "In der Cloud liegt ein neuerer Stand (Schema \(decoded.version ?? 0)). Nori muss aktualisiert werden."
+                    return nil
+                }
+                fresh[ref.id] = (ref.modifiedTime, decoded)
+                snapshots.append(decoded)
+                continue groups
             }
-            guard ref.size <= LibrarySyncLimits.maxSnapshotBytes else {
-                warning = "Ein Gerätestand ist unerwartet groß (\(ref.size) Bytes) und wurde übergangen."
-                continue
-            }
-            let data: Data
-            do {
-                data = try await remote.download(ref)
-            } catch let error as GoogleDriveError where error == .notFound {
-                // Zwischen Auflisten und Holen gelöscht. Kein Fehler.
-                continue
-            }
-            guard let decoded = try? JSONDecoder().decode(LibraryData.self, from: data) else {
-                // Eine unlesbare Fremddatei nimmt nur sich selbst mit. Den
-                // lokalen Stand mit ihr zu überschreiben wäre der teuerste
-                // denkbare Fehler.
-                warning = "Ein Gerätestand war nicht lesbar und wurde übergangen."
-                continue
-            }
-            if (decoded.version ?? 1) > LibraryStore.schemaVersion {
-                // Eine neuere App hat hier geschrieben. Diese Version würde
-                // beim Hochladen Felder wegwerfen, die sie nicht kennt — also
-                // wird gar nicht hochgeladen.
-                status = .unsupportedRemoteVersion
-                lastError = "In der Cloud liegt ein neuerer Stand (Schema \(decoded.version ?? 0)). Nori muss aktualisiert werden."
-                return nil
-            }
-            fresh[ref.id] = (ref.modifiedTime, decoded)
-            snapshots.append(decoded)
+        }
+        if duplicates > 0, warning == nil {
+            warning = "Für ein Gerät lagen mehrere Dateien vor; genutzt wird jeweils die neueste."
         }
 
         cache = fresh
@@ -350,26 +469,54 @@ final class LibrarySyncEngine {
         return (mergeLibrarySnapshots(snapshots + [store.snapshot()], now: clock()), refs)
     }
 
+    /// Die Dateien in Lesereihenfolge: je Gerät eine Gruppe, darin die neueste
+    /// zuerst. Dateien ohne Gerätekennung bilden je eine eigene Gruppe.
+    /// Deterministisch — Drive gibt Dateien in keiner zugesicherten Reihenfolge
+    /// heraus.
+    static func candidateGroups(_ refs: [RemoteSnapshotRef]) -> [[RemoteSnapshotRef]] {
+        var byDevice: [String: [RemoteSnapshotRef]] = [:]
+        var loose: [[RemoteSnapshotRef]] = []
+        for ref in refs {
+            if let device = ref.deviceId { byDevice[device, default: []].append(ref) } else { loose.append([ref]) }
+        }
+        let grouped = byDevice.keys.sorted().map { key in
+            byDevice[key]!.sorted { ($0.modifiedTime, $0.id) > ($1.modifiedTime, $1.id) }
+        }
+        return grouped + loose.sorted { $0[0].id < $1[0].id }
+    }
+
+    /// Die eigene Datei dieser Ablage.
+    ///
+    /// Die gemerkte Kennung nur, wenn sie in dieser Ablage **noch auftaucht** —
+    /// eine in den Papierkorb gelegte Spiegeldatei ließe sich zwar weiter
+    /// beschreiben, aber niemand fände sie; der Abgleich schriebe jedes Mal
+    /// ins Leere. Sonst die neueste Datei mit der eigenen Gerätekennung.
+    ///
+    /// Der zweite Weg ist der wichtige. Ohne ihn legte jede erneute
+    /// Zustimmung — und jede Neuinstallation mit erhaltener Bibliothek — eine
+    /// zweite Datei für dasselbe Gerät an, und der Ordner füllte sich mit
+    /// Karteileichen.
+    private func ownFile(in refs: [RemoteSnapshotRef]) -> String? {
+        if let remembered = bookkeeping.syncValue(forKey: fileIdKey), refs.contains(where: { $0.id == remembered }) {
+            return remembered
+        }
+        return refs
+            .filter { $0.deviceId == store.deviceId }
+            .max { ($0.modifiedTime, $0.id) < ($1.modifiedTime, $1.id) }?
+            .id
+    }
+
     private func upload(
         _ payload: Data,
         to remote: LibrarySnapshotStore,
-        known refs: [RemoteSnapshotRef]
+        fileId: String?
     ) async throws -> RemoteSnapshotRef {
-        // Die gemerkte Kennung zuerst; ist keine da, die eigene Datei am
-        // Gerätekennzeichen wiedererkennen.
-        //
-        // Der zweite Weg ist der wichtige. Ohne ihn legte jede erneute
-        // Zustimmung — und jede Neuinstallation mit erhaltener Bibliothek —
-        // eine zweite Datei für dasselbe Gerät an, und der Ordner füllte sich
-        // mit Karteileichen.
-        let fileId = bookkeeping.syncValue(forKey: Self.fileIdKey)
-            ?? refs.first { $0.deviceId == store.deviceId }?.id
         do {
             return try await remote.upload(payload, deviceId: store.deviceId, fileId: fileId)
         } catch let error as GoogleDriveError where error == .notFound {
             // Zwischen Auflisten und Schreiben gelöscht. Eine neue anlegen
             // statt aufzugeben.
-            bookkeeping.setSyncValue(nil, forKey: Self.fileIdKey)
+            bookkeeping.setSyncValue(nil, forKey: fileIdKey)
             return try await remote.upload(payload, deviceId: store.deviceId, fileId: nil)
         }
     }
