@@ -4,7 +4,8 @@
 // eingetragen. Ein Fernseher ohne Netz mit mitgeliefertem Schlüssel ist nicht
 // verbunden, und die Oberfläche sagt das.
 
-import type { TmdbDiagnostics } from "./tmdb";
+import { useEffect, useState } from "react";
+import { tmdb, type TmdbDiagnostics } from "./tmdb";
 
 export type TmdbTone = "ok" | "idle" | "warn" | "error";
 
@@ -14,7 +15,7 @@ export interface TmdbState {
   detail: string;
 }
 
-export function tmdbState(diagnostics: TmdbDiagnostics): TmdbState {
+export function tmdbState(diagnostics: Pick<TmdbDiagnostics, "available" | "lastStatus">): TmdbState {
   if (!diagnostics.available) {
     return { label: "Nicht verfügbar", tone: "warn", detail: "TMDB ist ausgeschaltet — Nori zeigt die Daten der Quellen." };
   }
@@ -34,4 +35,27 @@ export function tmdbState(diagnostics: TmdbDiagnostics): TmdbState {
     default:
       return { label: "Bereit", tone: "idle", detail: "Noch nicht abgefragt." };
   }
+}
+
+/**
+ * Der TMDB-Zustand, neu gezeichnet genau dann, wenn er sich ändert.
+ *
+ * Vorher lasen die Einstellungen ihn alle drei Sekunden neu — ein Rendern der
+ * ganzen Seite, auch wenn TMDB seit Minuten nichts getan hatte.
+ */
+export function useTmdbState(): TmdbState {
+  const [state, setState] = useState(() => tmdbState(tmdb.status()));
+  useEffect(() => {
+    const update = () => setState((current) => {
+      const next = tmdbState(tmdb.status());
+      return next.label === current.label && next.tone === current.tone && next.detail === current.detail
+        ? current
+        : next;
+    });
+    // Zwischen dem ersten Rendern und diesem Effekt kann sich der Zugang schon
+    // geändert haben.
+    update();
+    return tmdb.subscribeStatus(update);
+  }, []);
+  return state;
 }

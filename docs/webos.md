@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.1.1**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.2.0**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -222,7 +222,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.1.1_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.2.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -373,6 +373,16 @@ das den Fehler melden würde, nie läuft:
 `defer` und setzt `base: "./"`. Die aufgeteilten Bündel fallen dabei weg, und
 das ist kein Verlust: die Dateien liegen auf dem Gerät, nicht im Netz — es gibt
 keine Übertragung, die sich parallelisieren ließe.
+
+**hls.js ist nicht Teil des Bündels** (seit 2.2.0). Es war mit Abstand dessen
+größter Teil, gebraucht wird es aber nur für HLS-Streams auf Geräten ohne
+natives HLS — webOS spielt HLS in aller Regel selbst ab. `vite.config.ts` legt
+die UMD-Fassung aus `node_modules` als `dist/vendor/hls.min.js` daneben (für
+Chrome 79 übersetzt), und `src/player/hlsLoader.ts` lädt sie im Player als
+**klassisches** Skript nach. Das funktioniert von `file://`, anders als ein
+dynamisches `import()`. Das Startbündel sank damit von 1 001 KB auf 410 KB.
+`check-webos-package.py` verlangt die Datei im `.ipk`, und der
+Fernbedienungslauf lädt sie über `file://` nach und prüft `Hls.isSupported()`.
 
 Die Stile bleiben eine eigene Datei (`cssCodeSplit: false`), obwohl Vite sie
 bei einem einzigen Bündel sonst in das Skript legt. Der Startbildschirm in

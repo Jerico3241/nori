@@ -328,6 +328,18 @@ try {
     hero?.actions.some((a) => a.includes("ansehen")) && hero?.actions.some((a) => a.includes("Merkliste") || a.includes("Gemerkt")) && hero?.actions.some((a) => a.includes("Mehr")),
     hero?.actions.join(" | "));
 
+  // Beim Start nur das Nötige: hls.js kommt erst im Player dazu, und das
+  // Hauptbündel hat nicht mehr die Größe, die es mit hls.js hatte.
+  const startup = await page.evaluate(() => ({
+    hls: typeof window.Hls,
+    bundle: performance.getEntriesByType("resource")
+      .filter((entry) => /assets\/index-[^/]+\.js$/.test(entry.name))
+      .map((entry) => entry.decodedBodySize)[0] ?? null,
+  }));
+  check("Start ohne hls.js — es kommt erst im Player dazu", startup.hls === "undefined", startup.hls);
+  check("Startbündel unter 600 KB", startup.bundle !== null && startup.bundle > 0 && startup.bundle < 600_000,
+    `${Math.round((startup.bundle ?? 0) / 1024)} KB`);
+
   const start = await focused(page);
   check("Startfokus auf „Jetzt ansehen“", start?.key === "hero-play", start?.key ?? "-");
 
@@ -838,7 +850,30 @@ try {
   for (let i = 0; i < 8; i += 1) await remote(page, "forward", 150);
   await page.waitForTimeout(1200);
   check("Mehrfaches Spulen summiert sich", (await page.evaluate(() => document.querySelector("video.player-video")?.currentTime ?? 0)) > 60);
-  await page.waitForTimeout(5500);
+
+  // Während eine Folge läuft, rechnet die Oberfläche fast nichts. Früher
+  // sicherte eine Aufräumfunktion bei jedem gesicherten Stand erneut — eine
+  // Schleife aus Sichern und Rendern, die die ganze Wiedergabe über den
+  // Hauptthread belegte.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Performance.enable");
+  const scriptSeconds = async () => (await cdp.send("Performance.getMetrics")).metrics
+    .find((metric) => metric.name === "ScriptDuration")?.value ?? 0;
+  const scriptBefore = await scriptSeconds();
+  await page.waitForTimeout(3000);
+  const scriptSpent = (await scriptSeconds()) - scriptBefore;
+  check("Wiedergabe ohne Dauerrechnen (< 0,5 s Skript in 3 s)", scriptSpent < 0.5, `${Math.round(scriptSpent * 1000)} ms`);
+  await cdp.detach();
+  await page.waitForTimeout(2500);
+
+  // Angehalten heißt: der Stand steht im Speicher — nicht erst irgendwann.
+  await remote(page, "pause", 500);
+  const pausedAt = await page.evaluate(() => document.querySelector("video.player-video")?.currentTime ?? 0);
+  const storedAtPause = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("nori.library") ?? "{}").progress ?? {})
+    .map((item) => item.positionSec));
+  check("Pause legt den Stand sofort ab", storedAtPause.some((value) => Math.abs(value - pausedAt) < 1.5),
+    `${pausedAt.toFixed(1)} s · abgelegt ${storedAtPause.map((value) => value.toFixed(1)).join(", ") || "nichts"}`);
+  await remote(page, "play", 600);
 
   await remote(page, "up", 700);
   check("Drawer über ↑", Boolean(await page.$(".player-panel")));
@@ -1546,6 +1581,16 @@ try {
   check("file://: Stile geladen", fileState.accent === "#79c7ff", fileState.accent);
   check("file://: Daten kommen an", fileState.rails > 0 && fileState.cards > 5, `${fileState.rails} Reihen, ${fileState.cards} Karten`);
   check("file://: Fokus sitzt", Boolean(await focused(filePage)));
+  // hls.js liegt als eigene Datei im Paket und wird als klassisches Skript
+  // nachgeladen. Von `file://` scheitert ein ES-Modul — ein Skript nicht.
+  const fileHls = await filePage.evaluate(() => new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "./vendor/hls.min.js";
+    script.onload = () => resolve({ loaded: true, supported: Boolean(window.Hls && window.Hls.isSupported()) });
+    script.onerror = () => resolve({ loaded: false, supported: false });
+    document.head.appendChild(script);
+  }));
+  check("file://: hls.js lässt sich nachladen", fileHls.loaded && fileHls.supported, JSON.stringify(fileHls));
   await filePage.screenshot({ path: join(SHOTS, "35-von-file.png") });
   const fileRelevant = fileErrors.filter((m) => !/Failed to load resource|net::ERR|ERR_FAILED|MEDIA_ELEMENT|no supported source/i.test(m));
   check("file://: keine Skriptfehler", fileRelevant.length === 0, fileRelevant.slice(0, 3).join(" | "));

@@ -41,12 +41,27 @@ function Shell() {
 
   /**
    * Es darf keinen Zustand geben, in dem nichts fokussiert ist — dann wirkt
-   * die Fernbedienung tot. Die Navigation holt verlorenen Fokus sofort zurück;
-   * diese Prüfung ist das Netz darunter.
+   * die Fernbedienung tot.
+   *
+   * Zurückgeholt wird der Fokus ereignisgesteuert: die Navigation reagiert auf
+   * `focusout`, auf aus dem Dokument genommene Elemente (MutationObserver) und
+   * beim nächsten Tastendruck. Diese Prüfung ist nur das Netz darunter — für
+   * die Rückkehr der App in den Vordergrund sofort, sonst selten. Sie lief
+   * vorher alle 600 ms, auch unsichtbar im Hintergrund; gemessen kostete sie
+   * kaum Rechenzeit, weckte den Fernseher aber hundertmal in der Minute.
    */
   useEffect(() => {
-    const timer = window.setInterval(ensureFocus, 600);
-    return () => window.clearInterval(timer);
+    const check = () => {
+      if (document.visibilityState !== "hidden") ensureFocus();
+    };
+    const timer = window.setInterval(check, 2000);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
   }, []);
 
   /**

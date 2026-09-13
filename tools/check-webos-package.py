@@ -44,9 +44,11 @@ APP = ROOT / "apps/webos"
 CORE = ROOT / "shared/nori-core"
 API = ROOT / "services/nori-api"
 
-# Symbole, die im Paket liegen müssen. Ein Paket ohne sie installiert sich und
-# erscheint auf dem Fernseher als weiße Fläche im Launcher.
-REQUIRED_ASSETS = ["icon-80.png", "icon-130.png", "splash-1920x1080.png"]
+# Dateien, die im Paket liegen müssen. Ohne die Symbole installiert sich das
+# Paket und erscheint auf dem Fernseher als weiße Fläche im Launcher. Ohne
+# `vendor/hls.min.js` startet die App, aber kein HLS-Stream auf einem Gerät
+# ohne natives HLS — hls.js wird erst im Player nachgeladen.
+REQUIRED_ASSETS = ["icon-80.png", "icon-130.png", "splash-1920x1080.png", "vendor/hls.min.js"]
 
 # Namen und Kennungen der Referenz-App. Groß-/Kleinschreibung egal.
 FOREIGN_NAMES = ["fireanime", "fireani", "animecloud", "fireani.me"]

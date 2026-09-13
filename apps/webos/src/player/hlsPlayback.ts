@@ -5,13 +5,17 @@
 // es läuft in der Hardware, während hls.js jedes Segment durch JavaScript
 // schleust und auf älteren Panels sichtbar ruckelt.
 //
+// hls.js selbst kommt erst hier dazu, nachgeladen über `hlsLoader.ts`. Ein
+// Fernseher mit nativem HLS lädt es nie.
+//
 // Der Rest dieser Datei ist Aufräumen. Ein Player, der beim Verlassen nicht
 // vollständig abgebaut wird, lädt im Hintergrund weiter Segmente; nach ein paar
 // Folgen ist der Speicher voll und der Fernseher langsam.
 
-import Hls, { type ErrorData, Events } from "hls.js";
+import type { ErrorData } from "hls.js";
 import type { PlayKind } from "@nori/core";
 import { log, warn } from "../services/log";
+import { hasMediaSource, loadHls } from "./hlsLoader";
 
 export type PlaybackEngine = "native" | "hls.js";
 
@@ -67,65 +71,74 @@ export function attachPlayback(options: AttachOptions): Playback {
     };
   }
 
-  if (!Hls.isSupported()) {
+  // Ohne Media Source Extensions kann hls.js nichts — dann gar nicht erst laden.
+  if (!hasMediaSource()) {
     options.onFatal("Dieser Fernseher kann den Stream nicht abspielen (kein HLS).");
     return { engine: "native", destroy: () => teardownVideo(video) };
   }
 
-  log("hls", "hls.js wird benutzt");
-  options.onEngine("hls.js");
-  const hls = new Hls({
-    // Kleine Puffer: ein Fernseher hat wenig Speicher, und 60 s Vorrat sind
-    // mehr, als eine Folge je braucht.
-    maxBufferLength: 30,
-    maxMaxBufferLength: 60,
-    backBufferLength: 30,
-    enableWorker: true,
-    lowLatencyMode: false,
-    manifestLoadingMaxRetry: 2,
-    levelLoadingMaxRetry: 2,
-    fragLoadingMaxRetry: 3,
-  });
+  let destroyed = false;
+  let release: (() => void) | null = null;
 
-  let networkRetries = 0;
-  const onHlsError = (_event: unknown, data: ErrorData) => {
-    if (!data.fatal) return;
-    switch (data.type) {
-      case Hls.ErrorTypes.NETWORK_ERROR:
-        networkRetries += 1;
-        if (networkRetries > MAX_NETWORK_RETRIES) {
-          warn("hls", "Netzwerkfehler endgültig", data.details);
-          options.onFatal(`Netzwerkfehler beim Laden des Streams (${data.details}).`);
-          return;
-        }
-        // Begrenzter Wiederholungsversuch, keine Endlosschleife.
-        log("hls", "Netzwerkfehler, neuer Versuch", networkRetries, data.details);
-        hls.startLoad();
-        return;
-      case Hls.ErrorTypes.MEDIA_ERROR:
-        log("hls", "Medienfehler, Wiederherstellung", data.details);
-        hls.recoverMediaError();
-        return;
-      default:
-        warn("hls", "Fataler Fehler", data.type, data.details);
-        options.onFatal(`Stream nicht abspielbar (${data.details}).`);
+  log("hls", "hls.js wird nachgeladen");
+  loadHls().then((Hls) => {
+    if (destroyed) return;
+    if (!Hls.isSupported()) {
+      options.onFatal("Dieser Fernseher kann den Stream nicht abspielen (kein HLS).");
+      return;
     }
-  };
 
-  hls.on(Events.ERROR, onHlsError);
-  hls.loadSource(url);
-  hls.attachMedia(video);
-  hls.on(Events.MANIFEST_PARSED, () => {
-    void video.play().catch((cause: unknown) => {
-      log("playback", "Autostart abgelehnt", (cause as Error)?.message);
+    log("hls", "hls.js wird benutzt");
+    options.onEngine("hls.js");
+    const hls = new Hls({
+      // Kleine Puffer: ein Fernseher hat wenig Speicher, und 60 s Vorrat sind
+      // mehr, als eine Folge je braucht.
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      backBufferLength: 30,
+      enableWorker: true,
+      lowLatencyMode: false,
+      manifestLoadingMaxRetry: 2,
+      levelLoadingMaxRetry: 2,
+      fragLoadingMaxRetry: 3,
     });
-  });
 
-  return {
-    engine: "hls.js",
-    destroy() {
-      hls.off(Events.ERROR, onHlsError);
-      video.removeEventListener("loadedmetadata", seekOnce);
+    let networkRetries = 0;
+    const onHlsError = (_event: unknown, data: ErrorData) => {
+      if (!data.fatal) return;
+      switch (data.type) {
+        case Hls.ErrorTypes.NETWORK_ERROR:
+          networkRetries += 1;
+          if (networkRetries > MAX_NETWORK_RETRIES) {
+            warn("hls", "Netzwerkfehler endgültig", data.details);
+            options.onFatal(`Netzwerkfehler beim Laden des Streams (${data.details}).`);
+            return;
+          }
+          // Begrenzter Wiederholungsversuch, keine Endlosschleife.
+          log("hls", "Netzwerkfehler, neuer Versuch", networkRetries, data.details);
+          hls.startLoad();
+          return;
+        case Hls.ErrorTypes.MEDIA_ERROR:
+          log("hls", "Medienfehler, Wiederherstellung", data.details);
+          hls.recoverMediaError();
+          return;
+        default:
+          warn("hls", "Fataler Fehler", data.type, data.details);
+          options.onFatal(`Stream nicht abspielbar (${data.details}).`);
+      }
+    };
+
+    hls.on(Hls.Events.ERROR, onHlsError);
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      void video.play().catch((cause: unknown) => {
+        log("playback", "Autostart abgelehnt", (cause as Error)?.message);
+      });
+    });
+
+    release = () => {
+      hls.off(Hls.Events.ERROR, onHlsError);
       try {
         hls.stopLoad();
         hls.detachMedia();
@@ -133,6 +146,22 @@ export function attachPlayback(options: AttachOptions): Playback {
       } catch (cause) {
         warn("hls", "Abbau meldete einen Fehler", (cause as Error)?.message);
       }
+    };
+  }, (cause: unknown) => {
+    if (destroyed) return;
+    warn("hls", "Nachladen gescheitert", (cause as Error)?.message);
+    options.onFatal("Der Player für diesen Stream ließ sich nicht laden. Bitte erneut versuchen.");
+  });
+
+  return {
+    engine: "hls.js",
+    destroy() {
+      // Auch während hls.js noch lädt: dann wird es danach gar nicht erst
+      // an das Videoelement gehängt.
+      destroyed = true;
+      release?.();
+      release = null;
+      video.removeEventListener("loadedmetadata", seekOnce);
       teardownVideo(video);
     },
   };
