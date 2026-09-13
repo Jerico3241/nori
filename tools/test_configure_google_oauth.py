@@ -18,6 +18,7 @@ zusammengesetzt, damit keine Prüfung des Repositorys sie für echte hält.
 
 from __future__ import annotations
 
+import json
 import os
 import plistlib
 import shutil
@@ -170,6 +171,80 @@ class PackagingTests(unittest.TestCase):
         result = self.run_tool("--ios")
         self.assertEqual(result.returncode, 1)
         self.assertIn("enthält keine Google-Client-ID", result.stdout)
+
+
+    # MARK: - webOS: produktive TV-Konfiguration
+
+    def write_webos_json(self, document: object, name: str = "google-webos-oauth.json") -> None:
+        path = self.home / ".config/nori/secrets" / name
+        path.write_text(document if isinstance(document, str) else json.dumps(document))
+
+    def assert_webos_rejected(self, reason: str) -> None:
+        result = self.run_tool("--webos")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(reason, result.stdout)
+        self.assertNotIn("Google TV OAuth: configured", result.stdout)
+        self.assertFalse((self.root / "apps/webos/.env.local").exists())
+
+    def test_webos_configuration_from_secrets_json(self) -> None:
+        self.write_webos_json({"installed": {"client_id": FAKE_ID, "client_secret": FAKE_SECRET}})
+        result = self.run_tool("--webos")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        for line in ("Google TV OAuth: configured", "Google TV Client ID: valid", "Google TV Client Secret: included"):
+            self.assertIn(line, result.stdout)
+        self.assertNotIn(FAKE_ID, result.stdout)
+        self.assertNotIn(FAKE_SECRET, result.stdout)
+        env = self.root / "apps/webos/.env.local"
+        written = env.read_text()
+        self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_ID={FAKE_ID}", written)
+        self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_SECRET={FAKE_SECRET}", written)
+        self.assertEqual(env.stat().st_mode & 0o777, 0o600)
+
+    def test_webos_missing_json_is_a_hard_error(self) -> None:
+        self.assert_webos_rejected("google-webos-oauth.json fehlt")
+
+    def test_webos_invalid_json_is_rejected(self) -> None:
+        self.write_webos_json("{ kaputt")
+        self.assert_webos_rejected("kein gültiges JSON")
+
+    def test_webos_missing_client_id_is_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_secret": FAKE_SECRET}})
+        self.assert_webos_rejected("client_id fehlt")
+
+    def test_webos_missing_client_secret_is_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_id": FAKE_ID}})
+        self.assert_webos_rejected("client_secret fehlt")
+
+    def test_webos_empty_values_are_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_id": "  ", "client_secret": FAKE_SECRET}})
+        self.assert_webos_rejected("client_id in google-webos-oauth.json ist leer")
+        self.write_webos_json({"installed": {"client_id": FAKE_ID, "client_secret": "   "}})
+        self.assert_webos_rejected("client_secret in google-webos-oauth.json ist leer")
+
+    def test_webos_placeholder_values_are_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_id": "000000000000-beispiel" + SUFFIX, "client_secret": FAKE_SECRET}})
+        self.assert_webos_rejected("Platzhalter")
+        self.write_webos_json({"installed": {"client_id": FAKE_ID, "client_secret": "<aus-der-OAuth-JSON>"}})
+        self.assert_webos_rejected("Platzhalter")
+
+    def test_webos_wrong_client_id_form_is_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_id": "123456789012-abc.example.org", "client_secret": FAKE_SECRET}})
+        self.assert_webos_rejected("google-webos-oauth.json")
+
+    def test_webos_desktop_client_is_rejected(self) -> None:
+        self.write_webos_json({"installed": {"client_id": FAKE_ID, "client_secret": FAKE_SECRET, "redirect_uris": ["http://localhost"]}})
+        self.assert_webos_rejected("kein TV-Client")
+
+    def test_webos_web_client_is_rejected(self) -> None:
+        self.write_webos_json({"web": {"client_id": FAKE_ID, "client_secret": FAKE_SECRET}})
+        self.assert_webos_rejected("erwartet `installed`")
+
+    def test_macos_desktop_client_is_still_accepted(self) -> None:
+        path = self.home / ".config/nori/secrets/google-macos-oauth.json"
+        path.write_text(json.dumps({"installed": {"client_id": FAKE_ID, "client_secret": FAKE_SECRET, "redirect_uris": ["http://localhost"]}}))
+        result = self.run_tool("--macos")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(f"GOOGLE_CLIENT_SECRET = {FAKE_SECRET}", (self.root / "native/Nori-macOS/Config/Google.local.xcconfig").read_text())
 
 
 if __name__ == "__main__":

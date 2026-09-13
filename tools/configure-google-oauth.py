@@ -14,7 +14,8 @@ Quellen:
     iOS    --ios-client-id, sonst ~/.config/nori/secrets/google-ios-client-id
            (eine Zeile; der iOS-Client hat kein Secret und keine JSON)
     macOS  ~/.config/nori/secrets/google-macos-oauth.json   (Typ „Desktop-App")
-    webOS  ~/.config/nori/secrets/google-webos-oauth.json   (Typ „TVs and Limited Input devices")
+    webOS  ~/.config/nori/secrets/google-webos-oauth.json   (Typ „TVs and Limited Input devices",
+           `installed` ohne `redirect_uris`; anderes wird abgewiesen)
 
 Aufrufe:
 
@@ -81,6 +82,9 @@ CLIENT_ID = re.compile(r"^\d+-[a-z0-9]+" + re.escape(SUFFIX) + r"$")
 ANY_CLIENT_ID = re.compile(r"\d{6,}-[a-z0-9]{20,}" + re.escape(SUFFIX))
 
 SECRET_PATTERN = re.compile("GOCSPX" + r"-[A-Za-z0-9_-]{10,}")
+# Werte aus Vorlagen und Beispielen. Eng gefasst: ein echtes Secret ist
+# zufällig und darf nicht zufällig an einem zu kurzen Muster hängenbleiben.
+PLACEHOLDER = re.compile(r"[<>]|beispiel|example|placeholder|platzhalter|changeme|nie einchecken|^0+-", re.IGNORECASE)
 IN_CI = bool(os.environ.get("CI"))
 
 problems: list[str] = []
@@ -103,8 +107,14 @@ def ok(message: str) -> None:
 # MARK: - Lesen
 
 
-def read_json_client(path: Path, label: str) -> tuple[str, str] | None:
-    """`installed.client_id` und `installed.client_secret` — sonst nichts."""
+def read_json_client(path: Path, label: str, tv: bool = False) -> tuple[str, str] | None:
+    """`installed.client_id` und `installed.client_secret` — sonst nichts.
+
+    Mit `tv` zusätzlich die Prüfung auf den Clienttyp „TVs and Limited Input
+    devices". Google legt dessen Download ebenfalls unter `installed` ab, aber
+    ohne `redirect_uris` — ein Desktop-Client hat sie, ein Web-Client steht
+    unter `web`. Beides wäre auf dem Fernseher `invalid_client`.
+    """
     if not path.is_file():
         fail(f"{label}: {path} fehlt")
         return None
@@ -112,17 +122,40 @@ def read_json_client(path: Path, label: str) -> tuple[str, str] | None:
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         print(f"Hinweis {label}: {path} ist für andere Benutzer lesbar (chmod 600 empfohlen)")
     try:
-        installed = json.loads(path.read_text(encoding="utf-8"))["installed"]
-        client_id = str(installed["client_id"]).strip()
-        secret = str(installed["client_secret"]).strip()
-    except (KeyError, TypeError, json.JSONDecodeError) as error:
-        fail(f"{label}: {path.name} hat nicht die erwartete Form ({type(error).__name__})")
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        fail(f"{label}: {path.name} ist kein gültiges JSON ({type(error).__name__})")
+        return None
+    if not isinstance(document, dict) or not isinstance(document.get("installed"), dict):
+        kind = next(iter(document), "?") if isinstance(document, dict) and document else "?"
+        fail(f"{label}: {path.name} hat nicht die erwartete Form (erwartet `installed`, gefunden `{kind}`)")
+        return None
+    installed = document["installed"]
+    if tv and "redirect_uris" in installed:
+        fail(f"{label}: {path.name} ist kein TV-Client (redirect_uris vorhanden — Desktop- oder Web-Client)")
+        return None
+    if "client_id" not in installed:
+        fail(f"{label}: client_id fehlt in {path.name}")
+        return None
+    if "client_secret" not in installed:
+        fail(f"{label}: client_secret fehlt in {path.name}")
+        return None
+    client_id = str(installed["client_id"]).strip()
+    secret = str(installed["client_secret"]).strip()
+    if not client_id:
+        fail(f"{label}: client_id in {path.name} ist leer")
+        return None
+    if PLACEHOLDER.search(client_id):
+        fail(f"{label}: client_id in {path.name} ist ein Platzhalter")
         return None
     if not CLIENT_ID.match(client_id):
         fail(f"{label}: client_id in {path.name} sieht nicht nach einer Google-Client-ID aus")
         return None
     if not secret or re.search(r"\s", secret):
         fail(f"{label}: client_secret in {path.name} ist leer oder enthält Leerraum")
+        return None
+    if PLACEHOLDER.search(secret):
+        fail(f"{label}: client_secret in {path.name} ist ein Platzhalter")
         return None
     return client_id, secret
 
@@ -192,7 +225,7 @@ def write_macos(json_path: Path) -> None:
 
 
 def write_webos(json_path: Path) -> None:
-    client = read_json_client(json_path, "webOS")
+    client = read_json_client(json_path, "webOS", tv=True)
     if not client:
         return
     client_id, secret = client
@@ -202,6 +235,9 @@ def write_webos(json_path: Path) -> None:
                 if not line.startswith(("VITE_NORI_GOOGLE_TV_CLIENT_ID=", "VITE_NORI_GOOGLE_TV_CLIENT_SECRET="))]
     lines = keep + [f"VITE_NORI_GOOGLE_TV_CLIENT_ID={client_id}", f"VITE_NORI_GOOGLE_TV_CLIENT_SECRET={secret}"]
     write_private(WEBOS_LOCAL, "\n".join(lines) + "\n")
+    print("Google TV OAuth: configured")
+    print("Google TV Client ID: valid")
+    print("Google TV Client Secret: included")
     ok(f"webOS: {WEBOS_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)}, Client-Secret vorhanden)")
 
 

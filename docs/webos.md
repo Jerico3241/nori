@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.2.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.2.1**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -222,7 +222,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.2.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.2.1_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -408,6 +408,17 @@ In der CI macht das der Lauf **Build webOS**, ausgelöst durch Pushes auf
 demselben self-hosted Mac wie alle anderen Läufe (siehe
 `docs/self-hosted-runner.md`) — ist der aus, wartet der Job in der
 Warteschlange, statt zu scheitern. Xcode braucht er nicht, nur Node.
+
+Das Artefakt `Nori-webOS` ist seit 2.2.1 das **installierbare Paket mit
+Google-Abgleich**. Der Fernbedienungslauf läuft gegen einen Build mit leeren
+TV-Variablen; danach schreibt `tools/configure-google-oauth.py --webos` die
+`.env.local` aus `~/.config/nori/secrets/google-webos-oauth.json` auf dem
+Runner, der produktive Build wird gepackt und mit
+`check-webos-package.py --production --reference-dist …` im fertigen `.ipk`
+geprüft. Einzelheiten: `docs/google-drive-sync.md`, Abschnitt zur
+Build-Konfiguration für webOS. Lokal ändert sich nichts — ohne `.env.local`
+entsteht ein Paket ohne Google-Abgleich, und die Prüfung ohne `--production`
+nimmt es an.
 
 Die Oberfläche lässt sich mit einer nachgebauten Fernbedienung durchspielen:
 

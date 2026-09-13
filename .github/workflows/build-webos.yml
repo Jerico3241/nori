@@ -18,6 +18,9 @@ on:
       - 'shared/nori-core/**'
       - 'services/nori-api/**'
       - 'tools/check-webos-package.py'
+      - 'tools/test_check_webos_package.py'
+      - 'tools/configure-google-oauth.py'
+      - 'tools/test_configure_google_oauth.py'
       - '.github/workflows/build-webos.yml'
   workflow_dispatch:
 
@@ -62,15 +65,30 @@ jobs:
           npm run build
           npm test
 
-      - name: webOS-App bauen
-        working-directory: apps/webos
+      # Die Werkzeuge, die gleich Zugangsdaten schreiben und das Paket prüfen,
+      # werden vorher selbst geprüft — mit erfundenen Werten.
+      - name: Prüfwerkzeuge für Google-Zugangsdaten testen
         run: |
+          python3 tools/test_check_webos_package.py
+          python3 tools/test_configure_google_oauth.py
+
+      # Zwei Builds aus demselben Stand.
+      #
+      # Der Fernbedienungslauf prüft ausdrücklich „kein Google-Zugang im
+      # Build" und läuft deshalb gegen einen Build mit **leeren**
+      # TV-Variablen — so, wie ihn jeder Entwickler ohne Zugangsdaten bekommt.
+      # Das ausgelieferte Paket entsteht danach mit den produktiven Werten, und
+      # `check-webos-package.py --reference-dist` belegt, dass es sich von
+      # diesem getesteten Build nur an genau den beiden Werten unterscheidet.
+      - name: webOS-App für den Fernbedienungslauf bauen (ohne Google-Zugang)
+        working-directory: apps/webos
+        env:
+          VITE_NORI_GOOGLE_TV_CLIENT_ID: ""
+          VITE_NORI_GOOGLE_TV_CLIENT_SECRET: ""
+        run: |
+          rm -f .env.local
           npm install --no-audit --no-fund
           npm run build
-
-      - name: Paket schnüren
-        working-directory: apps/webos
-        run: npm run webos:package
 
       # Der Fernbedienungslauf.
       #
@@ -108,10 +126,41 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Prüft Quelltext und fertiges .ipk auf fremde Namen und Adressen und
-      # validiert appinfo.json.
+      - name: Getesteten Build zum Vergleich ablegen
+        run: |
+          rm -rf "$RUNNER_TEMP/webos-dist-tested"
+          cp -R apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
+
+      # Das installierbare Paket braucht den produktiven TV-Client. Er liegt auf
+      # dem Runner außerhalb des Repositorys unter
+      # ~/.config/nori/secrets/google-webos-oauth.json, neben den Zugangsdaten
+      # der anderen Plattformen. Dasselbe Werkzeug wie am Entwicklerrechner
+      # schreibt daraus die nicht eingecheckte apps/webos/.env.local (0600) und
+      # meldet nur „configured" — nie einen Wert. Fehlt die Datei oder ist sie
+      # ungültig, bricht der Lauf hier ab, bevor ein Paket entsteht.
+      - name: Google-TV-OAuth bereitstellen
+        run: python3 tools/configure-google-oauth.py --webos
+
+      - name: webOS-App produktiv bauen
+        working-directory: apps/webos
+        run: npm run build
+
+      - name: Paket schnüren
+        working-directory: apps/webos
+        run: |
+          rm -f ./*.ipk
+          npm run webos:package
+
+      # Das fertige .ipk selbst, entpackt: Version, Quelltext, genau die
+      # produktive TV-Client-ID und das Secret, keine iOS-/macOS- oder
+      # Test-Zugangsdaten, keine Tokens, keine .env, keine OAuth-JSON — und
+      # derselbe Stand wie der getestete Build.
       - name: Paket prüfen
-        run: python3 tools/check-webos-package.py
+        run: |
+          VERSION="$(node -p "require('./apps/webos/appinfo.json').version")"
+          python3 tools/check-webos-package.py --production \
+            --ipk "apps/webos/tv.nori.app_${VERSION}_all.ipk" \
+            --reference-dist "$RUNNER_TEMP/webos-dist-tested"
 
       - name: Paket als Artefakt ablegen
         uses: actions/upload-artifact@v4
@@ -120,3 +169,13 @@ jobs:
           path: apps/webos/*.ipk
           if-no-files-found: error
           retention-days: 30
+
+      # Zugangsdaten verlassen den Runner nur im hochgeladenen Paket. Die
+      # .env.local, der produktive Build und das Paket bleiben nicht im
+      # Arbeitsverzeichnis liegen.
+      - name: Zugangsdaten aus dem Checkout entfernen
+        if: always()
+        run: |
+          rm -f apps/webos/.env.local
+          rm -rf apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
+          rm -f apps/webos/*.ipk

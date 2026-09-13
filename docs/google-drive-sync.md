@@ -260,6 +260,30 @@ gebaut, die Bibliothek läuft weiter. Der Diagnosebereich hängt hier am
 Entwicklerschalter *Diagnoseprotokoll* und zeigt Client-ID, Herkunft, **ob** ein
 Secret vorliegt (nie welches) und den Bereich.
 
+`--webos` nimmt nur den Download eines Clients vom Typ *Fernseher und Geräte mit
+eingeschränkter Eingabe* an: `installed` **ohne** `redirect_uris`. Ein
+Desktop-Client (mit `redirect_uris`), ein Web-Client (`web`), leere Werte,
+Platzhalter oder eine Client-ID in falscher Form brechen mit Exit-Code 1 ab.
+Ausgegeben wird `Google TV OAuth: configured`, nie ein Wert.
+
+**Was CI baut.** Seit webOS 2.2.1 ist das Paket aus `Build webOS` das
+installierbare mit Google-Abgleich. Der Lauf baut zweimal aus demselben Stand:
+
+1. mit **leeren** TV-Variablen — dagegen läuft der Fernbedienungslauf, der
+   ausdrücklich „nicht verfügbar" prüft;
+2. nach `python3 tools/configure-google-oauth.py --webos` aus
+   `~/.config/nori/secrets/google-webos-oauth.json` auf dem Runner der
+   produktive Build, der gepackt wird.
+
+`python3 tools/check-webos-package.py --production --reference-dist …`
+entpackt danach das fertige `.ipk`: genau die TV-Client-ID und das Secret,
+keine iOS-, macOS- oder älteren Test-Zugangsdaten, keine Tokens, keine `.env*`,
+keine OAuth-JSON — und bis auf die beiden Werte derselbe Stand wie der
+getestete Build. Erst dann wird hochgeladen. Am Ende entfernt der Lauf
+`.env.local`, den produktiven Build und das Paket aus dem Arbeitsverzeichnis.
+Lokal bleibt ein Build ohne `.env.local` wie bisher möglich; `check-webos-package.py`
+ohne `--production` akzeptiert ihn.
+
 ### Was von früher übrig ist
 
 Wer bereits verbunden ist, hat seine Tokens zu einer **von Hand eingetragenen**

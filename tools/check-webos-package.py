@@ -25,7 +25,20 @@ Vier Fragen, die sich nicht durch Hinsehen beantworten lassen:
    Repository. Jeder **zweite** einkompilierte Schlüssel fällt weiterhin auf,
    auch einer in derselben Datei.
 
+6. **Trägt das Paket die richtigen Google-Zugangsdaten — und nur die?** Nach
+   jedem Paket gilt: keine `.env*`, keine OAuth-JSON, keine Tokens,
+   Gerätecodes oder Cookies. Mit `--production` zusätzlich: genau die
+   Client-ID und das Secret aus `~/.config/nori/secrets/google-webos-oauth.json`
+   liegen im Paket, und keine anderen — weder iOS noch macOS noch ältere
+   Test-Clients aus demselben Ordner. Geprüft wird das fertige `.ipk` selbst,
+   entpackt, jede Datei als Bytes. Werte werden nie ausgegeben.
+
     python3 tools/check-webos-package.py
+    python3 tools/check-webos-package.py --production [--ipk <paket>] [--reference-dist <ordner>]
+
+`--reference-dist` vergleicht das Paket mit einem ohne Zugangsdaten gebauten
+`dist/` — dem, gegen den der Fernbedienungslauf lief. Jede Datei muss gleich
+sein; Unterschiede sind nur an genau den beiden Zugangsdaten erlaubt.
 
 Exit-Code 1 bei ERROR, 0 sonst. Ergänzt `tools/check-apple-sources.py`, das
 dieselbe Aufgabe für die beiden Apple-Targets übernimmt.
@@ -33,6 +46,8 @@ dieselbe Aufgabe für die beiden Apple-Targets übernimmt.
 
 from __future__ import annotations
 
+import argparse
+import io
 import json
 import re
 import sys
@@ -82,8 +97,29 @@ REQUIRED_APPINFO = {"id", "version", "vendor", "type", "main", "title", "icon"}
 SOURCE_GLOBS = ["**/*.ts", "**/*.tsx", "**/*.css", "**/*.html", "**/*.json", "**/*.mjs"]
 SKIP_PARTS = {"node_modules", "dist", ".git", "package-lock.json"}
 
+# Google-Zugangsdaten. Die Muster sind zusammengesetzt, damit dieses Werkzeug
+# selbst nicht wie ein eingecheckter Wert aussieht.
+SECRETS_DIR = Path.home() / ".config/nori/secrets"
+WEBOS_JSON = SECRETS_DIR / "google-webos-oauth.json"
+CLIENT_ID_SUFFIX = ".apps.googleusercontent.com"
+CLIENT_ID_EXACT = re.compile(r"^\d+-[a-z0-9]+" + re.escape(CLIENT_ID_SUFFIX) + r"$")
+CLIENT_ID_ANY = re.compile((r"\d{6,}-[a-z0-9]{20,}" + re.escape(CLIENT_ID_SUFFIX)).encode())
+SECRET_ANY = re.compile(("GOCSPX" + r"-[A-Za-z0-9_-]{10,}").encode())
+PLACEHOLDER = re.compile(r"[<>]|beispiel|example|placeholder|platzhalter|changeme|nie einchecken|^0+-", re.IGNORECASE)
+TOKEN_PATTERNS = [
+    (re.compile(("ya" + r"29\.[A-Za-z0-9_-]{20,}").encode()), "Access-Token"),
+    (re.compile(("1/" + r"/0[A-Za-z0-9_-]{20,}").encode()), "Refresh-Token"),
+    (re.compile(rb'"(?:access_token|refresh_token|id_token|device_code|user_code)"\s*:\s*"[^"\s]{8,}"'), "Token oder Gerätecode als Wert"),
+    (re.compile(rb"Set-Cookie:|cf_clearance=|__Secure-[0-9A-Za-z]*PSID="), "Cookie"),
+]
+FORBIDDEN_FILES = re.compile(
+    r"(^|/)(\.env(\.[^/]*)?|client_secret[^/]*\.json|[^/]*oauth[^/]*\.json|google-services\.json|GoogleService-Info\.plist)$",
+    re.IGNORECASE,
+)
+
 problems: list[str] = []
 warnings: list[str] = []
+notes: list[str] = []
 
 
 def sources() -> list[Path]:
@@ -355,14 +391,282 @@ def check_css_compat() -> None:
             problems.append(f"{path.relative_to(ROOT)}: importiert Enact — die Navigation liegt in src/navigation/engine.ts")
 
 
-def check_package() -> None:
+def package_rel(package: Path) -> str:
+    try:
+        return str(package.resolve().relative_to(ROOT))
+    except ValueError:
+        return package.name
+
+
+def read_ipk(package: Path) -> tuple[dict[str, bytes], list[tuple[str, bytes]]] | str:
+    """ar-Archiv lesen: Teile des Pakets und alle Dateien aus Daten und Steuerung."""
+    raw = package.read_bytes()
+    if not raw.startswith(b"!<arch>\n"):
+        return "kein ar-Archiv"
+    members: dict[str, bytes] = {}
+    offset = 8
+    while offset + 60 <= len(raw):
+        header = raw[offset:offset + 60]
+        offset += 60
+        name = header[0:16].decode("ascii", "replace").strip().rstrip("/")
+        try:
+            size = int(header[48:58].decode("ascii").strip())
+        except ValueError:
+            return f"unlesbare Größenangabe für {name}"
+        members[name] = raw[offset:offset + size]
+        offset += size + (size % 2)
+    files: list[tuple[str, bytes]] = []
+    for part in ("control.tar.gz", "data.tar.gz"):
+        if part not in members:
+            continue
+        try:
+            with tarfile.open(fileobj=io.BytesIO(members[part]), mode="r:gz") as archive:
+                for member in archive.getmembers():
+                    if member.isfile():
+                        handle = archive.extractfile(member)
+                        files.append((member.name, handle.read() if handle else b""))
+        except (tarfile.TarError, OSError) as error:
+            return f"{part} nicht lesbar ({type(error).__name__})"
+    return members, files
+
+
+def read_tv_client(path: Path) -> tuple[str, str] | str:
+    """Client-ID und Secret des TV-Clients — oder der Grund, warum nicht."""
+    if not path.is_file():
+        return f"{path} fehlt"
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return f"{path.name} ist kein gültiges JSON"
+    installed = document.get("installed") if isinstance(document, dict) else None
+    if not isinstance(installed, dict):
+        return f"{path.name}: erwartet `installed` eines TV-Clients"
+    if "redirect_uris" in installed:
+        return f"{path.name} ist kein TV-Client (redirect_uris vorhanden)"
+    client_id = str(installed.get("client_id", "")).strip()
+    secret = str(installed.get("client_secret", "")).strip()
+    if not client_id:
+        return f"client_id fehlt oder ist leer in {path.name}"
+    if not secret:
+        return f"client_secret fehlt oder ist leer in {path.name}"
+    if PLACEHOLDER.search(client_id) or PLACEHOLDER.search(secret):
+        return f"{path.name} enthält Platzhalter statt Zugangsdaten"
+    if not CLIENT_ID_EXACT.match(client_id):
+        return f"client_id in {path.name} ist keine Google-Client-ID"
+    if re.search(r"\s", secret):
+        return f"client_secret in {path.name} enthält Leerraum"
+    return client_id, secret
+
+
+def foreign_credentials(secrets_dir: Path, production_json: Path) -> dict[str, str]:
+    """Alle bekannten Zugangsdaten, die **nicht** ins webOS-Paket gehören.
+
+    Jede OAuth-JSON im Secrets-Ordner außer der produktiven — also macOS und
+    ältere Test-Clients —, die iOS-Client-ID und die lokalen Apple-
+    Konfigurationen. Beschriftet nach Herkunft, nie nach Wert.
+    """
+    found: dict[str, str] = {}
+    production = production_json.resolve() if production_json.exists() else None
+    if secrets_dir.is_dir():
+        for path in sorted(secrets_dir.glob("*.json")):
+            if production and path.resolve() == production:
+                continue
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if not isinstance(document, dict):
+                continue
+            for kind, body in document.items():
+                if not isinstance(body, dict):
+                    continue
+                for key in ("client_id", "client_secret"):
+                    value = str(body.get(key, "")).strip()
+                    if len(value) >= 8:
+                        found[f"{path.name} ({kind}.{key})"] = value
+        ios = secrets_dir / "google-ios-client-id"
+        if ios.is_file():
+            value = ios.read_text(encoding="utf-8").strip()
+            if value:
+                found["iOS-Client-ID"] = value
+    for platform in ("Nori-iOS", "Nori-macOS"):
+        xcconfig = ROOT / "native" / platform / "Config/Google.local.xcconfig"
+        if not xcconfig.is_file():
+            continue
+        for line in xcconfig.read_text(encoding="utf-8").splitlines():
+            name, sep, value = line.strip().partition("=")
+            if sep and name.strip() in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET") and len(value.strip()) >= 8:
+                found[f"{platform} {name.strip()}"] = value.strip()
+    return found
+
+
+def check_package_credentials(
+    package: Path,
+    production: bool,
+    secrets_dir: Path = SECRETS_DIR,
+    webos_json: Path = WEBOS_JSON,
+    reference_dist: Path | None = None,
+) -> tuple[list[str], list[str]]:
+    """Google-Zugangsdaten im fertigen Paket prüfen.
+
+    Gibt Fehler und Erfolgsmeldungen zurück, ohne je einen Wert auszugeben.
+    Ohne `production` nur das, was in keinem Paket stehen darf.
+    """
+    errors: list[str] = []
+    passed: list[str] = []
+    rel = package_rel(package)
+    if not package.is_file():
+        return [f"{rel}: Paket fehlt"], passed
+    read = read_ipk(package)
+    if isinstance(read, str):
+        return [f"{rel}: {read}"], passed
+    _, files = read
+
+    for name, _ in files:
+        if FORBIDDEN_FILES.search(name):
+            errors.append(f"{rel}: Datei mit Zugangsdaten im Paket — {name}")
+    for name, data in files:
+        for pattern, what in TOKEN_PATTERNS:
+            if pattern.search(data):
+                errors.append(f"{rel}: {what} in {name}")
+
+    if not production:
+        return errors, passed
+
+    client = read_tv_client(webos_json)
+    if isinstance(client, str):
+        errors.append(f"Google TV OAuth: {client}")
+        return errors, passed
+    client_id, secret = client
+
+    blob_ids: set[bytes] = set()
+    blob_secrets: set[bytes] = set()
+    for _, data in files:
+        blob_ids.update(CLIENT_ID_ANY.findall(data))
+        blob_secrets.update(SECRET_ANY.findall(data))
+    has_id = any(client_id.encode() in data for _, data in files)
+    has_secret = any(secret.encode() in data for _, data in files)
+    if has_id:
+        passed.append("Google TV Client ID: valid")
+    else:
+        errors.append(f"{rel}: Google-TV-Client-ID fehlt im Paket — Build ohne produktive Konfiguration?")
+    if has_secret:
+        passed.append("Google TV Client Secret: included")
+    else:
+        errors.append(f"{rel}: Google-TV-Client-Secret fehlt im Paket")
+
+    foreign_hits = []
+    for label, value in foreign_credentials(secrets_dir, webos_json).items():
+        if value in (client_id, secret):
+            continue
+        if any(value.encode() in data for _, data in files):
+            foreign_hits.append(label)
+    for label in foreign_hits:
+        errors.append(f"{rel}: fremde Zugangsdaten im Paket — {label}")
+    unknown_ids = blob_ids - {client_id.encode()}
+    if unknown_ids:
+        errors.append(f"{rel}: {len(unknown_ids)} weitere Client-ID(s) im Paket")
+    unknown_secrets = blob_secrets - {secret.encode()}
+    if unknown_secrets:
+        errors.append(f"{rel}: {len(unknown_secrets)} weitere(s) Client-Secret(s) im Paket")
+    if not foreign_hits and not unknown_ids and not unknown_secrets:
+        passed.append("No foreign OAuth credentials found")
+
+    if reference_dist is not None:
+        errors.extend(compare_with_reference(rel, files, reference_dist, client_id, secret))
+        if not any("Referenz" in error for error in errors):
+            passed.append("Paket entspricht dem getesteten Build bis auf die Google-TV-Zugangsdaten")
+
+    if has_id and has_secret and not errors:
+        passed.insert(0, "Google TV OAuth: configured")
+    return errors, passed
+
+
+HASHED_ASSET = re.compile(r"^(?P<stem>.+)-[A-Za-z0-9_-]{8}(?P<ext>\.[A-Za-z0-9]+)$")
+
+
+def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: Path, client_id: str, secret: str) -> list[str]:
+    """Ist das Paket derselbe Stand wie der ohne Zugangsdaten getestete Build?
+
+    Der Fernbedienungslauf prüft ausdrücklich den Zustand „kein Google-Zugang
+    im Build" und läuft deshalb gegen einen Build mit leeren TV-Variablen. Hier
+    wird belegt, dass sich das ausgelieferte Paket davon nur an den beiden
+    Zugangsdaten unterscheidet — und an keiner anderen Stelle.
+
+    Vite hängt an Bündel einen Inhalts-Hash (`index-<hash>.js`). Andere
+    Zugangsdaten ergeben einen anderen Hash; verglichen wird deshalb nach dem
+    Namen ohne Hash, und Verweise auf gehashte Dateien werden vorher auf diesen
+    Namen zurückgeführt.
+    """
+    errors: list[str] = []
+    if not reference.is_dir():
+        return [f"{rel}: Referenz-Build {reference} fehlt"]
+
+    package_files: dict[str, bytes] = {}
+    marker = "/usr/palm/applications/"
+    for name, data in files:
+        normalized = "/" + name.lstrip("./")
+        if marker in normalized:
+            inner = normalized.split(marker, 1)[1].split("/", 1)
+            if len(inner) == 2:
+                package_files[inner[1]] = data
+    reference_files = {
+        path.relative_to(reference).as_posix(): path.read_bytes()
+        for path in reference.rglob("*") if path.is_file()
+    }
+
+    def unhashed(name: str) -> str:
+        head, _, base = name.rpartition("/")
+        match = HASHED_ASSET.match(base)
+        plain = f"{match.group('stem')}{match.group('ext')}" if match else base
+        return f"{head}/{plain}" if head else plain
+
+    def by_plain_name(entries: dict[str, bytes]) -> tuple[dict[str, bytes], dict[bytes, bytes]]:
+        plain: dict[str, bytes] = {}
+        renames: dict[bytes, bytes] = {}
+        for name, data in entries.items():
+            key = unhashed(name)
+            if key in plain:
+                errors.append(f"{rel}: Referenz-Vergleich — zwei Dateien ergeben {key}")
+            plain[key] = data
+            if key != name:
+                renames[name.rpartition("/")[2].encode()] = key.rpartition("/")[2].encode()
+        return plain, renames
+
+    mine, my_renames = by_plain_name(package_files)
+    theirs, their_renames = by_plain_name(reference_files)
+    only_package = sorted(set(mine) - set(theirs))
+    only_reference = sorted(set(theirs) - set(mine))
+    if only_package:
+        errors.append(f"{rel}: Referenz-Vergleich — nur im Paket: {', '.join(only_package[:5])}")
+    if only_reference:
+        errors.append(f"{rel}: Referenz-Vergleich — fehlt im Paket: {', '.join(only_reference[:5])}")
+
+    quoted_id = json.dumps(client_id).encode()
+    quoted_secret = json.dumps(secret).encode()
+    for key in sorted(set(mine) & set(theirs)):
+        ours, reference_bytes = mine[key], theirs[key]
+        if ours == reference_bytes:
+            continue
+        ours = ours.replace(quoted_id, b'""').replace(quoted_secret, b'""')
+        for old, new in my_renames.items():
+            ours = ours.replace(old, new)
+        for old, new in their_renames.items():
+            reference_bytes = reference_bytes.replace(old, new)
+        if ours != reference_bytes:
+            errors.append(f"{rel}: Referenz-Vergleich — {key} unterscheidet sich über die Zugangsdaten hinaus")
+    return errors
+
+
+def check_package(package: Path | None = None) -> None:
     """Das fertige Paket noch einmal von außen ansehen."""
-    packages = sorted(APP.glob("*.ipk"))
-    if not packages:
-        warnings.append("Kein .ipk vorhanden — `npm run build && npm run webos:package` prüft mehr.")
-        return
-    package = packages[-1]
-    rel = package.relative_to(ROOT)
+    if package is None:
+        packages = sorted(APP.glob("*.ipk"))
+        if not packages:
+            warnings.append("Kein .ipk vorhanden — `npm run build && npm run webos:package` prüft mehr.")
+            return
+        package = packages[-1]
+    rel = package_rel(package)
 
     raw = package.read_bytes()
     if not raw.startswith(b"!<arch>\n"):
@@ -444,6 +748,18 @@ def check_package() -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Statische Prüfung der webOS-App und des fertigen Pakets.")
+    parser.add_argument("--production", action="store_true",
+                        help="produktive Google-TV-Zugangsdaten im Paket erzwingen")
+    parser.add_argument("--ipk", type=Path, help="dieses Paket prüfen statt des jüngsten in apps/webos/")
+    parser.add_argument("--secrets-dir", type=Path, default=SECRETS_DIR)
+    parser.add_argument("--webos-json", type=Path, default=None,
+                        help="Standard: <secrets-dir>/google-webos-oauth.json")
+    parser.add_argument("--reference-dist", type=Path,
+                        help="ohne Zugangsdaten gebauter dist/-Ordner zum Vergleich")
+    args = parser.parse_args()
+    webos_json = args.webos_json or (args.secrets_dir / "google-webos-oauth.json")
+
     check_foreign_names()
     check_foreign_hosts()
     check_appinfo()
@@ -452,12 +768,29 @@ def main() -> int:
     check_versions()
     check_relative_paths()
     check_css_compat()
-    check_package()
+    check_package(args.ipk)
+
+    package = args.ipk
+    if package is None:
+        found = sorted(APP.glob("*.ipk"))
+        package = found[-1] if found else None
+    if package is None:
+        if args.production:
+            problems.append("--production: kein .ipk zum Prüfen")
+    else:
+        errors, passed = check_package_credentials(
+            package, args.production, args.secrets_dir.expanduser(), webos_json.expanduser(), args.reference_dist,
+        )
+        problems.extend(errors)
+        notes.extend(passed)
 
     for warning in warnings:
         print(f"WARN  {warning}")
     for problem in problems:
         print(f"ERROR {problem}")
+    if not problems:
+        for note in notes:
+            print(note)
 
     if problems:
         print(f"\n{len(problems)} Fehler.")

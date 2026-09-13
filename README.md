@@ -20,7 +20,7 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | iOS / iPadOS | **1.25.2** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.20.1** | Native SwiftUI-App mit eigener Mac-Oberfläche |
 | Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **2.2.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+| LG webOS | **2.2.1** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
