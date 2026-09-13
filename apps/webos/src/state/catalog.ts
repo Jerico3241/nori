@@ -32,9 +32,29 @@ import { tmdb } from "../services/tmdb";
 import { useData } from "./data";
 import { useLibrary } from "./library";
 
+/** Die stabile Kennung eines Katalogeintrags — dieselbe wie Key und Fokusschlüssel der Karte. */
+export function catalogItemId(item: CatalogItem): string {
+  return `${item.provider ?? "aniworld"}|${item.slug}`;
+}
+
+export interface DedupedCatalog {
+  items: CatalogItem[];
+  /**
+   * Kennung → Kennung der Vertreterin ihrer Gruppe. Dieselbe Serie aus zwei
+   * Quellen landet in derselben Gruppe; welche Fassung sie vertritt, kann sich
+   * mit einem TMDB-Treffer ändern.
+   */
+  representative: Map<string, string>;
+}
+
 export function dedupeCatalog(items: CatalogItem[]): CatalogItem[] {
+  return dedupeCatalogWithGroups(items).items;
+}
+
+export function dedupeCatalogWithGroups(items: CatalogItem[]): DedupedCatalog {
   const out: CatalogItem[] = [];
   const byKey = new Map<string, number>();
+  const slotOf = new Map<string, number>();
   for (const item of items) {
     const provider = item.provider ?? "aniworld";
     const art = tmdb.art(item.slug, provider);
@@ -46,6 +66,7 @@ export function dedupeCatalog(items: CatalogItem[]): CatalogItem[] {
     const existing = keys.map((key) => byKey.get(key)).find((index) => index !== undefined);
     if (existing === undefined) {
       keys.forEach((key) => byKey.set(key, out.length));
+      slotOf.set(catalogItemId(item), out.length);
       out.push(item);
       continue;
     }
@@ -55,8 +76,11 @@ export function dedupeCatalog(items: CatalogItem[]): CatalogItem[] {
       out[existing] = item;
     }
     keys.forEach((key) => byKey.set(key, existing));
+    slotOf.set(catalogItemId(item), existing);
   }
-  return out;
+  const representative = new Map<string, string>();
+  for (const [id, slot] of slotOf) representative.set(id, catalogItemId(out[slot]));
+  return { items: out, representative };
 }
 
 export function useCatalogView() {
@@ -95,10 +119,13 @@ export function useCatalogView() {
     };
   }, [tmdbRoute.effective]);
 
-  const items = useMemo(() => {
+  const deduped = useMemo<DedupedCatalog>(() => {
     void generation;
-    return library.state.scope === "all" ? dedupeCatalog(catalog.items) : catalog.items;
+    return library.state.scope === "all"
+      ? dedupeCatalogWithGroups(catalog.items)
+      : { items: catalog.items, representative: new Map<string, string>() };
   }, [catalog.items, library.state.scope, generation]);
+  const items = deduped.items;
 
   const favorites = library.state.favorites;
   const candidates = useMemo<HomeCandidate[]>(() => {
@@ -117,5 +144,5 @@ export function useCatalogView() {
     });
   }, [items, favorites, generation]);
 
-  return { catalog, items, candidates };
+  return { catalog, items, candidates, representative: deduped.representative };
 }

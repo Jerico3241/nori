@@ -13,6 +13,20 @@
 // Abfrage je Titel wäre bei zehntausend Titeln keine Option. Ein Filter, der
 // nichts filtert, wäre schlechter als keiner.
 //
+// ## Reihenfolge je Ansicht
+//
+// TMDB-Angaben treffen asynchron ein, und genau sie bestimmen „Beliebtheit"
+// und „Bewertung". Früher sortierte jeder gebündelte Treffer das sichtbare
+// Raster neu: Karten wanderten unter der Fernbedienung weg, die fokussierte
+// wechselte die Stelle oder wurde durch eine andere ersetzt. Jetzt bekommt eine
+// Ansicht (Bereich, Schnellfilter, Sortierung, Jahrzehnt, Suche) beim Aufbau
+// eine geordnete Liste stabiler Kennungen (`provider|slug`,
+// `stableCatalogOrder` im Kern). TMDB aktualisiert danach nur noch Cover,
+// Untertitel und Bewertung dahinter. Neu sortiert wird bei einer anderen
+// Ansicht oder beim erneuten Öffnen über die Seitenleiste — nicht beim
+// Zurückkehren von einer Detailseite, sonst träfe der gemerkte Fokus eine
+// andere Stelle.
+//
 // ## Große Kataloge
 //
 // Gezeichnet werden zuerst dreißig Karten; erreicht der Fokus die letzten zwei
@@ -21,11 +35,11 @@
 // noch Titel liegen.
 
 import {
-  LIBRARY_SCOPES, SCOPES, isNew, normalizeTitle,
+  LIBRARY_SCOPES, SCOPES, isNew, normalizeTitle, stableCatalogOrder,
   type HomeCandidate, type LibraryScope,
 } from "@nori/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigationType, useSearchParams } from "react-router-dom";
 
 import { ChipRow } from "../components/Chips";
 import { Icon } from "../components/Icon";
@@ -40,7 +54,8 @@ import { focusElement } from "../navigation/engine";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
 import { tmdb } from "../services/tmdb";
-import { useCatalogView } from "../state/catalog";
+import { catalogItemId, useCatalogView } from "../state/catalog";
+import { catalogOrderSession } from "../state/catalogOrder";
 import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
 import { fuzzyScore, searchScore } from "../state/search";
@@ -98,7 +113,11 @@ export function CatalogPage() {
   const [params] = useSearchParams();
   const { reloadCatalog } = useData();
   const library = useLibrary();
-  const { catalog, items, candidates } = useCatalogView();
+  const { catalog, items, candidates, representative } = useCatalogView();
+  // Beim erneuten Öffnen (Seitenleiste) frisch, beim Zurückkehren dieselbe
+  // Ansicht. Einmal je Einhängen bestimmt.
+  const navigationType = useNavigationType();
+  const [orderSession] = useState(() => catalogOrderSession(ROUTE, navigationType !== "POP"));
 
   const [query, setQuery] = usePersistentState("catalog.query", "");
   const [chip, setChip] = usePersistentState("catalog.chip", "all");
@@ -164,6 +183,26 @@ export function CatalogPage() {
     return [...list].sort(order);
   }, [candidates, chip, decade, debounced, sort]);
 
+  // Was gezeigt wird: die Reihenfolge der Ansicht, dahinter die frischesten
+  // Daten. `results` ist nur noch der Vorschlag für einen neuen Aufbau.
+  const view = JSON.stringify([library.state.scope, chip, sort, decade, debounced.trim()]);
+  const shown = useMemo(() => {
+    const idOf = (candidate: HomeCandidate) => `${candidate.title.provider}|${candidate.title.slug}`;
+    const byId = new Map<string, HomeCandidate>();
+    for (const candidate of candidates) {
+      const id = idOf(candidate);
+      byId.set(id, candidate);
+      orderSession.known.set(id, candidate);
+    }
+    const available = new Set(catalog.items.map(catalogItemId));
+    orderSession.order = stableCatalogOrder(
+      orderSession.order, view, results.map(idOf), available, (id) => representative.get(id) ?? id,
+    );
+    return orderSession.order.ids
+      .map((id) => byId.get(id) ?? orderSession.known.get(id))
+      .filter((candidate): candidate is HomeCandidate => Boolean(candidate));
+  }, [candidates, catalog.items, orderSession, representative, results, view]);
+
   // Ein anderer Filter fängt oben an. Beim ersten Aufbau nicht: dort steht die
   // Anzahl, die beim Verlassen gezeichnet war, damit der Fokus seine Karte
   // wiederfindet.
@@ -187,7 +226,7 @@ export function CatalogPage() {
     return restoreFocusSoon(ROUTE, ["grid", "chips", "top"], { initial: ".catalog-grid .spottable" });
   }, [wantsSearch]);
 
-  const visible = results.slice(0, Math.max(PAGE, limit));
+  const visible = shown.slice(0, Math.max(PAGE, limit));
   const activeFilters = (library.state.scope !== "all" ? 1 : 0) + (decade !== "all" ? 1 : 0) + (sort !== "popular" ? 1 : 0);
   const needsTmdb = chip === "new" || chip === "popular" || chip === "top" || decade !== "all";
   const headline = debounced.trim().length >= 2
@@ -263,7 +302,7 @@ export function CatalogPage() {
 
       <div className="section-head">
         <h2>{headline}</h2>
-        <span>{results.length} {results.length === 1 ? "Ergebnis" : "Ergebnisse"} · {sortLabel}</span>
+        <span>{shown.length} {shown.length === 1 ? "Ergebnis" : "Ergebnisse"} · {sortLabel}</span>
       </div>
 
       {catalog.status === "error" && items.length === 0 ? (
@@ -304,7 +343,7 @@ export function CatalogPage() {
               focusKey={`grid-${candidate.title.provider}-${candidate.title.slug}`}
               eager={index < 10}
               onFocus={() => {
-                if (index >= visible.length - 10 && visible.length < results.length) {
+                if (index >= visible.length - 10 && visible.length < shown.length) {
                   setLimit((current) => Math.max(current, visible.length) + PAGE);
                 }
               }}
