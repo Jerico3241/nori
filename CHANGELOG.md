@@ -144,6 +144,14 @@ Keine neuen Funktionen, keine Änderung an Google Drive, OAuth, Merge-Regeln,
   9 ms Skriptzeit in 3 s), Pause legt den Stand sofort ab, hls.js lässt sich
   von `file://` nachladen. Lokal ohne Google-Zugangsdaten im Build gebaut, wie
   in der CI.
+- **Gegenbeweis:** derselbe Test gegen das gebaute Paket von 2.1.1: 304/310.
+  Es schlagen fehl „Startbündel unter 600 KB" (978 KB), „Wiedergabe ohne
+  Dauerrechnen" (2 972 ms Skript in 3 s), „Pause legt den Stand sofort ab"
+  (nichts abgelegt) und „hls.js lässt sich nachladen" — dazu die erwartete
+  Versionsprüfung und die Prüfung ohne Google-Zugang (jenes Paket war mit
+  Zugangsdaten gebaut). „Start ohne hls.js" besteht auch mit 2.1.1, weil hls.js
+  dort im Bündel steckte, ohne ein globales `Hls` anzulegen; die Prüfung sichert
+  nur, dass es nicht künftig beim Start geladen wird.
 - `check-webos-package.py` OK — 2.2.0 überall, `vendor/hls.min.js` im `.ipk`.
 - `xcodebuild` iOS-Simulator und macOS: Build erfolgreich.
   `check-apple-sources.py`: keine Auffälligkeiten.
