@@ -5,7 +5,50 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.16.0**, iOS/iPadOS **1.21.0**,
-Windows **1.8.0**, LG webOS **2.0.0**.
+Windows **1.8.0**, LG webOS **2.0.1**.
+
+## [webOS 2.0.1] — 2026-09-13
+
+Fokus im Katalog: nach dem Eintreffen von TMDB-Treffern stand die fokussierte
+Karte halb unter dem Bildrand.
+
+### Behoben
+
+- **Die Scrollverankerung des Browsers arbeitete gegen die Navigation.** Kommen
+  TMDB-Treffer an, bewertet `useCatalogView` die Karten gebündelt neu, und das
+  Raster sortiert sich um. Chromium hielt dabei mit `overflow-anchor: auto`
+  einen Knoten oberhalb der fokussierten Karte optisch fest und verschob
+  `scrollTop` selbst um eine Rasterzeile — 538 px auf 1080p —, an
+  `navigation/engine.ts` vorbei und ohne Fokuswechsel, also ohne `reveal`. Die
+  fokussierte Karte stand danach bei 1005–1549 px. Die Bereiche mit
+  `data-scroll-y` und `data-scroll-x` haben jetzt `overflow-anchor: none`; ihre
+  Position bestimmt allein die Navigation. Aufgefallen im Fernbedienungstest
+  („Katalog Matrix", 4. Druck nach Rechts auf „Chainsaw Man"), dort reproduzierbar
+  auf `main`.
+- **Wechselte die fokussierte Karte beim Umsortieren selbst die Zeile, holte sie
+  niemand zurück.** Die Verankerung hatte das zufällig mit abgefangen — ohne sie
+  stand die Karte am Ende des Katalogs bei −81 px. Sichtbar gemacht wurde bisher
+  nur beim Fokuswechsel; `navigation/engine.ts` prüft jetzt nach jeder
+  DOM-Änderung, ob sich das fokussierte Element verschoben hat, und holt es mit
+  demselben `reveal` ins Bild. Ohne Verschiebung passiert nichts, mit Zeiger
+  (Magic Remote) wird nicht gescrollt.
+
+### Geprüft
+
+- **Ursache belegt:** Im protokollierten Lauf sortierte sich das Raster 45 ms nach
+  dem 4. Druck nach Rechts um, 22 ms später änderte der Browser `scrollTop` von
+  949 auf 411 — ohne dass die Navigation scrollte. Mit `overflow-anchor: none`
+  sortierte sich das Raster zum selben Zeitpunkt um, die Seite blieb stehen.
+- **Zwei neue Prüfungen** im Fernbedienungstest stellen die Umsortierung nach:
+  „Katalog umsortiert: Seite bleibt stehen, Fokus vollständig sichtbar" und
+  „… fokussierte Karte wechselt die Zeile und bleibt ganz sichtbar". Ohne Fix
+  schlagen „Katalog Matrix" und die erste fehl; nur mit dem CSS-Teil schlagen die
+  zweite und „unterste Reihe vollständig sichtbar" fehl.
+- **Fernbedienungstest mit vollständigem Fix:** 261/261, zweimal hintereinander,
+  1080p und 4K; keine bestehende Prüfung verändert.
+- TS-Kern 188/188, nori-api 13/13, `check-webos-package.py` OK (2.0.1 überall,
+  auch im `.ipk`).
+- Nicht auf LG-Hardware geprüft.
 
 ## [webOS 2.0.0] — 2026-09-12
 

@@ -31,6 +31,11 @@
 //   zuletzt fokussierte Element im Inhalt, „links" am Zeilenanfang in sie
 //   hinein auf den aktiven Eintrag.
 // - Offene Overlays (`data-focus-trap`) sperren den Fokus ein.
+// - Verschiebt eine Änderung am DOM das fokussierte Element, ohne dass sich der
+//   Fokus bewegt — ein Raster sortiert sich um, weil TMDB-Treffer eintreffen —,
+//   wird es wieder sichtbar gemacht. Die Scrollverankerung des Browsers ist in
+//   den Bereichen der Navigation abgeschaltet (`app.css`): sie verschob die
+//   Seite an dieser Datei vorbei.
 
 import { arrowDirection, isEnter } from "./keys";
 
@@ -480,6 +485,8 @@ export function moveFocus(dir: Direction): boolean {
 let instantReveal = false;
 let pointerMode = false;
 let lastFocused: { key: string | null; cx: number; cy: number } | null = null;
+/** Das Element zu `lastFocused` — der Schlüssel allein ist nicht eindeutig. */
+let lastFocusedNode: HTMLElement | null = null;
 let transientFocus = false;
 
 /**
@@ -631,6 +638,7 @@ function onFocusIn(event: FocusEvent): void {
   if (!pointerMode && !node.hasAttribute("data-no-reveal")) reveal(node, instant);
   const box = layoutBox(node);
   lastFocused = { key: node.getAttribute("data-focus-key"), cx: box.cx, cy: box.cy };
+  lastFocusedNode = node;
 }
 
 let recoverScheduled = false;
@@ -642,6 +650,34 @@ function scheduleRecover(): void {
     recoverScheduled = false;
     const active = document.activeElement;
     if (!active || active === document.body || !document.contains(active)) recoverFocus();
+  });
+}
+
+let layoutCheckScheduled = false;
+
+/**
+ * Hat eine Änderung am DOM das fokussierte Element verschoben, ohne dass sich
+ * der Fokus bewegt hat, wird es wieder sichtbar gemacht.
+ *
+ * Sichtbar gemacht wird sonst nur bei `focusin`. Sortiert sich aber ein Raster
+ * um, wandert die fokussierte Karte womöglich in eine andere Zeile — und
+ * niemand holt sie zurück. Gemessen wird wie überall gegen das Ziel laufender
+ * Bewegungen (`layoutBox`); hat sich nichts verschoben, passiert nichts. Mit
+ * Zeiger (Magic Remote) wird nicht gescrollt.
+ */
+function scheduleLayoutCheck(): void {
+  if (layoutCheckScheduled) return;
+  layoutCheckScheduled = true;
+  window.requestAnimationFrame(() => {
+    layoutCheckScheduled = false;
+    const active = document.activeElement;
+    if (pointerMode || !lastFocused || active !== lastFocusedNode || !isUsable(active)) return;
+    if (active.hasAttribute("data-no-reveal")) return;
+    const box = layoutBox(active);
+    if (Math.abs(box.cx - lastFocused.cx) < 1 && Math.abs(box.cy - lastFocused.cy) < 1) return;
+    reveal(active);
+    const settled = layoutBox(active);
+    lastFocused = { key: lastFocused.key, cx: settled.cx, cy: settled.cy };
   });
 }
 
@@ -663,6 +699,7 @@ export function installNavigation(): void {
   new MutationObserver(() => {
     const active = document.activeElement;
     if (lastFocused && (!active || active === document.body)) scheduleRecover();
+    else scheduleLayoutCheck();
   }).observe(document.body, { childList: true, subtree: true });
 
   // Magic Remote: ein Zeiger. Er fokussiert, worauf er zeigt, ohne zu
