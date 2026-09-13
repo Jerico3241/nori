@@ -90,6 +90,10 @@ jobs:
           git tag -a "$TAG" -m "Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}"
           git push origin "$TAG"
 
+      # Der Release baut kein IPA, sondern ein Quellpaket — die fehlende
+      # Google-Client-ID aus `Package iOS IPA` kann hier nicht auftreten. Die
+      # Gefahr ist die umgekehrte: eine lokale Google-Konfiguration aus dem
+      # Arbeitsverzeichnis des Runners darf nie in ein öffentliches Paket.
       - name: Quellpaket schnüren
         shell: bash
         run: |
@@ -101,7 +105,12 @@ jobs:
             native/Tests \
             config/contract.json \
             CHANGELOG.md \
-            README.md
+            README.md \
+            -x '*/Config/*.local.xcconfig' '*.env.local' '*oauth*.json' 'client_secret*.json'
+          if unzip -l "${{ steps.meta.outputs.asset }}" | grep -E '\.local\.xcconfig|\.env\.local|oauth.*\.json|client_secret'; then
+            echo "Lokale OAuth-Konfiguration im Quellpaket." >&2
+            exit 1
+          fi
           unzip -l "${{ steps.meta.outputs.asset }}" | tail -1
 
       - name: Release anlegen

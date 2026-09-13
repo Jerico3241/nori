@@ -7,6 +7,7 @@ on:
       - 'native/Nori-iOS/**'
       - 'native/NoriCore/**'
       - '.github/workflows/package-ios-ipa.yml'
+      - 'tools/configure-google-oauth.py'
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,20 @@ jobs:
 
       - name: Toolchain prüfen
         run: tools/require-xcode.sh 26
+
+      # Ein verteilbares IPA ohne Google-Client-ID ist ein Fehler. Nori 1.25.0
+      # (37) ging so hinaus: `Nori.xcconfig` bindet `Google.local.xcconfig` nur
+      # optional ein — für Entwicklungs-Builds gewollt —, im Runner-Checkout gibt
+      # es die Datei aber nicht, der Build lief grün, und die App meldete
+      # „ohne Google-Abgleich gebaut".
+      #
+      # Die iOS-Client-ID ist kein Secret, gehört aber nicht ins Repository. Sie
+      # liegt auf dem Runner unter ~/.config/nori/secrets/google-ios-client-id,
+      # neben den OAuth-JSON der anderen Plattformen, und dasselbe Werkzeug wie
+      # am Entwicklerrechner schreibt daraus die nicht eingecheckte
+      # Google.local.xcconfig. Fehlt die Datei, bricht der Job hier ab.
+      - name: Google OAuth für iOS bereitstellen
+        run: python3 tools/configure-google-oauth.py --ios
 
       - name: Version lesen
         id: meta
@@ -57,6 +72,14 @@ jobs:
             DEVELOPMENT_TEAM= \
             ONLY_ACTIVE_ARCH=NO \
             build | tee "$RUNNER_TEMP/nori-ipa.log"
+
+      - name: Google OAuth im gebauten Programm prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/ipa/Build/Products" -name 'Nori.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          python3 tools/configure-google-oauth.py --verify-ios-app "$APP"
 
       - name: In eine IPA packen
         id: pack
@@ -109,6 +132,11 @@ jobs:
           echo "── Aufbau der IPA ───────────────────────────"
           unzip -l "${{ steps.pack.outputs.path }}" | head -8
 
+      # Unabhängig von jeder Build-Einstellung: die fertige IPA wird selbst
+      # entpackt und ihre Info.plist geprüft. Erst danach wird hochgeladen.
+      - name: Google OAuth in der fertigen IPA prüfen
+        run: python3 tools/configure-google-oauth.py --verify-ios-ipa "${{ steps.pack.outputs.path }}"
+
       - name: IPA hochladen
         uses: actions/upload-artifact@v5
         with:
@@ -116,6 +144,10 @@ jobs:
           path: ${{ steps.pack.outputs.path }}
           if-no-files-found: error
           retention-days: 30
+
+      - name: Lokale Google-Konfiguration entfernen
+        if: always()
+        run: rm -f native/Nori-iOS/Config/Google.local.xcconfig
 
       - name: Build-Log bei Fehlschlag hochladen
         if: failure()

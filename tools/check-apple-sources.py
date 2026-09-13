@@ -469,6 +469,59 @@ def check_ios_runner() -> None:
                 )
 
 
+def check_ios_package_oauth() -> None:
+    """Das verteilbare iOS-Paket muss Google-Abgleich haben.
+
+    Nori 1.25.0 (37) ging als IPA mit leerer `GoogleClientID` hinaus: der
+    Workflow stellte `Google.local.xcconfig` nicht bereit, und weil eine fehlende
+    Konfiguration für Entwicklungs-Builds erlaubt ist, blieb der Lauf grün.
+
+    Geprüft wird, dass `Package iOS IPA` die Konfiguration vor dem Build mit
+    `tools/configure-google-oauth.py --ios` schreibt, das gebaute Programm und
+    die fertige IPA vor dem Hochladen prüft und nirgends ein Client-Secret
+    anfasst — und dass die iOS-`Info.plist` die Client-ID weiterhin aus der
+    Build-Einstellung bezieht und kein Secret kennt.
+    """
+    name = "package-ios-ipa.yml"
+    workflow = ROOT / ".github/workflows" / name
+    if not workflow.exists():
+        return
+    text = workflow.read_text()
+
+    def position(pattern: str) -> int:
+        match = re.search(pattern, text)
+        return match.start() if match else -1
+
+    configure = position(r"tools/configure-google-oauth\.py\s+--ios\b")
+    build = position(r"-sdk\s+iphoneos")
+    verify_app = position(r"tools/configure-google-oauth\.py\s+--verify-ios-app\b")
+    verify_ipa = position(r"tools/configure-google-oauth\.py\s+--verify-ios-ipa\b")
+    upload = position(r"actions/upload-artifact@")
+
+    if configure < 0 or build < 0 or configure > build:
+        add("ERROR", name, "Vor dem Geräte-Build fehlt `python3 tools/configure-google-oauth.py --ios`. "
+            "Ohne ihn entsteht eine IPA ohne Google-Abgleich (so geschehen bei 1.25.0).")
+    if verify_app < 0 or verify_app < build:
+        add("ERROR", name, "Nach dem Build fehlt `tools/configure-google-oauth.py --verify-ios-app` "
+            "für das gebaute Nori.app.")
+    if verify_ipa < 0 or upload < 0 or verify_ipa > upload:
+        add("ERROR", name, "Vor dem Hochladen fehlt `tools/configure-google-oauth.py --verify-ios-ipa` "
+            "für die fertige IPA.")
+    if re.search(r"GOOGLE_CLIENT_SECRET|--macos\b|--webos\b", text):
+        add("ERROR", name, "Der iOS-Paketlauf fasst eine fremde Google-Konfiguration an. "
+            "iOS bekommt nur seine Client-ID, nie ein Secret.")
+
+    plist = (IOS / "Info.plist").read_text() if (IOS / "Info.plist").exists() else ""
+    if "<key>GoogleClientID</key>" not in plist or "$(GOOGLE_CLIENT_ID)" not in plist:
+        add("ERROR", "iOS/Info.plist", "GoogleClientID muss aus der Build-Einstellung $(GOOGLE_CLIENT_ID) kommen.")
+    if "GoogleClientSecret" in plist:
+        add("ERROR", "iOS/Info.plist", "GoogleClientSecret gehört nicht in die iOS-App.")
+    xcconfig = ROOT / "native/Nori-iOS/Config/Nori.xcconfig"
+    if xcconfig.exists() and '#include? "Google.local.xcconfig"' not in xcconfig.read_text():
+        add("ERROR", "native/Nori-iOS/Config/Nori.xcconfig",
+            '`#include? "Google.local.xcconfig"` fehlt — dort schreibt das Werkzeug die Client-ID hin.')
+
+
 def check_main_actor_calls(folder: Path, label: str) -> None:
     """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
 
@@ -749,6 +802,7 @@ def main() -> int:
     check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
     check_glass_runner()
+    check_ios_package_oauth()
     check_fill_in_fixed_frame(IOS, "iOS")
     check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()

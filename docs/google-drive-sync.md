@@ -181,6 +181,8 @@ je eine `Google.local.xcconfig.example` als Vorlage. Geschrieben werden sie so:
 ```bash
 # iOS: der iOS-Client hat kein Secret und keine JSON.
 python3 tools/configure-google-oauth.py --ios --ios-client-id <iOS-Client-ID>
+# … oder aus ~/.config/nori/secrets/google-ios-client-id (eine Zeile, chmod 600)
+python3 tools/configure-google-oauth.py --ios
 
 # macOS: aus ~/.config/nori/secrets/google-macos-oauth.json
 python3 tools/configure-google-oauth.py --macos
@@ -189,7 +191,8 @@ python3 tools/configure-google-oauth.py --macos
 python3 tools/configure-google-oauth.py --check
 ```
 
-Das Skript gibt Client-IDs aus, Secrets **nie**. Ein Wert auf der Kommandozeile
+Das Skript gibt Client-IDs aus — im CI-Protokoll (`CI` gesetzt) nur ihre Form —,
+Secrets **nie**. Ein Wert auf der Kommandozeile
 (`xcodebuild … GOOGLE_CLIENT_ID=…`) hat weiterhin Vorrang vor der Datei.
 
 Die `Info.plist` übernimmt die Werte als `$(GOOGLE_CLIENT_ID)` und — nur auf
@@ -203,12 +206,26 @@ sie bleibt eben auf dem Gerät. Ein Eingabefeld gibt es dafür nicht: es ist ein
 **Build-Fehler** und keine Nutzeraufgabe. Auf macOS gilt dasselbe, wenn zwar die
 Client-ID, aber kein Secret gesetzt ist.
 
-**Was CI baut.** Die Läufe `Build iOS`, `Build macOS` und `Package iOS IPA`
-checken frisch aus und haben keine `.local`-Datei; ihre Ergebnisse haben
-deshalb keinen Google-Abgleich. Eine installierbare Fassung mit Abgleich
-entsteht lokal — `native/Nori-iOS/IPA-bauen.command` und
-`native/Nori-macOS/Mac-App-bauen.command` bauen im Projektordner und nehmen die
-lokale Datei mit.
+**Was CI baut.** `Build iOS` und `Build macOS` sind Typprüfungen: sie checken
+frisch aus, haben keine `.local`-Datei und bauen deshalb bewusst ohne
+Google-Abgleich. `Package iOS IPA` dagegen erzeugt eine **verteilbare** Fassung,
+und die muss den Abgleich haben — Nori 1.25.0 (37) ging ohne hinaus, weil der
+Lauf die Datei nicht bereitstellte und trotzdem grün war. Seit 1.25.1 gilt:
+
+1. Vor dem Build schreibt `python3 tools/configure-google-oauth.py --ios` die
+   `Google.local.xcconfig` aus `~/.config/nori/secrets/google-ios-client-id` auf
+   dem Runner. Fehlt die Datei oder enthält sie keine Client-ID, bricht der Job ab.
+2. Nach dem Build prüft `--verify-ios-app` das gebaute `Nori.app`, und
+   `--verify-ios-ipa` entpackt die fertige IPA und prüft sie noch einmal:
+   `GoogleClientID` vorhanden, nicht leer, auf `.apps.googleusercontent.com`,
+   kein Client-Secret und keine fremde Client-ID im Bündel. Erst dann wird
+   hochgeladen. Im Protokoll steht `Google OAuth: configured`, nicht die ID.
+3. Am Ende wird die `.local`-Datei aus dem Runner-Checkout entfernt.
+
+`tools/test_configure_google_oauth.py` (in `Check Apple sources`) und
+`tools/check-apple-sources.py` halten beides fest. Lokal bauen
+`native/Nori-iOS/IPA-bauen.command` und `native/Nori-macOS/Mac-App-bauen.command`
+weiterhin im Projektordner und nehmen die lokale Datei mit.
 
 Der Diagnosebereich unter *Synchronisation* — zugeklappt, ohne Eingabefeld —
 zeigt die benutzte Client-ID, woher sie stammt, den angefragten Bereich, ob ein
@@ -288,6 +305,7 @@ Gerät gleich mit. Die Bibliothek bleibt vollständig.
 | Client-ID (alle Plattformen) | ja, sie steht in jeder Anmeldeadresse | **nein** — gehört zum Projekt des Betreibers |
 | Client-Secret (macOS, webOS) | nein, siehe Abschnitt 3 | **nein, unter keinen Umständen** |
 | OAuth-JSON aus der Cloud Console | nein | **nein** — liegt unter `~/.config/nori/secrets/` |
+| iOS-Client-ID für Paket-Builds (`google-ios-client-id`) | nein | **nein** — liegt unter `~/.config/nori/secrets/` |
 | Access Token, Refresh Token | nein | **nein** |
 | `deviceId` | harmlos, zufällig | steht ohnehin nur in der Bibliothek |
 
