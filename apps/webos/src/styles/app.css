@@ -64,6 +64,24 @@
   display: none;
 }
 
+/*
+ * Keine Scrollverankerung in den Bereichen, die die Navigation bewegt.
+ *
+ * Chromium hält bei `overflow-anchor: auto` einen Knoten im Bild fest und
+ * verschiebt dafür selbst `scrollTop`, sobald sich davor etwas umsortiert.
+ * Genau das passierte im Katalog: kamen TMDB-Treffer an, sortierte sich das
+ * Raster neu, eine Karte oberhalb rutschte eine Zeile nach oben, und der
+ * Browser scrollte die Seite um diese Zeile (538 px auf 1080p) mit — an
+ * `navigation/engine.ts` vorbei, ohne Fokuswechsel und damit ohne `reveal`.
+ * Die fokussierte Karte stand danach halb unter dem Bildrand. Die Position
+ * dieser Bereiche bestimmt allein die Navigation; Chrome 79 (webOS 6) kennt
+ * die Eigenschaft.
+ */
+[data-scroll-y],
+[data-scroll-x] {
+  overflow-anchor: none;
+}
+
 /* Allgemeiner Fokus für alles, was unten keinen eigenen hat. */
 .spottable:focus {
   box-shadow: 0 0 0 0.1875rem var(--accent), 0 0 0 0.625rem var(--accent-glow);

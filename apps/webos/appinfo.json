@@ -1,6 +1,6 @@
 {
   "id": "tv.nori.app",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "vendor": "Nori",
   "type": "web",
   "main": "index.html",

@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.0.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.0.1**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -42,6 +42,14 @@ Karte samt Vergrößerung und Ring ganz dasteht; die Seite hält 3,5 rem Abstand
 zum Rand und holt die Überschrift einer Reihe mit herein. Overlays sperren den
 Fokus ein und geben ihn beim Schließen an ihren Auslöser zurück. Fokus und
 Scrollstand werden je Ansicht gemerkt.
+
+Die Scrollverankerung des Browsers ist in diesen Bereichen abgeschaltet
+(`overflow-anchor: none` an `data-scroll-y` und `data-scroll-x`). Sortiert sich
+ein Raster um — im Katalog, sobald TMDB-Treffer eintreffen —, verschob Chromium
+sonst selbst die Seite um eine Zeile, ohne dass die Navigation davon erfuhr, und
+die fokussierte Karte stand halb unter dem Bildrand. Verschiebt eine solche
+Änderung das fokussierte Element selbst, holt die Navigation es im nächsten Frame
+zurück ins Bild.
 
 ## Aufbau
 
@@ -200,7 +208,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.0.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.0.1_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
