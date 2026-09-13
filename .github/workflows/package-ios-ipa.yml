@@ -7,17 +7,24 @@ on:
       - 'native/Nori-iOS/**'
       - 'native/NoriCore/**'
       - '.github/workflows/package-ios-ipa.yml'
+      - '.github/workflows/release.yml'
       - 'tools/configure-google-oauth.py'
+      - 'tools/nori-release.py'
   workflow_dispatch:
 
+# Auf main wird ein laufender Lauf nicht abgebrochen: sein letzter Job legt den
+# GitHub-Release an und soll nie mittendrin enden.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   package:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 30
+    outputs:
+      artifact: ${{ steps.meta.outputs.name }}
+      sha256: ${{ steps.release-check.outputs.sha256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -137,6 +144,14 @@ jobs:
       - name: Google OAuth in der fertigen IPA prüfen
         run: python3 tools/configure-google-oauth.py --verify-ios-ipa "${{ steps.pack.outputs.path }}"
 
+      # Name, Version und Build der IPA gegen das Projekt, keine fremden
+      # Zugangsdaten, Tokens oder lokalen Dateien — und die Prüfsumme genau
+      # dieser geprüften Datei. Der Release-Job veröffentlicht nur eine IPA mit
+      # derselben Prüfsumme.
+      - name: IPA für den Release prüfen
+        id: release-check
+        run: python3 tools/nori-release.py verify --platform ios --file "${{ steps.pack.outputs.path }}" --github-output
+
       - name: IPA hochladen
         uses: actions/upload-artifact@v5
         with:
@@ -156,3 +171,17 @@ jobs:
           name: nori-ipa-log
           path: ${{ runner.temp }}/nori-ipa.log
           if-no-files-found: ignore
+
+  # GitHub-Release `ios-v<VERSION>` mit genau der geprüften IPA — nur auf main,
+  # nur nach einem grünen Paket-Job. Gibt es den Release schon, endet er grün.
+  release:
+    needs: package
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      platform: ios
+      artifact: ${{ needs.package.outputs.artifact }}
+      sha256: ${{ needs.package.outputs.sha256 }}

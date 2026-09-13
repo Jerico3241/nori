@@ -1,0 +1,50 @@
+name: Check release pipeline
+
+# Die Release-Logik, ihre Tests und die Notes der aktuellen Versionen — sobald
+# sich daran oder am Changelog etwas ändert, auch auf Branches. So fällt ein
+# fehlender Changelog-Abschnitt oder ein kaputter Workflow vor dem Merge auf,
+# nicht erst beim nächsten Release auf main. Legt nichts an.
+on:
+  push:
+    paths:
+      - 'tools/nori-release.py'
+      - 'tools/test_nori_release.py'
+      - 'tools/changelog-section.py'
+      - 'tools/check-webos-package.py'
+      - 'CHANGELOG.md'
+      - 'apps/webos/appinfo.json'
+      - 'native/Nori-iOS/Nori.xcodeproj/project.pbxproj'
+      - 'native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj'
+      - '.github/workflows/check-release.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/package-ios-ipa.yml'
+      - '.github/workflows/package-macos-source.yml'
+      - '.github/workflows/build-webos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Release-Werkzeug testen
+        run: python3 tools/test_nori_release.py
+
+      - name: Release Notes der aktuellen Versionen
+        run: |
+          for platform in ios macos webos; do
+            echo "::group::$platform"
+            python3 tools/nori-release.py meta --platform "$platform"
+            python3 tools/nori-release.py notes --platform "$platform"
+            echo "::endgroup::"
+          done

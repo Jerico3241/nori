@@ -30,9 +30,14 @@ def section(platform: str, version: str) -> str | None:
     changelog = ROOT / "CHANGELOG.md"
     if not changelog.exists():
         return None
+    return extract(changelog.read_text(), platform, version)
 
+
+def extract(changelog: str, platform: str, version: str) -> str | None:
+    """Wie `section`, aber aus einem schon gelesenen Changelog — etwa dem Stand
+    eines bestimmten Commits, den `tools/nori-release.py` mit `git show` holt."""
     wanted = f"[{platform} {version}]"
-    lines = changelog.read_text().splitlines()
+    lines = changelog.splitlines()
     out: list[str] = []
     inside = False
 

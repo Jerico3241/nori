@@ -380,6 +380,8 @@ Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am g
 
 Der Lauf **Build webOS** liegt auf demselben Runner, braucht dort aber kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
 
+GitHub-Releases entstehen automatisch und plattformgetrennt als letzter Job der Paket-Läufe auf `main` — erst nachdem das Paket gebaut und mit allen Produktions- und Zugangsdatenprüfungen bestanden hat: `ios-v<VERSION>` mit der unsignierten IPA aus **Package iOS IPA**, `webos-v<VERSION>` mit dem produktiven `.ipk` aus **Build webOS**, `macos-v<VERSION>` mit dem Quellpaket aus **Package macOS Source**. Jede Version bekommt höchstens einen Release; Tags werden nie verschoben. Einzelheiten: [docs/releases.md](docs/releases.md).
+
 Release-Quellpakete müssen neben dem jeweiligen Plattformordner auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md` enthalten, damit die Symlinks im Xcode-Projekt auflösbar bleiben.
 
 ## Technische Hinweise

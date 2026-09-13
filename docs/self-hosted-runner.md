@@ -72,7 +72,8 @@ auch den der Beta.
 Alles Weitere ist schon da: `git`, `curl`, `zip`, `unzip` und `python3` kommen
 mit den Command Line Tools, die Xcode mitbringt. Homebrew wird nicht gebraucht
 — die Workflows kommen bewusst ohne aus, deshalb legt `release.yml` das
-GitHub-Release über die REST-API an und nicht über die `gh`-CLI.
+GitHub-Release über die REST-API an (`tools/nori-release.py`, nur
+Python-Standardbibliothek) und nicht über die `gh`-CLI.
 
 Gegenprobe:
 

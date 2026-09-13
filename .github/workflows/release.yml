@@ -1,152 +1,115 @@
 name: Release
 
+# Legt GitHub-Releases an — plattformgetrennt, jede Version genau einmal.
+#
+# Kein eigener Auslöser über Tags. Dieser Workflow ist der letzte Job der
+# Paket-Läufe `Package iOS IPA`, `Build webOS` und `Package macOS Source` und
+# startet dort nur, wenn deren Paket-Job auf `main` mit allen Produktions- und
+# Zugangsdatenprüfungen grün war (`needs:` ohne `always()`). Veröffentlicht
+# wird genau das Artefakt dieses Laufs, erkannt an der Prüfsumme, die der
+# Paket-Job nach seinen Prüfungen festgehalten hat. Gebaut wird hier nichts.
+#
+# Die Regeln — Tag-Schema, keine Duplikate, nie verschieben, Release Notes ohne
+# interne Einzelheiten — stehen in tools/nori-release.py, die Tests in
+# tools/test_nori_release.py, die Beschreibung in docs/releases.md.
+#
+# Von Hand (workflow_dispatch) lässt sich nur ein Release für einen schon
+# abgeschlossenen, erfolgreichen Paket-Lauf nachholen: den jüngsten auf main,
+# für die Version, die main gerade trägt. Standardmäßig als Probelauf.
 on:
-  push:
-    tags:
-      - 'macos-v*'
-      - 'ios-v*'
+  workflow_call:
+    inputs:
+      platform:
+        description: ios, macos oder webos
+        type: string
+        required: true
+      artifact:
+        description: Name des geprüften Artefakts in diesem Lauf
+        type: string
+        required: true
+      sha256:
+        description: Prüfsumme des geprüften Pakets aus dem Paket-Job
+        type: string
+        required: true
+      run_id:
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag, z. B. macos-v1.14.3'
+      platform:
+        description: Plattform
+        type: choice
+        options: [ios, macos, webos]
         required: true
+      run_id:
+        description: ID des erfolgreichen Paket-Laufs auf main
+        type: string
+        required: true
+      dry_run:
+        description: Nur prüfen, nichts anlegen
+        type: boolean
+        default: true
 
 permissions:
   contents: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  actions: read
 
 jobs:
   release:
+    name: GitHub-Release
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 10
+    timeout-minutes: 20
+    # Ein Release wird nie mitten im Veröffentlichen abgebrochen; Läufe
+    # derselben Plattform warten aufeinander.
+    concurrency:
+      group: nori-release-${{ inputs.platform }}
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Plattform und Version aus dem Tag lesen
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ inputs.tag || github.ref_name }}"
+      - name: Release-Werkzeug prüfen
+        run: python3 tools/test_nori_release.py
 
-          case "$TAG" in
-            macos-v*) PLATFORM="macOS"; DIR="native/Nori-macOS"; PROJECT="native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj" ;;
-            ios-v*)   PLATFORM="iOS";   DIR="native/Nori-iOS";   PROJECT="native/Nori-iOS/Nori.xcodeproj/project.pbxproj" ;;
-            *) echo "Tag muss mit macos-v oder ios-v beginnen: $TAG" >&2; exit 1 ;;
-          esac
+      - name: Geprüftes Paket dieses Laufs holen
+        if: inputs.run_id == ''
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.artifact }}
+          path: ${{ runner.temp }}/nori-release/asset
 
-          VERSION="${TAG#*-v}"
-          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Version im Tag sieht nicht nach x.y.z aus: $VERSION" >&2
-            exit 1
-          fi
-
-          IN_PROJECT="$(grep -oE 'MARKETING_VERSION = [0-9.]+' "$PROJECT" | head -1 | awk '{print $3}')"
-          if [ "$IN_PROJECT" != "$VERSION" ]; then
-            echo "Tag sagt $VERSION, $PROJECT sagt $IN_PROJECT." >&2
-            exit 1
-          fi
-
-          {
-            echo "platform=$PLATFORM"
-            echo "version=$VERSION"
-            echo "dir=$DIR"
-            echo "asset=Nori-$PLATFORM-$VERSION-source.zip"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Release-Notiz aus dem Changelog holen
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/changelog-section.py \
-            "${{ steps.meta.outputs.platform }}" \
-            "${{ steps.meta.outputs.version }}" > notes.md
-          {
-            echo ""
-            echo "---"
-            echo ""
-            echo "Quellpaket: \`${{ steps.meta.outputs.asset }}\`. In Xcode öffnen und mit einem"
-            echo "Personal Team signieren; ein fertiges Programm liegt hier nicht bei."
-          } >> notes.md
-
-      - name: Tag anlegen, falls er noch fehlt
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ inputs.tag }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG existiert bereits, wird nicht verschoben."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}"
-          git push origin "$TAG"
-
-      # Der Release baut kein IPA, sondern ein Quellpaket — die fehlende
-      # Google-Client-ID aus `Package iOS IPA` kann hier nicht auftreten. Die
-      # Gefahr ist die umgekehrte: eine lokale Google-Konfiguration aus dem
-      # Arbeitsverzeichnis des Runners darf nie in ein öffentliches Paket.
-      - name: Quellpaket schnüren
-        shell: bash
-        run: |
-          set -euo pipefail
-          zip -r -y -q "${{ steps.meta.outputs.asset }}" \
-            "${{ steps.meta.outputs.dir }}" \
-            native/NoriCore \
-            native/Package.swift \
-            native/Tests \
-            config/contract.json \
-            CHANGELOG.md \
-            README.md \
-            -x '*/Config/*.local.xcconfig' '*.env.local' '*oauth*.json' 'client_secret*.json'
-          if unzip -l "${{ steps.meta.outputs.asset }}" | grep -E '\.local\.xcconfig|\.env\.local|oauth.*\.json|client_secret'; then
-            echo "Lokale OAuth-Konfiguration im Quellpaket." >&2
-            exit 1
-          fi
-          unzip -l "${{ steps.meta.outputs.asset }}" | tail -1
-
+      # Liest Version und Build aus dem Commit, prüft Name, Prüfsumme und Inhalt
+      # des Pakets, wiederholt die Produktionsprüfung der Plattform, erzeugt die
+      # Notes aus CHANGELOG.md — und legt erst dann Entwurf, Anhang, Tag und
+      # Veröffentlichung an. Gibt es den Release schon, endet es hier grün.
       - name: Release anlegen
+        if: inputs.run_id == ''
         env:
-          TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
-          TITLE: Nori ${{ steps.meta.outputs.platform }} ${{ steps.meta.outputs.version }}
-          ASSET: ${{ steps.meta.outputs.asset }}
-        shell: bash
+          GITHUB_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ inputs.platform }}
+          SHA256: ${{ inputs.sha256 }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
         run: |
-          set -euo pipefail
-          API="https://api.github.com/repos/${{ github.repository }}"
+          python3 tools/nori-release.py publish --platform "$PLATFORM" \
+            --dir "$RUNNER_TEMP/nori-release/asset" --sha256 "$SHA256" --commit "$GITHUB_SHA" $DRY_RUN
 
-          git fetch --tags --quiet origin
-          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
-            || { echo "Tag $TAG existiert nicht." >&2; exit 1; }
+      - name: Release für einen abgeschlossenen Paket-Lauf nachholen
+        if: inputs.run_id != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ inputs.platform }}
+          RUN_ID: ${{ inputs.run_id }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python3 tools/nori-release.py from-run --platform "$PLATFORM" --run-id "$RUN_ID" $DRY_RUN
 
-          BODY="$(python3 -c '
-          import json, os
-          print(json.dumps({
-              "tag_name": os.environ["TAG"],
-              "name": os.environ["TITLE"],
-              "body": open("notes.md").read(),
-              "draft": False,
-              "prerelease": False,
-          }))')"
-
-          ID="$(curl -sS -X POST "$API/releases" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -d "$BODY" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or sys.exit("Release nicht angelegt: " + json.dumps(d)[:400]))')"
-
-          curl -sS -X POST \
-            "https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$ASSET" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/zip" \
-            --data-binary "@$ASSET" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("Angehängt:", d.get("name") or sys.exit("Anhang fehlgeschlagen: " + json.dumps(d)[:400]))'
+      - name: Heruntergeladene Pakete entfernen
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/nori-release"
