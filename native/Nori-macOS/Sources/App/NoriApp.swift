@@ -81,8 +81,13 @@ final class CatalogStore {
     var provider: CatalogProvider = .aniworld
 
     /// Einen neuen Stand übernehmen, sofern er sich unterscheidet.
-    func replace(with next: [CatalogItem]) {
-        guard next != items else { return }
+    ///
+    /// Ob er sich unterscheidet, rechnet der Aufrufer abseits des
+    /// Hauptthreads (`changed`). Vorher verglich diese Methode beide Kataloge
+    /// Eintrag für Eintrag auf dem Hauptthread — rund 17 000 Titel samt
+    /// Alternativtiteln und Genres, bei jedem Laden.
+    func replace(with next: [CatalogItem], changed: Bool) {
+        guard changed else { return }
         items = next
         revision &+= 1
     }
@@ -374,29 +379,33 @@ struct RootView: View {
         async let serien = Self.fetch(.serienstream, force: force)
         let results = await [anime, serien]
 
-        var merged: [CatalogItem] = []
-        var failures: [CatalogProvider: String] = [:]
-        for (provider, outcome) in zip([CatalogProvider.aniworld, .serienstream], results) {
-            switch outcome {
-            case .success(let items): merged.append(contentsOf: items)
-            case .failure(let message): failures[provider] = message
-            }
-        }
-
         let scope = library.scope
         let previous = catalogStore.items
         let previousScoped = catalog
-        let prepared = await Task.detached(priority: .userInitiated) { () -> (all: [CatalogItem], scoped: [CatalogItem], scopedChanged: Bool) in
+        // Auch das Zusammenführen läuft abseits des Hauptthreads. Gemessen
+        // (SwiftUI-Vorlage in Instruments, Release): ein Mikrohänger von
+        // 300 ms beim Eintreffen der Kataloge, im Hauptthread
+        // `RootView.load` mit dem Anhängen beider Kataloge.
+        let prepared = await Task.detached(priority: .userInitiated) { () -> (all: [CatalogItem], allChanged: Bool, scoped: [CatalogItem], scopedChanged: Bool, failures: [CatalogProvider: String]) in
+            var merged: [CatalogItem] = []
+            var failures: [CatalogProvider: String] = [:]
+            for (provider, outcome) in zip([CatalogProvider.aniworld, .serienstream], results) {
+                switch outcome {
+                case .success(let items): merged.append(contentsOf: items)
+                case .failure(let message): failures[provider] = message
+                }
+            }
             let all = merged.isEmpty
                 ? previous
                 : merged.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             let scoped = scope.provider == nil && scope.genre == nil
                 ? all
                 : all.filter { scope.includes(item: $0) }
-            return (all, scoped, scoped != previousScoped)
+            return (all, all != previous, scoped, scoped != previousScoped, failures)
         }.value
+        let failures = prepared.failures
 
-        catalogStore.replace(with: prepared.all)
+        catalogStore.replace(with: prepared.all, changed: prepared.allChanged)
         catalogStore.provider = library.provider
         if prepared.scopedChanged {
             catalog = prepared.scoped

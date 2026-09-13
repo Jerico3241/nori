@@ -48,6 +48,15 @@ OAuth, Merge-Regeln, `drive.appdata`, `drive.file` oder am Bibliotheksschema
 
 ### Behoben — macOS
 
+- **Weniger Arbeit auf dem Hauptthread beim Eintreffen der Kataloge.** Die
+  SwiftUI-Vorlage in Instruments (Release) zeigte dabei einen Mikrohänger von
+  300 ms; im Hauptthread lag unter anderem `RootView.load`, das beide Kataloge
+  zusammenführte und anschließend Eintrag für Eintrag mit dem vorigen Stand
+  verglich — rund 17 000 Titel. Beides läuft jetzt im selben
+  Hintergrundschritt wie das Sortieren. Ehrlich gemessen bleibt der
+  Mikrohänger danach bei 289 ms: sein Hauptteil ist der SwiftUI-Aufbau der
+  Startseite, nicht das Zusammenführen. Der größte Ruckler fiel von 514 auf
+  278 ms, die Summe aller Ruckler in 20 s von 924 auf 792 ms.
 - **Im kleinen Fenster bestand die Startseite nur aus dem Kopfbereich.** Er war
   fest 460 Punkte hoch; bei 900 × 600 blieb von „Schau weiter" nur die
   Überschrift. Jetzt knapp zwei Drittel der sichtbaren Höhe, zwischen 360 und
