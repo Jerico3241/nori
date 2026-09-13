@@ -45,7 +45,12 @@ final class WatchlistViewModel {
     /// Die vollständige Merkliste.
     private(set) var items: [WatchlistItem] = []
     /// Was nach Suche, Schnellfilter und Filtern übrig bleibt, sortiert.
-    private(set) var results: [WatchlistItem] = []
+    private(set) var results: [WatchlistItem] = [] {
+        didSet { resultIDs = results.map(\.id) }
+    }
+    /// Die Kennungen dazu — der Wert, an dem die Rasteranimation hängt.
+    /// Einmal je Filterung gerechnet statt bei jedem Neuzeichnen.
+    private(set) var resultIDs: [String] = []
     /// Zahlen über den ganzen Bestand, nicht über die Treffer.
     private(set) var stats = WatchlistStats()
     /// Die Genres, die in der Merkliste vorkommen — für das Filter-Sheet.

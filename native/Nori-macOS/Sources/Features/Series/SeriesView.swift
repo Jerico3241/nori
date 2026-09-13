@@ -20,6 +20,7 @@ struct SeriesView: View {
     @State private var details = CoverDetails()
     /// Standbilder und Beschreibungen der Folgen, nach Nummer.
     @State private var episodeInfo: [Int: EpisodeInfo] = [:]
+    @State private var similarItems: [CatalogItem] = []
 
     /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
     /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
@@ -101,6 +102,19 @@ struct SeriesView: View {
             guard !Task.isCancelled, !fetched.isEmpty else { return }
             episodeInfo = fetched
         }
+        .task(id: "\(detail?.slug ?? "")|\(detail?.genres.joined(separator: ",") ?? "")|\(catalogStore.revision)") {
+            guard let loaded = detail else {
+                similarItems = []
+                return
+            }
+            let items = catalogStore.items
+            let provider = providerOverride ?? library.provider
+            let found = await Task.detached(priority: .utility) {
+                CatalogStore.similar(in: items, to: loaded.slug, genres: loaded.genres, provider: provider)
+            }.value
+            guard !Task.isCancelled else { return }
+            similarItems = found
+        }
         .sheet(isPresented: $pickingCover) {
             CoverPicker(
                 slug: slug,
@@ -122,8 +136,7 @@ struct SeriesView: View {
     @ViewBuilder
     private var content: some View {
         if loading && detail == nil {
-            ProgressView("Serie wird geladen")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            SeriesSkeleton(title: titleHint)
         } else if let error, detail == nil {
             ContentUnavailableView(
                 "Nicht geladen",
@@ -151,13 +164,11 @@ struct SeriesView: View {
     private var headerBackground: some View {
         ZStack {
             if let wide = details.backdrop {
-                AsyncImage(url: wide) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().scaledToFill()
-                    default:
-                        NoriTheme.elevated
-                    }
+                // Über den gemeinsamen Bildlader statt `AsyncImage`: der hält
+                // das Breitbild im Zwischenspeicher, und die Seite lädt es beim
+                // zweiten Öffnen nicht erneut.
+                NoriCoverImage(url: wide, referer: "https://www.themoviedb.org/") {
+                    NoriTheme.elevated
                 }
             } else {
                 LinearGradient(
@@ -345,11 +356,14 @@ struct SeriesView: View {
     /// Empfehlungen aus dem geladenen Katalog nach Genre-Überschneidung. Damit
     /// führt jeder Vorschlag garantiert auf einen Titel, den die Quelle auch
     /// wirklich hat.
+    ///
+    /// Gerechnet einmal je Serie und Katalogstand (siehe die Aufgabe dazu),
+    /// nicht in `body` — die Seite zeichnet bei jedem Laden eines
+    /// Standbilds neu, und jedes Mal lief ein Durchgang über den Katalog.
     @ViewBuilder
     private func similar(_ detail: SeriesDetail) -> some View {
-        let items = catalogStore.similar(to: slug, genres: detail.genres, provider: providerOverride ?? library.provider)
-        if !items.isEmpty {
-            PosterRow(title: "Ähnliche Titel", items: items)
+        if !similarItems.isEmpty {
+            PosterRow(title: "Ähnliche Titel", items: similarItems)
         }
     }
 
@@ -791,3 +805,67 @@ struct EpisodeRow: View {
     }
 }
 
+
+/// Die Detailseite, bevor die Serie da ist.
+///
+/// Kopfbereich mit Poster und Titel in denselben Maßen wie `header`, darunter
+/// der Platz der Folgenliste. Der Titel kam mit dem Klick und steht deshalb
+/// echt da statt als Balken.
+private struct SeriesSkeleton: View {
+    let title: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 30) {
+                HStack(alignment: .bottom, spacing: 22) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(NoriTheme.elevated)
+                        .aspectRatio(2 / 3, contentMode: .fit)
+                        .frame(width: 168)
+                    VStack(alignment: .leading, spacing: 11) {
+                        Text(title)
+                            .font(.system(size: 38, weight: .heavy))
+                            .foregroundStyle(NoriTheme.fg)
+                            .lineLimit(2)
+                        Group {
+                            Text("FSK 12 · 2024")
+                                .font(.caption)
+                            Text("Abspielen · Folge 1")
+                                .font(.headline)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 11)
+                        }
+                        .redacted(reason: .placeholder)
+                        .foregroundStyle(NoriTheme.muted.opacity(0.4))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, NoriLayout.gutter)
+                .padding(.top, 34)
+                .padding(.bottom, 26)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 430, alignment: .bottomLeading)
+                .background {
+                    LinearGradient(colors: [NoriTheme.elevated, NoriTheme.bg], startPoint: .top, endPoint: .bottom)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    NoriSectionHeader("Folgen")
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(NoriTheme.surface)
+                        .frame(height: 450)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(NoriTheme.border)
+                        }
+                }
+                .frame(maxWidth: 980, alignment: .leading)
+                .padding(.horizontal, NoriLayout.gutter)
+            }
+        }
+        .scrollDisabled(true)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) wird geladen")
+    }
+}

@@ -2,39 +2,37 @@ import SwiftUI
 
 /// Genre-Übersicht: erst alle Kategorien als Kacheln, nach Auswahl das Raster
 /// der Titel dieser Kategorie.
+///
+/// Genres und Titel einer Kategorie werden je Katalogstand einmal gerechnet,
+/// abseits des Hauptthreads. Vorher standen beide als berechnete
+/// Eigenschaften in der Ansicht: `body` las `genres` dreimal und `items`
+/// zweimal, und jedes Lesen lief über den ganzen Katalog.
 struct CategoriesView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
     let loading: Bool
 
     @State private var selected: String?
+    @State private var genres: [GenreCount] = []
+    @State private var items: [CatalogItem] = []
+    /// Zu welchem Katalogstand `genres` gehören.
+    @State private var countedRevision: Int?
+
+    struct GenreCount: Identifiable, Hashable, Sendable {
+        let name: String
+        let count: Int
+        var id: String { name }
+    }
 
     private let genreGrid = [GridItem(.adaptive(minimum: 190, maximum: 260), spacing: 16)]
     private let posterGrid = [GridItem(.adaptive(minimum: 158, maximum: 200), spacing: 18)]
 
-    private var genres: [(name: String, count: Int)] {
-        var counts: [String: Int] = [:]
-        for item in catalog {
-            for genre in item.genres where !genre.isEmpty {
-                counts[genre, default: 0] += 1
-            }
-        }
-        return counts
-            .filter { $0.value >= 3 }
-            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            .map { (name: $0.key, count: $0.value) }
-    }
-
-    private var items: [CatalogItem] {
-        guard let selected else { return [] }
-        return catalog.filter { $0.genres.contains(selected) }
-    }
-
     var body: some View {
         NoriScreen {
-            if loading && catalog.isEmpty {
-                ProgressView("Katalog wird geladen")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if countedRevision != catalogRevision && (loading || !catalog.isEmpty) {
+                skeleton
             } else if genres.isEmpty {
                 ContentUnavailableView(
                     "Keine Kategorien",
@@ -61,12 +59,60 @@ struct CategoriesView: View {
                 }
             }
         }
+        .task(id: catalogRevision) {
+            let source = catalog
+            let counted = await Task.detached(priority: .userInitiated) { Self.count(source) }.value
+            guard !Task.isCancelled else { return }
+            genres = counted
+            countedRevision = catalogRevision
+        }
+        .task(id: "\(catalogRevision)|\(selected ?? "")") {
+            guard let selected else {
+                items = []
+                return
+            }
+            let source = catalog
+            let found = await Task.detached(priority: .userInitiated) {
+                source.filter { $0.genres.contains(selected) }
+            }.value
+            guard !Task.isCancelled else { return }
+            items = found
+        }
+    }
+
+    nonisolated private static func count(_ catalog: [CatalogItem]) -> [GenreCount] {
+        var counts: [String: Int] = [:]
+        for item in catalog {
+            for genre in item.genres where !genre.isEmpty {
+                counts[genre, default: 0] += 1
+            }
+        }
+        return counts
+            .filter { $0.value >= 3 }
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { GenreCount(name: $0.key, count: $0.value) }
+    }
+
+    private var skeleton: some View {
+        ScrollView {
+            NoriSkeletonGroup(label: "Kategorien werden geladen") {
+                LazyVGrid(columns: genreGrid, alignment: .leading, spacing: 16) {
+                    ForEach(0 ..< 18, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(NoriTheme.elevated)
+                            .frame(height: 84)
+                    }
+                }
+                .padding(NoriLayout.gutter)
+            }
+        }
+        .scrollDisabled(true)
     }
 
     private var overview: some View {
         ScrollView {
             LazyVGrid(columns: genreGrid, alignment: .leading, spacing: 16) {
-                ForEach(genres, id: \.name) { genre in
+                ForEach(genres) { genre in
                     GenreTile(name: genre.name, count: genre.count) {
                         selected = genre.name
                     }

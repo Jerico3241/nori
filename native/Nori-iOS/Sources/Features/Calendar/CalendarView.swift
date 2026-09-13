@@ -31,6 +31,8 @@ struct CalendarView: View {
     /// Ein `AiringEntry` trägt Slug und Quelle, aber keine Genres — ohne diesen
     /// Umweg zeigte „K-Drama" den vollständigen Serienstream-Kalender.
     let slugs: Set<String>?
+    /// Zählt hoch, wenn sich `slugs` inhaltlich ändert.
+    let slugsRevision: Int
 
     @State private var service = CalendarService()
     @State private var mode: CalendarMode = .today
@@ -70,7 +72,7 @@ struct CalendarView: View {
         .task(id: reloadKey) {
             today = Date()
             if mode == .today { selected = today }
-            await service.load(scope: library.scope, slugs: slugs)
+            await service.load(scope: library.scope, slugs: slugs, slugsRevision: slugsRevision)
         }
         .onChange(of: mode) { _, next in
             // „Heute" ist ein Tag, kein Zeitraum: der Modus setzt die Auswahl
@@ -125,8 +127,7 @@ struct CalendarView: View {
     @ViewBuilder
     private var content: some View {
         if service.loading, service.releases.isEmpty {
-            ProgressView("Kalender wird geladen")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            CalendarSkeleton()
         } else if let error = service.error, service.releases.isEmpty {
             ContentUnavailableView(
                 "Kalender nicht geladen",
@@ -155,7 +156,7 @@ struct CalendarView: View {
                 }
                 .scrollIndicators(.hidden)
                 .noriSoftScrollEdges(.bottom)
-                .refreshable { await service.load(scope: library.scope, slugs: slugs, force: true) }
+                .refreshable { await service.load(scope: library.scope, slugs: slugs, slugsRevision: slugsRevision, force: true) }
                 // Ein Tipper in der Wochenleiste springt zum Abschnitt des
                 // Tages, statt die Liste auszutauschen: in „Woche" stehen alle
                 // sieben Tage untereinander, und „springen" ist genau das, was
@@ -441,7 +442,7 @@ struct CalendarView: View {
     /// überhaupt nach Genre einschränkt.
     private var reloadKey: String {
         guard library.scope.genre != nil else { return library.scope.rawValue }
-        return "\(library.scope.rawValue)|\(slugs?.count ?? -1)"
+        return "\(library.scope.rawValue)|\(slugsRevision)"
     }
 
     /// Aus „Heute" auf einen anderen Tag: der Modus wechselt mit, sonst stünde
@@ -562,5 +563,49 @@ struct CalendarPeriodBar: View {
         }
         .buttonStyle(NoriPressStyle())
         .accessibilityLabel(label)
+    }
+}
+
+
+// MARK: - Ladezustand
+
+/// Der Kalender, bevor die Einträge da sind.
+///
+/// Zusammenfassung und Zeilen im Umriss, in denselben Abständen wie die Liste.
+/// Vorher stand hier ein `ProgressView` mitten im Inhalt; beim Eintreffen der
+/// Daten schoben sich Karte und Zeilen von der Mitte an den oberen Rand.
+private struct CalendarSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            RoundedRectangle(cornerRadius: NoriPanel.cardRadius, style: .continuous)
+                .fill(NoriTheme.elevated)
+                .frame(height: 92)
+                .padding(.horizontal, CalendarMetrics.screen)
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(0 ..< 5, id: \.self) { _ in
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(NoriTheme.elevated)
+                            .frame(width: CalendarMetrics.thumb, height: CalendarMetrics.thumb * 9 / 16)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Titel einer Serie")
+                                .font(.subheadline.weight(.semibold))
+                            Text("S1 · F1 · Deutsch")
+                                .font(.caption)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.horizontal, CalendarMetrics.screen)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .redacted(reason: .placeholder)
+        .foregroundStyle(NoriTheme.elevated)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Kalender wird geladen")
     }
 }

@@ -350,20 +350,34 @@ struct CatalogSkeleton: View {
         )
     }
 
+    /// Dieselben Maße wie `CatalogPosterCard`: Abstand, Schrift und Zeilenzahl.
+    ///
+    /// Vorher standen hier Balken mit fester Höhe — 12 und 9 Punkte statt der
+    /// tatsächlichen Zeilenhöhe von 14- und 11-Punkt-Schrift. Jede Reihe wuchs
+    /// beim Eintreffen der Daten um ein paar Punkte, und das Raster rutschte.
+    /// Mit denselben Textzeilen, nur geschwärzt, reserviert das Gerüst genau
+    /// den Platz der späteren Kachel — auch bei großer Systemschrift.
     var body: some View {
         LazyVGrid(columns: grid, spacing: density.rowSpacing) {
             ForEach(0 ..< (columns * 4), id: \.self) { _ in
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: density == .compact ? 6 : 8) {
                     RoundedRectangle(cornerRadius: density.posterRadius, style: .continuous)
                         .fill(NoriTheme.elevated)
                         .aspectRatio(2 / 3, contentMode: .fit)
-                    RoundedRectangle(cornerRadius: 4).fill(NoriTheme.elevated).frame(height: 12)
-                    RoundedRectangle(cornerRadius: 4).fill(NoriTheme.elevated).frame(width: 60, height: 9)
+                    Text("Titel eines Eintrags")
+                        .font(.system(size: density == .compact ? 12 : 14, weight: .semibold))
+                        .lineLimit(1)
+                    Text("2024 · Genre")
+                        .font(.system(size: density == .compact ? 9.5 : 11))
+                        .lineLimit(1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, CatalogMetrics.screen)
         .redacted(reason: .placeholder)
+        .foregroundStyle(NoriTheme.elevated)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Katalog wird geladen")
     }
 }

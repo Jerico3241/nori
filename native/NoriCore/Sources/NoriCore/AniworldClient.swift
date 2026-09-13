@@ -313,6 +313,22 @@ enum NoriError: LocalizedError {
 /// Der Lader merkt sich Fehlschläge, damit eine Kachel beim Scrollen nicht
 /// immer wieder dieselbe 404 holt, und hält die zuletzt geladenen Bilder im
 /// Speicher.
+///
+/// ## Was dazugekommen ist
+///
+/// - **Ein Plattenspeicher für Bilder** (`NoriImages` im Cache-Ordner, 256 MB).
+///   Vorher lag nichts auf der Platte: nach jedem Start lud jede Kachel ihr
+///   Cover neu, ohne Netz blieben alle leer. Bildadressen beider Quellen und
+///   von TMDB ändern sich nicht, wenn sich das Bild ändert — ein neues Bild hat
+///   eine neue Adresse. Deshalb gilt der gespeicherte Stand, bis das System
+///   den Cache-Ordner räumt oder die Einstellungen ihn leeren.
+/// - **Ein Abruf je Adresse.** Dasselbe Cover steht oft gleichzeitig in
+///   Startseite, Katalog und Merkliste. Mehrere Kacheln warten jetzt auf
+///   denselben Abruf; er wird erst abgebrochen, wenn keine mehr wartet —
+///   wer an einer Kachel vorbeiscrollt, hält ihn nicht auf.
+/// - **Entschlüsselt abseits des Hauptthreads** (`image(for:referer:)`).
+///   Vorher entstand das Bild aus den Bytes auf dem Hauptthread, und
+///   entschlüsselt wurde es erst beim ersten Zeichnen — also beim Scrollen.
 actor CoverImageLoader {
     static let shared = CoverImageLoader()
 
@@ -323,11 +339,24 @@ actor CoverImageLoader {
     /// Titeln wächst auch diese Menge. Bei Überlauf wird sie geleert statt
     /// gepflegt — im schlimmsten Fall wird ein Cover einmal zu viel probiert.
     private let failureCapacity = 4000
+    /// Größte Kantenlänge eines entschlüsselten Bildes. Größer zeigt Nori
+    /// nichts an; ein übergroßes Quellcover wird beim Entschlüsseln verkleinert
+    /// statt in voller Auflösung im Speicher zu liegen.
+    static let maxPixelSize = 1600
 
     private var cache: [URL: Data] = [:]
     private var order: [URL] = []
     private var failed: [URL: Date] = [:]
     private let session: URLSession
+    private let diskCache: URLCache?
+
+    /// Laufende Abrufe je Adresse, samt der Zahl der Wartenden.
+    private struct Flight {
+        let id: UUID
+        let task: Task<Data?, Never>
+        var waiters: Int
+    }
+    private var flights: [URL: Flight] = [:]
 
     init() {
         let config = URLSessionConfiguration.default
@@ -335,6 +364,16 @@ actor CoverImageLoader {
         // Der Katalog fragt viele Kacheln auf einmal. Ohne Deckel schickt das
         // eine Lawine an eine Quelle, die ohnehin empfindlich reagiert.
         config.httpMaximumConnectionsPerHost = 4
+        #if canImport(Darwin)
+        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("NoriImages", isDirectory: true)
+        let images = URLCache(memoryCapacity: 0, diskCapacity: 256 * 1024 * 1024, directory: folder)
+        config.urlCache = images
+        config.requestCachePolicy = .returnCacheDataElseLoad
+        diskCache = images
+        #else
+        diskCache = nil
+        #endif
         session = URLSession(configuration: config)
     }
 
@@ -344,8 +383,73 @@ actor CoverImageLoader {
         if let hit = cache[url] { return hit }
         if let until = failed[url], until > Date() { return nil }
         failed[url] = nil
-        return await load(url, referer: referer)
+
+        let id: UUID
+        let task: Task<Data?, Never>
+        if var flight = flights[url] {
+            flight.waiters += 1
+            flights[url] = flight
+            id = flight.id
+            task = flight.task
+        } else {
+            id = UUID()
+            task = Task { await self.load(url, referer: referer) }
+            flights[url] = Flight(id: id, task: task, waiters: 1)
+        }
+
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.abandon(url, id: id) }
+        }
+        if flights[url]?.id == id { flights[url] = nil }
+        return result
     }
+
+    /// Eine Kachel wartet nicht mehr. Wartet niemand mehr, wird der Abruf
+    /// abgebrochen — beim schnellen Durchscrollen geht dann nichts raus.
+    private func abandon(_ url: URL, id: UUID) {
+        guard var flight = flights[url], flight.id == id else { return }
+        flight.waiters -= 1
+        if flight.waiters <= 0 {
+            flight.task.cancel()
+            flights[url] = nil
+        } else {
+            flights[url] = flight
+        }
+    }
+
+    #if canImport(ImageIO)
+    /// Das Bild fertig entschlüsselt, höchstens `maxPixelSize` groß.
+    ///
+    /// `nonisolated`: das Entschlüsseln läuft parallel auf dem allgemeinen
+    /// Ausführer und nicht nacheinander im Actor. Ein bereits entschlüsseltes
+    /// Bild kommt ohne Abruf und ohne Arbeit aus dem Zwischenspeicher.
+    nonisolated func image(for url: URL, referer: String) async -> CGImage? {
+        if let hit = DecodedImageCache.shared.image(for: url) { return hit }
+        guard let data = await data(for: url, referer: referer) else { return nil }
+        guard !Task.isCancelled else { return nil }
+        if let hit = DecodedImageCache.shared.image(for: url) { return hit }
+        guard let image = Self.decode(data, maxPixelSize: Self.maxPixelSize) else { return nil }
+        DecodedImageCache.shared.store(image, for: url)
+        return image
+    }
+
+    /// Entschlüsseln und dabei verkleinern — über ImageIO, das dafür nur die
+    /// nötigen Pixel liest, statt erst das ganze Bild auszupacken.
+    nonisolated static func decode(_ data: Data, maxPixelSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+    #endif
 
     private func load(_ url: URL, referer: String) async -> Data? {
         var request = URLRequest(url: url)
@@ -362,12 +466,17 @@ actor CoverImageLoader {
         }
         if let http = result.1 as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             remember(failure: url)
+            // Eine Fehlerantwort gehört nicht in den Plattenspeicher: mit
+            // `returnCacheDataElseLoad` käme sie sonst beim nächsten Mal ohne
+            // Nachfrage wieder.
+            diskCache?.removeCachedResponse(for: request)
             return nil
         }
         // Auch HTTP 200 kann HTML enthalten. Nur decodierbare Bilder cachen;
         // eine willkürliche Mindestgröße erkennt keine Fehlerseite.
         guard Self.isImage(result.0) else {
             remember(failure: url)
+            diskCache?.removeCachedResponse(for: request)
             return nil
         }
         remember(url, result.0)
@@ -439,6 +548,15 @@ actor CoverImageLoader {
         cache.removeAll(keepingCapacity: false)
         order.removeAll(keepingCapacity: false)
         failed.removeAll(keepingCapacity: false)
+        diskCache?.removeAllCachedResponses()
+        #if canImport(ImageIO)
+        DecodedImageCache.shared.removeAll()
+        #endif
+    }
+
+    /// Wie viele Bytes Bilder auf der Platte liegen.
+    func diskBytes() -> Int64 {
+        Int64(diskCache?.currentDiskUsage ?? 0)
     }
 
     /// Wie `load`, aber mit Befund statt nur Ergebnis — für die Cover-Diagnose
@@ -461,6 +579,41 @@ actor CoverImageLoader {
         }
     }
 }
+
+
+#if canImport(ImageIO)
+/// Entschlüsselte Bilder im Speicher, nach Adresse.
+///
+/// Ein `NSCache`: er gibt unter Speicherdruck von selbst frei, und die
+/// Obergrenze rechnet in Bytes der Pixel, nicht in Anzahl Bilder — ein
+/// Breitbild zählt so viel wie zwanzig kleine Poster.
+final class DecodedImageCache: @unchecked Sendable {
+    static let shared = DecodedImageCache()
+
+    private final class Entry {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    private let storage: NSCache<NSURL, Entry> = {
+        let cache = NSCache<NSURL, Entry>()
+        cache.totalCostLimit = 160 * 1024 * 1024
+        return cache
+    }()
+
+    func image(for url: URL) -> CGImage? {
+        storage.object(forKey: url as NSURL)?.image
+    }
+
+    func store(_ image: CGImage, for url: URL) {
+        storage.setObject(Entry(image), forKey: url as NSURL, cost: image.bytesPerRow * image.height)
+    }
+
+    func removeAll() {
+        storage.removeAllObjects()
+    }
+}
+#endif
 
 actor CoverIndex {
     static let shared = CoverIndex()

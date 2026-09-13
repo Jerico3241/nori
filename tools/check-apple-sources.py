@@ -46,6 +46,9 @@ SHARED_IDENTICAL = [
     # dieselbe Zuordnung, um TMDB-Ranglisten auf Noris Katalog zurückzuführen.
     "TMDBImages.swift",
     "TMDBMatcher.swift",
+    # Die Katalogsuche. Der iPhone-Katalog sucht über `CatalogEntry`, der
+    # Mac-Katalog über `CatalogItem` — mit derselben Normalisierung.
+    "CatalogSearch.swift",
     # Der Geräteabgleich über Google Drive. Regeln, Ablauf, HTTP und OAuth
     # gehören in beide Targets gleichermaßen; nur der Anmeldeweg ist
     # plattformeigen und liegt deshalb je Target in `GoogleSignIn.swift`.

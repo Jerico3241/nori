@@ -25,6 +25,15 @@ import SwiftUI
 /// TMDB-Daten und Kalender. Damit steht das Raster sofort, statt auf ein
 /// halbes Dutzend Abrufe zu warten.
 ///
+/// ## Die Reihenfolge bleibt stehen
+///
+/// Der zweite Durchgang bringt die Werte, nach denen „Beliebt" und
+/// „Bewertung" sortieren. Sortierte er neu, wanderten Kacheln weg, während
+/// jemand schon scrollte. Deshalb gilt `CatalogStableOrder`: frische Daten ja,
+/// neue Reihenfolge nur bei einer anderen Abfrage, beim bewussten
+/// Aktualisieren — und wenn die erste Reihenfolge ohne jedes TMDB-Signal
+/// entstand, also noch gar keine Rangfolge war.
+///
 /// ## Wenn TMDB ausfällt
 ///
 /// Nichts hier wirft. Ohne Schlüssel, ohne Netz oder bei Ratenbegrenzung
@@ -56,6 +65,12 @@ final class CatalogService {
 
     private(set) var query = CatalogQuery()
 
+    /// Die gezeigte Reihenfolge — siehe „Die Reihenfolge bleibt stehen".
+    @ObservationIgnored private var order: CatalogOrder<CatalogQuery>?
+    /// Stand die Reihenfolge schon auf TMDB-Signalen? Ohne sie war sie keine
+    /// Rangfolge und darf ersetzt werden, sobald Signale da sind.
+    @ObservationIgnored private var orderHadSignals = false
+
     /// Der lokale Stand, wie ihn die Ansicht mitgibt.
     ///
     /// Bewusst eine Kopie und keine Referenz auf `LibraryStore`: läse der
@@ -76,8 +91,19 @@ final class CatalogService {
         }
 
         /// Woran erkennbar ist, dass sich etwas geändert hat.
-        var signature: String {
-            "\(playedLanguages.count)|\(playedLanguages.values.reduce(0) { $0 + $1.count })"
+        ///
+        /// Aus dem Inhalt, nicht aus Anzahlen: vorher zählte die Signatur Slugs
+        /// und Sprachen. Eine Folge in GerSub statt Deutsch änderte keine der
+        /// beiden Zahlen, und der Sprachfilter blieb beim alten Stand.
+        var signature: Int {
+            var hasher = Hasher()
+            for slug in playedLanguages.keys.sorted() {
+                hasher.combine(slug)
+                for language in (playedLanguages[slug] ?? []).sorted(by: { $0.order < $1.order }) {
+                    hasher.combine(language.rawValue)
+                }
+            }
+            return hasher.finalize()
         }
     }
 
@@ -98,11 +124,30 @@ final class CatalogService {
     func apply(_ next: CatalogQuery) {
         guard next != query else { return }
         query = next
-        recompute()
+        recompute(reorder: true)
     }
 
-    private func recompute() {
-        results = CatalogEngine.results(for: query, in: entries, now: Date())
+    private func recompute(reorder: Bool) {
+        let fresh = CatalogEngine.results(for: query, in: entries, now: Date())
+        var current: [String: CatalogEntry] = [:]
+        var owner: [String: String] = [:]
+        current.reserveCapacity(entries.count)
+        owner.reserveCapacity(entries.count)
+        for entry in entries {
+            current[entry.id] = entry
+            for source in entry.sources { owner[source.id] = entry.id }
+        }
+        let hasSignals = fresh.contains { $0.tmdbID != nil }
+        let rebuild = reorder || !orderHadSignals
+        let next = CatalogStableOrder.next(
+            previous: rebuild ? nil : order,
+            view: query,
+            fresh: fresh.map(\.id),
+            resolve: { owner[$0] }
+        )
+        if rebuild || order?.view != query { orderHadSignals = hasSignals }
+        order = next
+        results = next.ids.compactMap { current[$0] }
     }
 
     /// Die Schnellfilter: die festen vier und die tatsächlich häufigen Genres.
@@ -114,14 +159,18 @@ final class CatalogService {
 
     // MARK: - Laden
 
-    func load(items: [CatalogItem], local: LocalState, force: Bool = false) async {
-        let key = "\(items.count)|\(local.signature)"
+    /// - Parameter revision: `catalogRevision` der Wurzelansicht. Sie ändert
+    ///   sich genau dann, wenn sich der Inhalt des Katalogs ändert — anders als
+    ///   die Anzahl, die vorher hier stand.
+    func load(items: [CatalogItem], revision: Int, local: LocalState, force: Bool = false) async {
+        let key = "\(revision)|\(local.signature)"
         if !force, key == lastKey, phase == .ready { return }
         lastKey = key
 
         guard !items.isEmpty else {
             entries = []
             results = []
+            order = nil
             facets = CatalogFacets()
             phase = .ready
             return
@@ -130,7 +179,7 @@ final class CatalogService {
 
         // --- Durchgang 1: alles, was ohne Netz dasteht.
         var context = await Self.offlineContext(items: items, local: local, calendar: calendarCache)
-        await publish(items: items, context: context)
+        await publish(items: items, context: context, reorder: force || order == nil)
         guard !Task.isCancelled else { return }
 
         // --- Durchgang 2: TMDB und Kalender.
@@ -152,7 +201,10 @@ final class CatalogService {
         context.airing = fresh.airing
         context.ended = completed
         context.calendar = calendarCache
-        await publish(items: items, context: context)
+        // Beim bewussten Aktualisieren wartet der Betrachter auf das Ergebnis
+        // (die Aktualisieren-Geste steht so lange) — dann darf es neu sortiert
+        // dastehen. Sonst bleibt die Reihenfolge.
+        await publish(items: items, context: context, reorder: force)
     }
 
     /// Was ohne eine einzige Netzanfrage zur Verfügung steht.
@@ -178,13 +230,13 @@ final class CatalogService {
         return context
     }
 
-    private func publish(items: [CatalogItem], context: CatalogBuilder.Context) async {
+    private func publish(items: [CatalogItem], context: CatalogBuilder.Context, reorder: Bool) async {
         let built = await Self.assemble(items: items, context: context)
         guard !Task.isCancelled else { return }
         entries = built
         facets = CatalogFacets.of(built)
         phase = .ready
-        recompute()
+        recompute(reorder: reorder)
     }
 
     /// Den Katalog außerhalb des Hauptactors bauen.

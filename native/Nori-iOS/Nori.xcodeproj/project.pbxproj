@@ -52,6 +52,7 @@
 		AB79 /* HomeSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC79 /* HomeSections.swift */; };
 		AB90 /* CatalogFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC90 /* CatalogFeed.swift */; };
 		AB91 /* CatalogRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC91 /* CatalogRanking.swift */; };
+		AB9A /* CatalogSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9A /* CatalogSearch.swift */; };
 		AB92 /* CatalogBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC92 /* CatalogBuilder.swift */; };
 		AB93 /* CatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC93 /* CatalogService.swift */; };
 		AB94 /* CatalogDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC94 /* CatalogDesign.swift */; };
@@ -138,6 +139,7 @@
 		AC79 /* HomeSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSections.swift; sourceTree = "<group>"; };
 		AC90 /* CatalogFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogFeed.swift; sourceTree = "<group>"; };
 		AC91 /* CatalogRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogRanking.swift; sourceTree = "<group>"; };
+		AC9A /* CatalogSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogSearch.swift; sourceTree = "<group>"; };
 		AC92 /* CatalogBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogBuilder.swift; sourceTree = "<group>"; };
 		AC93 /* CatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogService.swift; sourceTree = "<group>"; };
 		AC94 /* CatalogDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDesign.swift; sourceTree = "<group>"; };
@@ -218,6 +220,7 @@
 				AC09 /* CatalogView.swift */,
 				AC90 /* CatalogFeed.swift */,
 				AC91 /* CatalogRanking.swift */,
+				AC9A /* CatalogSearch.swift */,
 				AC92 /* CatalogBuilder.swift */,
 				AC93 /* CatalogService.swift */,
 				AC94 /* CatalogDesign.swift */,
@@ -387,6 +390,7 @@
 				AB09 /* CatalogView.swift in Sources */,
 				AB90 /* CatalogFeed.swift in Sources */,
 				AB91 /* CatalogRanking.swift in Sources */,
+				AB9A /* CatalogSearch.swift in Sources */,
 				AB92 /* CatalogBuilder.swift in Sources */,
 				AB93 /* CatalogService.swift in Sources */,
 				AB94 /* CatalogDesign.swift in Sources */,
@@ -461,7 +465,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -471,7 +475,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.23.0;
+				MARKETING_VERSION = 1.24.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;
@@ -491,7 +495,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -501,7 +505,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.23.0;
+				MARKETING_VERSION = 1.24.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.ios;
 				PRODUCT_NAME = Nori;
 				SDKROOT = iphoneos;

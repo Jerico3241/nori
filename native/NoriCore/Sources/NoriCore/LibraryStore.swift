@@ -24,6 +24,16 @@ protocol LibrarySyncProvider: AnyObject, Sendable {
 final class LibraryStore {
     static let schemaVersion = 6
 
+    /// Wie lange Fortschritt aus einer laufenden Wiedergabe höchstens nur im
+    /// Speicher steht, bevor er auf die Platte geht.
+    ///
+    /// Der Player sichert alle fünf Sekunden. Jede Sicherung schrieb bisher die
+    /// **ganze** Bibliothek atomar auf die Platte — auf dem Hauptthread, eine
+    /// Folge lang zwölfmal pro Minute. Die Oberfläche bekommt den Stand
+    /// weiterhin sofort; geschrieben wird gebündelt und sofort bei `flush()`:
+    /// Pause, Ende der Wiedergabe, Hintergrund.
+    static let deferredWriteDelay: TimeInterval = 10
+
     var favorites: [String] = []
     var recents: [RecentItem] = []
     var titles: [String: String] = [:]
@@ -43,9 +53,15 @@ final class LibraryStore {
     /// erste Eintrag gilt als der jüngste. Das ist keine Erfindung, sondern
     /// genau die Aussage, die in der Reihenfolge steckt.
     var favoriteAddedAt: [String: Double] = [:]
-    var langPref: String = "DE" { didSet { stamp(.langPref); persist() } }
-    var hosterPref: String = "VOE" { didSet { stamp(.hosterPref); persist() } }
-    var resumeEnabled: Bool = true { didSet { stamp(.resumeEnabled); persist() } }
+
+    // Einstellungen. Eine Zuweisung desselben Wertes ist **keine** Änderung:
+    // der Player setzt Hoster und Sprache bei jedem Start. Bekäme derselbe
+    // Wert eine frische Marke, überschriebe er beim nächsten Abgleich die
+    // bewusste Wahl eines anderen Geräts — und jede Wiedergabe schriebe die
+    // Bibliothek zweimal auf die Platte und stieße einen Upload an.
+    var langPref: String = "DE" { didSet { preferenceChanged(.langPref, oldValue != langPref) } }
+    var hosterPref: String = "VOE" { didSet { preferenceChanged(.hosterPref, oldValue != hosterPref) } }
+    var resumeEnabled: Bool = true { didSet { preferenceChanged(.resumeEnabled, oldValue != resumeEnabled) } }
     /// Bevorzugte Bildhöhe als Zeichenkette: „auto", „1080", „720", „480".
     ///
     /// Eine Höhe und keine Bitrate, weil die Oberfläche Höhen nennt und jede
@@ -55,17 +71,45 @@ final class LibraryStore {
     /// anbietet — eine einzelne MP4-Datei hat keine Stufen, und Nori tut dann
     /// auch nicht so. Die Auswahl ist deshalb ein *Wunsch*: der Spieler nimmt
     /// die höchste angebotene Stufe, die nicht darüber liegt.
-    var preferredQuality: String = "auto" { didSet { stamp(.preferredQuality); persist() } }
-    var autoplayNext: Bool = true { didSet { stamp(.autoplayNext); persist() } }
-    var playbackSpeed: Float = 1.0 { didSet { stamp(.playbackSpeed); persist() } }
-    var provider: CatalogProvider = .aniworld { didSet { stamp(.provider); persist() } }
+    var preferredQuality: String = "auto" { didSet { preferenceChanged(.preferredQuality, oldValue != preferredQuality) } }
+    var autoplayNext: Bool = true { didSet { preferenceChanged(.autoplayNext, oldValue != autoplayNext) } }
+    var playbackSpeed: Float = 1.0 { didSet { preferenceChanged(.playbackSpeed, oldValue != playbackSpeed) } }
+    var provider: CatalogProvider = .aniworld { didSet { preferenceChanged(.provider, oldValue != provider) } }
     /// Was die Bibliothek zeigt. Vorgabe „Alle": beide Quellen in einer
     /// Liste. `provider` bleibt daneben bestehen und entscheidet, welche
     /// Seite ein Titel ohne eigene Quellangabe öffnet.
-    var scope: LibraryScope = .all { didSet { stamp(.scope); persist() } }
+    var scope: LibraryScope = .all { didSet { preferenceChanged(.scope, oldValue != scope) } }
     /// Wann zuletzt mit einem Fremdstand abgeglichen wurde. Ohne eingerichteten
     /// Anbieter bleibt der Wert leer.
     var syncLastRun: Double?
+
+    // MARK: - Revisionen
+
+    // Woran eine Ansicht erkennt, dass sie neu rechnen muss.
+    //
+    // Vorher standen dort Anzahlen — `favorites.count`, `progress.count`. Eine
+    // Anzahl bleibt aber gleich, wenn ein Titel entfernt und ein anderer
+    // gemerkt wird, und sie ändert sich nicht, wenn eine angefangene Folge zu
+    // Ende gesehen wird. Die Merkliste und „Weiterschauen" standen dann
+    // veraltet da, bis zufällig ein Eintrag dazukam.
+    //
+    // Eine Revision zählt nur hoch. Sie zu lesen kostet nichts, und eine
+    // Ansicht, die nur sie liest, zeichnet nicht bei jeder anderen Änderung
+    // des Stores neu.
+
+    /// Merkliste: gemerkt, entfernt, zurückgelegt, übernommen.
+    private(set) var favoritesRevision = 0
+    /// Verlauf: geöffnet, entfernt, gelöscht, übernommen.
+    private(set) var recentsRevision = 0
+    /// **Jede** Änderung am Fortschritt — auch der Fünf-Sekunden-Takt des
+    /// Players. Für Ansichten, die die laufende Position zeigen.
+    private(set) var progressRevision = 0
+    /// Änderungen am Fortschritt, nach denen Listen neu gerechnet gehören: eine
+    /// neue oder wieder aufgenommene Folge, eine abgeschlossene, eine andere
+    /// Sprache, Löschen, ein übernommener Fremdstand — und das Ende einer
+    /// Wiedergabe (`flush()`). **Nicht** der laufende Takt: sonst rechnete die
+    /// Startseite hinter dem Player alle fünf Sekunden neu.
+    private(set) var watchRevision = 0
 
     /// Was der Abgleich gerade tut.
     ///
@@ -120,6 +164,16 @@ final class LibraryStore {
     private var isLoading = false
     private var modifiedAt: Double = 0
 
+    /// Der Schlüssel der zuletzt gesicherten Folge. Nur wer **dieselbe** Folge
+    /// erneut sichert, ist ein Takt; die erste Sicherung einer Wiedergabe
+    /// ändert „Weiterschauen" und zählt.
+    @ObservationIgnored private var lastProgressKey: String?
+    /// Seit der letzten abgeschlossenen Änderung gab es Takte.
+    @ObservationIgnored private var pendingProgressTick = false
+    /// Das geplante Schreiben nach einem Takt.
+    @ObservationIgnored private var deferredWrite: DispatchWorkItem?
+    @ObservationIgnored private let writeDelay: TimeInterval
+
     /// Was der Abgleich hochladen soll, sobald er darf.
     ///
     /// Der Zeitplan liegt in `LibrarySyncEngine`; der Store sagt nur Bescheid.
@@ -133,7 +187,9 @@ final class LibraryStore {
     /// schreiben oder die Persistenz ungeprüft lassen — und genau dort liegen
     /// Merkliste, Verlauf und Fortschritt. Die App ruft weiterhin
     /// `LibraryStore()` und landet im Anwendungsunterstützungsordner.
-    init(directory: URL? = nil) {
+    /// `deferredWriteDelay` ebenso — ein Test soll nicht zehn Sekunden warten.
+    init(directory: URL? = nil, deferredWriteDelay: TimeInterval = LibraryStore.deferredWriteDelay) {
+        writeDelay = deferredWriteDelay
         let folder: URL
         if let directory {
             folder = directory
@@ -162,6 +218,12 @@ final class LibraryStore {
         preferenceStamps[preference.rawValue] = now
     }
 
+    private func preferenceChanged(_ preference: SyncPreference, _ changed: Bool) {
+        guard changed else { return }
+        stamp(preference)
+        persist()
+    }
+
     func isFavorite(_ slug: String) -> Bool { favorites.contains(slug) }
 
     func toggleFavorite(_ slug: String, title: String? = nil) {
@@ -175,6 +237,7 @@ final class LibraryStore {
             favoriteMarks[favoriteKey(slug: slug, provider: provider)] =
                 FavoriteMark(isFavorite: true, updatedAt: stamp, addedAt: stamp)
             if let title { titles[slug] = title }
+            favoritesRevision &+= 1
             persist()
         }
     }
@@ -233,6 +296,7 @@ final class LibraryStore {
         // Eintrags, und jedes Gerät mit älterem Stand legte ihn wieder hin.
         favoriteMarks[favoriteKey(slug: slug, provider: source)] =
             FavoriteMark(isFavorite: false, updatedAt: now, addedAt: snapshot.addedAt)
+        favoritesRevision &+= 1
         persist()
         return snapshot
     }
@@ -250,6 +314,7 @@ final class LibraryStore {
         favoriteMarks[favoriteKey(slug: snapshot.slug, provider: snapshot.source ?? provider)] =
             FavoriteMark(isFavorite: true, updatedAt: now, addedAt: addedAt)
         if let title = snapshot.title { titles[snapshot.slug] = title }
+        favoritesRevision &+= 1
         persist()
     }
 
@@ -263,6 +328,7 @@ final class LibraryStore {
         // nehmen" auf. Bliebe der Grabstein stehen, verschwände der Eintrag
         // beim nächsten Abgleich wieder.
         recentsRemoved.removeValue(forKey: recentKey(slug: slug, provider: source))
+        recentsRevision &+= 1
         persist()
     }
 
@@ -296,15 +362,74 @@ final class LibraryStore {
         return best
     }
 
+    /// Den Stand einer Folge sichern.
+    ///
+    /// Ist es dieselbe Folge wie beim letzten Aufruf, nur weiter, ist das ein
+    /// **Takt** der laufenden Wiedergabe: der Speicher ist sofort aktuell,
+    /// geschrieben wird gebündelt (`deferredWriteDelay`), und `watchRevision`
+    /// bleibt stehen. Alles andere — eine neue Folge, eine abgeschlossene, eine
+    /// andere Sprache — wird sofort geschrieben und zählt.
     func upsert(_ item: WatchProgress) {
+        let tick = store(item)
+        if tick {
+            pendingProgressTick = true
+            persist(deferWrite: true)
+        } else {
+            pendingProgressTick = false
+            watchRevision &+= 1
+            persist()
+        }
+    }
+
+    /// Mehrere Folgen auf einmal — „Staffel als gesehen markieren".
+    ///
+    /// Ein Schreibvorgang und eine Meldung an den Abgleich statt einer je
+    /// Folge: bei vierundzwanzig Folgen waren das vierundzwanzig vollständige
+    /// Schreibvorgänge der Bibliothek hintereinander.
+    func upsert(contentsOf items: [WatchProgress]) {
+        guard !items.isEmpty else { return }
+        for item in items { _ = store(item) }
+        lastProgressKey = nil
+        pendingProgressTick = false
+        watchRevision &+= 1
+        persist()
+    }
+
+    /// Einen Eintrag ablegen. Gibt zurück, ob es nur ein Takt war.
+    private func store(_ item: WatchProgress) -> Bool {
         let path = normalizeEpisodePath(item.episodePath)
         var next = item
         next.episodePath = path
         next.provider = next.provider ?? providerFromPath(path)
         if next.durationSec >= 20, next.positionSec >= next.durationSec * 0.9 { next.completed = true }
-        progress[progressKey(path: path, provider: next.provider)] = next
-        removeLegacyDuplicates(for: next)
-        persist()
+        let key = progressKey(path: path, provider: next.provider)
+        let previous = progress[key]
+        progress[key] = next
+        let removed = removeLegacyDuplicates(for: next)
+        progressRevision &+= 1
+
+        let tick = removed == 0
+            && key == lastProgressKey
+            && previous != nil
+            && isEpisodeComplete(previous) == isEpisodeComplete(next)
+            && previous?.lang == next.lang
+        lastProgressKey = key
+        return tick
+    }
+
+    /// Was noch nicht auf der Platte steht, jetzt schreiben.
+    ///
+    /// Aufzurufen, wenn eine Wiedergabe endet oder anhält und wenn die App in
+    /// den Hintergrund geht. Takte seit der letzten abgeschlossenen Änderung
+    /// gelten danach als abgeschlossen: Listen wie „Weiterschauen" sehen den
+    /// neuen Stand über `watchRevision`.
+    func flush() {
+        if deferredWrite != nil { writeNow() }
+        if pendingProgressTick {
+            pendingProgressTick = false
+            watchRevision &+= 1
+        }
+        lastProgressKey = nil
     }
 
     func continueWatching() -> [WatchProgress] {
@@ -388,6 +513,7 @@ final class LibraryStore {
         // Einzelne Grabsteine sind damit erledigt — die Marke erschlägt sie
         // alle, und die Datei muss sie nicht weiter mitschleppen.
         recentsRemoved = [:]
+        recentsRevision &+= 1
         persist()
     }
 
@@ -403,12 +529,17 @@ final class LibraryStore {
         recents.removeAll { $0.slug == slug }
         guard recents.count != before else { return }
         for source in sources { recentsRemoved[recentKey(slug: slug, provider: source)] = now }
+        recentsRevision &+= 1
         persist()
     }
 
     func clearProgress() {
         progress = [:]
         progressClearedAt = now
+        lastProgressKey = nil
+        pendingProgressTick = false
+        progressRevision &+= 1
+        watchRevision &+= 1
         persist()
     }
 
@@ -436,7 +567,7 @@ final class LibraryStore {
                let remote = bag.modifiedAt, remote > modifiedAt {
                 apply(bag)
                 modifiedAt = remote
-                writeLocal(makeBag(modifiedAt: remote))
+                writeNow()
             }
             let bag = makeBag(modifiedAt: modifiedAt)
             let data = try JSONEncoder().encode(bag)
@@ -530,6 +661,13 @@ final class LibraryStore {
         favoriteSource = bag.favoriteSource?.compactMapValues { CatalogProvider(rawValue: $0) } ?? [:]
         favoriteAddedAt = backfillAddedAt(bag.favoriteAddedAt ?? [:], favorites: favorites)
         progress = migrateProgress(bag.progress)
+        // Ein übernommener Stand kann alles geändert haben.
+        lastProgressKey = nil
+        pendingProgressTick = false
+        favoritesRevision &+= 1
+        recentsRevision &+= 1
+        progressRevision &+= 1
+        watchRevision &+= 1
         isLoading = false
     }
 
@@ -575,7 +713,10 @@ final class LibraryStore {
         return migrated
     }
 
-    private func removeLegacyDuplicates(for item: WatchProgress) {
+    /// Ältere Einträge derselben Folge unter einem anderen Schlüssel entfernen.
+    /// Gibt zurück, wie viele es waren.
+    @discardableResult
+    private func removeLegacyDuplicates(for item: WatchProgress) -> Int {
         let clean = normalizeEpisodePath(item.episodePath)
         let keep = progressKey(path: clean, provider: item.provider)
         let matching = progress.keys.filter { key in
@@ -583,18 +724,46 @@ final class LibraryStore {
             return normalizeEpisodePath(existing.episodePath) == clean && (existing.provider ?? providerFromPath(existing.episodePath)) == item.provider
         }
         for key in matching { progress.removeValue(forKey: key) }
+        return matching.count
     }
 
-    private func persist() {
+    /// Eine Änderung festhalten: Zeitstempel, Platte, Abgleich.
+    ///
+    /// `deferWrite` nur für Takte der Wiedergabe — siehe `deferredWriteDelay`.
+    /// Alles andere wird sofort geschrieben; eine gemerkte Serie oder eine
+    /// geänderte Einstellung soll einen Absturz eine Sekunde später überleben.
+    private func persist(deferWrite: Bool = false) {
         guard !isLoading else { return }
         modifiedAt = now
-        writeLocal(makeBag(modifiedAt: modifiedAt))
+        if deferWrite {
+            scheduleDeferredWrite()
+        } else {
+            writeNow()
+        }
         // Kein Hochladen von hier aus. Der Fortschritt wird während der
-        // Wiedergabe im Sekundentakt geschrieben, und eine Netzanfrage pro
-        // Sekunde wäre weder Drive noch dem Gerät zumutbar. Gemeldet wird nur,
-        // *dass* sich etwas geändert hat; wann daraus ein Upload wird,
-        // entscheidet `LibrarySyncEngine`.
+        // Wiedergabe regelmäßig gesichert, und eine Netzanfrage je Takt wäre
+        // weder Drive noch dem Gerät zumutbar. Gemeldet wird nur, *dass* sich
+        // etwas geändert hat; wann daraus ein Upload wird, entscheidet
+        // `LibrarySyncEngine`.
         onChange?()
+    }
+
+    /// Einmal schreiben, nicht einmal je Takt: ein bereits geplantes Schreiben
+    /// wird nicht verschoben, sonst schöbe jeder Takt es weiter hinaus.
+    private func scheduleDeferredWrite() {
+        guard deferredWrite == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.deferredWrite != nil else { return }
+            self.writeNow()
+        }
+        deferredWrite = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + writeDelay, execute: work)
+    }
+
+    private func writeNow() {
+        deferredWrite?.cancel()
+        deferredWrite = nil
+        writeLocal(makeBag(modifiedAt: modifiedAt))
     }
 
     private func writeLocal(_ bag: LibraryData) {
@@ -647,7 +816,7 @@ final class LibraryStore {
         if let stamps = next.sync?.preferences { preferenceStamps = stamps.mapValues(\.updatedAt) }
         if let marks = next.sync?.favorites { favoriteMarks = marks }
         modifiedAt = max(modifiedAt, next.modifiedAt ?? 0)
-        writeLocal(makeBag(modifiedAt: modifiedAt))
+        writeNow()
     }
 
     /// Version der laufenden App, für die Metadaten im abgelegten Stand.

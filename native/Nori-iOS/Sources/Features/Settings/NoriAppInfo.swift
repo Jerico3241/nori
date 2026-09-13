@@ -64,7 +64,9 @@ enum NoriImageCache {
 
     /// Bilder auf der Platte und im Speicher.
     static func measure() async -> Int64 {
-        let disk = Int64(URLCache.shared.currentDiskUsage)
+        // Bilder liegen im eigenen Plattenspeicher des Laders; Schriftzüge und
+        // Standbilder, die über `AsyncImage` kommen, im gemeinsamen `URLCache`.
+        let disk = Int64(URLCache.shared.currentDiskUsage) + (await CoverImageLoader.shared.diskBytes())
         let memory = await CoverImageLoader.shared.memoryBytes()
         return disk + memory
     }

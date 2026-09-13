@@ -13,6 +13,9 @@ import SwiftUI
 /// Ladung in Sicht kommt — bis dahin gibt es weder Ansichten noch Arbeit.
 struct CatalogGrid: View {
     let entries: [CatalogEntry]
+    /// Die Abfrage, zu der `entries` gehören. Wechselt sie, beginnt das
+    /// Nachladen von vorn.
+    let query: CatalogQuery
     let density: CatalogDensity
     let columns: Int
     /// Ob „ANIME"/„SERIE" auf die Kachel gehört. Im gemischten Raster ja;
@@ -46,10 +49,14 @@ struct CatalogGrid: View {
         }
         .padding(.horizontal, CatalogMetrics.screen)
         .overlay(alignment: .bottom) { sentinel }
-        // Wechselt die Ergebnisliste, beginnt das Nachladen von vorn — sonst
+        // Wechselt die Abfrage, beginnt das Nachladen von vorn — sonst
         // stünden nach einer neuen Suche dreihundert Kacheln bereit, von
         // denen niemand je eine sieht.
-        .onChange(of: entries.count) { _, _ in shown = CatalogMetrics.batch }
+        //
+        // Ausdrücklich an der Abfrage und nicht an der Anzahl: trifft TMDB
+        // nach und ändert sich dadurch die Zahl der Treffer, fiel das Raster
+        // vorher auf die erste Ladung zurück — mitten im Scrollen.
+        .onChange(of: query) { _, _ in shown = CatalogMetrics.batch }
         .onChange(of: density) { _, _ in shown = CatalogMetrics.batch }
     }
 

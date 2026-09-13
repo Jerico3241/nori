@@ -35,9 +35,12 @@ final class CalendarService {
     ///     `nil` heißt „nicht einschränken" — nicht „nichts zeigen": solange
     ///     der Katalog noch lädt, ist ein vollständiger Kalender die bessere
     ///     Antwort als ein leerer.
+    ///   - slugsRevision: zählt hoch, wenn sich `slugs` inhaltlich ändert. Vorher
+    ///     stand hier die Anzahl — ein Ausschnitt mit derselben Zahl anderer
+    ///     Titel lud den Kalender nicht neu.
     ///   - force: am Netz vorbei am Zwischenspeicher vorbei neu holen.
-    func load(scope: LibraryScope, slugs: Set<String>?, force: Bool = false) async {
-        let key = "\(scope.rawValue)|\(slugs?.count ?? -1)"
+    func load(scope: LibraryScope, slugs: Set<String>?, slugsRevision: Int, force: Bool = false) async {
+        let key = "\(scope.rawValue)|\(slugs == nil ? -1 : slugsRevision)"
         if !force, key == loadedKey, !releases.isEmpty { return }
 
         loading = releases.isEmpty || force

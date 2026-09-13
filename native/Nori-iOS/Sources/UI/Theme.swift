@@ -377,8 +377,12 @@ struct NoriCoverImage<Fallback: View>: View {
         .task(id: url) {
             image = nil
             let known = NoriImageMemory.isKnown(url)
-            guard let data = await CoverImageLoader.shared.data(for: url, referer: referer) else { return }
-            guard !Task.isCancelled, let decoded = UIImage(data: data) else { return }
+            // Fertig entschlüsselt und abseits des Hauptthreads. Vorher entstand
+            // hier ein `UIImage(data:)`, das erst beim ersten Zeichnen
+            // entpackt wurde — mitten im Scrollen, auf dem Hauptthread.
+            guard let cgImage = await CoverImageLoader.shared.image(for: url, referer: referer) else { return }
+            guard !Task.isCancelled else { return }
+            let decoded = UIImage(cgImage: cgImage)
             NoriImageMemory.remember(url)
             if !known, !reduceMotion {
                 withAnimation(NoriMotion.micro) { image = decoded }

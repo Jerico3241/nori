@@ -21,9 +21,9 @@ struct PlayerControls: View {
     let episodeTitle: String
 
     let isPlaying: Bool
-    let position: Double
-    let duration: Double
-    let buffered: Double
+    /// Stelle, Dauer und Puffer — an den Regler durchgereicht, hier nicht
+    /// gelesen. Sonst zeichnete die ganze Bedienung viermal pro Sekunde neu.
+    let clock: PlaybackClock
     let speed: Float
 
     let hosters: [PlayerChoice]
@@ -79,9 +79,7 @@ struct PlayerControls: View {
                 PlayerBottomBar(
                     episodeNumber: episodeNumber,
                     episodeTitle: episodeTitle,
-                    position: position,
-                    duration: duration,
-                    buffered: buffered,
+                    clock: clock,
                     speed: speed,
                     hosters: hosters,
                     activeHoster: activeHoster,

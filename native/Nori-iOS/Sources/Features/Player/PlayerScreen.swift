@@ -18,7 +18,6 @@ struct PlayerScreen: View {
     @State private var error: String?
     @State private var observer: Any?
     @State private var endObserver: NSObjectProtocol?
-    @State private var duration: Double = 0
     @State private var source: PlaySource?
     @State private var watchInfo: WatchInfo?
     @State private var autoplaySeconds: Int?
@@ -58,8 +57,9 @@ struct PlayerScreen: View {
     /// Für die eigene Bedienung: Stand, Position und Puffer kamen vorher von
     /// AVKit und wurden nirgends gebraucht.
     @State private var isPlaying = false
-    @State private var position: Double = 0
-    @State private var buffered: Double = 0
+    /// Stelle, Dauer und Puffer — ein eigenes Objekt, damit ihr Fortschreiten
+    /// nur den Regler neu zeichnet und nicht den ganzen Player.
+    @State private var clock = PlaybackClock()
     @State private var lastSaved: Double = 0
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var subtitleChoices: [PlayerChoice] = []
@@ -99,7 +99,7 @@ struct PlayerScreen: View {
                     step: 10,
                     onSingleTap: { toggleControls() },
                     onSeek: { delta in
-                        seek(to: position + delta)
+                        seek(to: clock.latestPosition + delta)
                         scheduleHide()
                     }
                 )
@@ -157,6 +157,10 @@ struct PlayerScreen: View {
             guard menuOpen else { return }
             menuOpen = false
             scheduleHide()
+        }
+        // VoiceOver hält die Bedienung sichtbar — dann zieht auch der Regler mit.
+        .onChange(of: voiceOverEnabled) { _, enabled in
+            clock.isShown = controlsVisible || enabled || scrubbing
         }
         .task { await startPlayback(resumeAt: currentResumeAt) }
         .onDisappear { teardown(saveCurrent: true) }
@@ -240,9 +244,7 @@ struct PlayerScreen: View {
             episodeNumber: episodeTitleText == nil ? nil : "Folge \(currentEpisode.number)",
             episodeTitle: episodeTitleText ?? "Folge \(currentEpisode.number)",
             isPlaying: isPlaying,
-            position: position,
-            duration: duration,
-            buffered: buffered,
+            clock: clock,
             speed: library.playbackSpeed,
             hosters: hosterChoices,
             activeHoster: source?.hoster,
@@ -265,7 +267,7 @@ struct PlayerScreen: View {
             onPlayPause: { Task { @MainActor in togglePlayback() } },
             onSkip: { seconds in
                 Task { @MainActor in
-                    seek(to: position + seconds)
+                    seek(to: clock.latestPosition + seconds)
                     scheduleHide()
                 }
             },
@@ -274,6 +276,7 @@ struct PlayerScreen: View {
             onScrubbing: { active in
                 Task { @MainActor in
                     scrubbing = active
+                    clock.isShown = controlsVisible || voiceOverEnabled || active
                     if active {
                         hideTask?.cancel()
                         setControlsVisible(true)
@@ -359,6 +362,10 @@ struct PlayerScreen: View {
         if isPlaying {
             player.pause()
             isPlaying = false
+            // Angehalten ist der Moment, den Stand wirklich abzulegen: wer
+            // danach das iPhone weglegt, soll genau dort weitermachen.
+            save(forceComplete: false)
+            library.flush()
             // Beim Anhalten sichtbar bleiben, sonst verschwindet die
             // Bedienung genau dann, wenn man sie sucht.
             hideTask?.cancel()
@@ -372,11 +379,11 @@ struct PlayerScreen: View {
 
     @MainActor
     private func seek(to seconds: Double) {
-        guard let player, duration > 0 else { return }
-        let target = min(max(seconds, 0), duration)
-        position = target
+        guard let player, clock.duration > 0 else { return }
+        let target = min(max(seconds, 0), clock.duration)
+        clock.jump(to: target)
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-        savePosition(target, duration: duration)
+        savePosition(target, duration: clock.duration)
     }
 
     /// Ein Sprung während des Ziehens.
@@ -387,9 +394,9 @@ struct PlayerScreen: View {
     /// danach nachgeholt — sonst stapeln sich beim Ziehen Dutzende Sprünge.
     @MainActor
     private func scrubSeek(to seconds: Double) {
-        guard let player, duration > 0 else { return }
-        let target = min(max(seconds, 0), duration)
-        position = target
+        guard let player, clock.duration > 0 else { return }
+        let target = min(max(seconds, 0), clock.duration)
+        clock.jump(to: target)
         guard !seeking else {
             pendingSeek = target
             return
@@ -421,6 +428,7 @@ struct PlayerScreen: View {
     /// wie ein Fehler.
     @MainActor
     private func setControlsVisible(_ visible: Bool) {
+        clock.isShown = visible || voiceOverEnabled || scrubbing
         let curve = visible ? NoriMotion.controlsIn : NoriMotion.controlsOut
         withAnimation(NoriMotion.allowed(curve, reduceMotion: reduceMotion)) {
             controlsVisible = visible
@@ -632,7 +640,7 @@ struct PlayerScreen: View {
         // Beim Wechsel bleibt die Dauer stehen: der Regler soll nicht auf
         // null zusammenfallen und gleich darauf wieder aufspringen. Es ist
         // dieselbe Folge, nur ein anderer Hoster.
-        if !keepChrome { duration = 0 }
+        if !keepChrome { clock.reset(position: 0, keepDuration: false) }
         isSwitching = true
 
         do {
@@ -731,9 +739,12 @@ struct PlayerScreen: View {
                 guard generation == playbackGeneration else { return }
                 let pos = time.seconds
                 guard pos.isFinite else { return }
-                position = pos
                 let dur = item.duration.seconds
-                if dur.isFinite { duration = dur }
+                let end = item.loadedTimeRanges.last.map {
+                    ($0.timeRangeValue.start + $0.timeRangeValue.duration).seconds
+                }
+                // Nur die Uhr. Der Player selbst zeichnet dafür nicht neu.
+                clock.tick(position: pos, duration: dur, buffered: end)
                 // `.playing` allein wäre falsch: beim Puffern steht der
                 // Stand auf `.waitingToPlayAtSpecifiedRate`, und das viermal
                 // pro Sekunde. Das Symbol sprang dann zwischen Pause und
@@ -754,13 +765,9 @@ struct PlayerScreen: View {
                     // schon eine Warnung.
                     if running { Task { @MainActor in scheduleHide() } }
                 }
-                if let range = item.loadedTimeRanges.last?.timeRangeValue {
-                    let end = (range.start + range.duration).seconds
-                    if end.isFinite { buffered = end }
-                }
                 if pos - lastSaved >= 5 || lastSaved == 0 {
                     lastSaved = pos
-                    savePosition(pos, duration: duration)
+                    savePosition(pos, duration: clock.duration)
                 }
             }
 
@@ -778,9 +785,8 @@ struct PlayerScreen: View {
 
             player = av
             isPlaying = true
-            position = targetResume >= 8 ? targetResume : 0
+            clock.reset(position: targetResume >= 8 ? targetResume : 0, keepDuration: true)
             lastSaved = 0
-            buffered = 0
             await loadSubtitles(for: item)
             currentResumeAt = 0
             // Nach dem Start die Bedienung zeigen und den Wegblendezähler
@@ -943,7 +949,7 @@ struct PlayerScreen: View {
                 germanTitle: currentEpisode.germanTitle,
                 englishTitle: currentEpisode.englishTitle,
                 positionSec: pos,
-                durationSec: dur.isFinite ? dur : duration,
+                durationSec: dur.isFinite ? dur : clock.duration,
                 updatedAt: Date().timeIntervalSince1970 * 1000,
                 lang: source?.lang ?? library.langPref,
                 completed: dur >= 20 && pos >= dur * 0.9,
@@ -953,10 +959,10 @@ struct PlayerScreen: View {
     }
 
     func save(forceComplete: Bool) {
-        guard player != nil || duration > 0 else { return }
+        guard player != nil || clock.duration > 0 else { return }
         let pos = player?.currentTime().seconds ?? 0
-        var dur = player?.currentItem?.duration.seconds ?? duration
-        if !dur.isFinite { dur = duration }
+        var dur = player?.currentItem?.duration.seconds ?? clock.duration
+        if !dur.isFinite { dur = clock.duration }
         let path = currentPath.isEmpty ? currentEpisode.path : currentPath
         library.upsert(
             WatchProgress(
@@ -1002,6 +1008,9 @@ struct PlayerScreen: View {
     func teardown(saveCurrent: Bool) {
         cancelAutoplay()
         clearPlayer(saveCurrent: saveCurrent)
+        // Was während der Wiedergabe nur im Speicher stand, jetzt auf die
+        // Platte — und „Weiterschauen" sieht den neuen Stand.
+        library.flush()
     }
 
     func languageLabel(_ lang: String) -> String {

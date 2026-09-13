@@ -18,12 +18,16 @@ struct HeroItem: Identifiable, Hashable {
 struct HomeView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
     let loading: Bool
     let error: String?
     let reload: () async -> Void
 
     @State private var genreRows: [GenreRow] = []
     @State private var heroItems: [HeroItem] = []
+    /// „Schau weiter" — siehe die Aufgabe an `watchRevision` unten.
+    @State private var watching: [WatchProgress] = []
 
     private let grid = [GridItem(.adaptive(minimum: 158, maximum: 200), spacing: 18)]
 
@@ -50,11 +54,11 @@ struct HomeView: View {
                     }
 
                     if loading && catalog.isEmpty {
-                        ProgressView("Nori wird geladen")
-                            .frame(maxWidth: .infinity, minHeight: 420)
+                        // Der Umriss der Seite statt eines Rädchens im leeren
+                        // Fenster: Kopfbereich und Reihen haben ihren Platz,
+                        // bevor die Daten da sind.
+                        HomeSkeleton()
                     } else {
-                        let watching = library.continueWatching()
-
                         if !heroItems.isEmpty {
                             HeroCarousel(items: heroItems)
                         }
@@ -107,9 +111,25 @@ struct HomeView: View {
                 .disabled(loading)
             }
         }
+        // Gruppiert wird abseits des Hauptthreads: beide Rechnungen laufen
+        // über den ganzen Katalog.
         .task(id: rowsKey) {
-            genreRows = Self.buildRows(from: catalog)
-            heroItems = buildHero()
+            let items = catalog
+            let fallback = library.provider
+            let built = await Task.detached(priority: .userInitiated) {
+                (Self.buildRows(from: items), Self.buildHero(from: items, fallback: fallback))
+            }.value
+            guard !Task.isCancelled else { return }
+            genreRows = built.0
+            heroItems = built.1
+        }
+        // „Schau weiter" neu, wenn eine Folge dazukommt, abgeschlossen wird
+        // oder eine Wiedergabe endet. Vorher lief `continueWatching()` in
+        // `body`: die Startseite las damit den ganzen Fortschritt und
+        // zeichnete bei jedem Fünf-Sekunden-Takt des Players im
+        // Nachbarfenster neu.
+        .task(id: library.watchRevision) {
+            watching = library.continueWatching()
         }
     }
 
@@ -121,7 +141,7 @@ struct HomeView: View {
     ///
     /// Läuft in einer Aufgabe statt bei jedem Rendern — die Auswahl geht durch
     /// den gesamten Katalog.
-    private func buildHero() -> [HeroItem] {
+    nonisolated static func buildHero(from catalog: [CatalogItem], fallback: CatalogProvider) -> [HeroItem] {
         // Titel ohne Genre sagen im Banner nichts aus; nur wenn zu wenige mit
         // Genre da sind, wird der ganze Katalog genommen.
         let described = catalog.filter { !$0.genres.isEmpty }
@@ -139,7 +159,7 @@ struct HomeView: View {
                 HeroItem(
                     slug: $0.slug,
                     title: $0.title,
-                    kind: $0.provider ?? library.provider,
+                    kind: $0.provider ?? fallback,
                     genres: $0.genres
                 )
             }
@@ -147,7 +167,7 @@ struct HomeView: View {
 
     /// `hashValue` ist pro Prozess anders gesalzen — die Reihenfolge wechselte
     /// damit bei jedem Start der App. Diese Streuung ist es nicht.
-    static func featureRank(_ slug: String, day: Int) -> Int {
+    nonisolated static func featureRank(_ slug: String, day: Int) -> Int {
         var acc = day &* 2_654_435_761
         for scalar in slug.unicodeScalars {
             acc = (acc &* 31 &+ Int(scalar.value)) % 1_000_003
@@ -155,14 +175,15 @@ struct HomeView: View {
         return acc < 0 ? -acc : acc
     }
 
-    /// Neu gruppieren, wenn sich Quelle oder Katalogumfang ändert. Ein
-    /// `onChange` auf dem Array selbst würde bei jedem Rendern tausende
-    /// Einträge vergleichen.
+    /// Neu gruppieren, wenn sich Bereich oder Katalog ändern. Ein `onChange`
+    /// auf dem Array selbst würde bei jedem Rendern tausende Einträge
+    /// vergleichen — und die Anzahl, die hier vorher stand, übersah einen
+    /// Katalog mit derselben Zahl anderer Titel.
     private var rowsKey: String {
-        "\(library.scope.rawValue)|\(catalog.count)"
+        "\(library.scope.rawValue)|\(catalogRevision)"
     }
 
-    static func buildRows(from catalog: [CatalogItem]) -> [GenreRow] {
+    nonisolated static func buildRows(from catalog: [CatalogItem]) -> [GenreRow] {
         guard catalog.count > 12 else { return [] }
         var counts: [String: Int] = [:]
         for item in catalog {
@@ -197,6 +218,56 @@ struct HomeView: View {
 enum NoriLayout {
     static let gutter: CGFloat = 28
     static let cardWidth: CGFloat = 168
+}
+
+
+/// Die Startseite, bevor der Katalog da ist.
+///
+/// Mit den Maßen der echten Abschnitte: Kopfbereich 460 Punkte wie
+/// `HeroCarousel`, darunter zwei Reihen wie `PosterRow`. Vorher stand an
+/// dieser Stelle ein `ProgressView` mitten im leeren Fenster, und beim
+/// Eintreffen der Daten sprang die Seite von einem Rädchen auf ihren Aufbau.
+struct HomeSkeleton: View {
+    var body: some View {
+        NoriSkeletonGroup(label: "Nori wird geladen") {
+            VStack(alignment: .leading, spacing: 36) {
+                ZStack(alignment: .bottomLeading) {
+                    Rectangle().fill(NoriTheme.elevated)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Titel im Kopfbereich")
+                            .font(.system(size: 44, weight: .heavy))
+                        Text("Anime • Genre, Genre")
+                            .font(.caption)
+                        Text("Eine Beschreibung über zwei Zeilen, damit ihr Platz schon steht.")
+                            .font(.callout)
+                            .lineLimit(2)
+                    }
+                    .foregroundStyle(NoriTheme.muted.opacity(0.3))
+                    .padding(.horizontal, NoriLayout.gutter)
+                    .padding(.bottom, 54)
+                    .frame(maxWidth: 720, alignment: .leading)
+                }
+                .frame(height: 460)
+
+                ForEach(0 ..< 2, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 14) {
+                        NoriSectionHeader("Genre")
+                            .padding(.horizontal, NoriLayout.gutter)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 18) {
+                                ForEach(0 ..< 10, id: \.self) { _ in
+                                    NoriPosterSkeleton(width: NoriLayout.cardWidth)
+                                }
+                            }
+                            .padding(.horizontal, NoriLayout.gutter)
+                            .padding(.vertical, 6)
+                        }
+                        .scrollDisabled(true)
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Hero-Karussell

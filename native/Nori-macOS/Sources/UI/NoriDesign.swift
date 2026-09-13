@@ -140,3 +140,71 @@ struct NoriRowHeader<Trailing: View>: View {
         .padding(.horizontal, NoriSpacing.screen)
     }
 }
+
+// MARK: - Ladezustand
+
+/// Der Rahmen eines Ladegerüsts: nicht bedienbar, für VoiceOver ein Satz.
+///
+/// Auf dem Mac stand beim ersten Laden ein `ProgressView("… wird geladen")`
+/// mitten im leeren Fenster, und beim Eintreffen der Daten sprang die Fläche
+/// von einem Rädchen auf ein volles Raster. Die Gerüste halten stattdessen den
+/// Platz frei, den Kacheln und Zeilen später einnehmen. Ohne Schimmer: Bewegung
+/// sagt hier nichts, was die Form nicht schon sagt, und über ein großes
+/// Fenster gezogen kostet sie Leistung.
+struct NoriSkeletonGroup<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .redacted(reason: .placeholder)
+            .foregroundStyle(NoriTheme.elevated)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+    }
+}
+
+/// Eine Posterkachel im Gerüst — dieselben Maße wie `PosterCell` und
+/// `NoriPosterCell`: Poster 2 : 3, zwei reservierte Titelzeilen, eine Zeile
+/// darunter.
+struct NoriPosterSkeleton: View {
+    var width: CGFloat? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(NoriTheme.elevated)
+                .aspectRatio(2 / 3, contentMode: .fit)
+            Text("Titel eines Eintrags")
+                .font(.callout.weight(.medium))
+                .lineLimit(2, reservesSpace: true)
+            Text("Genre")
+                .font(.caption2)
+                .lineLimit(1)
+        }
+        .frame(width: width, alignment: .leading)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+    }
+}
+
+/// Eine Listenzeile im Gerüst — Miniatur, Titel, Nebenzeile.
+struct NoriRowSkeleton: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(NoriTheme.elevated)
+                .frame(width: 34, height: 51)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Titel eines Eintrags")
+                    .font(.body.weight(.medium))
+                Text("Nebenzeile")
+                    .font(.caption)
+            }
+            Spacer(minLength: 8)
+            Text("S1 · F1")
+                .font(.caption)
+        }
+        .padding(.vertical, 4)
+    }
+}
