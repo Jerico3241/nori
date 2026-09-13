@@ -5,7 +5,51 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.2.0**.
+Windows **1.8.0**, LG webOS **2.2.1**.
+
+## [webOS 2.2.1] — 2026-09-13
+
+Nur ein Paketierungsfehler. Kein App-Code geändert; OAuth-Fluss, Scope
+`drive.file`, Spiegel-Sync, Merge-Regeln, Tombstones und Sync-Version
+unverändert. iOS, macOS und Windows unverändert.
+
+### Behoben
+
+- **Das installierbare `.ipk` aus `Build webOS` hatte keinen Google-Zugang.**
+  Unter *Mehr → Abgleich* stand „nicht verfügbar". Der Workflow baute das
+  Paket ohne `VITE_NORI_GOOGLE_TV_CLIENT_ID` und
+  `VITE_NORI_GOOGLE_TV_CLIENT_SECRET`: beide kommen aus der nicht
+  eingecheckten `apps/webos/.env.local`, die es im Checkout des Runners nicht
+  gibt. Der Lauf war trotzdem grün — ein Build ohne Zugangsdaten ist für
+  Entwickler gewollt, und nichts prüfte das fertige Paket darauf.
+- Jetzt schreibt `Build webOS` vor dem produktiven Build mit
+  `python3 tools/configure-google-oauth.py --webos` die `.env.local` (0600)
+  aus `~/.config/nori/secrets/google-webos-oauth.json` auf dem Runner. Fehlt
+  die Datei, ist sie kein gültiges JSON, fehlt oder ist leer eine der beiden
+  Angaben, steht ein Platzhalter darin, hat die Client-ID nicht die Form einer
+  Google-Client-ID oder ist es kein TV-Client (`redirect_uris` vorhanden,
+  `web` statt `installed`), bricht der Lauf ab. Im Protokoll steht nur
+  „Google TV OAuth: configured", nie ein Wert.
+- `tools/check-webos-package.py --production` entpackt das fertige `.ipk` und
+  verlangt genau die produktive TV-Client-ID und das Secret — und keine
+  iOS-, macOS- oder älteren Test-Zugangsdaten, keine weiteren Client-IDs oder
+  Secrets, keine Tokens, Gerätecodes oder Cookies, keine `.env*` und keine
+  OAuth-JSON. Ohne `--production` bleibt ein Paket ohne Zugangsdaten zulässig.
+- Der Fernbedienungslauf prüft ausdrücklich „kein Google-Zugang im Build" und
+  läuft weiter gegen einen Build mit leeren TV-Variablen. `--reference-dist`
+  belegt, dass sich das ausgelieferte Paket davon nur an den beiden
+  Zugangsdaten unterscheidet. Danach entfernt der Lauf `.env.local`,
+  produktiven Build und Paket aus dem Arbeitsverzeichnis.
+
+### Tests
+
+- `tools/test_check_webos_package.py` (22): korrektes Paket, Client-ID fehlt,
+  leer oder falsch, Secret fehlt oder falsch, iOS-ID, macOS-ID und -Secret,
+  alte Test-TV-Zugangsdaten, OAuth-JSON, `.env.local`, Tokens und Cookies,
+  Entwicklerpaket ohne Zugangsdaten, Vergleich mit dem getesteten Build.
+- `tools/test_configure_google_oauth.py` +11 für `--webos` (fehlend, kein JSON,
+  fehlende oder leere Werte, Platzhalter, falsche Form, Desktop- und Web-Client)
+  und `--macos` unverändert.
 
 ## [iOS 1.25.2] · [macOS 1.20.1] — 2026-09-13
 
