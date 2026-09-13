@@ -18,8 +18,20 @@ struct CalendarView: View {
     var body: some View {
         Group {
             if loading && payload == nil {
-                ProgressView("Kalender wird geladen")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Zeilen im Umriss statt eines Rädchens mitten im Fenster.
+                ScrollView {
+                    NoriSkeletonGroup(label: "Kalender wird geladen") {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(0 ..< 12, id: \.self) { _ in
+                                NoriRowSkeleton()
+                                    .padding(.horizontal, 20)
+                                Divider()
+                            }
+                        }
+                        .padding(.vertical, 12)
+                    }
+                }
+                .scrollDisabled(true)
             } else if let error, payload == nil {
                 ContentUnavailableView(
                     "Kalender nicht geladen",
@@ -63,7 +75,7 @@ struct CalendarView: View {
     /// Bereich überhaupt an einem Genre hängt.
     private var reloadKey: String {
         guard library.scope.genre != nil else { return library.scope.rawValue }
-        return "\(library.scope.rawValue)|\(catalogStore.items.count)"
+        return "\(library.scope.rawValue)|\(catalogStore.revision)"
     }
 
     private func listBody(_ payload: CalendarPayload) -> some View {

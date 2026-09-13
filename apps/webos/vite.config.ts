@@ -1,6 +1,6 @@
-import { copyFileSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, transformWithEsbuild } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Die App wird als webOS-Paket von `file://` geladen. Deshalb relative Pfade
@@ -8,28 +8,6 @@ import react from "@vitejs/plugin-react";
 //
 // Übersetzungsziel Chrome 79: das ist die Engine von webOS 6. Damit laufen
 // `?.` und `??` auch dort, ohne dass der Quelltext darauf verzichten muss.
-/**
- * Enact liefert seine Debug-Stile als `.less` mit.
- *
- * Gebraucht wird davon nichts — es ist ein Hilfsraster zum Einfärben von
- * Spotlight-Containern während der Entwicklung. Statt `less` nur dafür als
- * Abhängigkeit aufzunehmen, wird die Datei durch ein leeres Stylesheet
- * ersetzt.
- */
-function stubEnactLess() {
-  const marker = "\0nori-empty.css";
-  return {
-    name: "nori-stub-enact-less",
-    enforce: "pre" as const,
-    resolveId(source: string) {
-      return source.endsWith(".less") ? marker : null;
-    },
-    load(id: string) {
-      return id === marker ? "" : null;
-    },
-  };
-}
-
 /**
  * Aus den Verweisen in `index.html` klassische Skript-Angaben machen.
  *
@@ -79,6 +57,44 @@ function copyAppInfo() {
   };
 }
 
+/**
+ * hls.js als eigene Datei neben das Bündel legen.
+ *
+ * Es wird erst im Player nachgeladen (`src/player/hlsLoader.ts`) und ist nicht
+ * Teil des Hauptbündels — beim Start muss der Fernseher es nicht parsen. Die
+ * UMD-Fassung aus `node_modules` wird dafür wie das Bündel für Chrome 79
+ * übersetzt: Syntax, die webOS 6 nicht kennt, bräche sonst genau den Stream
+ * ab, der hls.js braucht.
+ *
+ * Im Entwicklungsstand liefert der Vite-Server dieselbe Adresse aus.
+ */
+function vendorHls() {
+  const source = resolve(__dirname, "node_modules/hls.js/dist/hls.min.js");
+  const target = "vendor/hls.min.js";
+  const version = (JSON.parse(readFileSync(resolve(__dirname, "node_modules/hls.js/package.json"), "utf8")) as { version: string }).version;
+  return {
+    name: "nori-vendor-hls",
+    configureServer(server: { middlewares: { use(path: string, handler: (req: unknown, res: { setHeader(k: string, v: string): void; end(body: Buffer): void }) => void): void } }) {
+      server.middlewares.use(`/${target}`, (_req, res) => {
+        res.setHeader("Content-Type", "text/javascript");
+        res.end(readFileSync(source));
+      });
+    },
+    async closeBundle() {
+      const lowered = await transformWithEsbuild(readFileSync(source, "utf8"), "hls.min.js", {
+        target: "chrome79",
+        minify: true,
+        legalComments: "none",
+      });
+      mkdirSync(resolve(__dirname, "dist/vendor"), { recursive: true });
+      writeFileSync(
+        resolve(__dirname, "dist", target),
+        `/*! hls.js ${version} | Apache-2.0 | https://github.com/video-dev/hls.js */\n${lowered.code}`,
+      );
+    },
+  };
+}
+
 /** Die Version aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
 const appVersion = (JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as { version: string }).version;
 
@@ -87,7 +103,7 @@ export default defineConfig(({ command }) => ({
   define: {
     __NORI_WEBOS_VERSION__: JSON.stringify(appVersion),
   },
-  plugins: [stubEnactLess(), react(), classicScriptTags(), copyAppInfo()],
+  plugins: [react(), classicScriptTags(), copyAppInfo(), vendorHls()],
   build: {
     target: ["chrome79"],
     outDir: "dist",

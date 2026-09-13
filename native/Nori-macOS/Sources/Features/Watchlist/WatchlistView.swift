@@ -1,31 +1,29 @@
 import SwiftUI
 
+/// Die Merkliste, getrennt nach Anime und Serien.
+///
+/// Die Einträge werden gerechnet, wenn sich Merkliste oder Katalog ändern —
+/// nicht in `body`. Vorher suchte jede Zeile ihren Titel mit
+/// `catalog.first(where:)` im ganzen Katalog, und `body` baute beide Listen
+/// mehrfach: bei fünfzig gemerkten Titeln und zehntausend im Katalog einige
+/// Millionen Vergleiche je Neuzeichnen.
 struct WatchlistView: View {
     @Environment(LibraryStore.self) private var library
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
 
     @AppStorage("nori.watchlist.layout") private var layoutRaw = NoriViewMode.grid.rawValue
+    @State private var anime: [WatchlistEntry] = []
+    @State private var serien: [WatchlistEntry] = []
 
     private var layout: NoriViewMode { NoriViewMode(rawValue: layoutRaw) ?? .grid }
     private let grid = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 18)]
-
-    private var anime: [WatchlistEntry] { items(for: .aniworld) }
-    private var serien: [WatchlistEntry] { items(for: .serienstream) }
 
     struct WatchlistEntry: Identifiable, Hashable {
         let slug: String
         let title: String
         var id: String { slug }
-    }
-
-    private func items(for provider: CatalogProvider) -> [WatchlistEntry] {
-        library.favorites.compactMap { slug in
-            guard library.source(of: slug) == provider else { return nil }
-            let title = library.titles[slug]
-                ?? catalog.first(where: { $0.slug == slug })?.title
-                ?? slug
-            return WatchlistEntry(slug: slug, title: title)
-        }
     }
 
     var body: some View {
@@ -51,6 +49,30 @@ struct WatchlistView: View {
                 }
             }
         }
+        // An Revisionen, nicht an Anzahlen: ein entfernter und ein neu
+        // gemerkter Titel ändern die Zahl nicht, wohl aber die Liste.
+        .task(id: "\(library.favoritesRevision)|\(catalogRevision)") { rebuild() }
+    }
+
+    private func rebuild() {
+        // Einmal ein Verzeichnis statt je Eintrag eine Suche durch den Katalog.
+        var known: [String: String] = [:]
+        known.reserveCapacity(catalog.count)
+        for item in catalog where known[item.slug] == nil {
+            known[item.slug] = item.title
+        }
+        var nextAnime: [WatchlistEntry] = []
+        var nextSerien: [WatchlistEntry] = []
+        for slug in library.favorites {
+            let entry = WatchlistEntry(slug: slug, title: library.titles[slug] ?? known[slug] ?? slug)
+            if library.source(of: slug) == .aniworld {
+                nextAnime.append(entry)
+            } else {
+                nextSerien.append(entry)
+            }
+        }
+        anime = nextAnime
+        serien = nextSerien
     }
 
     private var listBody: some View {
@@ -85,14 +107,15 @@ struct WatchlistView: View {
             NoriSectionHeader(label, trailing: "\(items.count)")
             LazyVGrid(columns: grid, alignment: .leading, spacing: 20) {
                 ForEach(items) { item in
+                    // Die Quelle geht über `kind` an die Detailseite. Vorher
+                    // schaltete das Öffnen zusätzlich die Vorgabequelle der
+                    // ganzen Bibliothek um — eine Einstellung mit frischem
+                    // Zeitstempel, die beim nächsten Abgleich auf alle Geräte
+                    // wanderte.
                     NoriPosterCell(
                         title: item.title,
                         slug: item.slug,
-                        kind: source,
-                        // Wie in der Liste: beim Öffnen auf die Quelle des
-                        // Eintrags umschalten, damit die Detailseite nicht in
-                        // der falschen landet.
-                        onOpen: { library.provider = source }
+                        kind: source
                     )
                     .contextMenu {
                         Button("Aus Merkliste entfernen") {
@@ -109,8 +132,7 @@ struct WatchlistView: View {
             NoriSeriesLink(
                 slug: item.slug,
                 titleHint: item.title,
-                provider: src,
-                onOpen: { library.provider = src }
+                provider: src
             ) {
                 HStack(spacing: 10) {
                     PosterTile(title: item.title, slug: item.slug, compact: true, kind: src)

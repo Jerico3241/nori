@@ -21,10 +21,10 @@ import { DeviceSignInDialog, relativeTime } from "../components/DeviceSignIn";
 import { Icon } from "../components/Icon";
 import { Menu, type MenuOption } from "../components/Overlay";
 import { Screen } from "../components/Screen";
+import { useTick } from "../hooks/useTick";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { tmdb } from "../services/tmdb";
-import { tmdbState } from "../services/tmdbStatus";
+import { useTmdbState } from "../services/tmdbStatus";
 import { useData } from "../state/data";
 import { useLibrary } from "../state/library";
 import { useSettings } from "../state/settings";
@@ -49,20 +49,16 @@ export function MorePage() {
   const { settings, update } = useSettings();
   const { tmdbRoute } = useData();
   const [menu, setMenu] = useState<MenuId>(null);
-  const [, setTick] = useState(0);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["playback", "display", "sync", "nori"], {
     initial: '[data-focus-key="set-autoplay"]',
     ready: true,
   }), []);
 
-  // Der TMDB-Zustand ändert sich mit jedem Abruf; alle paar Sekunden neu lesen.
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((value) => value + 1), 3000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const tmdbInfo = tmdbState(tmdb.diagnostics());
+  // Neu gezeichnet wird, wenn TMDB den Zustand wechselt — nicht im Takt.
+  const tmdbInfo = useTmdbState();
+  // „Zuletzt vor 3 Minuten" soll auch nach drei Minuten auf der Seite stimmen.
+  useTick(30_000, sync.lastSuccessfulSync !== null);
   const lang = LANGUAGES.find((entry) => entry.value === library.state.langPref)?.label ?? library.state.langPref;
 
   return (

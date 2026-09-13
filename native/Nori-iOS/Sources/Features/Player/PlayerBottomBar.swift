@@ -18,9 +18,9 @@ struct PlayerBottomBar: View {
     /// Der Titel der Folge, sonst die Nummer.
     let episodeTitle: String
 
-    let position: Double
-    let duration: Double
-    let buffered: Double
+    /// Stelle, Dauer und Puffer. Nur der Regler liest daraus — die Leiste
+    /// selbst zeichnet beim Fortschreiten der Wiedergabe nicht neu.
+    let clock: PlaybackClock
     let speed: Float
 
     let hosters: [PlayerChoice]
@@ -87,9 +87,7 @@ struct PlayerBottomBar: View {
             }
 
             PlayerProgressSlider(
-                position: position,
-                duration: duration,
-                buffered: buffered,
+                clock: clock,
                 onScrub: onScrub,
                 onSeek: onSeek,
                 onScrubbing: onScrubbing

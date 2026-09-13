@@ -63,8 +63,13 @@ final class HomeFeedService {
     /// demselben Stand tut nichts.
     private var lastKey: String = ""
 
-    func load(catalog: [CatalogItem], local: LocalState, force: Bool = false) async {
-        let key = Self.key(catalog: catalog, local: local)
+    /// - Parameter sourceKey: woran erkennbar ist, dass sich etwas geändert
+    ///   hat — aus den Revisionen von Katalog und Bibliothek (siehe
+    ///   `NoriHomeView.feedKey`). Vorher rechnete der Dienst ihn selbst aus
+    ///   Anzahlen und dem jüngsten Fortschrittszeitpunkt; eine abgeschlossene
+    ///   Folge oder ein ersetzter Merklisteneintrag ändern keine Anzahl.
+    func load(catalog: [CatalogItem], sourceKey: String, local: LocalState, force: Bool = false) async {
+        let key = sourceKey
         if !force, key == lastKey, ready { return }
         lastKey = key
 
@@ -394,15 +399,5 @@ final class HomeFeedService {
             rows.append(HomeRow(title: labels[entry.key] ?? entry.key, items: items))
         }
         return rows
-    }
-
-    /// Woran erkennbar ist, dass sich etwas geändert hat.
-    ///
-    /// Nicht der Katalog selbst: das wären bei jedem Vergleich zehntausend
-    /// Einträge. Umfang und Fortschrittsstand reichen — beides ändert sich
-    /// genau dann, wenn die Startseite tatsächlich neu gerechnet gehört.
-    private static func key(catalog: [CatalogItem], local: LocalState) -> String {
-        let latest = local.progress.map(\.updatedAt).max() ?? 0
-        return "\(catalog.count)|\(local.progress.count)|\(Int(latest))|\(local.favorites.count)"
     }
 }

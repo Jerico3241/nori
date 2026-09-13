@@ -197,6 +197,7 @@ class TmdbService {
   private readonly queue: (() => void)[] = [];
   private running = 0;
   private readonly listeners = new Set<Listener>();
+  private readonly statusListeners = new Set<() => void>();
   private readonly saveTimers = new Map<string, number>();
 
   /**
@@ -214,6 +215,10 @@ class TmdbService {
     if (same) return;
     this.config = config;
     this.lastStatus = null;
+    // Nach dem Tausch des Zugangs unten — erst dann stimmt `available`.
+    queueMicrotask(() => {
+      for (const listener of this.statusListeners) listener();
+    });
     // Kein Umschreiben von Adressen und keine Weiterleitungsauswertung: TMDB
     // antwortet direkt, und im Serverbetrieb sitzt der Nori-Server davor.
     const http = new FetchHttpClient({ canReadRedirects: false, timeoutMs: 15_000 });
@@ -245,6 +250,29 @@ class TmdbService {
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Nur Wechsel des Zustands — nicht jeder Treffer.
+   *
+   * Getrennt von `subscribe`: dort meldet sich jede nachgeladene Serie, und
+   * wer nur „Verbunden/Fehler" anzeigt, rechnete sonst bei jedem Cover neu.
+   * Die Einstellungen zeichneten dafür vorher alle drei Sekunden neu.
+   */
+  subscribeStatus(listener: () => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  /** Das, was „Verbunden" oder „Fehler" entscheidet — ohne die Ablagen zu zählen. */
+  status(): { available: boolean; lastStatus: TMDBStatus | null } {
+    return { available: this.available, lastStatus: this.lastStatus };
+  }
+
+  private setStatus(status: TMDBStatus | null): void {
+    if (this.lastStatus === status) return;
+    this.lastStatus = status;
+    for (const listener of this.statusListeners) listener();
   }
 
   diagnostics(): TmdbDiagnostics {
@@ -332,7 +360,7 @@ class TmdbService {
         provider: input.provider,
         expectedYear: input.expectedYear ?? null,
       });
-      this.lastStatus = status;
+      this.setStatus(status);
       if (!result) {
         // Nur einen echten Fehlschlag merken: TMDB hat geantwortet, und nichts
         // passte. Bei 401, 429, einem Netzfehler oder einem 404 vom Server hat
@@ -399,7 +427,7 @@ class TmdbService {
 
     return this.once(`logo:${key}`, () => this.schedule(async () => {
       const { url, status } = await this.client.logo(art.tmdbID);
-      this.lastStatus = status;
+      this.setStatus(status);
       if (!url) return null;
       const entry = this.titles.art[key];
       if (entry) {
@@ -570,7 +598,7 @@ class TmdbService {
     }
     return this.once(`feed:${feed}`, () => this.schedule(async () => {
       const { rows, status } = await this.client.feed(feed, now);
-      this.lastStatus = status;
+      this.setStatus(status);
       // Ein leerer Abruf überschreibt keinen brauchbaren Stand. Ohne das leerte
       // ein einzelner Netzfehler die halbe Startseite.
       if (rows.length === 0) return known?.rows ?? [];
@@ -595,7 +623,7 @@ class TmdbService {
 
     return this.once(`related:${key}`, () => this.schedule(async () => {
       const { rows, status } = await this.client.related(tmdbID);
-      this.lastStatus = status;
+      this.setStatus(status);
       if (rows.length === 0) return known?.rows ?? [];
       this.relatedStore.related[key] = { rows, fetchedAt: Date.now() };
       this.trimRelated();
@@ -617,7 +645,7 @@ class TmdbService {
     if (!this.available) return { status: "noKey", ms: 0 };
     const started = Date.now();
     const { status } = await this.client.search("Frieren");
-    this.lastStatus = status;
+    this.setStatus(status);
     return { status, ms: Date.now() - started };
   }
 

@@ -214,30 +214,45 @@ struct HomeErrorBanner: View {
 /// Ein Umriss der späteren Seite statt eines kreisenden Rädchens: so springt
 /// das Layout nicht, wenn die Daten eintreffen, und es ist von Anfang an
 /// erkennbar, was dort erscheinen wird.
+///
+/// Die Maße sind die der echten Abschnitte: der Kopfbereich mit demselben
+/// Anschnitt nach unten, die Überschrift in `HomeSectionHeader`-Schrift, jede
+/// Kachel so hoch wie `HomePosterCard` (Poster plus 60 Punkte Text). Vorher
+/// fehlten den Kacheln die Textzeilen — jede Reihe wuchs beim Eintreffen der
+/// Daten um 60 Punkte, und alles darunter sprang nach unten.
 struct HomeSkeleton: View {
     let heroHeight: CGFloat
     let posterWidth: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: HomeMetrics.section) {
-            RoundedRectangle(cornerRadius: 0)
+            Rectangle()
                 .fill(NoriTheme.elevated)
                 .frame(height: heroHeight)
                 .overlay(alignment: .bottom) {
                     LinearGradient(colors: [.clear, NoriTheme.bg], startPoint: .center, endPoint: .bottom)
                 }
+                .padding(.bottom, -14)
 
             ForEach(0 ..< 2, id: \.self) { row in
-                VStack(alignment: .leading, spacing: 12) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(NoriTheme.elevated)
-                        .frame(width: 170, height: 20)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Neu & beliebt")
+                        .font(.system(size: 22, weight: .bold))
+                        .lineLimit(1)
                         .padding(.horizontal, HomeMetrics.screen)
-                    HStack(spacing: HomeMetrics.rail) {
+                        .padding(.bottom, 12)
+                    HStack(alignment: .top, spacing: HomeMetrics.rail) {
                         ForEach(0 ..< 4, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: HomeMetrics.posterRadius, style: .continuous)
-                                .fill(NoriTheme.elevated)
-                                .frame(width: posterWidth, height: posterWidth * 1.5)
+                            VStack(alignment: .leading, spacing: 8) {
+                                RoundedRectangle(cornerRadius: HomeMetrics.posterRadius, style: .continuous)
+                                    .fill(NoriTheme.elevated)
+                                    .frame(width: posterWidth, height: posterWidth * 1.5)
+                                Text("Titel")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Genre")
+                                    .font(.system(size: 11))
+                            }
+                            .frame(width: posterWidth, height: posterWidth * 1.5 + 60, alignment: .top)
                         }
                     }
                     .padding(.horizontal, HomeMetrics.screen)
@@ -246,6 +261,9 @@ struct HomeSkeleton: View {
             }
         }
         .redacted(reason: .placeholder)
+        .foregroundStyle(NoriTheme.elevated)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Startseite wird geladen")
     }
 }

@@ -315,7 +315,9 @@ struct PlayerScreen: View {
                 guard generation == playbackGeneration else { return }
                 let pos = time.seconds
                 let dur = item.duration.seconds
-                if dur.isFinite { duration = dur }
+                // Nur bei einer Änderung: jedes Setzen eines `@State` zeichnet
+                // das Fenster neu, auch mit demselben Wert.
+                if dur.isFinite, dur != duration { duration = dur }
                 if pos.isFinite { savePosition(pos, duration: duration) }
             }
 
@@ -564,6 +566,9 @@ struct PlayerScreen: View {
     func teardown(saveCurrent: Bool) {
         cancelAutoplay()
         clearPlayer(saveCurrent: saveCurrent)
+        // Was während der Wiedergabe nur im Speicher stand, jetzt auf die
+        // Platte — und die Listen im Hauptfenster sehen den neuen Stand.
+        library.flush()
     }
 
     func languageLabel(_ lang: String) -> String {

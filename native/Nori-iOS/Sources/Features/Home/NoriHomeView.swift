@@ -29,6 +29,8 @@ struct NoriHomeView: View {
     @Environment(LibraryStore.self) private var library
     /// Der vollständige Katalog beider Quellen.
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
     let loading: Bool
     let error: String?
     let reload: () async -> Void
@@ -183,17 +185,25 @@ struct NoriHomeView: View {
 
     /// Woran die Ansicht merkt, dass neu gerechnet gehört.
     ///
-    /// Ausdrücklich **nicht** der Fortschrittsstand selbst: der ändert sich
-    /// während der Wiedergabe im Sekundentakt, und die Reihenfolge der
-    /// Startseite hängt nicht daran. Ein neuer oder entfernter Eintrag ändert
-    /// dagegen die Anzahl — und genau das ist der Fall, in dem
-    /// „Weiterschauen" anders aussieht.
+    /// Revisionen statt Anzahlen. Vorher stand hier
+    /// `catalog.count|progress.count|favorites.count`: eine zu Ende gesehene
+    /// Folge, eine wieder aufgenommene ältere Serie oder ein getauschter
+    /// Merklisteneintrag ändern keine dieser Zahlen, und „Weiterschauen" blieb
+    /// beim alten Stand, bis zufällig ein Eintrag dazukam.
+    ///
+    /// Ausdrücklich **nicht** `progressRevision`: die ändert sich während der
+    /// Wiedergabe alle fünf Sekunden, und die Startseite hinter dem Player
+    /// rechnete dann ständig neu. `watchRevision` ändert sich, wenn eine Folge
+    /// dazukommt, abgeschlossen wird oder die Wiedergabe endet.
+    ///
+    /// Die Ansicht liest damit auch den Fortschritt selbst nicht mehr in
+    /// `body` — und zeichnet nicht bei jedem Takt des Players neu.
     private var feedKey: String {
-        "\(catalog.count)|\(library.progress.count)|\(library.favorites.count)"
+        "\(catalogRevision)|\(library.watchRevision)|\(library.favoritesRevision)"
     }
 
     private func rebuild(force: Bool = false) async {
-        await service.load(catalog: catalog, local: localState, force: force)
+        await service.load(catalog: catalog, sourceKey: feedKey, local: localState, force: force)
         // Der Kopfbereich kann kürzer geworden sein, seit jemand
         // weitergeblättert hat.
         if heroIndex >= feed.hero.count { heroIndex = 0 }

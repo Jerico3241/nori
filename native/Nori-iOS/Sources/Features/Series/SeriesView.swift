@@ -74,8 +74,10 @@ struct SeriesView: View {
                     description: Text(error)
                 )
             } else if loading {
-                ProgressView("Serie wird geladen")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Der Umriss der Seite statt eines Rädchens mitten im Schwarz:
+                // der Titel ist vom Antippen her bekannt und steht sofort da,
+                // Kopfbereich und Folgenliste haben ihren Platz schon.
+                SeriesSkeleton(title: titleHint, screen: NoriScreenMetrics.size)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -237,34 +239,37 @@ struct SeriesView: View {
         Task { await load(season: next) }
     }
 
+    /// Eine ganze Staffel auf einmal — ein Schreibvorgang, nicht einer je Folge.
     private func markSeasonWatched(_ detail: SeriesDetail) {
         let now = Date().timeIntervalSince1970
-        for episode in detail.episodes {
+        let items = detail.episodes.map { episode in
             // Die Laufzeit, sofern schon eine bekannt ist: sie stehen zu
             // lassen ist richtiger, als sie beim Abhaken auf null zu setzen.
             let known = library.progress(
                 slug: slug, season: season, episode: episode.number, path: episode.path, provider: source
             )
-            library.upsert(WatchProgress(
+            return WatchProgress(
                 slug: slug, title: detail.title, season: season, episode: episode.number,
                 episodePath: episode.path, germanTitle: episode.germanTitle,
                 englishTitle: episode.englishTitle,
                 positionSec: known?.durationSec ?? 0, durationSec: known?.durationSec ?? 0,
                 updatedAt: now, lang: known?.lang, completed: true, provider: source
-            ))
+            )
         }
+        library.upsert(contentsOf: items)
     }
 
     private func forgetSeason(_ detail: SeriesDetail) {
         let now = Date().timeIntervalSince1970
-        for episode in detail.episodes {
-            library.upsert(WatchProgress(
+        let items = detail.episodes.map { episode in
+            WatchProgress(
                 slug: slug, title: detail.title, season: season, episode: episode.number,
                 episodePath: episode.path, germanTitle: episode.germanTitle,
                 englishTitle: episode.englishTitle, positionSec: 0, durationSec: 0,
                 updatedAt: now, provider: source
-            ))
+            )
         }
+        library.upsert(contentsOf: items)
     }
 
     private func loadArt() async {
@@ -382,5 +387,72 @@ struct SeriesView: View {
         season = loaded.activeSeason
         resolvedProvider = provider
         library.remember(slug: slug, title: loaded.title, provider: provider)
+    }
+}
+
+/// Die Detailseite, bevor die Serie da ist.
+///
+/// Aufgebaut wie die fertige Seite: das Artworkband oben, darunter Titel,
+/// Eckdaten, Beschreibung und die beiden Knöpfe, dann die Folgen. Der Titel
+/// ist schon bekannt — er kam mit dem Antippen — und steht deshalb echt da
+/// statt als Balken.
+private struct SeriesSkeleton: View {
+    let title: String
+    let screen: CGSize
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Color.clear.frame(height: max(screen.height * 0.34, 150))
+                    Text(title)
+                        .font(.system(size: screen.width > 700 ? 44 : 34, weight: .bold, design: .serif))
+                        .foregroundStyle(NoriTheme.fg)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.5)
+                    Group {
+                        Text("2024 · Genre · Genre")
+                            .font(.subheadline)
+                        Text("Eine Beschreibung der Serie über drei Zeilen, damit der Platz dafür reserviert ist und nichts springt, wenn der Text eintrifft.")
+                            .font(.callout)
+                            .lineLimit(3)
+                    }
+                    .redacted(reason: .placeholder)
+                    .foregroundStyle(NoriTheme.elevated)
+                    HStack(spacing: 10) {
+                        Capsule().fill(NoriTheme.elevated).frame(height: 50)
+                        Capsule().fill(NoriTheme.elevated).frame(width: 50, height: 50)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, NoriSpacing.screen)
+                .frame(maxWidth: SeriesMetrics.content)
+                .frame(maxWidth: .infinity)
+                .background(alignment: .top) {
+                    LinearGradient(
+                        colors: [NoriTheme.elevated, NoriTheme.bg],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: max(screen.height * 0.34, 150) + 60)
+                }
+
+                VStack(spacing: 12) {
+                    ForEach(0 ..< 4, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(NoriTheme.elevated)
+                            .frame(height: 92)
+                    }
+                }
+                .padding(.horizontal, NoriSpacing.screen)
+                .frame(maxWidth: SeriesMetrics.content)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .scrollDisabled(true)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) wird geladen")
     }
 }

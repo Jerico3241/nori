@@ -26,6 +26,7 @@ import { DeviceSignInDialog, relativeTime } from "../../components/DeviceSignIn"
 import { Dialog } from "../../components/Overlay";
 import { Screen } from "../../components/Screen";
 import { restoreFocusSoon } from "../../navigation/focusMemory";
+import { useTick } from "../../hooks/useTick";
 import { SpotButton } from "../../navigation/Spot";
 import { useSettings } from "../../state/settings";
 import { syncStatusLabel, useSync } from "../../state/sync";
@@ -37,6 +38,8 @@ export function SyncPage() {
   const sync = useSync();
   const { settings } = useSettings();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  // „vor 3 Minuten" soll auch nach drei Minuten auf der Seite noch stimmen.
+  useTick(30_000, sync.lastSuccessfulSync !== null);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["sync"], { initial: ".setting-card .spottable", ready: true }), []);
 

@@ -245,63 +245,83 @@ enum CatalogRanking {
 
 // MARK: - Suche
 
-/// Die Katalogsuche.
-///
-/// Gesucht wird über einen **vorbereiteten** Schlüssel (`CatalogEntry.searchKey`),
-/// nicht über die Rohfelder: bei jeder Taste zehntausend Titel, Alternativtitel
-/// und Genres neu zu entkernen wäre pro Anschlag eine halbe Sekunde Arbeit.
-///
-/// Die Normalisierung ist dieselbe wie bei der TMDB-Zuordnung
-/// (`TMDBMatcher.normalize`) — kleingeschrieben, ohne Akzente, ohne
-/// Satzzeichen. Damit findet „pokemon" auch „Pokémon", „re zero" auch
-/// „Re:ZERO" und „sci fi" auch „Sci-Fi".
-enum CatalogSearch {
-    /// Der Suchschlüssel eines Eintrags: Titel, Originaltitel, Alternativtitel,
-    /// Genres und Jahr in einer normalisierten Zeichenkette.
-    static func key(
-        title: String,
-        originalTitle: String?,
-        alternates: [String],
-        genres: [String],
-        year: Int?
-    ) -> String {
-        var parts: [String] = []
-        func add(_ raw: String) {
-            let plain = TMDBMatcher.normalize(raw)
-            guard !plain.isEmpty, !parts.contains(plain) else { return }
-            parts.append(plain)
-            // Zusätzlich die um Staffel- und Jahresangaben bereinigte Fassung:
-            // wer „attack on titan" sucht, meint auch „Attack on Titan Final
-            // Season".
-            let stripped = TMDBMatcher.stripVariants(raw)
-            if !stripped.isEmpty, stripped != plain, !parts.contains(stripped) {
-                parts.append(stripped)
-            }
-        }
-        add(title)
-        if let originalTitle { add(originalTitle) }
-        for alternate in alternates { add(alternate) }
-        for genre in genres { add(genre) }
-        if let year { parts.append(String(year)) }
-        return parts.joined(separator: " ")
-    }
-
-    /// Die Suchbegriffe einer Eingabe.
-    ///
-    /// Mehrere Wörter sind eine **Und**-Verknüpfung: „fantasy 2024" meint
-    /// beides, nicht eines von beiden.
-    static func terms(_ raw: String) -> [String] {
-        let plain = TMDBMatcher.normalize(raw)
-        guard !plain.isEmpty else { return [] }
-        return plain.split(separator: " ").map(String.init)
-    }
-
+/// Die Katalogsuche über `CatalogEntry`. Schlüssel und Suchbegriffe stehen in
+/// `CatalogSearch.swift`, das beide Apple-Targets bauen.
+extension CatalogSearch {
     static func matches(_ entry: CatalogEntry, terms: [String]) -> Bool {
         guard !terms.isEmpty else { return true }
         for term in terms where !entry.searchKey.contains(term) {
             return false
         }
         return true
+    }
+}
+
+
+// MARK: - Stabile Reihenfolge
+
+/// Die Reihenfolge einer Ansicht: welche Einträge in welcher Folge dastehen.
+struct CatalogOrder<View: Hashable>: Equatable {
+    /// Was die Ansicht ausmacht — Suche, Filter, Sortierung.
+    var view: View
+    /// Kennungen in der gezeigten Reihenfolge.
+    var ids: [String]
+}
+
+/// Eine Reihenfolge, die nachträglich eintreffende Daten nicht umwirft.
+///
+/// Der Katalog baut sich in zwei Durchgängen: erst aus dem, was ohne Netz
+/// dasteht, dann mit frischen TMDB-Daten. Genau diese Daten bestimmen aber
+/// „Beliebt" und „Bewertung". Sortierte der zweite Durchgang neu, wanderten
+/// Kacheln unter dem Finger weg, während jemand schon scrollte.
+///
+/// Dieselbe Regel wie `stableCatalogOrder` im TypeScript-Kern
+/// (`shared/nori-core/src/catalog-order.ts`): **Anreicherung ändert Daten, nie
+/// die Reihenfolge.**
+///
+/// - Was schon dasteht, behält seine Stelle — auch wenn ein TMDB-abhängiger
+///   Filter es inzwischen anders einordnen würde.
+/// - Was neu hinzukommt, kommt hinten dazu.
+/// - Was es nicht mehr gibt, fällt weg.
+/// - Wird ein Titel mit dem derselben Serie der anderen Quelle
+///   zusammengeführt, übernimmt der zusammengeführte Eintrag die Stelle
+///   (`resolve`), statt ans Ende zu wandern.
+///
+/// Neu sortiert wird mit einer anderen Ansicht oder wenn der Aufrufer es
+/// verlangt (`previous = nil`) — beim ersten Aufbau und beim bewussten
+/// Aktualisieren.
+enum CatalogStableOrder {
+    /// - Parameters:
+    ///   - previous: die bisherige Reihenfolge, `nil` für einen Neuaufbau
+    ///   - view: Schlüssel der Ansicht
+    ///   - fresh: frisch sortierte Kennungen mit dem aktuellen Wissen
+    ///   - resolve: die heutige Kennung zu einer früheren, `nil`, wenn der
+    ///     Eintrag nicht mehr existiert
+    static func next<View: Hashable>(
+        previous: CatalogOrder<View>?,
+        view: View,
+        fresh: [String],
+        resolve: (String) -> String?
+    ) -> CatalogOrder<View> {
+        guard let previous, previous.view == view, !previous.ids.isEmpty else {
+            return CatalogOrder(view: view, ids: unique(fresh))
+        }
+        var seen: Set<String> = []
+        var ids: [String] = []
+        ids.reserveCapacity(max(previous.ids.count, fresh.count))
+        for old in previous.ids {
+            guard let current = resolve(old), seen.insert(current).inserted else { continue }
+            ids.append(current)
+        }
+        for id in fresh where seen.insert(id).inserted {
+            ids.append(id)
+        }
+        return CatalogOrder(view: view, ids: ids)
+    }
+
+    private static func unique(_ ids: [String]) -> [String] {
+        var seen: Set<String> = []
+        return ids.filter { seen.insert($0).inserted }
     }
 }
 

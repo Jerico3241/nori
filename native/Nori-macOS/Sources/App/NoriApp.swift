@@ -69,10 +69,23 @@ final class PlayerHost {
 @Observable
 final class CatalogStore {
     /// Beide Kataloge, zusammengeführt und alphabetisch.
-    var items: [CatalogItem] = []
+    private(set) var items: [CatalogItem] = []
+    /// Zählt hoch, wenn sich der **Inhalt** ändert — nicht die Anzahl.
+    ///
+    /// Der Kalender erkannte einen neuen Katalog an `items.count`. Dieselbe
+    /// Zahl anderer Titel ließ einen Bereich mit Genre auf dem alten Stand
+    /// stehen.
+    private(set) var revision = 0
     /// Die zuletzt gewählte Quelle. Entscheidet, welche Seite ein Titel ohne
     /// eigene Quellangabe öffnet — nicht mehr, was in den Listen steht.
     var provider: CatalogProvider = .aniworld
+
+    /// Einen neuen Stand übernehmen, sofern er sich unterscheidet.
+    func replace(with next: [CatalogItem]) {
+        guard next != items else { return }
+        items = next
+        revision &+= 1
+    }
 
     /// Der Ausschnitt für einen Bereich.
     ///
@@ -98,6 +111,12 @@ final class CatalogStore {
 
     /// Titel mit den meisten gemeinsamen Genres, ohne den Titel selbst.
     func similar(to slug: String, genres: [String], provider: CatalogProvider? = nil, limit: Int = 18) -> [CatalogItem] {
+        Self.similar(in: items, to: slug, genres: genres, provider: provider, limit: limit)
+    }
+
+    /// Dasselbe als reine Funktion — die Detailseite rechnet es abseits des
+    /// Hauptthreads, einmal je Serie und Katalogstand.
+    static func similar(in items: [CatalogItem], to slug: String, genres: [String], provider: CatalogProvider? = nil, limit: Int = 18) -> [CatalogItem] {
         guard !genres.isEmpty else { return [] }
         let wanted = Set(genres)
         // Innerhalb derselben Quelle bleiben: ein Vorschlag, der auf die
@@ -166,7 +185,13 @@ struct NoriApp: App {
                     sync.appDidBecomeActive()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    // Fortschritt, der nur im Speicher steht, zuerst auf die
+                    // Platte — ein Mac wird gern mit laufendem Player zugeklappt.
+                    library.flush()
                     sync.appDidEnterBackground()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    library.flush()
                 }
         }
         .defaultSize(width: 1180, height: 780)
@@ -243,7 +268,10 @@ struct RootView: View {
     @Environment(CatalogStore.self) private var catalogStore
 
     @State private var section: NoriSection = .home
+    /// Der Ausschnitt des gewählten Bereichs.
     @State private var catalog: [CatalogItem] = []
+    /// Zählt hoch, wenn sich der Ausschnitt inhaltlich ändert.
+    @State private var catalogRevision = 0
     @State private var error: String?
     @State private var loading = true
     @State private var columns: NavigationSplitViewVisibility = .all
@@ -307,15 +335,15 @@ struct RootView: View {
     private var detail: some View {
         switch section {
         case .home:
-            HomeView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
+            HomeView(catalog: catalog, catalogRevision: catalogRevision, loading: loading, error: error, reload: { await load(force: true) })
         case .catalog:
-            CatalogView(catalog: catalog, loading: loading, error: error, reload: { await load(force: true) })
+            CatalogView(catalog: catalog, catalogRevision: catalogRevision, loading: loading, error: error, reload: { await load(force: true) })
         case .categories:
-            CategoriesView(catalog: catalog, loading: loading)
+            CategoriesView(catalog: catalog, catalogRevision: catalogRevision, loading: loading)
         case .calendar:
             CalendarView()
         case .watchlist:
-            WatchlistView(catalog: catalog)
+            WatchlistView(catalog: catalog, catalogRevision: catalogRevision)
         }
     }
 
@@ -326,6 +354,10 @@ struct RootView: View {
     /// Rückschritt gegenüber dem alten Umschalter. Gemeldet wird nur, wenn
     /// **beide** ausfallen — oder wenn die eine ausfällt, die gerade gefragt
     /// ist.
+    ///
+    /// Sortieren und Zuschneiden laufen abseits des Hauptthreads; eine
+    /// Aktualisierung mit identischem Ergebnis ändert keine Revision und
+    /// zeichnet damit auch nichts neu.
     func load(force: Bool = false) async {
         loading = catalog.isEmpty
         error = nil
@@ -343,11 +375,25 @@ struct RootView: View {
             }
         }
 
-        if !merged.isEmpty {
-            catalogStore.items = merged.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
+        let scope = library.scope
+        let previous = catalogStore.items
+        let previousScoped = catalog
+        let prepared = await Task.detached(priority: .userInitiated) { () -> (all: [CatalogItem], scoped: [CatalogItem], scopedChanged: Bool) in
+            let all = merged.isEmpty
+                ? previous
+                : merged.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            let scoped = scope.provider == nil && scope.genre == nil
+                ? all
+                : all.filter { scope.includes(item: $0) }
+            return (all, scoped, scoped != previousScoped)
+        }.value
+
+        catalogStore.replace(with: prepared.all)
         catalogStore.provider = library.provider
-        catalog = catalogStore.items(for: library.scope)
+        if prepared.scopedChanged {
+            catalog = prepared.scoped
+            catalogRevision &+= 1
+        }
 
         if let named = library.scope.provider {
             error = failures[named]
@@ -377,6 +423,7 @@ struct RootView: View {
 
 struct PlayerWindowView: View {
     @Environment(PlayerHost.self) private var host
+    @Environment(LibraryStore.self) private var library
 
     var body: some View {
         Group {
@@ -394,7 +441,9 @@ struct PlayerWindowView: View {
         .frame(minWidth: 560, minHeight: 340)
         // Beim Schließen des Fensters die Wiedergabe wirklich beenden, damit
         // kein Stream im Hintergrund weiterläuft.
-        .onDisappear { host.request = nil }
+        .onDisappear {
+            host.request = nil
+            library.flush()
+        }
     }
 }
-

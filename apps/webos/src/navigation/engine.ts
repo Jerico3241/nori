@@ -709,6 +709,19 @@ export function installNavigation(): void {
     pointerMode = true;
     document.documentElement.dataset.pointer = "on";
   }, { passive: true });
+  // webOS meldet, wenn der Zeiger der Magic Remote verschwindet — nach ein
+  // paar Sekunden Ruhe oder beim Wechsel auf die Pfeiltasten. Dann gilt wieder
+  // der Tastenmodus: der Fokus steht sichtbar auf dem zuletzt gezeigten
+  // Element und konkurriert nicht mehr mit einem Hover, den es nicht mehr gibt.
+  document.addEventListener("cursorStateChange", (event) => {
+    const visible = (event as CustomEvent<{ visibility?: boolean }>).detail?.visibility;
+    if (visible !== false || !pointerMode) return;
+    pointerMode = false;
+    document.documentElement.dataset.pointer = "off";
+    const active = document.activeElement;
+    if (isUsable(active) && active.matches(FOCUSABLE)) reveal(active);
+    else recoverFocus(true);
+  });
   document.addEventListener("mouseover", (event) => {
     if (!pointerMode) return;
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>(FOCUSABLE) : null;

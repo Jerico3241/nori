@@ -1,5 +1,74 @@
 import SwiftUI
 
+/// Stelle, Dauer und Puffer der laufenden Wiedergabe.
+///
+/// ## Warum ein eigenes Objekt
+///
+/// Die Stelle stand vorher als `@State` im `PlayerScreen`. Der Zeitbeobachter
+/// setzt sie viermal pro Sekunde — und jedes Setzen zeichnete den **ganzen**
+/// Player neu: Bedienung, Menüs, Hoster- und Sprachlisten (samt Sortierung),
+/// auch dann, wenn die Bedienung ausgeblendet war und niemand hinsah.
+///
+/// Jetzt lesen genau die Ansichten die Stelle, die sie zeigen — der Regler
+/// und seine Zeiten. Und solange die Bedienung ausgeblendet ist, wird sie nur
+/// mitgeschrieben (`latestPosition`), ohne dass SwiftUI etwas davon erfährt.
+/// Blendet die Bedienung ein, steht der Regler im selben Moment richtig.
+@Observable
+final class PlaybackClock {
+    /// Die gezeigte Stelle.
+    private(set) var position: Double = 0
+    private(set) var duration: Double = 0
+    /// Bis wohin gepuffert ist, auf halbe Sekunden gerundet — feiner sieht
+    /// man es auf dem Regler nicht, und jede Änderung wäre ein Neuzeichnen.
+    private(set) var buffered: Double = 0
+
+    /// Die tatsächliche Stelle, auch wenn gerade niemand hinsieht. Für
+    /// Sprünge und das Sichern.
+    @ObservationIgnored private(set) var latestPosition: Double = 0
+    @ObservationIgnored private var latestBuffered: Double = 0
+
+    /// Ist die Bedienung zu sehen? Nur dann zieht der Regler mit.
+    @ObservationIgnored var isShown = true {
+        didSet { if isShown, !oldValue { publish() } }
+    }
+
+    /// Ein Takt des Zeitbeobachters.
+    func tick(position: Double, duration: Double?, buffered: Double?) {
+        guard position.isFinite else { return }
+        latestPosition = position
+        if let duration, duration.isFinite, duration > 0, duration != self.duration {
+            self.duration = duration
+        }
+        if let buffered, buffered.isFinite {
+            latestBuffered = (buffered * 2).rounded(.down) / 2
+        }
+        if isShown { publish() }
+    }
+
+    /// Ein Sprung: sofort sichtbar, auch bei ausgeblendeter Bedienung — der
+    /// Doppeltipp zeigt seine eigene Rückmeldung, der Regler soll danach
+    /// nicht an der alten Stelle aufblenden.
+    func jump(to position: Double) {
+        latestPosition = position
+        self.position = position
+    }
+
+    /// Eine neue Wiedergabe. Beim Hosterwechsel bleibt die Dauer stehen, damit
+    /// der Regler nicht auf null zusammenfällt und gleich wieder aufspringt.
+    func reset(position: Double, keepDuration: Bool) {
+        latestPosition = position
+        latestBuffered = 0
+        self.position = position
+        buffered = 0
+        if !keepDuration { duration = 0 }
+    }
+
+    private func publish() {
+        if position != latestPosition { position = latestPosition }
+        if buffered != latestBuffered { buffered = latestBuffered }
+    }
+}
+
 /// Der Fortschrittsregler.
 ///
 /// Ein eigener Regler statt `Slider`: der Systemregler bringt eine eigene Spur
@@ -13,9 +82,7 @@ import SwiftUI
 /// Gruppe gelöst, hier über die tatsächlichen Maße, damit der Text nicht
 /// mitverzerrt wird.
 struct PlayerProgressSlider: View {
-    let position: Double
-    let duration: Double
-    let buffered: Double
+    let clock: PlaybackClock
 
     /// Läuft während des Ziehens mit — der Player folgt dem Finger, statt
     /// erst beim Loslassen zu springen.
@@ -33,8 +100,8 @@ struct PlayerProgressSlider: View {
     @State private var dragging = false
     @State private var dragValue: Double = 0
 
-    private var shown: Double { dragging ? dragValue : position }
-    private var total: Double { duration.isFinite && duration > 0 ? duration : 0 }
+    private var shown: Double { dragging ? dragValue : clock.position }
+    private var total: Double { clock.duration.isFinite && clock.duration > 0 ? clock.duration : 0 }
     private var trackHeight: CGFloat { dragging ? 8 : 5 }
     private var knob: CGFloat { dragging ? 17 : 11 }
 
@@ -43,7 +110,7 @@ struct PlayerProgressSlider: View {
             GeometryReader { geo in
                 let width = geo.size.width
                 let played = total > 0 ? min(max(shown / total, 0), 1) : 0
-                let loaded = total > 0 ? min(max(buffered / total, 0), 1) : 0
+                let loaded = total > 0 ? min(max(clock.buffered / total, 0), 1) : 0
 
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -110,8 +177,8 @@ struct PlayerProgressSlider: View {
             guard total > 0 else { return }
             let step = max(total / 20, 10)
             switch direction {
-            case .increment: onSeek(min(position + step, total))
-            case .decrement: onSeek(max(position - step, 0))
+            case .increment: onSeek(min(clock.latestPosition + step, total))
+            case .decrement: onSeek(max(clock.latestPosition - step, 0))
             @unknown default: break
             }
         }

@@ -8,6 +8,20 @@
 // schließen, erst dann den Player verlassen. Ein Zurück, das aus dem Drawer
 // heraus sofort zur Detailseite springt, verliert die Wiedergabe für einen
 // Tastendruck, der nur „einen Schritt zurück" meinte.
+//
+// ## Was während der Wiedergabe gerendert wird
+//
+// Möglichst nichts. Die Zeitleiste zieht nur mit, solange die Bedienung zu
+// sehen ist; ausgeblendet wird die Position nur mitgeschrieben (`lastTime`),
+// ohne dass React etwas davon erfährt. Gesichert wird alle fünf Sekunden,
+// bei Pause, beim Folgenwechsel und beim Verlassen.
+//
+// Die Ereignisse des Videoelements hängen **einmal** am Element und lesen den
+// aktuellen Stand über `latest`. Hingen sie an `library` — und damit an jedem
+// gesicherten Fortschritt —, würden sie alle fünf Sekunden neu angehängt; und
+// eine Aufräumfunktion, die selbst sichert, löste damit ihre eigene nächste
+// Runde aus. Genau das ist passiert: eine Endlosschleife aus Sichern und
+// Neurendern, zehntausend Mal in der Sekunde, solange eine Folge lief.
 
 import {
   NoriError, availableLanguages, episodePathFor, nextEpisode, orderHosters, previousEpisode,
@@ -15,7 +29,7 @@ import {
   type CatalogProvider, type Episode, type HosterOption, type PlaySource, type SeriesDetail,
   type WatchInfo,
 } from "@nori/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { Icon } from "../components/Icon";
@@ -33,6 +47,9 @@ import { attachPlayback, type Playback } from "./hlsPlayback";
 
 type Phase = "resolving" | "playing" | "error";
 type Overlay = "none" | "resume" | "next";
+
+/** Darunter ist nichts angesehen worden — dieselbe Schwelle wie auf den Apple-Geräten. */
+const MIN_SAVED_POSITION = 2;
 
 function isProvider(value: string | undefined): value is CatalogProvider {
   return value === "aniworld" || value === "serienstream";
@@ -89,6 +106,8 @@ export function PlayerPage() {
   const pendingSeek = useRef(0);
   const resumeAsked = useRef(false);
   const startAt = useRef(requestedAt);
+  /** Die zuletzt gesehene Stelle der **laufenden** Folge — ohne Rendern mitgeschrieben. */
+  const lastTime = useRef({ position: 0, duration: 0 });
 
   const episodes = useMemo(
     () => [...(detail?.episodes ?? [])].sort((a, b) => a.number - b.number),
@@ -113,6 +132,8 @@ export function PlayerPage() {
   const title = detail?.title ?? slug;
   const subtitle = `Staffel ${season} · Folge ${episodeNumber}`
     + (episode?.germanTitle ? ` · ${episode.germanTitle}` : "");
+
+  const controlsVisible = chrome && phase === "playing" && overlay === "none" && !drawer;
 
   // ---- Bedienung ein- und ausblenden -------------------------------------
 
@@ -246,13 +267,6 @@ export function PlayerPage() {
     };
   }, [source, phase, gateway]);
 
-  // Restlos abbauen, wenn die Seite verlassen wird — auch wenn der Effekt oben
-  // durch einen Fehler nie lief.
-  useEffect(() => () => {
-    playbackRef.current?.destroy();
-    playbackRef.current = null;
-  }, []);
-
   // ---- Fortschritt --------------------------------------------------------
 
   const saveProgress = useCallback((positionSec: number, durationSec: number, completed?: boolean) => {
@@ -274,44 +288,67 @@ export function PlayerPage() {
     });
   }, [library, slug, title, season, episodeNumber, episodePath, episode, lang, provider]);
 
+  /**
+   * Der aktuelle Stand für alles, was außerhalb des Renderns läuft —
+   * Videoereignisse, Zeitgeber, Aufräumen. Siehe Kopf der Datei.
+   */
+  const latest = useRef({ library, saveProgress, nextEp, episodePath, provider, navigate, settings });
+  latest.current = { library, saveProgress, nextEp, episodePath, provider, navigate, settings };
+
+  /** Die Stelle der laufenden Folge sichern, sofern schon etwas zu sichern ist. */
+  const saveNow = useCallback((flush: boolean) => {
+    const { position: at, duration: total } = lastTime.current;
+    if (total > 0 && at >= MIN_SAVED_POSITION) latest.current.saveProgress(at, total);
+    if (flush) latest.current.library.flush();
+  }, []);
+
   useEffect(() => {
-    if (phase !== "playing") return;
+    if (phase !== "playing") return undefined;
     const timer = window.setInterval(() => {
       const video = videoRef.current;
-      if (!video || video.paused || !Number.isFinite(video.duration)) return;
-      saveProgress(video.currentTime, video.duration);
+      if (!video || video.paused) return;
+      saveNow(false);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [phase, saveProgress]);
+  }, [phase, saveNow]);
 
-  // Beim Verlassen den letzten Stand sichern; sonst fehlen die letzten
-  // Sekunden vor dem Zurückgehen.
+  // Beim Verlassen den letzten Stand sichern und sofort schreiben; sonst
+  // fehlen die Sekunden seit dem letzten Takt. Ausdrücklich ohne
+  // Abhängigkeiten — diese Aufräumung läuft genau einmal.
   useEffect(() => () => {
-    const video = videoRef.current;
-    if (video && Number.isFinite(video.duration) && video.duration > 0 && video.currentTime > 0) {
-      saveProgress(video.currentTime, video.duration);
-    }
-  }, [saveProgress]);
+    playbackRef.current?.destroy();
+    playbackRef.current = null;
+    saveNow(true);
+  }, [saveNow]);
 
   // ---- Videoereignisse ----------------------------------------------------
 
+  const clockVisible = useRef(controlsVisible);
+  clockVisible.current = controlsVisible;
+
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) return undefined;
     const onTime = () => {
+      // Nach dem Abbau meldet das Element Position null ohne Dauer — das ist
+      // kein Stand der Folge und darf den letzten nicht überschreiben.
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      lastTime.current = { position: video.currentTime, duration: video.duration };
+      if (!clockVisible.current) return;
       setPosition(video.currentTime);
       if (video.buffered.length > 0) {
-        setBuffered(video.buffered.end(video.buffered.length - 1));
+        setBuffered(Math.floor(video.buffered.end(video.buffered.length - 1)));
       }
     };
     const onMeta = () => {
+      const { library: current, episodePath: path, provider: source } = latest.current;
       setDuration(Number.isFinite(video.duration) ? video.duration : 0);
-      video.playbackRate = library.state.playbackSpeed;
+      video.playbackRate = current.state.playbackSpeed;
       // Resume-Frage nur, wenn nicht schon eine Position mitgegeben wurde.
       if (!resumeAsked.current && startAt.current < 8) {
         resumeAsked.current = true;
-        const stored = library.progressFor(episodePath, provider);
-        const at = library.state.resumeEnabled ? resumePosition(stored) : 0;
+        const stored = current.progressFor(path, source);
+        const at = current.state.resumeEnabled ? resumePosition(stored) : 0;
         if (at >= 8) {
           startAt.current = at;
           setOverlay("resume");
@@ -320,14 +357,21 @@ export function PlayerPage() {
       }
     };
     const onPlay = () => setPaused(false);
-    const onPause = () => setPaused(true);
+    const onPause = () => {
+      setPaused(true);
+      // Angehalten ist ein guter Moment, den Stand wirklich abzulegen: wer
+      // danach den Fernseher ausschaltet, soll dort weitermachen.
+      saveNow(true);
+    };
     const onEnded = () => {
-      saveProgress(video.duration, video.duration, true);
-      if (library.state.autoplayNext && nextEp) {
-        setCountdown(settings.autoplayCountdown);
+      const { library: current, saveProgress: save, nextEp: next, settings: device, navigate: go } = latest.current;
+      save(video.duration, video.duration, true);
+      current.flush();
+      if (current.state.autoplayNext && next) {
+        setCountdown(device.autoplayCountdown);
         setOverlay("next");
       } else {
-        navigate(-1);
+        go(-1);
       }
     };
     video.addEventListener("timeupdate", onTime);
@@ -344,13 +388,27 @@ export function PlayerPage() {
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
     };
-  }, [library, episodePath, provider, saveProgress, nextEp, navigate, settings.autoplayCountdown]);
+  }, [saveNow]);
+
+  // Wird die Bedienung sichtbar, steht die Zeitleiste im selben Bild richtig —
+  // nicht erst beim nächsten `timeupdate`.
+  useLayoutEffect(() => {
+    if (!controlsVisible) return;
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration)) return;
+    setPosition(video.currentTime);
+    if (video.buffered.length > 0) setBuffered(Math.floor(video.buffered.end(video.buffered.length - 1)));
+  }, [controlsVisible]);
 
   // ---- Countdown ----------------------------------------------------------
 
   const goToEpisode = useCallback((target: Episode) => {
+    // Die laufende Folge noch sichern — mit ihrer eigenen Nummer, bevor die
+    // Adresse auf die nächste zeigt.
+    saveNow(false);
     playbackRef.current?.destroy();
     playbackRef.current = null;
+    lastTime.current = { position: 0, duration: 0 };
     resumeAsked.current = false;
     startAt.current = 0;
     setOverlay("none");
@@ -363,7 +421,7 @@ export function PlayerPage() {
       path: target.path,
       at: "0",
     }, { replace: true });
-  }, [season, setSearch]);
+  }, [season, setSearch, saveNow]);
 
   useEffect(() => {
     if (overlay !== "next" || !nextEp) return;
@@ -562,6 +620,8 @@ export function PlayerPage() {
     ).filter((h) => !failedHosters.includes(`${h.name}|${h.lang}`));
   }, [info, lang, library.state.hosterPref, failedHosters]);
 
+  const languages = useMemo(() => (info ? availableLanguages(info.hosters) : []), [info]);
+
   return (
     <div className="player-page">
       <video
@@ -675,7 +735,7 @@ export function PlayerPage() {
       ) : null}
 
       <PlayerControls
-        visible={chrome && phase === "playing" && overlay === "none" && !drawer}
+        visible={controlsVisible}
         title={title}
         subtitle={subtitle}
         paused={paused}
@@ -698,7 +758,7 @@ export function PlayerPage() {
 
       <PlayerDrawer
         open={drawer}
-        languages={info ? availableLanguages(info.hosters) : []}
+        languages={languages}
         activeLang={lang}
         hosters={info?.hosters ?? []}
         activeHoster={source?.hoster ?? null}

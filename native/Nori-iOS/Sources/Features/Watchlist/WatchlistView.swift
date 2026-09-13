@@ -30,6 +30,8 @@ struct WatchlistView: View {
     /// Der Katalog liefert Genres und Alternativtitel. Er entscheidet
     /// **nicht**, was in der Merkliste steht — das tut allein `favorites`.
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
     /// Wechselt in den Katalog-Tab. Für den leeren Zustand.
     var openCatalog: (() -> Void)?
 
@@ -158,7 +160,7 @@ struct WatchlistView: View {
                     }
                 }
                 .padding(.bottom, WatchlistMetrics.bottom)
-                .noriAnimation(NoriMotion.ui, value: model.results.map(\.id))
+                .noriAnimation(NoriMotion.ui, value: model.resultIDs)
             }
             .scrollIndicators(.hidden)
             .noriSoftScrollEdges()
@@ -344,13 +346,14 @@ struct WatchlistView: View {
 
     /// Woran die Ansicht merkt, dass die Merkliste neu zusammenzustellen ist.
     ///
-    /// Der jüngste Fortschrittszeitpunkt gehört dazu, die Anzahl allein
-    /// reichte nicht: kommt jemand aus dem Player zurück, ist dieselbe Folge
-    /// weiter fortgeschritten, ohne dass ein Eintrag hinzugekommen wäre. Die
-    /// Position selbst steht bewusst **nicht** im Schlüssel — sie ändert sich
-    /// im Sekundentakt.
+    /// Revisionen statt Anzahlen: vorher standen hier `favorites.count` und
+    /// `progress.count` — ein entfernter und ein neu gemerkter Titel ließen
+    /// die Liste auf dem alten Stand stehen. Außerdem lief für den jüngsten
+    /// Fortschrittszeitpunkt bei **jedem** Neuzeichnen ein `map` über den
+    /// gesamten Fortschritt, und die Ansicht zeichnete bei jedem Takt des
+    /// Players neu. `watchRevision` ändert sich genau dann, wenn eine Folge
+    /// neu dazukommt, abgeschlossen wird oder eine Wiedergabe endet.
     private var sourceKey: String {
-        let latest = library.progress.values.map(\.updatedAt).max() ?? 0
-        return "\(library.favorites.count)|\(library.progress.count)|\(latest)|\(catalog.count)"
+        "\(library.favoritesRevision)|\(library.watchRevision)|\(catalogRevision)"
     }
 }

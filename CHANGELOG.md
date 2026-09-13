@@ -4,8 +4,158 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.18.0**, iOS/iPadOS **1.23.0**,
-Windows **1.8.0**, LG webOS **2.1.1**.
+unterschiedlich schnell bewegen: macOS **1.19.0**, iOS/iPadOS **1.24.0**,
+Windows **1.8.0**, LG webOS **2.2.0**.
+
+## [iOS 1.24.0] · [macOS 1.19.0] · [webOS 2.2.0] — 2026-09-13
+
+Qualitätsdurchgang über alle drei gepflegten Apps: weniger Rechenarbeit,
+weniger Schreibzugriffe, früher sichtbare Oberfläche, ruhigere Ladezustände.
+Keine neuen Funktionen, keine Änderung an Google Drive, OAuth, Merge-Regeln,
+`drive.appdata`, `drive.file` oder am Bibliotheksschema (weiter v6).
+
+### Behoben — webOS
+
+- **Der Player rechnete während der Wiedergabe ununterbrochen.** Die
+  Aufräumfunktion „beim Verlassen sichern" hing an `saveProgress` und damit an
+  der Bibliothek. Jede Sicherung erzeugte eine neue Bibliothek, damit ein neues
+  `saveProgress`, damit einen Aufräumlauf, der wieder sicherte — eine
+  Endlosschleife aus Sichern und Rendern. Gemessen (Chromium, CPU ×4
+  gedrosselt): 20 s Wiedergabe kosteten 19,7 s Skriptzeit und 210 645
+  React-Commits. Nebenwirkung: das gebündelte Schreiben in den `localStorage`
+  wurde bei jedem Durchlauf neu verschoben und fand während der Wiedergabe nie
+  statt. Jetzt hängen Videoereignisse, Zeitgeber und das Sichern beim Verlassen
+  einmal am Element und lesen den aktuellen Stand über eine Referenz: 5 ms
+  Skriptzeit und 4 Commits in 20 s.
+- **Der letzte Stand beim Verlassen ging verloren.** Das Videoelement war beim
+  Aufräumen schon abgebaut (Position 0). Die Stelle wird jetzt ohne Rendern
+  mitgeschrieben und beim Verlassen, bei Pause, beim Folgenwechsel und am
+  Folgenende sofort abgelegt.
+- **Die Zeitleiste zeichnete den ganzen Player viermal pro Sekunde neu**, auch
+  bei ausgeblendeter Bedienung. Sie zieht jetzt nur mit, solange die Bedienung
+  sichtbar ist, und steht beim Einblenden im selben Bild richtig.
+- **„Mehr" zeichnete alle drei Sekunden neu**, nur um den TMDB-Zustand zu lesen.
+  Jetzt meldet `tmdb` Zustandswechsel (`subscribeStatus`), die Seite zeichnet nur
+  dann. „Zuletzt vor 3 Minuten" bleibt über einen halbminütigen Takt richtig,
+  auch auf „Abgleich".
+- **Derselbe Wert als Einstellung** (`setPreference`) bekam eine frische Marke
+  und stieß Schreiben und Abgleich an. Jetzt nur bei einer echten Änderung.
+
+### Verbessert — webOS
+
+- **hls.js wird erst im Player geladen.** Es lag im Startbündel und war mit
+  Abstand dessen größter Teil. Jetzt liegt es als eigene Datei im Paket
+  (`vendor/hls.min.js`, beim Bau für Chrome 79 übersetzt) und wird als
+  klassisches Skript nachgeladen — ES-Module laden von `file://` nicht. Ein
+  Fernseher mit nativem HLS lädt es nie. Hauptbündel 1 001 KB → 410 KB
+  (gzip 317 → 133 KB).
+- **Start** (Chromium, CPU ×4): Dokument geladen 233 → 63 ms, App-Hülle
+  264 → 82 ms, erster Inhalt 352 → 155 ms, Skriptzeit bis zur fertigen
+  Startseite 269 → 123 ms.
+- **Bibliothek:** Änderungen stehen sofort im Zustand; geschrieben wird nach
+  höchstens 400 ms, Fortschritt der Wiedergabe höchstens alle 10 s, und sofort
+  bei `visibilitychange`/`pagehide`, Pause, Folgenende und beim Verlassen des
+  Players. Ein unveränderter Stand wird nicht erneut geschrieben.
+- **Fokus-Netz:** Der Watchdog lief alle 600 ms, auch im Hintergrund. Gemessen
+  kostete er kaum Rechenzeit (≈ 1 ms in 20 s Leerlauf), weckte das Gerät aber
+  hundertmal pro Minute. Jetzt alle 2 s, nicht bei verborgener App, dazu sofort
+  beim Zurückkehren in den Vordergrund. Zurückgeholt wird weiter
+  ereignisgesteuert (`focusout`, MutationObserver, Tastendruck).
+- **Magic Remote:** Verschwindet der Zeiger (`cursorStateChange`), gilt wieder
+  der Tastenmodus — der Fokus steht sichtbar auf dem zuletzt gezeigten Element.
+- Die nicht mehr benutzte Enact-`.less`-Umleitung ist aus `vite.config.ts`
+  entfernt.
+
+### Behoben — iOS/iPadOS und macOS
+
+- **Anzahl statt Revision.** Startseite („Weiterschauen"), Merkliste, Katalog,
+  Kalender und Kategorien erkannten Änderungen an `catalog.count`,
+  `favorites.count` oder `progress.count`. Ein getauschter Merklisteneintrag,
+  eine zu Ende gesehene Folge oder ein Katalog mit derselben Zahl anderer Titel
+  blieben unbemerkt. `LibraryStore` führt jetzt `favoritesRevision`,
+  `recentsRevision`, `progressRevision` (jeder Takt) und `watchRevision`
+  (abgeschlossene Änderungen); die Wurzelansichten zählen eine
+  `catalogRevision` hoch, wenn sich der **Inhalt** ändert. Eine Aktualisierung
+  mit identischem Ergebnis rechnet nichts neu.
+- **Die Startseite zeichnete hinter dem Player alle fünf Sekunden neu** (iOS)
+  bzw. im Hauptfenster neben dem Player (macOS), weil sie den Fortschritt in
+  `body` las. Jetzt hängt sie an `watchRevision`.
+- **Jede Sicherung der Wiedergabe schrieb die ganze Bibliothek auf die Platte.**
+  Takte derselben Folge werden gebündelt (höchstens alle 10 s) und sofort
+  geschrieben bei Pause, Ende der Wiedergabe, Hintergrund und Programmende.
+  Neue Folgen, abgeschlossene Folgen, Merkliste und Einstellungen werden weiter
+  sofort geschrieben. „Staffel als gesehen markieren" schreibt einmal statt je
+  Folge (`upsert(contentsOf:)`).
+- **Derselbe Einstellungswert war eine Änderung.** Der Player setzt Hoster und
+  Sprache bei jedem Start; jede Wiedergabe schrieb damit zweimal und stieß einen
+  Upload an, und die frische Marke konnte die bewusste Wahl eines anderen Geräts
+  überschreiben.
+- **Die Merkliste des Macs** suchte je Eintrag den Titel im ganzen Katalog, und
+  das Öffnen eines Titels stellte die Vorgabequelle der ganzen Bibliothek um
+  (mit Zeitstempel und Abgleich). Beides entfällt.
+
+### Verbessert — iOS/iPadOS
+
+- **Der Player** zeichnet beim Fortschreiten der Wiedergabe nur noch den Regler
+  neu (`PlaybackClock`), und bei ausgeblendeter Bedienung gar nichts.
+- **Stabile Reihenfolge im Katalog** (`CatalogStableOrder`, dieselbe Regel wie
+  `stableCatalogOrder` auf dem Fernseher): der zweite Durchgang mit frischen
+  TMDB-Daten aktualisiert Kacheln, sortiert sie aber nicht um, während jemand
+  scrollt. Neu sortiert wird bei einer anderen Abfrage und beim Aktualisieren.
+  Das Nachladen des Rasters beginnt nur bei einer neuen Abfrage von vorn, nicht
+  mehr, wenn TMDB die Trefferzahl ändert.
+- **Ladegerüste mit den echten Maßen:** Die Kacheln im Startseiten-Gerüst waren
+  60 Punkte zu niedrig, die im Katalog-Gerüst hatten feste Balken statt echter
+  Textzeilen — beim Eintreffen der Daten sprang das Layout. Kalender und
+  Detailseite zeigen ein Gerüst statt eines Rädchens; die Detailseite nennt dabei
+  schon den Titel. Gerüste sind für VoiceOver ein einziger Satz.
+- **Katalog laden:** Sortieren und Zuschneiden von zehntausend Titeln liefen beim
+  Start und bei jedem Bereichswechsel auf dem Hauptthread; jetzt daneben.
+
+### Verbessert — macOS
+
+- **Katalog wie auf iOS gebaut:** vorbereiteter Index (`CatalogItemIndex` im
+  Kern, dieselbe Normalisierung wie die iPhone-Suche), entprellte Suche abseits
+  des Hauptthreads. Vorher lief `lowercased().contains` über den ganzen Katalog
+  bei jedem Neuzeichnen — dreimal je Durchlauf —, und „pokemon" fand „Pokémon"
+  nicht.
+- **Ladegerüste** für Startseite, Katalog, Kategorien, Kalender und Detailseite
+  statt `ProgressView` im leeren Fenster; Toolbar und Suche stehen sofort.
+- Kategorien, Startseitenreihen und „Ähnliche Titel" werden je Katalogstand
+  einmal abseits des Hauptthreads gerechnet statt in `body`.
+
+### Verbessert — Bilder (iOS und macOS)
+
+- **Plattenspeicher für Cover** (`NoriImages`, 256 MB): nach einem Neustart und
+  ohne Netz sind geladene Cover sofort da. Vorher lag nichts auf der Platte.
+- **Ein Abruf je Adresse:** dasselbe Cover in mehreren Kacheln wird einmal
+  geladen; der Abruf bricht erst ab, wenn keine Kachel mehr wartet.
+- **Entschlüsselt abseits des Hauptthreads** und verkleinert auf höchstens
+  1600 Pixel, mit einem Speicher für fertige Bilder. Vorher entstand das Bild
+  auf dem Hauptthread und wurde erst beim Zeichnen entpackt — beim Scrollen.
+
+### Geprüft
+
+- Swift-Kern: **479/479** (vorher 452; neu: Revisionen und gebündeltes Schreiben
+  10, Katalogindex 5, stabile Reihenfolge 8, Bildentschlüsselung 4).
+- TypeScript-Kern **221/221**, nori-api **13/13**.
+- Fernbedienungstest **310/310** (1080p, 4K, `file://`; neu 5): Start ohne
+  hls.js, Startbündel unter 600 KB, Wiedergabe ohne Dauerrechnen (gemessen
+  9 ms Skriptzeit in 3 s), Pause legt den Stand sofort ab, hls.js lässt sich
+  von `file://` nachladen. Lokal ohne Google-Zugangsdaten im Build gebaut, wie
+  in der CI.
+- **Gegenbeweis:** derselbe Test gegen das gebaute Paket von 2.1.1: 304/310.
+  Es schlagen fehl „Startbündel unter 600 KB" (978 KB), „Wiedergabe ohne
+  Dauerrechnen" (2 972 ms Skript in 3 s), „Pause legt den Stand sofort ab"
+  (nichts abgelegt) und „hls.js lässt sich nachladen" — dazu die erwartete
+  Versionsprüfung und die Prüfung ohne Google-Zugang (jenes Paket war mit
+  Zugangsdaten gebaut). „Start ohne hls.js" besteht auch mit 2.1.1, weil hls.js
+  dort im Bündel steckte, ohne ein globales `Hls` anzulegen; die Prüfung sichert
+  nur, dass es nicht künftig beim Start geladen wird.
+- `check-webos-package.py` OK — 2.2.0 überall, `vendor/hls.min.js` im `.ipk`.
+- `xcodebuild` iOS-Simulator und macOS: Build erfolgreich.
+  `check-apple-sources.py`: keine Auffälligkeiten.
+- Nicht auf LG-Hardware, nicht auf einem physischen iPhone/iPad geprüft.
 
 ## [webOS 2.1.1] — 2026-09-13
 

@@ -101,15 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.18.0"
+    static let version = "1.19.0"
 
     static let highlights = [
-        "Mit Fernseher teilen: Ein neuer Schalter unter Einstellungen › Synchronisation legt nach deiner Zustimmung bei Google eine sichtbare Kopie im Ordner „Nori“ an, die der LG-Fernseher liest. Ohne den Schalter ändert sich nichts.",
-        "Ein Mac mit eingeschalteter Freigabe reicht Änderungen zwischen Fernseher, iPhone und iPad weiter.",
-        "Ausschalten stoppt nur diesen Mac. Gelöscht wird dabei nichts — weder die Kopie noch der Ordner.",
-        "Ein Abgleich ohne Änderung schreibt jetzt auch nach einem Neustart nichts nach Google Drive.",
-        "Liegen für ein Gerät mehrere Dateien vor, nutzt Nori gleichbleibend die neueste.",
-        "Anmeldung auf dem Mac mit Client-Secret aus der Build-Konfiguration (seit 1.17.0).",
+        "Der Katalog sucht jetzt wie auf dem iPhone: ohne Akzente, über Alternativtitel und Genres, entprellt und abseits des Hauptthreads — auch bei zehntausend Titeln ohne Stocken.",
+        "Beim ersten Laden stehen Startseite, Katalog, Kategorien, Kalender und Detailseite als Umriss da statt als Rädchen im leeren Fenster.",
+        "Merkliste, „Schau weiter“ und Kalender bemerken jetzt jede Änderung — auch dann, wenn die Anzahl gleich bleibt.",
+        "Während der Wiedergabe zeichnet das Hauptfenster nicht mehr alle fünf Sekunden neu, und der Fortschritt wird gebündelt statt bei jedem Takt auf die Platte geschrieben — sofort beim Schließen und beim Wechsel in ein anderes Programm.",
+        "Cover liegen jetzt auf der Platte: nach einem Neustart und ohne Netz sind sie sofort da.",
+        "Derselbe Wert in den Einstellungen gilt nicht mehr als Änderung und wird nicht erneut nach Google Drive geschrieben.",
     ]
 }
 

@@ -34,6 +34,8 @@ struct CatalogView: View {
     @Environment(LibraryStore.self) private var library
     /// Der vollständige Katalog beider Quellen.
     let catalog: [CatalogItem]
+    /// Zählt hoch, wenn sich der Inhalt von `catalog` ändert.
+    let catalogRevision: Int
     let loading: Bool
     let error: String?
     let reload: () async -> Void
@@ -68,6 +70,14 @@ struct CatalogView: View {
         CatalogQuery(text: committedText, quick: quick, filters: filters, sort: sort)
     }
 
+    /// Wann der Katalog neu gebaut gehört: neuer Katalog oder eine
+    /// abgeschlossene Änderung am Fortschritt — die Sprachbelege hängen daran.
+    /// Nicht der laufende Takt des Players (`progressRevision`); ob sich die
+    /// Sprachen tatsächlich geändert haben, prüft der Dienst selbst.
+    private var rebuildKey: String {
+        "\(catalogRevision)|\(library.watchRevision)"
+    }
+
     var body: some View {
         GeometryReader { proxy in
             screen(width: proxy.size.width)
@@ -81,10 +91,12 @@ struct CatalogView: View {
         .navigationDestination(item: $discovered) { entry in
             SeriesView(slug: entry.slug, titleHint: entry.title, providerOverride: entry.provider)
         }
-        .task(id: catalog.count) { await rebuild() }
+        .task(id: rebuildKey) { await rebuild() }
         .onChange(of: text) { _, value in scheduleSearch(value) }
         .onChange(of: query) { _, value in service.apply(value) }
-        .onChange(of: library.recents.count) { _, _ in syncHistory() }
+        // An der Revision, nicht an der Anzahl: wer einen Titel erneut öffnet,
+        // ändert die Reihenfolge des Verlaufs, nicht seine Länge.
+        .onChange(of: library.recentsRevision) { _, _ in syncHistory() }
         .onAppear { syncHistory() }
     }
 
@@ -207,6 +219,7 @@ struct CatalogView: View {
         } else {
             CatalogGrid(
                 entries: service.results,
+                query: service.query,
                 density: density,
                 columns: columns,
                 // Das Typ-Abzeichen trägt nur im gemischten Raster etwas bei.
@@ -315,7 +328,7 @@ struct CatalogView: View {
     // MARK: - Daten
 
     private func rebuild(force: Bool = false) async {
-        await service.load(items: catalog, local: localState, force: force)
+        await service.load(items: catalog, revision: catalogRevision, local: localState, force: force)
         service.apply(query)
     }
 
