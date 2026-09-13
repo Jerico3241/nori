@@ -162,8 +162,15 @@ enum NoriNetworkSimulation: String, CaseIterable {
     case slow
     /// TMDB antwortet nicht, bis das Zeitlimit greift.
     case tmdbTimeout = "tmdb-timeout"
+    /// TMDB antwortet, aber acht Sekunden später — der zweite Durchgang der
+    /// Startseite kommt dann sichtbar spät, während schon gescrollt wird.
+    case tmdbSlow = "tmdb-slow"
     /// AniWorld und Serienstream antworten nicht.
     case providerTimeout = "provider-timeout"
+    /// Nur AniWorld antwortet nicht.
+    case aniworldTimeout = "aniworld-timeout"
+    /// Nur Serienstream antwortet nicht.
+    case serienstreamTimeout = "serienstream-timeout"
     /// Serienstream ist nicht erreichbar.
     case onlyAniworld = "only-aniworld"
     /// AniWorld ist nicht erreichbar.
@@ -231,7 +238,10 @@ enum NoriNetworkSimulation: String, CaseIterable {
         case .offline: return .fail(.notConnectedToInternet)
         case .slow: return .delay(4)
         case .tmdbTimeout: return matches(tmdb) ? .hang(12) : .pass
+        case .tmdbSlow: return matches(tmdb) ? .delay(8) : .pass
         case .providerTimeout: return matches(aniworld + serienstream) ? .hang(20) : .pass
+        case .aniworldTimeout: return matches(aniworld) ? .hang(20) : .pass
+        case .serienstreamTimeout: return matches(serienstream) ? .hang(20) : .pass
         case .onlyAniworld: return matches(serienstream) ? .fail(.cannotConnectToHost) : .pass
         case .onlySerienstream: return matches(aniworld) ? .fail(.cannotConnectToHost) : .pass
         case .driveOffline: return matches(google) ? .fail(.notConnectedToInternet) : .pass
@@ -615,22 +625,36 @@ actor CoverImageLoader {
     }
     private var flights: [URL: Flight] = [:]
 
+    /// Obergrenze der Cover auf der Platte.
+    static let diskCapacity = 256 * 1024 * 1024
+
     init() {
+        self.init(
+            directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("NoriImages", isDirectory: true),
+            diskCapacity: Self.diskCapacity
+        )
+    }
+
+    /// Mit eigenem Verzeichnis, eigener Obergrenze und eigenen Protokollen —
+    /// für die Belastungstests des Caches. Die App benutzt `init()`.
+    init(directory: URL?, diskCapacity: Int, protocolClasses: [AnyClass] = []) {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         // Der Katalog fragt viele Kacheln auf einmal. Ohne Deckel schickt das
         // eine Lawine an eine Quelle, die ohnehin empfindlich reagiert.
         config.httpMaximumConnectionsPerHost = 4
         #if canImport(Darwin)
-        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("NoriImages", isDirectory: true)
-        let images = URLCache(memoryCapacity: 0, diskCapacity: 256 * 1024 * 1024, directory: folder)
+        let images = URLCache(memoryCapacity: 0, diskCapacity: diskCapacity, directory: directory)
         config.urlCache = images
         config.requestCachePolicy = .returnCacheDataElseLoad
         diskCache = images
         #else
         diskCache = nil
         #endif
+        if !protocolClasses.isEmpty {
+            config.protocolClasses = protocolClasses + (config.protocolClasses ?? [])
+        }
         #if DEBUG
         NoriNetworkSimulation.configure(config)
         #endif

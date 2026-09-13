@@ -45,6 +45,7 @@ struct PlayerBottomBar: View {
     var onNextEpisode: () -> Void
     var onToggleFill: () -> Void
     var onMenuOpen: () -> Void
+    var onMenuClose: () -> Void
 
     @AppStorage(NoriGlassSetting.key) private var glass = true
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -124,7 +125,8 @@ struct PlayerBottomBar: View {
                 menuTitle: "Geschwindigkeit",
                 label: .text(Self.speedLabel(speed), size: pad ? 16 : 14),
                 items: speedItems,
-                onOpen: onMenuOpen
+                onOpen: onMenuOpen,
+                onClose: onMenuClose
             )
             .frame(height: buttonHeight)
             .padding(.horizontal, pad ? 12 : 9)
@@ -160,7 +162,8 @@ struct PlayerBottomBar: View {
                 menuTitle: title,
                 label: .symbol(symbol, size: iconSize),
                 items: { menuItems(options, active: active, action: action) },
-                onOpen: onMenuOpen
+                onOpen: onMenuOpen,
+                onClose: onMenuClose
             )
             .frame(width: buttonWidth, height: buttonHeight)
             .contentShape(Rectangle())

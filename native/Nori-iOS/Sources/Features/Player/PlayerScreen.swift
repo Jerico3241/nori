@@ -61,6 +61,13 @@ struct PlayerScreen: View {
     /// nur den Regler neu zeichnet und nicht den ganzen Player.
     @State private var clock = PlaybackClock()
     @State private var lastSaved: Double = 0
+    /// Wo die Wiedergabe steht, wenn gerade kein Player läuft.
+    ///
+    /// Nach einem gescheiterten Start oder Hosterwechsel gibt es keinen
+    /// Player, und `currentPosition()` lieferte 0. „Anderen Hoster versuchen"
+    /// und „Noch einmal versuchen" begannen die Folge dann von vorn — bei
+    /// einer halb gesehenen Folge ging die Stelle verloren.
+    @State private var standingPosition: Double = 0
     @State private var subtitleGroup: AVMediaSelectionGroup?
     @State private var subtitleChoices: [PlayerChoice] = []
     @State private var activeSubtitle: String = PlayerScreen.subtitleOff
@@ -150,9 +157,9 @@ struct PlayerScreen: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         // Ein Menü der unteren Leiste liegt in einem eigenen Fenster des
-        // Systems. Schließt es, wird Noris Fenster wieder Schlüsselfenster —
-        // das ist das verlässliche Signal „Menü zu". Das Aufklappen meldet
-        // der Menüknopf selbst.
+        // Systems. Das Schließen meldet der Menüknopf selbst (`onMenuClose`);
+        // dass Noris Fenster wieder Schlüsselfenster wird, bleibt als zweites
+        // Signal — auf iPadOS 26 kommt es nach einer Auswahl nicht immer.
         .onReceive(NotificationCenter.default.publisher(for: UIWindow.didBecomeKeyNotification)) { _ in
             guard menuOpen else { return }
             menuOpen = false
@@ -318,6 +325,13 @@ struct PlayerScreen: View {
                 Task { @MainActor in
                     menuOpen = true
                     hideTask?.cancel()
+                }
+            },
+            onMenuClose: {
+                Task { @MainActor in
+                    guard menuOpen else { return }
+                    menuOpen = false
+                    scheduleHide()
                 }
             }
         )
@@ -630,7 +644,9 @@ struct PlayerScreen: View {
         resumeAt: Double? = nil
     ) async {
         cancelAutoplay()
+        let targetResume = resumeAt ?? currentResumeAt
         clearPlayer(saveCurrent: false)
+        standingPosition = targetResume
         let generation = playbackGeneration
         error = nil
         source = nil
@@ -703,7 +719,6 @@ struct PlayerScreen: View {
             av.actionAtItemEnd = .pause
             av.defaultRate = library.playbackSpeed
 
-            let targetResume = resumeAt ?? currentResumeAt
             if targetResume >= 8 {
                 let t = CMTime(seconds: targetResume, preferredTimescale: 600)
                 await av.seek(to: t)
@@ -909,7 +924,16 @@ struct PlayerScreen: View {
                 try? await Task.sleep(for: .seconds(1))
             }
             guard !Task.isCancelled else { return }
-            await playNextEpisode()
+            // Nicht in dieser Aufgabe weiter: `switchEpisode` bricht
+            // `autoplayTask` ab — also genau die Aufgabe, in der es liefe. Der
+            // Abruf der nächsten Folge kam dann abgebrochen zurück, wurde als
+            // veraltet verworfen, und der Player stand ohne Meldung bei
+            // „Folge wird gelesen…" (beobachtet: über zwei Minuten nach dem
+            // Ende von Folge 1). Die neue Folge startet in einer eigenen Aufgabe.
+            await MainActor.run {
+                autoplayTask = nil
+                Task { await playNextEpisode() }
+            }
         }
     }
 
@@ -984,8 +1008,9 @@ struct PlayerScreen: View {
     }
 
     func currentPosition() -> Double {
-        let pos = player?.currentTime().seconds ?? 0
-        return pos.isFinite ? pos : 0
+        guard let player else { return standingPosition }
+        let pos = player.currentTime().seconds
+        return pos.isFinite ? pos : standingPosition
     }
 
     @MainActor
@@ -1000,6 +1025,9 @@ struct PlayerScreen: View {
         failureObserver = nil
         statusTask?.cancel()
         statusTask = nil
+        if let pos = player?.currentTime().seconds, pos.isFinite, pos > 0 {
+            standingPosition = pos
+        }
         player?.pause()
         player = nil
     }

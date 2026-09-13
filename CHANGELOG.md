@@ -4,8 +4,87 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.20.0**, iOS/iPadOS **1.25.1**,
+unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
 Windows **1.8.0**, LG webOS **2.2.0**.
+
+## [iOS 1.25.2] · [macOS 1.20.1] — 2026-09-13
+
+Abschließende Apple-Prüfung: Player auf iPad und Mac von Hand durchgespielt,
+stabile Startseite unter verzögertem TMDB, Bild-Cache unter Last, Netzstörungen
+in der Oberfläche. Keine Änderung an Google Drive, OAuth, Merge-Regeln,
+Bibliotheksschema (v6), IPA-Paketierung oder webOS (2.2.0).
+
+### Behoben — macOS
+
+- **Das Öffnen einer Folge brachte Nori zum Absturz.** Unter macOS 27 bricht
+  der Aufbau von SwiftUIs `VideoPlayer` in `_AVKit_SwiftUI` ab
+  (`getSuperclassMetadata`, SIGABRT) — jede Wiedergabe endete, bevor ein Bild
+  kam. Der Player benutzt jetzt `AVPlayerView` aus AppKit mit derselben
+  Systemsteuerung: schwebende Leiste, Vollbild, Bild in Bild, Tastatur.
+
+### Behoben — beide Apple-Apps
+
+- **Nach dem Countdown startete die nächste Folge nicht.** Der Player blieb
+  ohne Meldung bei „Folge wird gelesen …" stehen (beobachtet: über zwei
+  Minuten). Die Countdown-Aufgabe rief den Folgenwechsel in sich selbst auf, und
+  der Wechsel bricht genau diese Aufgabe ab — der Abruf der nächsten Folge kam
+  abgebrochen zurück und wurde verworfen. Die neue Folge startet jetzt in einer
+  eigenen Aufgabe.
+- **„Anderen Hoster versuchen" und „Noch einmal versuchen" begannen von vorn.**
+  Nach einem gescheiterten Hoster gibt es keinen Player mehr, und die
+  Position fiel auf 0. Die Stelle bleibt jetzt über gescheiterte Starts und
+  Hosterwechsel erhalten (geprüft: Ted Lasso bei 15:24 fortgesetzt, One Piece
+  nach gescheitertem Filemoon bei 5:24 statt 0:00).
+
+- **Hängende Quellen hielten die App im Ladeskelett, obwohl ein Katalog auf
+  der Platte lag.** Der Rückfall auf den gespeicherten Katalog griff erst,
+  wenn das Laden scheiterte — bei einem hängenden Server also nach dem
+  Zeitlimit. Gemessen mit `-NoriNetworkSimulation provider-timeout`: auf dem
+  Mac über 40 Sekunden Skelett. Jetzt steht beim kalten Start zuerst der
+  gespeicherte Katalog da, das Netz legt sich danach darüber; Startseite und
+  Katalog behalten dabei ihre Ordnung. Auf dem iPad stehen damit nach 3 s die
+  Reihen, nach 8 s alle Cover.
+
+### Behoben — iOS/iPadOS
+
+- **Die Bedienung blendete nach einer Menüauswahl nie mehr aus.** Als Signal
+  „Menü zu" diente, dass Noris Fenster wieder Schlüsselfenster wird; auf
+  iPadOS 26/27 kommt das nach einer Auswahl nicht. Leisten und Mitteltasten
+  blieben während der Wiedergabe dauerhaft über dem Bild (beobachtet: über
+  25 Sekunden nach einer Untertitelwahl). Der Menüknopf meldet das Schließen
+  jetzt selbst über das Ende der Menü-Interaktion.
+- **Menüs der unteren Leiste standen auf dem Kopf.** UIKit legt den ersten
+  Eintrag an den Knopf; aus der unteren Leiste nach oben aufgeklappt stand der
+  bevorzugte Hoster ganz unten und Doodstream oben. Die Einträge stehen jetzt in
+  der gelieferten Reihenfolge (VOE, Vidmoly, Filemoon, Doodstream).
+
+### Geprüft, ohne Änderung
+
+- **macOS-Katalogruckler.** Die ~290 ms aus dem letzten Durchgang sind auf
+  `main` nicht mehr reproduzierbar: drei Aufnahmen (Time Profiler, Hitches,
+  Hangs, systemweit) zeigen beim Eintreffen der Kataloge Ruckler von höchstens
+  35 ms und keinen Hänger; Zusammenführen und Vergleich laufen im Hintergrund.
+  Es bleibt ein Ruckler von 160–167 ms rund 2,2 s nach dem Start — **vor** den
+  Katalogdaten, beim ersten Aufbau des Fensters. Keine Änderung, weil kein
+  Nori-Pfad klar belegbar ist.
+- **Stabile Startseite.** Mit `-NoriNetworkSimulation tmdb-slow` und absichtlich
+  umgedrehtem, veraltetem TMDB-Stand lieferte der zweite Durchgang nach 35 s
+  einen anderen Kopfbereich (Bleach statt The Ghost in the Shell) und eine
+  andere Reihenfolge — sichtbar blieben Kopfbereich, Reihenfolge der Karten und
+  Abschnitte unverändert; „Neue Episoden" kam unten dazu. Keine Karte sprang.
+- **Bild-Cache.** 250 Bilder (~64 MB) gegen eine Obergrenze von 16 MB, Neustart,
+  beschädigte Dateien, Speicherwarnung, Leeren, 25 gleichzeitige Abrufe — kein
+  Absturz, Verzeichnis bleibt unter der Obergrenze.
+
+### Tests
+
+- `CoverImageCacheStressTests` (7): Verdrängung über die Obergrenze, Bytes auf
+  der Platte, beschädigte Cache-Dateien beim Start, Speicherwarnung, Leeren,
+  gemeinsamer Abruf, 256 MB in der App.
+- `NetworkSimulationTests` +2: `tmdb-slow`, `aniworld-timeout`,
+  `serienstream-timeout` (neue Debug-Modi).
+- `CoverImageLoader` bekommt einen zweiten Initialisierer mit Verzeichnis,
+  Obergrenze und Protokollen — nur für Tests; die App benutzt weiter `init()`.
 
 ## [iOS 1.25.1] — 2026-09-13
 
