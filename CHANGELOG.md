@@ -5,7 +5,61 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.18.0**, iOS/iPadOS **1.23.0**,
-Windows **1.8.0**, LG webOS **2.1.0**.
+Windows **1.8.0**, LG webOS **2.1.1**.
+
+## [webOS 2.1.1] — 2026-09-13
+
+Katalog: Die Reihenfolge einer Ansicht bleibt stehen, während TMDB-Angaben
+nachkommen.
+
+### Behoben
+
+- **Das Katalograster sortierte sich während der Navigation um.** Sichtbar
+  werdende Karten holen ihre TMDB-Angaben (`covers.ensure` → `tmdb.ensureArt`),
+  auch Ranglisten melden sich nachträglich. `useCatalogView` bündelte jede
+  Meldung nach 1,5 s zu einem neuen Durchlauf von `dedupeCatalog` und
+  `buildCandidates`, und `Catalog.tsx` sortierte das Ergebnis jedes Mal neu.
+  Beliebtheit, Trendplatz, Bewertung und Stimmen kamen aber erst mit TMDB:
+  Karten wechselten die Stelle, TMDB-abhängige Filter änderten die
+  Zugehörigkeit, und die Dublettenregel tauschte eine sichtbare Karte gegen die
+  Fassung der anderen Quelle. Der fokussierte Titel wechselte dabei die Stelle
+  oder wurde durch einen anderen ersetzt.
+- **Anreicherung und Reihenfolge sind getrennt.** Eine Ansicht — Bereich,
+  Schnellfilter, Sortierung, Jahrzehnt, Suche — bekommt beim Aufbau eine
+  geordnete Liste stabiler Kennungen (`provider|slug`, `stableCatalogOrder` im
+  Kern). TMDB aktualisiert danach nur noch Cover, Untertitel und Bewertung
+  dahinter. Später geladene Titel kommen hinten dazu; eine neue
+  Dubletten-Vertreterin ersetzt keine sichtbare Karte. Neu sortiert wird bei
+  einer anderen Ansicht und beim erneuten Öffnen über die Seitenleiste — beim
+  Zurückkehren von einer Detailseite bleibt die Ansicht, damit der gemerkte
+  Fokus dieselbe Karte an derselben Stelle trifft.
+
+### Unverändert
+
+- Der Fokus- und Scroll-Fix aus 2.0.1 bleibt.
+- Keine Änderung an Google Drive, OAuth, TV-Synchronisation, `drive.file` oder
+  `drive.appdata`.
+
+### Geprüft
+
+- **Unit-Tests im TS-Kern (neu, 10):** erster Aufbau, geänderter Sortierwert
+  in derselben Ansicht, mehrere Antworten in unterschiedlicher Reihenfolge,
+  später geladene Titel, TMDB-abhängiger Filter, entfernte Titel,
+  Dubletten-Vertreterin, bewusste neue Ansicht (Sortierung, Filter, Suche),
+  erneutes Öffnen, leere Ansicht. TS-Kern insgesamt 221/221.
+- **Fernbedienungstest (neu, 38 Prüfungen, 1080p und 4K):** TMDB-Antworten
+  werden zurückgehalten und während der Navigation in umgekehrter Reihenfolge
+  freigegeben. Geprüft: Fokus und Reihenfolge bleiben, Kartenpositionen bleiben,
+  Cover und Untertitel werden trotzdem aktualisiert, mit Zeiger bleibt die Karte
+  unter ihm, erneutes Öffnen sortiert nach Beliebtheit, A–Z und zurück sortieren
+  neu, „Top bewertet" filtert, Navigation danach vollständig sichtbar, keine
+  Skriptfehler.
+- **Gegenbeweis:** Mit dem bisherigen Katalog-Code schlagen je Auflösung
+  „Reihenfolge der Ansicht bleibt stabil", „… auch nach allen Antworten stabil"
+  und „mit Zeiger bleibt die Karte unter ihm" fehl (299/305).
+- **Mit dieser Fassung:** Fernbedienungstest 305/305, zweimal hintereinander;
+  nori-api 13/13; `check-webos-package.py` OK (2.1.1 überall, auch im `.ipk`).
+- Nicht auf LG-Hardware geprüft.
 
 ## [iOS 1.23.0] · [macOS 1.18.0] · [webOS 2.1.0] — 2026-09-13
 

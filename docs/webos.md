@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.1.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.1.1**. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -50,6 +50,20 @@ sonst selbst die Seite um eine Zeile, ohne dass die Navigation davon erfuhr, und
 die fokussierte Karte stand halb unter dem Bildrand. Verschiebt eine solche
 Änderung das fokussierte Element selbst, holt die Navigation es im nächsten Frame
 zurück ins Bild.
+
+### Reihenfolge im Katalog
+
+Eine Katalogansicht — Bereich, Schnellfilter, Sortierung, Jahrzehnt, Suche —
+bekommt beim Aufbau eine geordnete Liste stabiler Kennungen (`provider|slug`).
+TMDB-Angaben, die danach eintreffen, aktualisieren Cover, Untertitel und
+Bewertung, aber nicht die Reihenfolge: Beliebtheit, Trendplatz und Bewertung
+kommen erst mit TMDB, und früher sortierte jeder gebündelte Treffer das Raster
+unter der Fernbedienung neu. Später geladene Titel kommen hinten dazu; eine neue
+Dubletten-Vertreterin ersetzt keine sichtbare Karte. Neu sortiert wird bei einer
+anderen Ansicht und beim erneuten Öffnen über die Seitenleiste. Beim Zurückkehren
+von einer Detailseite bleibt die Ansicht, damit der gemerkte Fokus dieselbe Karte
+an derselben Stelle trifft. Die Regel steht als reine Funktion im Kern
+(`shared/nori-core/src/catalog-order.ts`).
 
 ## Aufbau
 
@@ -208,7 +222,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.1.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.1.1_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und

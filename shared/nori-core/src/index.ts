@@ -29,3 +29,5 @@ export * as aniworld from "./parse/aniworld.js";
 export * as serienstream from "./parse/serienstream.js";
 export * from "./parse/common.js";
 export * from "./tmdb/index.js";
+// Die Reihenfolge einer Katalogansicht — stabil gegen nachträglich eintreffende TMDB-Angaben.
+export * from "./catalog-order.js";

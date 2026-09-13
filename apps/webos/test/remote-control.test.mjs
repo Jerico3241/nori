@@ -1282,6 +1282,196 @@ try {
   check("Der Knopf zum Anmelden steht trotzdem", quietText.includes("Mit Google Drive verbinden"));
   await quiet.close();
 
+  // --- 10c. Katalog: Reihenfolge je Ansicht ------------------------------------------------
+  //
+  // TMDB-Angaben treffen asynchron ein und bestimmen „Beliebtheit" und
+  // „Bewertung". Früher sortierte jeder gebündelte Treffer das sichtbare Raster
+  // neu, und die fokussierte Karte wechselte die Stelle oder wurde durch eine
+  // andere ersetzt. Hier werden die TMDB-Antworten zurückgehalten und während
+  // der Navigation in umgekehrter Reihenfolge freigegeben — mit Fernbedienung
+  // und mit Zeiger, in 1080p und in 4K.
+  const firstDifference = (a, b) => {
+    const index = a.findIndex((key, i) => key !== b[i]);
+    return index === -1 ? `${a.length} Karten gleich` : `ab Stelle ${index + 1}: ${a[index]} → ${b[index]}`;
+  };
+  const TRENDING_SLUGS = ["frieren", "one-piece", "jujutsu-kaisen", "dandadan", "vinland-saga"];
+
+  async function catalogStability(width, height, label) {
+    section(`Katalog: stabile Reihenfolge · ${label}`);
+    const view = await newTvPage(browser, width, height);
+    const errors = [];
+    view.on("pageerror", (err) => errors.push(err.message));
+    view.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
+    const held = [];
+    let holding = true;
+    let requests = 0;
+    await view.route("**/api/tmdb/**", (route) => {
+      requests += 1;
+      if (holding) held.push(route);
+      else route.continue().catch(() => {});
+    });
+    // Alles Gehaltene in umgekehrter Reihenfolge freigeben.
+    const release = async (gap = 40) => {
+      const batch = held.splice(0).reverse();
+      for (const route of batch) {
+        await route.continue().catch(() => {});
+        if (gap) await view.waitForTimeout(gap);
+      }
+      return batch.length;
+    };
+    const state = () => view.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll(".catalog-grid > .poster-card"));
+      const screen = document.querySelector(".screen.catalog");
+      return {
+        keys: cards.map((card) => card.getAttribute("data-focus-key")),
+        titles: cards.map((card) => card.querySelector(".card-title")?.textContent ?? ""),
+        rects: cards.slice(0, 20).map((card) => {
+          const r = card.getBoundingClientRect();
+          return `${Math.round(r.left)},${Math.round(r.top)}`;
+        }),
+        subs: cards.slice(0, 20).map((card) => card.querySelector(".card-sub")?.textContent ?? ""),
+        images: cards.slice(0, 20).map((card) => decodeURIComponent(card.querySelector(".art img")?.getAttribute("src") ?? "")),
+        scrollTop: Math.round(screen?.scrollTop ?? 0),
+        focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
+        head: document.querySelector(".catalog .section-head span")?.textContent ?? "",
+      };
+    });
+    const toSidebar = async () => {
+      for (let i = 0; i < 12; i += 1) {
+        if (await view.evaluate(() => Boolean(document.activeElement?.closest(".sidebar")))) return;
+        await remote(view, "left", 160);
+      }
+    };
+    const toNav = async (key, step) => {
+      for (let i = 0; i < 8 && (await focused(view))?.key !== key; i += 1) await remote(view, step, 160);
+    };
+
+    await view.goto(`${BASE}/#/katalog`, { waitUntil: "domcontentloaded" });
+    for (let i = 0; i < 60; i += 1) {
+      if ((await view.$$(".catalog-grid > .poster-card")).length >= 20) break;
+      await view.waitForTimeout(250);
+    }
+    await view.waitForTimeout(1200);
+    check(`${label}: TMDB-Antworten zurückgehalten, Raster steht`, requests > 0 && held.length > 0,
+      `${requests} Anfragen, ${held.length} gehalten`);
+
+    // Fokus auf eine Karte in Reihe 2, wie beim Blättern.
+    await remote(view, "down");
+    await remote(view, "right");
+    await remote(view, "right");
+    const before = await state();
+    const alphabetical = [...before.titles].sort((a, b) => a.localeCompare(b, "de"));
+    check(`${label}: vor TMDB ohne Beliebtheitswerte sortiert (alphabetisch)`,
+      before.titles.length >= 20 && JSON.stringify(before.titles) === JSON.stringify(alphabetical), before.titles.slice(0, 4).join(", "));
+
+    // Mit der Fernbedienung: Antworten in umgekehrter Reihenfolge, dazwischen
+    // hin und her — danach steht der Fokus wieder auf derselben Stelle.
+    let keyboardReleased = 0;
+    for (const step of ["right", "left", "left", "right", "right", "left"]) {
+      keyboardReleased += await release();
+      await remote(view, step, 320);
+    }
+    await view.waitForTimeout(2400); // die Bündelung wartet 1,5 s
+    const keyboard = await state();
+    check(`${label}: TMDB-Antworten treffen während der Navigation ein`, keyboardReleased > 0, `${keyboardReleased} Antworten`);
+    check(`${label}: fokussierter Titel bleibt derselbe`, keyboard.focus === before.focus, `vorher ${before.focus}, nachher ${keyboard.focus}`);
+    check(`${label}: Reihenfolge der Ansicht bleibt stabil`,
+      JSON.stringify(keyboard.keys.slice(0, before.keys.length)) === JSON.stringify(before.keys), firstDifference(before.keys, keyboard.keys));
+    check(`${label}: Kartenpositionen bleiben stehen`,
+      JSON.stringify(keyboard.rects) === JSON.stringify(before.rects) && keyboard.scrollTop === before.scrollTop,
+      `scrollTop ${before.scrollTop} → ${keyboard.scrollTop}`);
+
+    // Mit Zeiger (Magic Remote): er fokussiert, worauf er zeigt, und scrollt
+    // nicht. Kommen dabei weitere Antworten, bleibt die Karte unter ihm dieselbe.
+    const target = await view.evaluate(() => {
+      const card = document.querySelectorAll(".catalog-grid > .poster-card")[7];
+      const r = card.getBoundingClientRect();
+      return { key: card.getAttribute("data-focus-key"), x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 3) };
+    });
+    await view.mouse.move(target.x - 40, target.y);
+    await view.mouse.move(target.x, target.y);
+    await view.waitForTimeout(400);
+    const pointed = await state();
+    let pointerReleased = 0;
+    for (let wave = 0; wave < 24; wave += 1) {
+      const count = await release(25);
+      pointerReleased += count;
+      await view.waitForTimeout(350);
+      if (count === 0 && wave > 8) break;
+    }
+    holding = false;
+    pointerReleased += await release(0);
+    await view.waitForTimeout(2400);
+    const pointer = await state();
+    const hoveredRect = (snapshot) => snapshot.rects[snapshot.keys.indexOf(target.key)] ?? null;
+    check(`${label}: Zeiger fokussiert die Karte darunter`, pointed.focus === target.key, `${pointed.focus} statt ${target.key}`);
+    check(`${label}: mit Zeiger bleibt die Karte unter ihm, obwohl TMDB antwortet`,
+      pointerReleased > 0 && pointer.focus === target.key && hoveredRect(pointer) === hoveredRect(pointed) && pointer.scrollTop === pointed.scrollTop,
+      `${pointerReleased} Antworten · Fokus ${pointer.focus} · scrollTop ${pointed.scrollTop} → ${pointer.scrollTop}`);
+    check(`${label}: Reihenfolge auch nach allen Antworten stabil`,
+      JSON.stringify(pointer.keys.slice(0, before.keys.length)) === JSON.stringify(before.keys), firstDifference(before.keys, pointer.keys));
+    const changedSubs = pointer.subs.filter((sub, index) => sub !== before.subs[index] && /★|\d{4}/.test(sub)).length;
+    const changedCovers = pointer.images.filter((src, index) => src !== before.images[index] && /-poster\.jpg/.test(src)).length;
+    check(`${label}: Cover und Metadaten trotzdem aktualisiert`, changedSubs > 0 && changedCovers > 0,
+      `${changedSubs} Untertitel, ${changedCovers} Cover`);
+
+    // Die Fernbedienung übernimmt wieder; alles bleibt vollständig sichtbar.
+    await stress(view, `${label}: Navigation nach den TMDB-Antworten`, ["right", "down", "left", "up", "right", "left"]);
+
+    // Erneut öffnen: über die Seitenleiste zur Startseite und zurück.
+    await toSidebar();
+    await toNav("nav-start", "up");
+    await remote(view, "ok", 2200);
+    await toSidebar();
+    await toNav("nav-katalog", "down");
+    await remote(view, "ok", 2600);
+    const reopened = await state();
+    const firstSlug = (reopened.keys[0] ?? "").replace(/^grid-(aniworld|serienstream)-/, "");
+    check(`${label}: erneut geöffnet mit der verbesserten Sortierung`,
+      TRENDING_SLUGS.includes(firstSlug) && JSON.stringify(reopened.keys.slice(0, 10)) !== JSON.stringify(before.keys.slice(0, 10)),
+      reopened.keys.slice(0, 4).join(", "));
+    await stress(view, `${label}: Navigation nach erneutem Öffnen`, ["down", "right", "right", "down", "left", "up"]);
+
+    // Ausdrücklich eine andere Sortierung: A–Z, dann zurück auf Beliebtheit.
+    const chooseSort = async (value) => {
+      await focusKey(view, "filter-open");
+      await remote(view, "ok", 900);
+      await focusKey(view, `filter-sort-${value}`);
+      await remote(view, "ok", 700);
+      await remote(view, "back", 900);
+    };
+    await chooseSort("az");
+    const az = await state();
+    const azSorted = [...az.titles].sort((a, b) => a.localeCompare(b, "de"));
+    check(`${label}: Sortierung A–Z sortiert neu`,
+      az.titles.length > 0 && JSON.stringify(az.titles) === JSON.stringify(azSorted) && az.head.includes("A–Z")
+        && JSON.stringify(az.keys.slice(0, 10)) !== JSON.stringify(reopened.keys.slice(0, 10)),
+      `${az.head} · ${az.titles.slice(0, 3).join(", ")}`);
+    await chooseSort("popular");
+    const popular = await state();
+    const popularFirst = (popular.keys[0] ?? "").replace(/^grid-(aniworld|serienstream)-/, "");
+    check(`${label}: zurück auf Beliebtheit sortiert wieder nach Beliebtheit`,
+      TRENDING_SLUGS.includes(popularFirst) && popular.head.includes("Beliebtheit"), `${popular.head} · ${popular.keys.slice(0, 3).join(", ")}`);
+
+    // Schnellfilter: „Top bewertet" und zurück auf „Alle".
+    await focusKey(view, "chips-top");
+    await remote(view, "ok", 900);
+    const top = await state();
+    check(`${label}: Schnellfilter „Top bewertet" filtert weiterhin`,
+      top.keys.length > 0 && top.keys.length < popular.keys.length && top.head.includes("Bewertung"), `${top.keys.length} Titel · ${top.head}`);
+    await focusKey(view, "chips-all");
+    await remote(view, "ok", 900);
+    const allAgain = await state();
+    check(`${label}: „Alle" zeigt wieder den vollen Katalog`, allAgain.keys.length === popular.keys.length, `${allAgain.keys.length} Titel`);
+    await stress(view, `${label}: Navigation nach Filterwechsel`, ["down", "right", "down", "left", "up"]);
+
+    check(`${label}: keine Skriptfehler`, errors.length === 0, errors.slice(0, 2).join(" | "));
+    await view.close();
+  }
+
+  await catalogStability(1920, 1080, "1080p");
+  await catalogStability(3840, 2160, "4K");
+
   // --- 11. 4K ---------------------------------------------------------------------------
   section("3840 × 2160");
   const uhd = await newTvPage(browser, 3840, 2160);
