@@ -117,6 +117,21 @@ const app = await _electron.launch({
 });
 
 const page = await app.firstWindow();
+
+/**
+ * Jede angeforderte Bildadresse.
+ *
+ * Geladen wird davon nichts: Der Nachbau erfindet TMDB-Pfade, und die echte
+ * Bildablage von TMDB kennt sie nicht. Das ist auch nicht der Punkt. Geprüft
+ * wird, **was** Nori anfordert — die Stufe der Auflösung entscheidet auf einem
+ * Fenster wie auf einem Fernseher über Dekodierzeit und Speicher, und sie
+ * entsteht im geteilten Quelltext, nicht im Browser.
+ */
+const imageRequests = [];
+page.on("request", (request) => {
+  if (request.resourceType() === "image") imageRequests.push(request.url());
+});
+
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
@@ -207,21 +222,30 @@ try {
   section("Bilder");
   const art = await page.evaluate(() => {
     const areas = Array.from(document.querySelectorAll(".card .art"));
-    const sizes = Array.from(document.querySelectorAll(".art img"))
-      .map((img) => (/\/t\/p\/([^/]+)\//.exec(img.getAttribute("src") ?? "") ?? [])[1])
-      .filter(Boolean);
     return {
       areas: areas.length,
-      loaded: areas.filter((node) => node.querySelector("img")).length,
-      sizes,
+      // Eine Fläche ohne Bild zeigt Initialen. Leer bleibt keine — das wäre
+      // ein Loch im Raster, und ein Loch sieht aus wie ein Fehler.
+      empty: areas.filter((node) => !node.querySelector("img, .art-fallback")).length,
       queue: window.__noriArtwork ? window.__noriArtwork() : null,
     };
   });
-  check("Bilder nur in Sichtweite", art.loaded <= art.areas,
-    `${art.loaded} von ${art.areas} Flächen`);
-  check("Kein Bild in `original`", !art.sizes.includes("original"), art.sizes.join(", ") || "noch keins");
+  const tmdbRequests = imageRequests.filter((url) => url.includes("/t/p/"));
+  const sizes = [...new Set(tmdbRequests.map((url) => (/\/t\/p\/([^/]+)\//.exec(url) ?? [])[1]))];
+
+  check("Bilder werden angefordert", tmdbRequests.length > 0,
+    `${tmdbRequests.length} Abrufe, Stufen: ${sizes.join(", ") || "keine"}`);
+  check("Nicht mehr Abrufe als Flächen", tmdbRequests.length <= art.areas * 2,
+    `${tmdbRequests.length} Abrufe bei ${art.areas} Flächen`);
+  check("Kein Bild in `original`", !sizes.includes("original"), sizes.join(", ") || "noch keins");
+  check("Poster in einer Fensterstufe, nicht in Panelgröße",
+    sizes.every((size) => !/^w(780|1280)$/.test(size))
+    || tmdbRequests.some((url) => /\/t\/p\/w(342|500)\//.test(url)),
+    sizes.join(", "));
   check("Bildabrufe begrenzt", art.queue !== null && art.queue.running <= art.queue.limit,
     JSON.stringify(art.queue));
+  check("Keine leere Bildfläche", art.areas > 0 && art.empty === 0,
+    `${art.areas} Flächen, ${art.empty} leer`);
 
   // --- 3. Navigation ------------------------------------------------------
   section("Navigation");
