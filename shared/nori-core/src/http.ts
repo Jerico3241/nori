@@ -79,10 +79,66 @@ export class FetchHttpClient implements HttpClient {
       if ((error as Error)?.name === "AbortError") {
         throw NoriError.network("Zeitüberschreitung");
       }
-      throw NoriError.network((error as Error)?.message ?? "Netzwerkfehler");
+      throw NoriError.network(describeNetworkError(error, target));
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+/** Nur der Name des Rechners — nie die Abfrage, die dahinter steht. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "Die Quelle";
+  }
+}
+
+/**
+ * Was wirklich schiefging.
+ *
+ * Nodes `fetch` meldet **jeden** Verbindungsfehler als „fetch failed" und
+ * hängt den Grund in `cause`. In der Oberfläche stand damit ein Satz, der
+ * nichts sagt — und der Unterschied zwischen „die Adresse ist nicht
+ * auflösbar" und „niemand nimmt ab" ist genau der, den jemand zum
+ * Weiterkommen braucht. Auf dem Schreibtisch ist das der Regelfall: dort
+ * ruft Nori die Quellen selbst ab, und wenn der Internetanbieter ihre
+ * Adressen sperrt, sieht der Nutzer sonst nur „fetch failed".
+ *
+ * Im Browser gibt es `cause` nicht; dort bleibt es bei der Meldung, die
+ * ohnehin schon deutlicher ist.
+ */
+export function describeNetworkError(error: unknown, url: string): string {
+  const message = (error as Error)?.message ?? "Netzwerkfehler";
+  const cause = (error as { cause?: { code?: string; message?: string } })?.cause;
+  if (!cause) return message;
+  const host = hostOf(url);
+  // Ein Grund ohne Kennung ist immer noch ein Grund — „bad port" sagt mehr
+  // als „fetch failed".
+  if (!cause.code) return cause.message ? `${host}: ${cause.message}` : message;
+  const code = cause.code;
+
+  switch (code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return `${host} ist nicht auflösbar. Häufig sperrt der Internetanbieter `
+        + "die Adresse im DNS — ein anderer DNS-Server oder ein VPN hilft dann.";
+    case "ECONNREFUSED":
+      return `${host} nimmt keine Verbindung an.`;
+    case "ECONNRESET":
+    case "UND_ERR_SOCKET":
+      return `${host} hat die Verbindung abgebrochen.`;
+    case "ETIMEDOUT":
+    case "UND_ERR_CONNECT_TIMEOUT":
+      return `${host} antwortet nicht.`;
+    case "EPROTO":
+    case "ERR_TLS_CERT_ALTNAME_INVALID":
+    case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
+    case "CERT_HAS_EXPIRED":
+      return `Die gesicherte Verbindung zu ${host} kam nicht zustande (${code}).`;
+    default:
+      return `${host}: ${cause?.message ?? code}`;
   }
 }
 
