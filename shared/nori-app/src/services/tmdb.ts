@@ -26,8 +26,9 @@ import {
   DirectTMDBTransport, FetchHttpClient, NoTMDBTransport, ServerTMDBTransport, TMDBClient,
   TMDB_FEEDS, alignEpisodes, alignmentIsUsable, emptySignals, feedMaxAge, pickTmdbSeason,
   tmdbImageURL,
-  type CatalogProvider, type SeasonMatch, type SourceEpisodeRef, type TMDBCandidate,
-  type TMDBEpisodeInfo, type TMDBFeed, type TMDBKeyOrigin, type TMDBSignals, type TMDBStatus,
+  type CatalogProvider, type HttpClient, type SeasonMatch, type SourceEpisodeRef,
+  type TMDBCandidate, type TMDBEpisodeInfo, type TMDBFeed, type TMDBKeyOrigin,
+  type TMDBSignals, type TMDBStatus,
 } from "@nori/core";
 import { log, warn } from "./log";
 
@@ -136,6 +137,23 @@ interface RelatedStore {
 
 export type TmdbMode = "server" | "direct" | "off";
 
+/**
+ * Womit TMDB abgerufen wird, wenn die App etwas Eigenes mitbringt.
+ *
+ * Auf dem Fernseher und im Browser ist das `fetch`, und dabei bleibt es. Auf
+ * dem Schreibtisch nicht: das Fenster lädt von `file://`, seine
+ * Inhaltsrichtlinie lässt kein `http:` zu, und ein Nori-Server im Heimnetz
+ * spricht genau das. Die Abrufe laufen dort deshalb durch den Hauptprozess —
+ * dieselbe Schicht, nur ein Kanal weiter.
+ *
+ * Angemeldet wird einmal beim Start, vor dem ersten `configure`.
+ */
+let injectedHttp: HttpClient | null = null;
+
+export function registerTmdbHttpClient(client: HttpClient): void {
+  injectedHttp = client;
+}
+
 export interface TmdbConfig {
   mode: TmdbMode;
   /** Nur für `direct`. */
@@ -221,7 +239,8 @@ class TmdbService {
     });
     // Kein Umschreiben von Adressen und keine Weiterleitungsauswertung: TMDB
     // antwortet direkt, und im Serverbetrieb sitzt der Nori-Server davor.
-    const http = new FetchHttpClient({ canReadRedirects: false, timeoutMs: 15_000 });
+    const http = injectedHttp
+      ?? new FetchHttpClient({ canReadRedirects: false, timeoutMs: 15_000 });
     if (config.mode === "server" && config.serverUrl) {
       this.client = new TMDBClient(new ServerTMDBTransport(config.serverUrl, http));
       this.keyOrigin = null;

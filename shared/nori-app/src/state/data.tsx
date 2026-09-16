@@ -119,6 +119,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [settings.transport, settings.serverUrl],
   );
 
+  /**
+   * Der gewählte Weg als Zeichenkette — und nicht dasselbe wie `gateway`.
+   *
+   * Auf dem Fernseher wechselt mit dem Weg auch das Zugangsobjekt, auf dem
+   * Schreibtisch nicht: dort ist der Zugang immer derselbe Kanal in den
+   * Hauptprozess, und welchen Weg der nimmt, ist seine Sache. Geladene Listen
+   * gelten trotzdem nicht mehr, wenn der Weg wechselt — also hängt alles, was
+   * daran hängt, an dieser Zeichenkette und nicht am Objekt.
+   */
+  const route = `${settings.transport}|${serverBase}`;
+
   const tmdbRoute = useMemo(
     () => resolveTmdbRoute({
       wanted: settings.tmdbMode,
@@ -144,7 +155,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSlices({});
     pending.current.clear();
-  }, [gateway]);
+  }, [route]);
 
   useEffect(() => {
     const up = () => setOnline(true);
@@ -185,7 +196,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         pending.current.delete(provider);
       },
     );
-  }, [gateway]);
+    // `route` steht mit in der Liste, damit ein Wechsel des Weges die Listen
+    // wirklich neu holt — auf dem Schreibtisch bleibt `gateway` dabei gleich.
+  }, [gateway, route]);
 
   const catalog = useCallback((provider: CatalogProvider): CatalogSlice => {
     const slice = slices[provider];

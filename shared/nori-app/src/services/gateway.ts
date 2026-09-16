@@ -8,14 +8,23 @@
 //               weiter, womit die Herkunftsprüfung des Fernsehers keine Rolle
 //               mehr spielt.
 //
-//   „direkt"  — der Fernseher ruft die Quellen selbst ab, wie iOS und macOS es
+//   „direkt"  — der Client ruft die Quellen selbst ab, wie iOS und macOS es
 //               tun. Kommt ohne zusätzliche Einrichtung aus, hängt aber davon
-//               ab, dass webOS der App fremde Abrufe erlaubt und dass der
-//               Hoster ohne Referer ausliefert. Kein Ersatz, sondern der
-//               Rückfall.
+//               ab, dass die Laufzeit fremde Abrufe erlaubt und dass der
+//               Hoster ohne Referer ausliefert. Auf dem Fernseher kein Ersatz,
+//               sondern der Rückfall.
 //
-// Hosterlogik gibt es in keinem Fall doppelt: beide Wege benutzen denselben
-// Kern, der direkte im Fernseher, der andere im Server.
+//   „lokal"   — der Weg des Schreibtischs: derselbe Kern, aber im
+//               Hauptprozess der App, wo es keine Herkunftsprüfung gibt und
+//               `Referer` gesetzt werden darf. Das Fenster spricht über einen
+//               Kanal mit ihm; die App meldet ihn beim Start an
+//               (`registerLocalGateway`). Ist einer angemeldet, laufen auch
+//               „server" und „direkt" dort — welchen der beiden, sagt das
+//               Fenster dem Hauptprozess. Ohne angemeldeten Kanal bleibt es
+//               bei den zwei Wegen darüber.
+//
+// Hosterlogik gibt es in keinem Fall doppelt: alle Wege benutzen denselben
+// Kern — im Client, im Hauptprozess oder im Server.
 
 import {
   DirectGateway, FetchHttpClient, NoriError, isTMDBImage,
@@ -24,7 +33,30 @@ import {
 } from "@nori/core";
 import { log } from "./log";
 
-export type TransportMode = "server" | "direct";
+export type TransportMode = "server" | "direct" | "local";
+
+let cached: { key: string; gateway: NoriGateway } | null = null;
+
+/**
+ * Der Zugang, den die App selbst mitbringt.
+ *
+ * Auf dem Schreibtisch ist das die Brücke in den Hauptprozess. Angemeldet wird
+ * er einmal beim Start, bevor etwas gezeichnet wird.
+ *
+ * Ist einer angemeldet, **gilt er für jede Einstellung**. Das ist kein
+ * Übergehen des Nutzers, sondern die Aufteilung der Arbeit: Welchen Weg die
+ * Daten nehmen — im Programm oder über einen Nori-Server —, entscheidet dann
+ * der Hauptprozess, und die Einstellung wird ihm gemeldet. Das Fenster selbst
+ * darf gar nicht ins Netz: von `file://` aus ist jeder Abruf fremder Herkunft,
+ * und die Inhaltsrichtlinie lässt kein `http:` zu. Ein hier gebauter Zugang
+ * wäre also nicht der schnellere Weg, sondern gar keiner.
+ */
+let localGateway: NoriGateway | null = null;
+
+export function registerLocalGateway(gateway: NoriGateway): void {
+  localGateway = gateway;
+  cached = null;
+}
 
 export interface GatewayConfig {
   mode: TransportMode;
@@ -121,8 +153,6 @@ class HttpGateway implements NoriGateway {
   }
 }
 
-let cached: { key: string; gateway: NoriGateway } | null = null;
-
 export function normalizeServerUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -137,6 +167,8 @@ export function normalizeServerUrl(raw: string): string {
 }
 
 export function createGateway(config: GatewayConfig): NoriGateway {
+  // Der mitgebrachte Zugang schlägt alles: siehe `localGateway`.
+  if (localGateway) return localGateway;
   const server = normalizeServerUrl(config.serverUrl);
   const key = `${config.mode}|${server}`;
   if (cached?.key === key) return cached.gateway;
