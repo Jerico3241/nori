@@ -77,7 +77,12 @@ nsis:
 
 linux:
   # Nur für die Prüfung in dieser Entwicklungsumgebung: dieselbe Oberfläche,
-  # derselbe Hauptprozess, nur ein anderes Betriebssystem. Ausgeliefert wird
-  # Nori auf dem Schreibtisch als Windows-Paket.
+  # derselbe Hauptprozess, dasselbe `app.asar`, nur ein anderes Betriebssystem.
+  # Ausgeliefert wird Nori auf dem Schreibtisch als Windows-Paket.
+  #
+  # `executableName` ausdrücklich: ohne sie leitet electron-builder den Namen
+  # aus `@nori/windows` ab, und `release/linux-unpacked/@noriwindows` ist
+  # weder zu tippen noch in einer Anleitung zu lesen.
+  executableName: nori
   target: [dir]
   category: AudioVideo

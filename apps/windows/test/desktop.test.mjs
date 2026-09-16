@@ -31,11 +31,22 @@
 // `--ignore-certificate-errors` mit. Das ist ein Startschalter dieser Prüfung
 // und steht in keiner Zeile des Programms.
 //
+// ## Auch für das fertige Paket
+//
+// `NORI_PACKAGED=<Pfad zur ausführbaren Datei>` startet statt des Quellordners
+// das gepackte Ergebnis. Das ist kein Feinschliff: Im Paket liegt die App als
+// `app.asar`, und `electron-builder` entscheidet selbst, was hineinkommt.
+// Wer dort etwas weglässt, das zur Laufzeit doch gebraucht wird, merkt es
+// sonst erst auf dem Rechner des Nutzers.
+//
 // Voraussetzungen:
 //
 //     npm run build
 //     npm i --no-save playwright
 //     xvfb-run -a node test/desktop.test.mjs
+//
+//     npm run package:linux
+//     NORI_PACKAGED=release/linux-unpacked/nori xvfb-run -a node test/desktop.test.mjs
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -92,8 +103,14 @@ function section(name) {
   results.push(`\n— ${name} ${"—".repeat(Math.max(0, 58 - name.length))}`);
 }
 
+/** Der Quellordner — oder das fertige Paket, wenn eines genannt ist. */
+const packaged = process.env.NORI_PACKAGED
+  ? resolve(APP, process.env.NORI_PACKAGED)
+  : null;
+const flags = [`--user-data-dir=${USER_DATA}`, "--no-sandbox", "--ignore-certificate-errors"];
+
 const app = await _electron.launch({
-  args: [APP, `--user-data-dir=${USER_DATA}`, "--no-sandbox", "--ignore-certificate-errors"],
+  ...(packaged ? { executablePath: packaged, args: flags } : { args: [APP, ...flags] }),
   // Dasselbe für den Hauptprozess: sein `fetch` ist das von Node und kennt
   // den Chromium-Schalter nicht.
   env: { ...process.env, NORI_TEST: "1", NODE_TLS_REJECT_UNAUTHORIZED: "0" },
@@ -459,6 +476,7 @@ await app.close();
 mock.kill();
 rmSync(USER_DATA, { recursive: true, force: true });
 
+console.log(`\n${packaged ? `Geprüft: Paket ${packaged}` : "Geprüft: Quellordner"}`);
 console.log(`\n${results.join("\n")}`);
 const total = results.filter((line) => !line.startsWith("\n")).length;
 console.log(`\n${results.filter((line) => line.startsWith("PASS")).length}/${total} bestanden`);

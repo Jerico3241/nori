@@ -83,5 +83,5 @@ apps/webos/shot-*.png
 # dazu — dort liegen die Symbole, und die sind Quelltext.
 apps/windows/dist-main/
 apps/windows/release/
-apps/windows/test-shots/
+apps/windows/test-shots*/
 apps/windows/test-userdata/
