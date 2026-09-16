@@ -654,8 +654,31 @@ def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: 
         for old, new in their_renames.items():
             reference_bytes = reference_bytes.replace(old, new)
         if ours != reference_bytes:
-            errors.append(f"{rel}: Referenz-Vergleich — {key} unterscheidet sich über die Zugangsdaten hinaus")
+            errors.append(
+                f"{rel}: Referenz-Vergleich — {key} unterscheidet sich über die "
+                f"Zugangsdaten hinaus{where_they_differ(ours, reference_bytes)}"
+            )
     return errors
+
+
+def where_they_differ(ours: bytes, reference: bytes) -> str:
+    """Wo genau — ohne je ein Byte aus dem produktiven Paket zu zeigen.
+
+    „Unterscheidet sich" allein ist eine Sackgasse: Wer den Runner nicht vor
+    sich hat, kann nur raten, und Raten hat hier schon einmal einen Lauf
+    gekostet. Gezeigt wird deshalb die Stelle und ihre Umgebung — aber
+    ausschließlich aus dem **Vergleichsbau**. Der entsteht mit leeren
+    Zugangsdaten; in ihm steht keine Client-ID und kein Secret, er lässt sich
+    also gefahrlos zitieren. Aus dem produktiven Paket kommen nur Zahlen.
+    """
+    limit = min(len(ours), len(reference))
+    at = next((i for i in range(limit) if ours[i] != reference[i]), limit)
+    start = max(0, at - 70)
+    context = reference[start:at + 70].decode("utf-8", "replace").replace("\n", "⏎")
+    return (
+        f" — ab Byte {at} von {len(reference)} (Paket {len(ours)} Bytes); "
+        f"im Vergleichsbau steht dort: …{context}…"
+    )
 
 
 def check_package(package: Path | None = None) -> None:
