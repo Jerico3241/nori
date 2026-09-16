@@ -1,1 +1,0 @@
-import{o as e}from"./useStore-DCim0WvV.js";import{i as t}from"./settings-ui-BMuxJnTH.js";import{t as n}from"./trakt-panel-B3o5eFNT.js";var r=e();function i(){return(0,r.jsx)(t,{kicker:`Konto`,title:`Trakt`,hint:`Verlauf ohne VIP importieren. Schreiben braucht OAuth.`,children:(0,r.jsx)(`div`,{className:`mt-8`,children:(0,r.jsx)(n,{})})})}export{i as component};

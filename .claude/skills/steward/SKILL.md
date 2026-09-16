@@ -12,8 +12,9 @@ description: Arbeitsregeln für Änderungen, Prüfung, Releases und Versionspfle
 - macOS-App: `native/Nori-macOS/`
 - SwiftPM/Testpaket: `native/Package.swift` + `native/Tests/`
 - kanonischer Contract: `config/contract.json`
-- Windows-Legacy-Hülle: `desktop/`
-- generiertes Windows-Runtime-Bundle: `server/` — nicht manuell bearbeiten
+- gemeinsame Anwendungsschicht: `shared/nori-app/` — steckt in **beiden**
+  JavaScript-Apps; wer sie ändert, prüft webOS und Windows
+- Windows-App: `apps/windows/` (Electron: `src/main/`, `src/renderer/`)
 
 Die gleichnamigen Core-Dateien in den Apple-App-Ordnern sind Symlinks. Eine Kernänderung erfolgt ausschließlich unter `native/NoriCore/Sources/NoriCore/`.
 
@@ -107,7 +108,7 @@ Nicht in Git einchecken:
 - `.ipa`
 - Logs
 
-`server/` ist eine historische Ausnahme: dort liegt der gebaute Windows-Runtime-Stand 1.8.0. Er ist kein Ort für neue manuelle Implementierung.
+`apps/windows/dist/`, `apps/windows/dist-main/` und `apps/windows/release/` sind Bauausgaben und gehören nicht ins Repository. Die frühere Ausnahme `server/` — der gebaute Windows-Runtime-Stand 1.8.0 — ist mit Windows 2.0.0 entfallen.
 
 ## Schlüssel
 
