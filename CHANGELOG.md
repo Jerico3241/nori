@@ -111,16 +111,29 @@ der Server den Stream weiterreichen.
 
 ### Geprüft
 
-- `apps/windows/test/desktop.test.mjs` — **52 Prüfungen**, Playwright startet
+- `apps/windows/test/desktop.test.mjs` — **55 Prüfungen**, Playwright startet
   die gebaute App über `_electron.launch`: Start, Brücke, Bilder, Navigation,
   Suche, Detailseite, Player samt echter Wiedergabe, Fenstergröße, Vollbild,
   Überlappungen, Schriftgrößen, Google-Zustand, Fehlerzustände.
+- Dieselben 55 Prüfungen laufen mit `NORI_PACKAGED=<Pfad>` gegen das
+  **gepackte** Ergebnis — dasselbe `app.asar`, das im Installer landet.
 - Der Nachbau des Nori-Servers läuft dafür über `https:` mit einem
   Wegwerf-Zertifikat (`NORI_MOCK_TLS=1`). Über `http:` wäre er nach der
   Inhaltsrichtlinie der App gesperrt — und eine Prüfung, die dafür die
   Richtlinie lockert, prüft nicht mehr die App, die ausgeliefert wird.
-- `apps/webos/test/remote-control.test.mjs` — unverändert grün.
-- `shared/nori-core` — 221 Tests.
+- `apps/webos/test/remote-control.test.mjs` — 339 Prüfungen, unverändert grün.
+- `shared/nori-core` — 221 Tests. `services/nori-api` — 13 Tests.
+
+### Das Paket
+
+    app.asar     47,6 MB → 1,16 MB
+    entpackt     370 MB  → 283 MB
+    Installer    102 MB  → 86 MB
+    ZIP          143 MB  → 122 MB
+
+`electron-builder` nahm die Produktionsabhängigkeiten aus `package.json`
+ungefragt mit, obwohl sie längst in den zwei Bündeln stecken; dazu 55
+Sprachdateien von Chromium, von denen zwei gebraucht werden.
 
 ### Entfallen
 
