@@ -19,8 +19,8 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 | --- | --- | --- |
 | iOS / iPadOS | **1.25.2** | Native SwiftUI-App, aktueller Hauptstand |
 | macOS | **1.20.1** | Native SwiftUI-App mit eigener Mac-Oberfläche |
-| Windows | **1.8.0** | Electron / Node Portable Build, Legacy-Stand |
-| LG webOS | **2.2.1** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+| Windows | **2.0.0** | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
+| LG webOS | **2.4.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -35,12 +35,12 @@ nori/
 │   └── Tests/NoriCoreTests/      # Tests des gemeinsamen Kerns
 ├── config/
 │   └── contract.json             # kanonischer Daten-/Provider-Contract
-├── desktop/                      # Electron-Hülle des Windows-Legacy-Stands
-├── server/                       # gebautes Nitro/Node-Bundle, kein Quellcode
 ├── shared/
-│   └── nori-core/                # gemeinsamer Kern in TypeScript
+│   ├── nori-core/                # gemeinsamer Kern in TypeScript
+│   └── nori-app/                 # gemeinsame Anwendungsschicht (React)
 ├── apps/
-│   └── webos/                    # TV-App für LG webOS
+│   ├── webos/                    # TV-App für LG webOS
+│   └── windows/                  # Desktop-App für Windows (Electron)
 ├── services/
 │   └── nori-api/                 # Provider-Schicht als HTTP-Dienst
 ├── docs/
@@ -65,6 +65,22 @@ Die Oberflächen bleiben bewusst plattformspezifisch. iOS nutzt unter anderem Ta
 `shared/nori-core/` ist die TypeScript-Entsprechung von `native/NoriCore/`: dieselben Modelle, dieselben Regeln, dieselben Parser und derselbe Hoster-Resolver. Sie kann Swift nicht einbinden, richtet sich aber nach demselben `config/contract.json` und legt dieselbe `library.json`-Form ab. Die webOS-App und der Nori-Server benutzen sie beide; hosterspezifische Extraktion gibt es dadurch nur einmal.
 
 Beide Testreihen prüfen absichtlich dieselben HTML-Ausschnitte — `native/Tests/NoriCoreTests/Fixtures.swift` und `shared/nori-core/test/fixtures.ts`.
+
+### Gemeinsame Anwendungsschicht
+
+`shared/nori-app/` liegt zwischen dem Kern und den Oberflächen: Zustand
+(Bibliothek, Einstellungen, Katalog, Abgleich), Dienste (TMDB, Bilder,
+Zugang, Protokoll), Hooks, die Wiedergabeanbindung und die wenigen
+Bausteine, die überall gleich aussehen (`Artwork`, `Icon`). Sie enthält
+**keine** Annahme darüber, worauf sie läuft; was sie über das Gerät wissen
+muss, fragt sie über `NoriPlatform` — Breite der Zeichenfläche, ob die
+Eingabe gerade arbeitet, wie eine fremde Adresse geöffnet und wie die App
+beendet wird.
+
+Darüber liegen die Oberflächen, und die bleiben getrennt: `apps/webos/` ist
+für drei Meter Abstand und ein Steuerkreuz gebaut, `apps/windows/` für einen
+Zeiger, eine Tastatur und ein Fenster, das seine Größe ändert. Beide sehen
+denselben Katalog, dieselbe Bibliothek und denselben Abgleich.
 
 ## Funktionen
 
@@ -367,12 +383,63 @@ Hoster — er bekommt ein `PlaySource` und eine Adresse, die er laden kann.
 
 ## Windows
 
-Der Windows-Stand ist derzeit **1.8.0** und wird als Legacy-Bereich behandelt:
+`apps/windows/` ist die Nori-App für den Schreibtisch. Sie benutzt denselben
+Kern und dieselbe Anwendungsschicht wie der Fernseher und hat eine eigene
+Oberfläche für Maus, Tastatur, Trackpad und ein Fenster, dessen Größe sich
+ändert.
 
-- `desktop/` enthält die Electron-Hülle.
-- `server/` enthält ausschließlich das bereits gebaute Nitro/Node-Runtime-Bundle.
+```text
+apps/windows/
+├── src/main/        Hauptprozess: Fenster, Quellenschicht, Google, Streams
+├── src/renderer/    Oberfläche: Seiten, Player, Zustand, Stylesheets
+├── test/            Desktop-Prüfung über Playwright (`_electron`)
+└── build/           Symbole für Fenster und Installer
+```
 
-`server/` ist **kein Quellcode** und sollte nicht manuell editiert werden. Für eine aktive Weiterentwicklung der Windows-Version sollte zuerst der ursprüngliche Web-Sourcecode wieder als eigene App-Struktur ins Repository aufgenommen werden; erst dann wäre ein Umzug nach `apps/windows/` sinnvoll.
+### Die Quellen laufen im Hauptprozess
+
+Ein Fenster kann AniWorld und Serienstream nicht selbst lesen: von `file://`
+aus ist jeder Abruf fremder Herkunft, `Referer` lässt sich nicht setzen, und
+das Ziel einer Weiterleitung nicht auslesen. Der Fernseher löst das mit einem
+Nori-Server nebenan. Auf dem Schreibtisch braucht es den nicht — der
+Hauptprozess **ist** Node, und dieselbe `DirectGateway` aus `@nori/core`, die
+auch `services/nori-api` benutzt, läuft direkt darin. Kein zweiter Prozess,
+kein belegter Port, keine Wartezeit beim Start.
+
+Das Fenster spricht über eine feste Liste von Kanälen mit ihm
+(`src/main/preload.ts`). Wer lieber einen Nori-Server benutzt — etwa den, der
+schon für den Fernseher läuft —, stellt das in den Einstellungen um; auch
+dieser Weg läuft im Hauptprozess. Der Server liefert dann Listen, Details und
+aufgelöste Adressen, **Bild und Ton holt Nori selbst** und setzt dafür den
+`Referer` — ein Umweg über den Server wäre `http:`, und das lässt die
+Inhaltsrichtlinie des Fensters zu Recht nicht zu.
+
+### Sicherheit
+
+- `contextIsolation`, `sandbox`, kein `nodeIntegration`, kein `remote`.
+- Eine strenge Inhaltsrichtlinie im Dokument; `script-src 'self'`.
+- Fremde Adressen gehen in den Systembrowser, nie in ein Nori-Fenster
+  (`setWindowOpenHandler`, `will-navigate`).
+- Google-Anmeldung als Authorization Code mit PKCE über den Systembrowser und
+  eine Rückgabeadresse auf `127.0.0.1` (RFC 8252) — keine eingebettete
+  Anmeldeseite.
+- Tokens liegen verschlüsselt über `safeStorage` unter `%APPDATA%\\Nori`. Das
+  Fenster bekommt nur ein Zugriffstoken, das eine Stunde gilt; das
+  Refresh-Token verlässt den Hauptprozess nie.
+
+### Bauen
+
+```bash
+npm --prefix apps/windows install
+npm --prefix apps/windows run build      # Typprüfung, Hauptprozess, Oberfläche
+npm --prefix apps/windows run package    # Installer und ZIP nach apps/windows/release/
+npm --prefix apps/windows run test:desktop   # 52 Prüfungen im echten Programm
+```
+
+Die Prüfung startet die **gebaute** App über Playwright, dazu einen Nachbau des
+Nori-Servers über `https:` mit einem Wegwerf-Zertifikat — die App lässt nach
+ihrer eigenen Richtlinie nichts anderes an Bild und Ton, und eine Prüfung, die
+dafür die Richtlinie lockert, prüft nicht mehr die App, die ausgeliefert wird.
 
 ## CI / Releases
 
@@ -387,4 +454,7 @@ Release-Quellpakete müssen neben dem jeweiligen Plattformordner auch `native/No
 - AniWorld-Weiterleitungen (`/redirect/...`) und Serienstream-Weiterleitungen (`/r?...`) werden getrennt behandelt.
 - Der Hoster-Resolver akzeptiert nur sichere HTTPS-Ziele und blockiert lokale/private Netzwerkadressen.
 - Hoster können ihre Seiten oder Schutzmechanismen jederzeit ändern. Dadurch kann die Stream-Auflösung trotz unverändertem Nori-Code zeitweise ausfallen.
-- `server/` ist generierte Build-Ausgabe und kein Ort für manuelle Änderungen.
+- Die frühere Windows-Fassung (`desktop/` mit einem gebauten Nitro-Bundle in
+  `server/`) ist mit 2.0.0 entfallen. Ihr Web-Quelltext lag nie im Repository,
+  weshalb sie sich nicht pflegen ließ; `apps/windows/` ersetzt sie vollständig
+  und besteht aus Quelltext.

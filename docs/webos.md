@@ -250,10 +250,22 @@ jedes Gerät, das sich genauso misst.
 
 ```
 apps/webos/          TV-Oberfläche (React, TypeScript, Enact Spotlight, hls.js)
+shared/nori-app/     gemeinsame Anwendungsschicht — Zustand, Dienste, Hooks,
+                     Wiedergabeanbindung, `Artwork` und `Icon`
 shared/nori-core/    gemeinsamer Kern in TypeScript — Modelle, Provider,
                      Parser, Hoster-Resolver, Bibliotheksregeln, TMDB
 services/nori-api/   Provider-Schicht als HTTP-Dienst, benutzt denselben Kern
 ```
+
+`shared/nori-app/` teilt sich der Fernseher mit der Windows-App. Sie enthält
+keine Annahme über das Gerät: was sie darüber wissen muss, fragt sie über
+`NoriPlatform`, und `apps/webos/src/services/webos.ts` meldet die Antworten
+des Fernsehers beim Start an. **Wer dort etwas ändert, ändert beide Apps** —
+dann gehören beide Prüfläufe dazu, nicht nur der Fernbedienungslauf.
+
+Die Oberfläche bleibt getrennt und soll es bleiben: hier ist sie für drei
+Meter Abstand und ein Steuerkreuz gebaut, dort für Zeiger, Tastatur und ein
+Fenster, dessen Größe sich ändert.
 
 Der Kern ist die TypeScript-Entsprechung von `native/NoriCore/`, dem
 gemeinsamen Swift-Kern der Apple-Apps. Maßgeblich ist für beide

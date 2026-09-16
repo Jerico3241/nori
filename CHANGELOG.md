@@ -5,7 +5,128 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.3.0**.
+Windows **2.0.0**, LG webOS **2.4.0**.
+
+## [Windows 2.0.0] · [webOS 2.4.0] — 2026-09-16
+
+Nori für Windows ist neu gebaut. Der Fernseher war zuletzt die technisch und
+funktional vollständigste Fassung; die Windows-Version bestand aus einem
+gebauten Web-Bündel, dessen Quelltext nie im Repository lag. Sie ist damit
+nicht kopiert, sondern **abgelöst**: dieselbe Kernlogik, dieselbe
+Anwendungsschicht, eine eigene Oberfläche für Zeiger, Tastatur und ein Fenster,
+dessen Größe sich ändert.
+
+webOS steigt mit, weil ein Teil seines Quelltextes jetzt geteilt wird. Gleiche
+Funktionen, gleiche Oberfläche, gleiche Leistungswerte wie 2.3.0 — geprüft mit
+demselben Fernbedienungslauf. iOS und macOS sind unverändert;
+Bibliotheksschema weiterhin v6, Merge-Regeln, Sync-Format, OAuth-Fluss und
+Contract unverändert.
+
+### Eine Anwendungsschicht statt zweier Apps
+
+`shared/nori-app/` ist neu und liegt zwischen `shared/nori-core/` und den
+Oberflächen: Zustand (Bibliothek, Einstellungen, Katalog, Startseite,
+Abgleich), Dienste (TMDB, Bilder, Bildwarteschlange, Zugang, Protokoll,
+Leistungsmodus), Hooks, die Wiedergabeanbindung und die Bausteine, die überall
+gleich aussehen (`Artwork`, `Icon`). Herausgelöst aus der webOS-App, nicht neu
+geschrieben.
+
+Sie enthält keine Annahme über das Gerät. Was sie darüber wissen muss, fragt
+sie über `NoriPlatform` — Breite der Zeichenfläche, ob die Eingabe gerade
+arbeitet, wie eine fremde Adresse geöffnet und wie die App beendet wird. Auf
+dem Fernseher heißt „die Eingabe arbeitet": der Fokus bewegt sich; auf dem
+Schreibtisch: es wird gescrollt oder gezogen. Die Hintergrundarbeit weicht in
+beiden Fällen zurück, ohne dass die Schicht wüsste, worum es geht.
+
+Beide Apps binden sie als Quelltext ein. Die Oberflächen bleiben getrennt und
+sollen es bleiben.
+
+### Windows: kein Server mehr
+
+Die alte Fassung startete einen Nitro-Server als eigenen Prozess und zeigte in
+einem Fenster `http://127.0.0.1:17321`. Das hieß: ein zweiter Node-Prozess,
+ein belegter Port, eine Wartezeit beim Start und ein Fehlerbild („Server
+antwortet nicht"), das niemand auflösen konnte.
+
+Jetzt läuft die Quellenschicht im **Hauptprozess** — dieselbe `DirectGateway`
+aus `@nori/core`, die auch `services/nori-api` benutzt, mit `linkedom` als
+Parser. Ein Fenster könnte das nicht: von `file://` aus ist jeder Abruf fremder
+Herkunft, `Referer` lässt sich nicht setzen, und das Ziel einer Weiterleitung
+nicht auslesen. Ein Programm darf all das.
+
+Wer lieber einen Nori-Server benutzt — etwa den, der schon für den Fernseher
+läuft —, stellt das um; auch dieser Weg läuft im Hauptprozess. Der Server
+liefert dann Listen, Details und aufgelöste Adressen, **Bild und Ton holt Nori
+selbst** und setzt dafür den `Referer`. Auf dem Fernseher ist das andersherum,
+und das hat einen Grund: dort kann niemand einen `Referer` setzen, also muss
+der Server den Stream weiterreichen.
+
+### Windows: Sicherheit
+
+- `contextIsolation`, `sandbox`, kein `nodeIntegration`, kein `remote`. Das
+  Fenster sieht ausschließlich die Liste aus `src/main/preload.ts`.
+- Inhaltsrichtlinie im Dokument: `script-src 'self'`, `object-src 'none'`,
+  `base-uri 'none'`, `frame-src 'none'`. Eine eingeschleuste Zeichenkette aus
+  einer Hoster-Seite wird nicht ausgeführt, und nichts im Fenster telefoniert
+  über `http:` ins lokale Netz.
+- Fremde Adressen gehen in den Systembrowser, nie in ein Nori-Fenster
+  (`setWindowOpenHandler`, `will-navigate`).
+- Google-Anmeldung als Authorization Code mit PKCE über den Systembrowser und
+  eine Rückgabeadresse auf `127.0.0.1` (RFC 8252). Keine eingebettete
+  Anmeldeseite, kein eigener Auth-Server, kein Proxy.
+- Tokens liegen verschlüsselt über `safeStorage` unter `%APPDATA%\Nori`
+  (Dateirechte 0600). Das Fenster bekommt nur ein Zugriffstoken, das eine
+  Stunde gilt; das Refresh-Token verlässt den Hauptprozess nie.
+- Der eine Kanal, über den das Fenster einen Abruf anstoßen kann
+  (`nori:http`, für TMDB), lässt genau zwei Ziele zu: TMDB und den
+  eingetragenen Nori-Server.
+
+### Windows: Oberfläche
+
+- Seitenleiste links, Kopfzeile mit Suchfeld, Startseite mit Kopfbereich und
+  Reihen, Katalog als Raster, das die Fensterbreite füllt, Detailseite,
+  Merkliste, Verlauf, Kalender, Einstellungen.
+- Reihen lassen sich mit dem Rad schieben, mit der Maus ziehen oder über zwei
+  Knöpfe, die beim Überfahren erscheinen.
+- Player mit Leertaste/K, Pfeilen, ↑↓ für die Lautstärke, F für Vollbild, M
+  für stumm, N für die nächste Folge, Escape zurück. Hosterwechsel,
+  Sprachwahl und Autoplay wie auf dem Fernseher.
+- Fenstergröße und Vollbildzustand bleiben erhalten. Unter 1100 px wird die
+  Seitenleiste kompakt.
+- Dieselbe Farbwelt: fastschwarzer Grund, Eisblau als Akzent, große Poster.
+  Keine orange Akzentfarbe, keine Tabs, keine Download-Knöpfe, kein
+  Crunchyroll.
+
+### Behoben
+
+- **Der Kopfbereich stand zweimal `--gutter` zu breit.** `.hero` ist ein
+  direktes Kind von `.main` und brauchte den negativen Außenabstand nie; links
+  saß er vor dem Fensterrand, rechts schnitt `.main` ihn ab, und das Artwork
+  saß sichtbar schief.
+- **Das Suchfeld filterte nicht.** `usePersistentState` hielt seinen Wert je
+  Komponente. Auf dem Fernseher fiel das nie auf — dort steht das Suchfeld in
+  der Katalogseite. Auf dem Schreibtisch steht es in der Kopfzeile: getippt
+  wurde, gefiltert nicht. Ein Schlüssel hat jetzt einen Wert, und wer daran
+  hängt, erfährt jede Änderung. (Betrifft beide Apps.)
+
+### Geprüft
+
+- `apps/windows/test/desktop.test.mjs` — **52 Prüfungen**, Playwright startet
+  die gebaute App über `_electron.launch`: Start, Brücke, Bilder, Navigation,
+  Suche, Detailseite, Player samt echter Wiedergabe, Fenstergröße, Vollbild,
+  Überlappungen, Schriftgrößen, Google-Zustand, Fehlerzustände.
+- Der Nachbau des Nori-Servers läuft dafür über `https:` mit einem
+  Wegwerf-Zertifikat (`NORI_MOCK_TLS=1`). Über `http:` wäre er nach der
+  Inhaltsrichtlinie der App gesperrt — und eine Prüfung, die dafür die
+  Richtlinie lockert, prüft nicht mehr die App, die ausgeliefert wird.
+- `apps/webos/test/remote-control.test.mjs` — unverändert grün.
+- `shared/nori-core` — 221 Tests.
+
+### Entfallen
+
+`desktop/` und `server/` sind weg. `server/` bestand aus generierten
+`.mjs`-Dateien mit Hash-Namen, deren Quelltext nie im Repository lag; pflegen
+ließ sich das nicht. `apps/windows/` ersetzt beides und besteht aus Quelltext.
 
 ## [webOS 2.3.0] — 2026-09-16
 

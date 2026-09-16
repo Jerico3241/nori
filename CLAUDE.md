@@ -10,15 +10,15 @@ Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
 | `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
 | `native/Tests/` | Tests des gemeinsamen Kerns | ja |
-| `desktop/` | Electron-Hülle für Windows | ja |
-| `server/` | gebautes Nitro/Node-Bundle | nein, generiert |
 | `shared/nori-core/` | gemeinsamer Kern in TypeScript | ja |
+| `shared/nori-app/` | gemeinsame Anwendungsschicht (React) für webOS und Windows | ja |
 | `apps/webos/` | LG webOS, React + TypeScript + Enact Spotlight | ja |
+| `apps/windows/` | Windows, Electron: Hauptprozess + React-Oberfläche | ja |
 | `services/nori-api/` | Provider-Schicht als HTTP-Dienst für die TV-App | ja |
 | `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
 
-`server/` besteht aus generierten `.mjs`-Dateien mit Hash-Namen. Änderungen daran sind falsch; der ursprüngliche Web-Sourcecode gehört separat ins Repository, falls Windows wieder aktiv weiterentwickelt wird.
+Die frühere Windows-Fassung — `desktop/` mit einem gebauten Nitro-Bundle in `server/` — ist mit Windows 2.0.0 entfallen. Sie bestand aus generierten `.mjs`-Dateien, deren Quelltext nie im Repository lag; pflegen ließ sie sich damit nicht. `apps/windows/` ersetzt sie vollständig und besteht aus Quelltext.
 
 ## Gemeinsamer Apple-Core
 
@@ -41,6 +41,29 @@ Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`
 Die gleichnamigen Pfade in den iOS- und macOS-Ordnern sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Die Xcode-Projekte referenzieren weiterhin ihre bekannten Pfade und bauen dadurch dieselben Quellen.
 
 Die Oberflächen bleiben bewusst getrennt: `NoriApp.swift`, `Theme.swift`, Views und Player-Integration dürfen zwischen iOS und macOS voneinander abweichen.
+
+## Gemeinsame Anwendungsschicht
+
+`shared/nori-app/` liegt zwischen `shared/nori-core/` und den zwei
+JavaScript-Oberflächen (`apps/webos/`, `apps/windows/`): Zustand, Dienste,
+Hooks, Wiedergabeanbindung und die Bausteine, die überall gleich aussehen
+(`Artwork`, `Icon`).
+
+Sie enthält **keine** Annahme über das Gerät. Was sie darüber wissen muss,
+fragt sie über `NoriPlatform` (`shared/nori-app/src/platform.ts`) — Breite der
+Zeichenfläche, ob die Eingabe gerade arbeitet, wie eine fremde Adresse
+geöffnet und wie die App beendet wird. Jede App meldet ihre Umsetzung beim
+Start an (`installPlatform`). Wer dort `window.webOS`, `navigator.userAgent`
+oder `process` abfragt, hat die Schicht falsch verstanden.
+
+Beide Apps binden sie als **Quelltext** ein (Vite-Alias auf
+`shared/nori-app/src/index.ts`, dazu `resolve.dedupe: ["react", "react-dom"]`).
+Ohne `dedupe` gäbe es zwei React-Instanzen, und der Fehler meldet sich als
+„Invalid hook call" an ganz anderer Stelle.
+
+Die Oberflächen bleiben getrennt: webOS ist für drei Meter Abstand und ein
+Steuerkreuz gebaut, Windows für Zeiger, Tastatur und ein Fenster, dessen
+Größe sich ändert. Was dort verschieden aussieht, ist Absicht.
 
 ## Zweiter Kern: TypeScript
 
@@ -91,10 +114,27 @@ Die Oberfläche lässt sich zusätzlich mit einer nachgebauten Fernbedienung
 durchspielen (`apps/webos/test/`, siehe `docs/webos.md`). Der Lauf `Build
 webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
 
+Für Windows gilt dasselbe — auch diese Toolchain ist im Container vorhanden:
+
+```bash
+npm --prefix apps/windows run build          # tsc --noEmit, esbuild, Vite
+npm --prefix apps/windows run test:desktop   # Playwright startet die App
+npm --prefix apps/windows run package        # Installer und ZIP
+```
+
+`test:desktop` startet die **gebaute** App über `_electron.launch` und dazu
+einen Nachbau des Nori-Servers über `https:`. Unter Linux braucht es
+`xvfb-run -a` davor. Wer den Installer plattformübergreifend bauen will,
+braucht Wine (`wine64` **und** `wine32:i386`) — ohne die 32-Bit-Hälfte
+scheitert die Deinstallationsroutine von NSIS.
+
+Wer `shared/nori-app/**` ändert, ändert **beide** Apps. Dann gehören beide
+Läufe dazu, nicht nur der der eigenen Plattform.
+
 ## Konventionen
 
 - Oberflächentexte, README und Commit-Nachrichten sind deutsch.
-- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`.
+- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`, `Windows: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
 - App-Versionen stammen auf den Apple-Plattformen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
 - `config/contract.json` enthält keine App-Version.
@@ -108,11 +148,27 @@ der anderen unterscheiden lässt, und ein Fehlerbericht dazu ist nicht mehr
 zuzuordnen.
 
 Gleich stehen müssen `apps/webos/appinfo.json`, `apps/webos/package.json`,
-`shared/nori-core/package.json`, `services/nori-api/package.json`,
-`API_VERSION` in `services/nori-api/src/server.ts` und ein Abschnitt
-`[webOS <version>]` in `CHANGELOG.md` samt der Übersicht am Dateianfang.
+`shared/nori-core/package.json`, `shared/nori-app/package.json`,
+`services/nori-api/package.json`, `API_VERSION` in
+`services/nori-api/src/server.ts` und ein Abschnitt `[webOS <version>]` in
+`CHANGELOG.md` samt der Übersicht am Dateianfang.
 `tools/check-webos-package.py` prüft das, einschließlich der Version **im
 gebauten `.ipk`**.
+
+Weil `shared/nori-app/` in beiden Apps steckt, gilt: Wer dort etwas ändert,
+erhöht **beide** Versionen — die von webOS und die von Windows. Sonst gäbe es
+zwei verschiedene Fassungen unter derselben Nummer.
+
+### Versionsnummer bei Windows
+
+Die Windows-Version steht in `apps/windows/package.json` und im
+`package.json` der Wurzel; beide müssen übereinstimmen, und ein Installer mit
+neuem Inhalt braucht eine neue Nummer — aus demselben Grund wie beim
+Fernseher. `electron-builder` nimmt die Nummer aus
+`apps/windows/package.json` und setzt sie in Dateinamen,
+Windows-Ressourcen und Deinstallationseintrag. Ein Abschnitt
+`[Windows <version>]` in `CHANGELOG.md` und die Übersicht am Dateianfang
+gehören dazu.
 
 ## Datenmodell
 
