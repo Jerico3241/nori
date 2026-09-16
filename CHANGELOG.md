@@ -5,36 +5,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **2.0.1**, LG webOS **2.4.1**.
+Windows **2.0.0**, LG webOS **2.4.1**.
 
-## [Windows 2.0.1] · [webOS 2.4.1] — 2026-09-16
+## [webOS 2.4.1] — 2026-09-16
 
-Ein Satz, der nichts sagte.
-
-Kommt Nori nicht an AniWorld oder Serienstream heran, stand in der Oberfläche
-„Katalog nicht ladbar — **fetch failed**". Das ist Nodes Meldung für *jeden*
-Verbindungsfehler; der eigentliche Grund hängt in `cause` und wurde verworfen.
-
-Auf dem Schreibtisch ist das kein Randfall, sondern der Regelfall: Dort ruft
-Nori die Quellen selbst ab, und wenn der Internetanbieter ihre Adressen im DNS
-sperrt — in Deutschland verbreitet —, sieht der Nutzer nur diese zwei Wörter.
-Ob die Adresse nicht auflösbar ist, niemand antwortet oder das Zertifikat
-nicht passt, macht aber den ganzen Unterschied: Das Erste löst ein anderer
-DNS-Server, das Zweite nicht.
-
-`FetchHttpClient` benennt den Grund jetzt (`describeNetworkError`):
-
-    aniworld.to ist nicht auflösbar. Häufig sperrt der Internetanbieter
-    die Adresse im DNS — ein anderer DNS-Server oder ein VPN hilft dann.
-
-    serienstream.to nimmt keine Verbindung an.
-    serienstream.to antwortet nicht.
-
-Genannt wird nur der Rechnername, nie die Adresse samt Abfrage — aus
-demselben Grund wie überall sonst im Protokoll. Im Browser gibt es `cause`
-nicht; dort bleibt die Meldung, die ohnehin schon deutlicher ist.
-
-Betrifft alle, die den Kern benutzen: Windows, webOS und `services/nori-api`.
+Nur Werkzeug — an der App selbst ändert sich nichts. Funktionen, Oberfläche
+und Leistungswerte sind die von 2.4.0.
 
 ### Die gemeinsame Schicht hat kein eigenes `node_modules` mehr
 
