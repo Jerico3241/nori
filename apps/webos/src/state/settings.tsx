@@ -11,6 +11,7 @@ import {
 import type { TransportMode } from "../services/gateway";
 import type { TmdbMode } from "../services/tmdb";
 import { warn } from "../services/log";
+import { setPerformanceSetting, type PerformanceSetting } from "../services/performance";
 
 const STORAGE_KEY = "nori.webos.settings";
 
@@ -43,6 +44,20 @@ export interface DeviceSettings {
   tmdbKey: string;
   /** Weiche Flächen kosten auf älteren Panels Bilder pro Sekunde. */
   reduceEffects: boolean;
+  /**
+   * Wie sparsam Nori zeichnet und nachlädt.
+   *
+   *   „auto"  — Nori misst und entscheidet: ein kurzer Rechenlauf beim ersten
+   *             Start und danach die tatsächliche Fokuslatenz.
+   *   „full"  — immer die volle Darstellung.
+   *   „lean"  — immer sparsam, auch wenn das Gerät schnell genug wäre.
+   *
+   * Getrennt von `reduceEffects`: „Animationen reduzieren" ist eine Frage des
+   * Geschmacks und der Barrierefreiheit, der Leistungsmodus eine der Hardware.
+   * Wer Übergänge mag, aber ein schwaches Panel hat, soll beides einzeln
+   * einstellen können.
+   */
+  performance: PerformanceSetting;
   debug: boolean;
 }
 
@@ -55,6 +70,7 @@ const DEFAULTS: DeviceSettings = {
   tmdbMode: "server",
   tmdbKey: "",
   reduceEffects: false,
+  performance: "auto",
   debug: false,
 };
 
@@ -65,6 +81,11 @@ interface SettingsContextValue {
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
+
+/** Der abgelegte Stand. Auch `main.tsx` liest ihn — vor dem ersten Zeichnen. */
+export function readSettings(): DeviceSettings {
+  return read();
+}
 
 function read(): DeviceSettings {
   try {
@@ -78,6 +99,10 @@ function read(): DeviceSettings {
     if (parsed.tmdbMode === undefined) {
       merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : DEFAULTS.tmdbMode;
     }
+    // Ein Stand von vor dem Leistungsmodus kennt nur „Animationen reduzieren".
+    // Wer den eingeschaltet hatte, hat ein Gerät, dem etwas fehlt — die
+    // Messung darf das bestätigen, aber nicht dahinter zurückfallen.
+    if (parsed.performance === undefined) merged.performance = DEFAULTS.performance;
     return merged;
   } catch (cause) {
     warn("app", "Einstellungen nicht lesbar", cause);
@@ -96,6 +121,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
     localStorage.setItem("nori.debug", settings.debug ? "1" : "0");
     document.documentElement.dataset.effects = settings.reduceEffects ? "reduced" : "full";
+    setPerformanceSetting(settings.performance);
   }, [settings]);
 
   const update = useCallback((patch: Partial<DeviceSettings>) => {

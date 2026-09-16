@@ -55,6 +55,8 @@ Nori.exe
 *.ipk
 apps/webos/dist/
 apps/webos/test-shots/
+# Messwerte von `test/perf-bench.mjs` — die Zahlen stehen im Changelog.
+apps/webos/test-perf/
 shared/nori-core/dist/
 services/nori-api/dist/
 services/nori-api/dist-test/

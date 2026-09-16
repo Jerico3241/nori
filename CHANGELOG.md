@@ -5,7 +5,226 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.2.1**.
+Windows **1.8.0**, LG webOS **2.3.0**.
+
+## [webOS 2.3.0] — 2026-09-16
+
+Leistungsüberarbeitung für schwächere LG-Fernseher. Als Low-/Mid-End-Referenz
+gilt ab jetzt der **LG 55UA75006LA**: 4K-Panel, schwache CPU, webOS mit
+1080p-Zeichenfläche. Er ist Maßstab, nicht Sonderfall — seine Modellnummer
+steht nirgends im Quelltext, und alles hier gilt für jedes Gerät, das sich
+genauso misst.
+
+Gleiche Funktionen, gleiche Oberfläche, deutlich weniger Arbeit je
+Tastendruck. Kein Wechsel auf 720p, keine entfernte Funktion, kein neues
+Design. iOS, macOS und Windows unverändert; Bibliotheksschema weiterhin v6,
+Merge-Regeln, Sync-Format, OAuth-Fluss und Contract unverändert.
+
+### Gemessen
+
+Mit `apps/webos/test/perf-bench.mjs` — CPU sechsfach gedrosselt, kaltes
+Bild-Cache, 400 Titel je Quelle, sieben Startseiten-Reihen, je drei Läufe.
+Angegeben ist der Median der Läufe.
+
+| Messwert | vorher | nachher | |
+| --- | ---: | ---: | --- |
+| Layoutabfragen je Tastendruck (Start) | 299 | 18 | 16,6× weniger |
+| `getComputedStyle` je Tastendruck | 86 | 6 | 14,3× weniger |
+| Layoutabfragen je Tastendruck (Katalog) | 184 | 15 | 12,3× weniger |
+| Zielsuche der Navigation (Median) | — | 0,9 ms | neu messbar |
+| Tastenhandler gesamt (Median) | 15,9 ms | 11,4 ms | −28 % |
+| Tastenhandler gesamt (95. Perzentil) | 25,1 ms | 19,7 ms | −22 % |
+| Aufgaben über 100 ms | 23 | 9 | 2,6× weniger |
+| Summe dieser Aufgaben | 14 497 ms | 1 411 ms | 10,3× weniger |
+| DOM-Knoten der Startseite | 631 | 370 | 1,7× weniger |
+| Fokussierbare Elemente | 85 | 45 | 1,9× weniger |
+| Bildabrufe beim Aufbau | 102 | 85 | −17 % |
+| Größtes geladenes Artwork | 2000 px | 1280 px | −36 % |
+| Geladene Bildfläche gesamt | 16,1 MPx | 10,0 MPx | −38 % |
+
+Kaltstart bis zur ersten Reihe bleibt im Rahmen der Streuung (863–1058 ms
+vorher, 958–1173 ms nachher). Der JS-Heap am Ende des Laufs ebenso
+(11,8 MB → 11,5 MB); der Gewinn liegt bei den **dekodierten** Bildern, und die
+zählt der Lauf nicht mit — messbar ist dort nur, dass ein Viertel weniger
+Bilder in einer um mehr als ein Drittel kleineren Fläche geholt werden.
+
+### Fernbedienung
+
+- **Ein Tastendruck vermisst nicht mehr die ganze Seite.** Vorher wurde bei
+  jedem Pfeildruck jedes `.spottable` der Seite gesucht, auf Erreichbarkeit
+  geprüft (`getComputedStyle`) und geometrisch vermessen
+  (`getBoundingClientRect`, `offsetWidth`, `offsetHeight`). Jetzt in drei
+  Stufen: die Zeile entlang (`data-nav-row`), dann die Nachbarreihen, und erst
+  als Rückfall die ganze Seite. Das Ergebnis ist dasselbe — gemessen wird ein
+  Bruchteil.
+- **Geometriespeicher.** Boxen bleiben zwischen Tastendrücken gültig.
+  Gespeichert wird die Position im Inhalt statt auf dem Bildschirm; gegen den
+  Scrollstand zurückgerechnet wird gegen das **Ziel** laufender Bewegungen.
+  Verworfen wird bei jeder DOM-Änderung, die etwas verschieben kann — das
+  kostet eine Addition, gemessen wird erst auf Nachfrage.
+- **Ein geladenes Poster löst keine Neuvermessung mehr aus.** Die
+  DOM-Beobachtung nimmt alles unterhalb von `data-nav-quiet` aus: die
+  Bildflächen haben ihre Größe aus dem Stylesheet, ein eintreffendes Bild
+  verschiebt dort nichts. Eine Unterzeile, die nach einem TMDB-Treffer unter
+  einer Kachel erscheint, ist ausdrücklich **nicht** ausgenommen — die ändert
+  die Kartenhöhe.
+- **Der Scrollstand wird gemerkt.** `scrollTop`/`scrollLeft` sind
+  Layoutabfragen, und geschrieben wird bei jedem Tastendruck; gelesen werden
+  sie jetzt nur noch beim ersten Mal und im `scroll`-Ereignis.
+- **Wiederholrate nach gemessener Dauer** statt fester Zahl (70–180 ms). Mehr
+  Wiederholungen, als das Panel zeichnen kann, sind keine schnellere Bedienung.
+- Die Maße des Fokus (`--focus-scale-card`, `--focus-scale-control`,
+  `--focus-ring-rem`) stehen jetzt nur noch in `theme.css`; die Scrollrechnung
+  liest sie zur Laufzeit von dort statt sie zu wiederholen.
+- Der rechte Bereich im Player (`.player-panel`) ist als Scrollbereich
+  angeschrieben und lässt sich damit auch mit dem Steuerkreuz durchlaufen.
+
+### Bilder
+
+- **Auflösung an der Zeichenfläche statt am Panel.** Ein webOS-Paket mit
+  `"resolution": "1920x1080"` zeichnet in 1920 × 1080 Bildpunkten; viele
+  4K-Geräte melden trotzdem `devicePixelRatio === 2`. Auf einem solchen Gerät
+  kamen Poster als `w780` statt `w342` (5,2× so viele Bildpunkte), Kopfbilder
+  als `original` — bei TMDB regelmäßig 3840 × 2160 — und der Schriftzug
+  ebenfalls als `original`, ein PNG mit Alphakanal in voller Größe. Die Größe
+  ist jetzt durch die Zeichenfläche aus `appinfo.json` begrenzt
+  (`__NORI_WEBOS_RESOLUTION__`, eine Quelle). Auf einer echten 4K-Fläche bleibt
+  es bei `w780` und `original`.
+- Die Leiter für den Schriftzug bekommt eine Stufe `w300`; bei 1080p ist er
+  jetzt `w500` statt `original`.
+- `getComputedStyle` für die Umrechnung lief bei **jedem Zeichnen jeder
+  Kachel**. Jetzt einmal, neu gemessen bei Größenänderung.
+- **Höchstens drei bis vier Bildabrufe gleichzeitig**
+  (`services/artworkQueue.ts`), nach Rangfolge: Kopfbereich und fokussierte
+  Kachel, dann die erste Reihe, dann alles Sichtbare in der Reihenfolge, in der
+  es ins Bild kommt. Eine Frist von acht Sekunden gibt den Platz zurück, wenn
+  ein Bild nie antwortet.
+- **Offscreen-Kacheln laden kein Bild mehr.** `loading="lazy"` half nicht:
+  Chromium setzt den Vorlauf nach der gemessenen Verbindung, und auf einem
+  Fernseher ist nicht die Verbindung der Engpass. `Artwork` trennt jetzt
+  nachfragen (in Sichtweite) von laden (wenn ein Platz frei ist).
+- Vorgeladen werden nur noch die ersten fünf Karten der **ersten** Reihe statt
+  sieben Karten **jeder** Reihe; im Katalog eine Rasterzeile statt zehn Karten.
+- Welche Titel bei TMDB nachgeschlagen werden, entscheidet jetzt
+  `state/home.ts` (die ersten zwölf je Reihe, in Leerlaufpausen, höchstens
+  einmal je Titel und Sitzung). Vorher war das ein Nebeneffekt des Bildladens —
+  und damit hing die Rangfolge der Startseite daran, welche Bilder geladen
+  wurden.
+- Kacheln hören nur noch auf **ihren eigenen** Titel (`covers.subscribe(slug)`).
+  Vorher meldete sich jede Kachel für jede Bildänderung an und verglich selbst:
+  achtzig Aufrufe je eingetroffenem Poster.
+
+### Zeichnen
+
+- Reihen der Startseite werden in Schritten eingehängt, der Rest in
+  Leerlaufpausen; während die Fernbedienung arbeitet, ruht das Nachziehen.
+- Eine Reihe zeichnet zunächst zehn Karten (acht im sparsamen Modus) und
+  verbreitert sich, wenn der Fokus die letzten drei erreicht — im nächsten
+  Bild, nicht im Tastendruck. Die erreichte Breite bleibt je Reihe gemerkt,
+  damit das Fokusgedächtnis beim Zurückkehren dieselbe Karte findet.
+- Jede Reihe trägt `contain: layout style`: der Browser rechnet beim
+  erzwungenen Layout nach einem Tastendruck nur die Reihe durch statt der
+  ganzen Seite. Ohne `paint`, weil die fokussierte Karte über ihre Reihe
+  hinauswächst.
+- `content-visibility: auto` steht bewusst **nicht** im Stylesheet:
+  übersprungene Teilbäume liefern keine Geometrie mehr, und die
+  Fernbedienungsnavigation lebt von Geometrie.
+- `will-change: transform` nur am **fokussierten** Element. An allen Kacheln
+  wäre es der naheliegende und der falsche Weg: achtzig eigene Texturen im
+  Grafikspeicher.
+- `Artwork` vergleicht seine Angaben und zeichnet sich nicht neu, wenn sich an
+  ihnen nichts geändert hat.
+
+### Hintergrundarbeit
+
+- **`normalizeTitle` war der größte Einzelposten des Seitenaufbaus** — im
+  CPU-Profil eines gedrosselten Laufs mehr als die Hälfte der Rechenzeit. Die
+  Funktion lief über jedes Zeichen mit zwei Ausdrücken **in** der Schleife, und
+  ein Ausdruck in einer Schleife ist bei jedem Durchlauf ein neues Objekt.
+  Jetzt drei Durchläufe mit drei festen Ausdrücken. Das Ergebnis ist
+  unverändert; die Fixtures des Kerns belegen das.
+- `stripVariants` baut seine fünf Ausdrücke nicht mehr bei jedem Aufruf neu.
+- `HomeCatalogIndex` merkt sich, welche TMDB-Zeile zu welchem Titel gehört. Ein
+  Index ist unveränderlich, dieselben Zeilen kommen bei jeder Neuberechnung der
+  Startseite wieder, und jede Zuordnung normalisierte bis zu sechs
+  Schreibweisen.
+- Der Katalog baut Titel und Suchindex nicht mehr bei jedem gebündelten
+  TMDB-Treffer neu — sie hängen am Katalog, nicht an TMDB. Bei zehntausend
+  Titeln waren das zehntausend neue Objekte alle zwei Sekunden für eine
+  Zuordnung, die sich nicht geändert hat.
+- Gebündelte TMDB-Runden weichen der Navigation aus (`services/scheduler.ts`),
+  aber höchstens dreimal: wer die Pfeiltaste festhält, soll die Arbeit
+  aufschieben können, nicht verhindern.
+
+### Leistungsmodus
+
+- Neu unter *Mehr → Darstellung → Leistung*: **Automatisch**, **Normal**,
+  **Optimiert**. Getrennt von „Animationen reduzieren" — das eine ist eine
+  Frage der Hardware, das andere eine des Geschmacks.
+- „Automatisch" entscheidet an drei Signalen und an keiner Modellnummer: einem
+  kurzen Rechenlauf (einmal je Gerät, **nach** dem ersten Bild, Ergebnis im
+  `localStorage`), an `hardwareConcurrency`/`deviceMemory` als Hinweis, und an
+  der tatsächlich gemessenen Fokuslatenz — bleibt die Bedienung zäh, wechselt
+  der Modus auch bei unauffälligem Rechenlauf.
+- „Optimiert" nimmt zurück: die dritte, weiche Schattenebene des Fokusrings,
+  ein Hauch Wachstum (1,05 statt 1,07), den wandernden Schimmer der
+  Ladeflächen, den zweiten Farbverlauf des Hintergrunds; dazu zwei statt vier
+  gleichzeitige Bildabrufe, kleinerer Vorlauf, kleinere Aufbauschritte. Farben,
+  Abstände, Schriftgrößen, Postergrößen, Kopfbereich und die Art, wie der Fokus
+  aussieht, bleiben unverändert.
+
+### Messbar gemacht
+
+- `window.__noriNav` zählt Tastendrücke, Messungen, Treffer im
+  Zwischenspeicher, vollständige Durchläufe, Verwürfe und die Zeiten. Drei
+  Additionen je Tastendruck; ausgegeben wird nur mit Entwicklerschalter.
+- *Mehr → Diagnose* zeigt einen Abschnitt **Leistung**: Modus und Begründung,
+  mittlere und schlechteste Fokuslatenz, Messungen gegenüber
+  Zwischenspeicher-Treffern, die gewählten TMDB-Stufen und den Stand der
+  Bildwarteschlange.
+- Neu: `apps/webos/test/perf-bench.mjs`. Gedrosselte CPU, kaltes Bild-Cache,
+  großer Katalog; zählt im Browser selbst, indem es `getBoundingClientRect`,
+  `getComputedStyle`, `offsetWidth`/`offsetHeight` und
+  `scrollWidth`/`scrollHeight` vor jedem Skript der Seite ersetzt.
+  `--compare` stellt zwei Läufe gegenüber.
+- `test/mock-server.mjs` kennt `NORI_MOCK_TITLES` (großer Katalog),
+  `test/mock-tmdb.mjs` kennt `NORI_MOCK_SYNTH_TMDB=1` (TMDB-Antwort zu jedem
+  Titel). Beides aus, wenn nichts gesetzt ist — der Fernbedienungslauf prüft
+  ausdrücklich den Fall „Titel ohne TMDB-Eintrag".
+
+### Tests
+
+- `npm run test:tv`: **339 Prüfungen** (vorher 310), alle bestanden. Neu ein
+  Abschnitt **Leistung**:
+  - Navigation bleibt in der Reihe: höchstens vier Messungen je Tastendruck,
+    kein vollständiger Seitendurchlauf, Zielsuche unter 5 ms.
+  - Runter führt in die **nächste** Reihe, Hoch zurück in die vorherige.
+  - Zwölf Tastendrücke im 20-ms-Takt: der Fokus steht auf einer Karte und ist
+    vollständig sichtbar.
+  - Katalog: weniger geladene Bilder als Bildflächen; weit entfernte Kacheln
+    laden keins.
+  - Höchstens vier Bildabrufe gleichzeitig.
+  - Der Fokus bleibt, während Daten nachlaufen.
+  - Auf einem simulierten LG mit `devicePixelRatio 2` und 1080p-Fläche: Poster
+    `w342`, Kopfbild `w1280`, kein einziges Bild in `original`.
+  - Sparsamer Modus: gesetzt, Eisblau und Kachelbreite unverändert, Hero und
+    Reihen da, Karten wachsen weiterhin, Fokusring ohne weichen Schlagschatten,
+    Posterauflösung unverändert — dazu Navigationslauf und Layoutprüfung.
+- `npm --prefix shared/nori-core test`: 221 Prüfungen, unverändert bestanden —
+  der Gegenbeweis, dass `normalizeTitle`, `stripVariants` und die Zuordnung
+  dasselbe liefern wie vorher.
+- `npm --prefix services/nori-api test` und `python3 tools/check-webos-package.py`
+  unverändert bestanden.
+- Kein physischer Fernseher im automatisierten Lauf: gemessen wurde in
+  Chromium mit sechsfacher CPU-Drosselung, echten LG-Tastencodes, bei
+  1920 × 1080 und 3840 × 2160 sowie simuliertem webOS-Gerät.
+
+### Dokumentation
+
+- `docs/webos.md`: neue Abschnitte zu den drei Suchstufen der Navigation, zum
+  Geometriespeicher, zur Artwork-Auflösung, zur Warteschlange der Bildabrufe,
+  zum schrittweisen Aufbau, zum Leistungsmodus und zum Referenzfernseher; dazu
+  eine Anleitung für `perf-bench.mjs`.
 
 ## [webOS 2.2.1] — 2026-09-13
 

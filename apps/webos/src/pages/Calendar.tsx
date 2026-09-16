@@ -133,7 +133,7 @@ export function CalendarPage() {
   };
 
   const releaseList = (entries: AiringEntry[]) => (
-    <div className="release-list">
+    <div className="release-list" data-nav-row="">
       {entries.map((entry) => (
         <ReleaseRow
           key={`${entry.provider}|${entry.slug}|${entry.season}|${entry.episode}|${entry.languages.join()}`}
@@ -219,7 +219,7 @@ export function CalendarPage() {
 
       {mode === "month" ? (
         <section className="month" data-reveal="">
-          <div className="month-head">
+          <div className="month-head" data-nav-row="">
             <SpotButton className="glassbtn" focusRoute={ROUTE} focusArea="days" focusKey="month-prev" onClick={() => setSelected(addMonths(selected, -1))}>
               <Icon name="back" />
               Vormonat
@@ -230,13 +230,13 @@ export function CalendarPage() {
               <Icon name="chevronRight" />
             </SpotButton>
           </div>
-          <div className="month-grid">
+          <div className="month-grid" data-nav-row="">
             {WEEKDAY_SHORT.map((label) => <div className="month-weekday" key={label}>{label}</div>)}
             {monthGrid(selected).map((key) => dayButton(key, "mday", !sameMonth(key, selected)))}
           </div>
         </section>
       ) : (
-        <div className="weekstrip">{week.map((key) => dayButton(key, "day"))}</div>
+        <div className="weekstrip" data-nav-row="">{week.map((key) => dayButton(key, "day"))}</div>
       )}
 
       {body}

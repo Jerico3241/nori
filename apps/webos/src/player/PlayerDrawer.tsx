@@ -52,6 +52,7 @@ export function PlayerDrawer(props: DrawerProps) {
       <div className="player-panel-shade" aria-hidden="true" />
       <SpotArea
         className="player-panel"
+        data-scroll-y=""
         spotlightId="player-drawer"
         restrict="self-only"
         role="dialog"

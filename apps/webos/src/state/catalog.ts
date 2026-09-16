@@ -28,6 +28,7 @@ import {
 } from "@nori/core";
 import { useEffect, useMemo, useState } from "react";
 
+import { batched } from "../services/scheduler";
 import { tmdb } from "../services/tmdb";
 import { useData } from "./data";
 import { useLibrary } from "./library";
@@ -90,19 +91,15 @@ export function useCatalogView() {
   const [generation, setGeneration] = useState(0);
 
   // TMDB-Treffer gebündelt übernehmen. Jeder einzelne hieße: alle Karten neu
-  // bewerten — bei zehntausend Titeln spürbar auf einem Fernseher.
+  // bewerten — bei zehntausend Titeln spürbar auf einem Fernseher. Und nicht
+  // mitten in einem Tastendruck: `batched` schiebt die Runde auf, solange die
+  // Fernbedienung arbeitet.
   useEffect(() => {
-    let timer: number | null = null;
-    const stop = tmdb.subscribe(() => {
-      if (timer !== null) return;
-      timer = window.setTimeout(() => {
-        timer = null;
-        setGeneration((value) => value + 1);
-      }, 1500);
-    });
+    const update = batched(1500, () => setGeneration((value) => value + 1));
+    const stop = tmdb.subscribe(() => update.schedule());
     return () => {
       stop();
-      if (timer !== null) window.clearTimeout(timer);
+      update.cancel();
     };
   }, []);
 
@@ -128,13 +125,23 @@ export function useCatalogView() {
   const items = deduped.items;
 
   const favorites = library.state.favorites;
+  /*
+   * Titel und Index hängen am Katalog, nicht an TMDB.
+   *
+   * Sie standen mit in der Rechnung darunter und entstanden deshalb bei jedem
+   * gebündelten TMDB-Treffer neu — bei zehntausend Titeln zehntausend neue
+   * Objekte und ein neu aufgebauter Index, alle zwei Sekunden, für eine
+   * Zuordnung, die sich nicht geändert hat.
+   */
+  const titles = useMemo(() => items.map((item) => homeTitleFrom(item)), [items]);
+  const index = useMemo(() => new HomeCatalogIndex(titles), [titles]);
+
   const candidates = useMemo<HomeCandidate[]>(() => {
     void generation;
-    const titles = items.map((item) => homeTitleFrom(item));
     const signals = tmdb.cachedSignals();
     return buildCandidates({
       catalog: titles,
-      index: new HomeCatalogIndex(titles),
+      index,
       trending: signals.trending,
       popular: signals.popular,
       airing: signals.airing,
@@ -142,7 +149,7 @@ export function useCatalogView() {
       known: tmdb.knownSignals(),
       now: Date.now(),
     });
-  }, [items, favorites, generation]);
+  }, [titles, index, favorites, generation]);
 
   return { catalog, items, candidates, representative: deduped.representative };
 }

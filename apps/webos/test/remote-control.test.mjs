@@ -274,23 +274,39 @@ function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-async function newTvPage(browser, width, height, { settings = true } = {}) {
-  const page = await browser.newPage({ viewport: { width, height } });
+async function newTvPage(browser, width, height, { settings = true, dpr, userAgent, patch = {} } = {}) {
+  const page = await browser.newPage({
+    viewport: { width, height },
+    ...(dpr ? { deviceScaleFactor: dpr } : {}),
+    ...(userAgent ? { userAgent } : {}),
+  });
   const placeholder = readFileSync(join(APP, "public", "icon-400.png"));
   await page.route("https://image.tmdb.org/**", (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: placeholder }));
   if (settings) {
-    await page.addInitScript((base) => {
+    await page.addInitScript(([base, patch]) => {
       if (!localStorage.getItem("nori.webos.settings")) {
         localStorage.setItem("nori.webos.settings", JSON.stringify({
           transport: "server", serverUrl: base, controlsTimeout: 4, seekStep: 10,
           autoplayCountdown: 3, tmdbMode: "server", tmdbKey: "", reduceEffects: false, debug: true,
+          ...patch,
         }));
       }
-    }, BASE);
+    }, [BASE, patch]);
   }
   return page;
 }
+
+/**
+ * Die Kennung eines echten LG-Fernsehers.
+ *
+ * Gebraucht für die Bildgrößen: Nori begrenzt sie auf die Zeichenfläche aus
+ * `appinfo.json`, und diese Begrenzung greift nur dort, wo die App auch
+ * wirklich auf einem Fernseher läuft. Im Browser bleibt das Pixelverhältnis
+ * maßgeblich, weil es dort die Wahrheit ist.
+ */
+const WEBOS_AGENT = "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) "
+  + "Chrome/79.0.3945.79 Safari/537.36 WebAppManager";
 
 let crashed = null;
 const browser = await chromium.launch({
@@ -1559,6 +1575,169 @@ try {
   await layoutAudit(uhd, "4K Mehr", 26);
   await stress(uhd, "4K Mehr Matrix", MATRIX);
   await uhd.close();
+
+  // --- 12. Leistung ---------------------------------------------------------------------------
+  //
+  // Diese Prüfungen sind der Gegenbeweis zu den Zahlen in `test/perf-bench.mjs`:
+  // Dort steht, wie viel schneller es geworden ist, hier steht, dass dabei
+  // nichts verloren ging. Gemessen wird gegen `window.__noriNav` — dieselben
+  // Zähler, die auch der Diagnosebereich zeigt.
+  section("Leistung");
+
+  const perfPage = await newTvPage(browser, 1920, 1080);
+  const perfErrors = [];
+  perfPage.on("pageerror", (e) => perfErrors.push(e.message));
+  await perfPage.goto(BASE, { waitUntil: "domcontentloaded" });
+  await perfPage.waitForTimeout(6500);
+
+  // Die Zähler gibt es überhaupt — sonst sagt alles Folgende nichts.
+  const hasCounters = await perfPage.evaluate(() => Boolean(window.__noriNav && window.__noriArtwork));
+  check("Leistung: Zähler für Navigation und Bildabrufe vorhanden", hasCounters);
+
+  // Eine Reihe entlang: je Tastendruck nur eine Handvoll Messungen, und kein
+  // einziger vollständiger Durchlauf über die Seite.
+  await focusKey(perfPage, "hero-play");
+  await remote(perfPage, "down", 500);
+  const railLocal = await perfPage.evaluate(() => {
+    const nav = window.__noriNav;
+    return { measured: nav.measured, fullScans: nav.fullScans, moves: nav.moves };
+  });
+  for (let i = 0; i < 6; i += 1) await remote(perfPage, "right", 200);
+  const railAfter = await perfPage.evaluate(() => {
+    const nav = window.__noriNav;
+    return {
+      measured: nav.measured, fullScans: nav.fullScans, moves: nav.moves,
+      spottables: document.querySelectorAll(".spottable").length,
+      search: nav.searchMs,
+    };
+  });
+  const perMove = (railAfter.measured - railLocal.measured) / Math.max(1, railAfter.moves - railLocal.moves);
+  check("Navigation bleibt in der Reihe: höchstens 4 Messungen je Tastendruck",
+    perMove <= 4, `${perMove.toFixed(1)} von ${railAfter.spottables} Elementen`);
+  check("Navigation in der Reihe ohne vollständigen Seitendurchlauf",
+    railAfter.fullScans === railLocal.fullScans, `${railAfter.fullScans - railLocal.fullScans} Durchläufe`);
+  check("Zielsuche unter 5 ms", railAfter.search < 5, `${railAfter.search.toFixed(2)} ms`);
+
+  // Hoch/Runter findet die benachbarte Reihe, nicht irgendeine.
+  const railOrder = await perfPage.evaluate(() =>
+    Array.from(document.querySelectorAll("[data-rail]")).map((el) => el.getAttribute("data-rail")));
+  const railOf = () => perfPage.evaluate(() =>
+    document.activeElement?.closest("[data-rail]")?.getAttribute("data-rail") ?? null);
+  const beforeDown = await railOf();
+  await remote(perfPage, "down", 420);
+  const afterDown = await railOf();
+  check("Runter führt in die **nächste** Reihe",
+    railOrder.indexOf(afterDown) === railOrder.indexOf(beforeDown) + 1 || railOrder.length < 2,
+    `${beforeDown} → ${afterDown}`);
+  await remote(perfPage, "up", 420);
+  check("Hoch führt zurück in die vorherige Reihe", (await railOf()) === beforeDown, `${afterDown} → ${await railOf()}`);
+
+  // Zwölf Tastendrücke in schneller Folge: der Fokus bleibt auf einer Karte
+  // und bleibt vollständig sichtbar.
+  for (let i = 0; i < 12; i += 1) await remote(perfPage, "right", 20);
+  await perfPage.waitForTimeout(700);
+  const fast = await focused(perfPage);
+  const fastVisible = await focusVisibility(perfPage);
+  check("Zwölf schnelle Tastendrücke: Fokus steht auf einer Karte",
+    Boolean(fast?.key) && /poster|land|card/i.test(fast?.cls ?? ""), `${fast?.key} (${fast?.cls})`);
+  check("Zwölf schnelle Tastendrücke: Fokus vollständig sichtbar", fastVisible.ok, fastVisible.reason);
+
+  // Nur laden, was zu sehen ist. Im Katalog steht ein Raster aus dreißig
+  // Karten und sichtbar sind zwei Zeilen — dort zeigt sich der Unterschied,
+  // den die Startseite des Nachbaus mit ihren elf Karten nicht hergibt.
+  await goto(perfPage, "#/katalog", 5200);
+  const lazy = await perfPage.evaluate(() => {
+    const areas = Array.from(document.querySelectorAll(".catalog-grid .art"));
+    const height = window.innerHeight;
+    const far = areas.filter((a) => {
+      const r = a.getBoundingClientRect();
+      return r.top > height * 1.6 || r.bottom < -height * 0.6;
+    });
+    return {
+      areas: areas.length,
+      images: areas.filter((a) => a.querySelector("img")).length,
+      far: far.length,
+      farImages: far.filter((a) => a.querySelector("img")).length,
+    };
+  });
+  check("Katalog: weniger geladene Bilder als Bildflächen",
+    lazy.areas > 12 && lazy.images < lazy.areas, `${lazy.images} Bilder / ${lazy.areas} Flächen`);
+  check("Weit entfernte Kacheln laden kein Bild",
+    lazy.far > 0 && lazy.farImages === 0, `${lazy.farImages} von ${lazy.far} weit entfernten Kacheln`);
+
+  const queue = await perfPage.evaluate(() => window.__noriArtwork());
+  check("Höchstens vier Bildabrufe gleichzeitig",
+    queue.limit <= 4 && queue.running <= queue.limit, JSON.stringify(queue));
+
+  // Der Fokus überlebt eintreffende Daten: derselbe Schlüssel nach mehreren
+  // TMDB-Runden, ohne dass jemand eine Taste gedrückt hätte. Im Katalog ist
+  // das der harte Fall — dort sortiert TMDB das Raster im Hintergrund.
+  await remote(perfPage, "down", 400);
+  await remote(perfPage, "right", 400);
+  const beforeIdle = await focused(perfPage);
+  await perfPage.waitForTimeout(3000);
+  const afterIdle = await focused(perfPage);
+  check("Fokus bleibt, während Daten nachlaufen",
+    beforeIdle?.key === afterIdle?.key, `${beforeIdle?.key} → ${afterIdle?.key}`);
+  check("Leistung: keine Skriptfehler", perfErrors.length === 0, perfErrors.slice(0, 2).join(" | "));
+  await shot(perfPage, "36-leistung");
+  await perfPage.close();
+
+  // Bildgrößen auf einem 4K-Panel mit 1080p-Zeichenfläche — der Fall des
+  // Referenzgeräts. Ohne die Begrenzung kämen hier `w780` und `original`.
+  const tvPage = await newTvPage(browser, 1920, 1080, { dpr: 2, userAgent: WEBOS_AGENT });
+  await tvPage.goto(BASE, { waitUntil: "domcontentloaded" });
+  await tvPage.waitForTimeout(6500);
+  const tvArt = await tvPage.evaluate(() => ({
+    webos: /web0s|webos/i.test(navigator.userAgent),
+    dpr: window.devicePixelRatio,
+    poster: document.querySelector(".poster-card .art img")?.getAttribute("src") ?? "",
+    hero: document.querySelector(".hero-media .art img")?.getAttribute("src") ?? "",
+    sizes: Array.from(document.querySelectorAll(".art img"))
+      .map((img) => (/\/t\/p\/([^/]+)\//.exec(img.getAttribute("src") ?? "") ?? [])[1])
+      .filter(Boolean),
+  }));
+  check("Fernseher erkannt, Panel meldet Pixelverhältnis 2", tvArt.webos && tvArt.dpr === 2, `${tvArt.dpr}`);
+  check("Poster in w342 statt w780 — die Zeichenfläche ist 1080p",
+    tvArt.poster.includes("/w342/"), tvArt.poster.split("/t/p/")[1] ?? "kein Poster");
+  check("Kopfbild in w1280 statt original",
+    tvArt.hero.includes("/w1280/"), tvArt.hero.split("/t/p/")[1] ?? "kein Kopfbild");
+  check("Kein einziges Bild in `original`",
+    tvArt.sizes.length > 0 && !tvArt.sizes.includes("original"), tvArt.sizes.join(", "));
+  await tvPage.close();
+
+  // Der sparsame Modus: dieselbe App, dieselben Farben, weniger Aufwand.
+  const leanPage = await newTvPage(browser, 1920, 1080, { patch: { performance: "lean" } });
+  await leanPage.goto(BASE, { waitUntil: "domcontentloaded" });
+  await leanPage.waitForTimeout(6000);
+  const lean = await leanPage.evaluate(() => {
+    const root = getComputedStyle(document.documentElement);
+    const card = document.querySelector(".poster-card");
+    return {
+      mode: document.documentElement.dataset.perf,
+      accent: root.getPropertyValue("--accent").trim(),
+      scale: root.getPropertyValue("--focus-scale-card").trim(),
+      ring: root.getPropertyValue("--focus-ring").trim(),
+      cardWidth: card ? Math.round(card.getBoundingClientRect().width) : 0,
+      rails: document.querySelectorAll("[data-rail]").length,
+      hero: Boolean(document.querySelector(".hero-home")),
+      poster: document.querySelector(".poster-card .art img")?.getAttribute("src") ?? "",
+    };
+  });
+  check("Leistungsmodus „optimiert“ ist gesetzt", lean.mode === "lean", lean.mode ?? "-");
+  check("Optimiert: Eisblau und Kachelbreite unverändert",
+    lean.accent === "#79c7ff" && lean.cardWidth === 205, `${lean.accent} · ${lean.cardWidth} px`);
+  check("Optimiert: Hero und Reihen weiterhin da", lean.hero && lean.rails > 0, `${lean.rails} Reihen`);
+  check("Optimiert: Karten wachsen im Fokus weiterhin",
+    Number.parseFloat(lean.scale) > 1.02, lean.scale);
+  check("Optimiert: Fokusring ohne weichen Schlagschatten",
+    !/rem\s+3\.375rem/.test(lean.ring) && lean.ring.includes("rgba(238, 248, 255"), lean.ring.slice(0, 60));
+  check("Optimiert: Posterauflösung unverändert", lean.poster.includes("/w342/"), lean.poster.split("/t/p/")[1] ?? "-");
+  await focusKey(leanPage, "hero-play");
+  await stress(leanPage, "Optimiert: Navigation", ["down", "right", "right", "down", "left", "up"]);
+  await layoutAudit(leanPage, "Optimiert Startseite", 13);
+  await shot(leanPage, "37-optimiert");
+  await leanPage.close();
 
   // --- 12. file:// ----------------------------------------------------------------------------
   section("Von file:// geladen");

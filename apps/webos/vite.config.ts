@@ -95,13 +95,17 @@ function vendorHls() {
   };
 }
 
-/** Die Version aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
-const appVersion = (JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as { version: string }).version;
+/** Version und Zeichenfläche aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
+const appInfo = JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as {
+  version: string;
+  resolution: string;
+};
 
 export default defineConfig(({ command }) => ({
   base: "./",
   define: {
-    __NORI_WEBOS_VERSION__: JSON.stringify(appVersion),
+    __NORI_WEBOS_VERSION__: JSON.stringify(appInfo.version),
+    __NORI_WEBOS_RESOLUTION__: JSON.stringify(appInfo.resolution ?? "1920x1080"),
   },
   plugins: [react(), classicScriptTags(), copyAppInfo(), vendorHls()],
   build: {

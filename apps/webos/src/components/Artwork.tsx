@@ -7,7 +7,7 @@
 //
 // ## Welches Bild
 //
-// Eine Liste in absteigender Güte, die bei jedem Zeichnen neu entsteht:
+// Eine Liste in absteigender Güte:
 //
 //     übergebene Adresse (Standbild einer Folge, Breitbild des Kopfbereichs)
 //     TMDB-Breitbild            (nicht bei Postern)
@@ -17,20 +17,34 @@
 // Scheitert eine Adresse, wird sie gemerkt und die nächste genommen. Am Ende
 // steht ein Ersatz aus dem Titel, nie eine Lücke. Die Größe jeder TMDB-Adresse
 // setzt `services/images.ts` — eine Kachel lädt kein Kopfbild, und das
-// Kopfbild eines 4K-Panels ist kein gestrecktes `w1280`.
+// Kopfbild eines 4K-Panels ist kein `original` für eine 1080p-Fläche.
 //
 // ## Wann es geladen wird
 //
-// Erst in Sichtweite, außer bei `eager`. Und **auch dann, wenn schon ein
-// Quellcover da ist**: der vorherige Stand fragte TMDB nur, wenn gar kein Bild
-// bekannt war. Ein einmal abgelegtes 220-px-Quellcover verhinderte damit für
-// immer das scharfe TMDB-Poster.
+// Zwei Stufen, und das ist der Unterschied zum vorherigen Stand:
+//
+// 1. **Nachfragen** (TMDB nach diesem Titel fragen) passiert, sobald die
+//    Kachel in die Nähe des Bildes kommt.
+// 2. **Laden** (`src` setzen) passiert erst, wenn dafür ein Platz frei ist —
+//    `services/artworkQueue.ts` lässt drei bis vier gleichzeitig zu und
+//    bevorzugt Kopfbereich und fokussierte Kachel.
+//
+// Vorher stand die Adresse sofort im `src` jeder gezeichneten Kachel, und der
+// Browser lud, was er für richtig hielt. Auf der Startseite waren das über
+// hundert Bilder in den ersten Sekunden.
+//
+// Und die Nachfrage läuft **auch dann, wenn schon ein Quellcover da ist**: der
+// ältere Stand fragte TMDB nur, wenn gar kein Bild bekannt war. Ein einmal
+// abgelegtes 220-px-Quellcover verhinderte damit für immer das scharfe
+// TMDB-Poster.
 
 import type { CatalogProvider } from "@nori/core";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
+import { ARTWORK_PRIORITY, requestArtworkSlot } from "../services/artworkQueue";
 import { covers } from "../services/covers";
 import { sizedImage, type ImageUse } from "../services/images";
+import { performanceProfile } from "../services/performance";
 import { tmdb } from "../services/tmdb";
 import { useData } from "../state/data";
 
@@ -68,9 +82,7 @@ function initialsOf(title: string): string {
     .slice(0, 2).map((word) => word[0] ?? "").join("").toUpperCase() || "N";
 }
 
-export function Artwork({
-  kind, slug, provider, title, alts, src, fallback, eager = false, passive = false, className,
-}: {
+export interface ArtworkProps {
   kind: ArtworkKind;
   slug: string;
   provider: CatalogProvider;
@@ -83,75 +95,109 @@ export function Artwork({
   /** Keinen Abruf anstoßen — nur zeigen, was schon bekannt ist. */
   passive?: boolean;
   className?: string;
-}) {
+}
+
+function ArtworkView({
+  kind, slug, provider, title, alts, src, fallback, eager = false, passive = false, className,
+}: ArtworkProps) {
   const { gateway, tmdbRoute } = useData();
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
   const [failed, setFailed] = useState<string[]>([]);
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  /** Die Adresse, für die ein Platz vergeben wurde — erst sie kommt ins `src`. */
+  const [claimed, setClaimed] = useState<string | null>(null);
+  /** Ist die Kachel nahe genug am Bild, um überhaupt etwas zu wollen? */
+  const [near, setNear] = useState(eager);
   const holder = useRef<HTMLSpanElement>(null);
 
-  // Ein Treffer, der später eintrifft, muss die Kachel erreichen.
-  useEffect(() => covers.subscribe((changed) => {
-    if (changed === slug || changed === "*") setVersion((value) => value + 1);
-  }), [slug]);
+  // Ein Treffer, der später eintrifft, muss die Kachel erreichen — und nur sie.
+  useEffect(
+    () => covers.subscribe(slug, () => setVersion((value) => value + 1)),
+    [slug],
+  );
 
   useEffect(() => {
     setFailed([]);
+    setClaimed(null);
+    setLoadedUrl(null);
   }, [slug, provider, src]);
 
+  // Sichtweite. `eager` überspringt das; alles andere wartet, bis die Kachel
+  // in die Nähe kommt. Ohne `IntersectionObserver` (sehr alte Stände) gilt
+  // alles als nah — lieber zu viel laden als gar nichts zeigen.
   useEffect(() => {
-    if (passive || (kind === "still" && src)) return undefined;
-    const wantsTmdb = tmdb.available && !covers.hasTmdb(slug, provider);
-    const hasAny = candidatesFor(kind, slug, provider, src, fallback).length > 0;
-    if (!wantsTmdb && hasAny) return undefined;
-
-    let cancelled = false;
-    const run = () => {
-      void covers.ensure({ slug, provider, title, alts }).then(() => {
-        if (!cancelled) setVersion((value) => value + 1);
-      });
-    };
-    if (eager || !("IntersectionObserver" in window)) {
-      run();
-      return () => {
-        cancelled = true;
-      };
+    if (eager || near) return undefined;
+    if (!("IntersectionObserver" in window)) {
+      setNear(true);
+      return undefined;
     }
     const node = holder.current;
     if (!node) return undefined;
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        observer.disconnect();
-        run();
-      }
-    }, { rootMargin: "360px 480px" });
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      setNear(true);
+    }, { rootMargin: performanceProfile().prefetchMargin });
     observer.observe(node);
+    return () => observer.disconnect();
+  }, [eager, near]);
+
+  const entries = useMemo(
+    () => candidatesFor(kind, slug, provider, src, fallback),
+    // `version` ist der Anstoß: kommt ein Cover an, entsteht die Liste neu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kind, slug, provider, src, fallback, version],
+  );
+
+  // Nachfragen bei TMDB, sobald die Kachel in die Nähe kommt.
+  useEffect(() => {
+    if (passive || !near || (kind === "still" && src)) return undefined;
+    const wantsTmdb = tmdb.available && !covers.hasTmdb(slug, provider);
+    if (!wantsTmdb && entries.length > 0) return undefined;
+
+    let cancelled = false;
+    void covers.ensure({ slug, provider, title, alts }).then(() => {
+      if (!cancelled) setVersion((value) => value + 1);
+    });
     return () => {
       cancelled = true;
-      observer.disconnect();
     };
     // `title` und `alts` absichtlich außen vor: sie ändern sich beim Nachladen
-    // der Detaildaten, und das darf keinen zweiten Abruf auslösen.
+    // der Detaildaten, und das darf keinen zweiten Abruf auslösen. `entries`
+    // ebenso — sonst liefe der Abruf bei jedem eintreffenden Cover erneut.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, slug, provider, src, eager, passive, tmdbRoute.effective]);
+  }, [kind, slug, provider, src, near, passive, tmdbRoute.effective]);
 
-  const entry = candidatesFor(kind, slug, provider, src, fallback)
-    .find((candidate) => !failed.includes(candidate.url));
+  const entry = entries.find((candidate) => !failed.includes(candidate.url));
   const sized = entry ? sizedImage(entry.url, entry.use) : null;
   const url = sized ? gateway.imageURL(sized, provider) : null;
-  const loaded = url !== null && loadedUrl === url;
+
+  // Einen Platz holen, sobald feststeht, welches Bild es werden soll.
+  useEffect(() => {
+    if (!near || !url || url === claimed) return undefined;
+    const priority = kind === "hero"
+      ? ARTWORK_PRIORITY.hero
+      : holder.current && document.activeElement instanceof HTMLElement
+        && document.activeElement.contains(holder.current)
+        ? ARTWORK_PRIORITY.hero
+        : eager ? ARTWORK_PRIORITY.eager : ARTWORK_PRIORITY.visible;
+    const slot = requestArtworkSlot(priority, () => setClaimed(url));
+    return () => slot.release();
+  }, [near, url, claimed, kind, eager]);
+
+  const shown = url !== null && claimed === url ? url : null;
+  const loaded = shown !== null && loadedUrl === shown;
 
   return (
     <span className={`art${className ? ` ${className}` : ""}`} ref={holder}>
-      {url ? (
+      {shown ? (
         <img
-          key={url}
-          src={url}
+          key={shown}
+          src={shown}
           alt=""
           className={loaded ? "loaded" : ""}
-          loading={eager ? "eager" : "lazy"}
           decoding="async"
-          onLoad={() => setLoadedUrl(url)}
+          onLoad={() => setLoadedUrl(shown)}
           onError={() => {
             if (entry) setFailed((list) => (list.includes(entry.url) ? list : [...list, entry.url]));
           }}
@@ -161,3 +207,17 @@ export function Artwork({
     </span>
   );
 }
+
+/**
+ * Gleiche Angaben, gleiches Bild.
+ *
+ * Eine Kachel zeichnet sich sonst bei jedem Durchgang der Reihe neu, obwohl
+ * sich an ihr nichts geändert hat — und eine Reihe zeichnet sich neu, sobald
+ * irgendein TMDB-Treffer die Startseite anfasst. `alts` ist ein Feld und bei
+ * jedem Durchgang ein neues Objekt; verglichen wird deshalb sein Inhalt.
+ */
+export const Artwork = memo(ArtworkView, (a, b) =>
+  a.kind === b.kind && a.slug === b.slug && a.provider === b.provider
+  && a.title === b.title && a.src === b.src && a.fallback === b.fallback
+  && a.eager === b.eager && a.passive === b.passive && a.className === b.className
+  && (a.alts?.join("|") ?? "") === (b.alts?.join("|") ?? ""));

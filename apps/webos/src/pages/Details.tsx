@@ -34,6 +34,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { recallFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
 import { covers } from "../services/covers";
+import { performanceProfile } from "../services/performance";
 import { log } from "../services/log";
 import { tmdb, type SeasonArt } from "../services/tmdb";
 import { useData } from "../state/data";
@@ -306,7 +307,7 @@ export function DetailsPage() {
       />
 
       <section className="season-section" data-reveal="" aria-label="Folgen">
-        <div className="season-row">
+        <div className="season-row" data-nav-row="">
           {seasons.length > 1 ? (
             <SpotButton
               className="chip active season-trigger"
@@ -344,7 +345,7 @@ export function DetailsPage() {
         ) : episodes.length === 0 ? (
           <p className="muted-note">Für diese Staffel sind keine Folgen eingetragen.</p>
         ) : (
-          <div className="episode-grid">
+          <div className="episode-grid" data-nav-row="">
             {visibleEpisodes.map((episode, index) => (
               <div
                 key={episode.path || episode.number}
@@ -387,7 +388,7 @@ export function DetailsPage() {
               focusRoute={route}
               focusArea="similar"
               focusKey={`similar-${candidate.title.provider}-${candidate.title.slug}`}
-              eager={index < 6}
+              eager={index < performanceProfile().eagerCards}
             />
           ))}
         </Rail>

@@ -48,7 +48,7 @@ export function HistoryPage() {
       {entries.length === 0 ? (
         <EmptyState title="Noch nichts angesehen" message="Sobald eine Folge läuft, steht sie hier mit ihrem Fortschritt." />
       ) : (
-        <div className="release-list">
+        <div className="release-list" data-nav-row="">
           {entries.map((item) => {
             const provider = item.provider ?? providerFromPath(item.episodePath);
             const percent = progressPercent(item);

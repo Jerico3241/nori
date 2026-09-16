@@ -35,6 +35,11 @@
     linear-gradient(180deg, var(--bg-top), var(--bg) 58%);
 }
 
+/* Derselbe Farbeindruck mit einem Verlauf statt zweien. */
+:root[data-perf="lean"] .app-shell {
+  background: linear-gradient(180deg, #08131f, var(--bg) 58%);
+}
+
 .app-main {
   position: absolute;
   top: 0;
@@ -588,6 +593,29 @@ h1 {
 
 .section {
   margin-top: 2.625rem;
+}
+
+/*
+ * Jede Reihe rechnet ihr Layout für sich.
+ *
+ * `contain: layout` sagt dem Browser zu, dass nichts aus dieser Reihe die
+ * Anordnung außerhalb beeinflusst. Er muss beim nächsten erzwungenen Layout —
+ * und genau eines steht nach jedem Tastendruck an, weil die Reihe gescrollt
+ * wurde — nicht mehr die ganze Seite durchrechnen, sondern nur die Reihe.
+ *
+ * Bewusst **ohne** `paint`: die fokussierte Karte wächst über ihre Reihe
+ * hinaus und trägt einen Ring; Farbcontainment würde beides abschneiden.
+ * `content-visibility: auto` steht aus demselben Grund nicht hier, aus einem
+ * strengeren: übersprungene Teilbäume liefern keine Geometrie mehr, und die
+ * Fernbedienungsnavigation lebt von Geometrie. Weit entfernte Reihen werden
+ * stattdessen erst gar nicht gezeichnet (`hooks/useProgressive.ts`).
+ *
+ * Chrome 79 (webOS 6) kennt `contain` seit Chrome 52; ältere Stände ignorieren
+ * die Zeile, und dann bleibt es beim vorherigen Verhalten.
+ */
+.rail-section,
+.season-section {
+  contain: layout style;
 }
 
 .section-head {

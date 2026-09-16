@@ -83,7 +83,7 @@ export const NO_DETAILS: TitleDetails = {
   poster: null,
 };
 
-type Listener = (slug: string) => void;
+type Listener = () => void;
 
 export interface ArtworkRequest {
   slug: string;
@@ -102,7 +102,17 @@ class ArtworkIndex {
   private queue: (() => void)[] = [];
   private running = 0;
   private saveTimer: number | null = null;
-  private listeners = new Set<Listener>();
+  /**
+   * Zuhörer je Titel, nicht ein Topf für alle.
+   *
+   * Vorher meldete sich jede Kachel für **jede** Bildänderung an und verglich
+   * selbst, ob sie gemeint war. Auf einer Startseite mit achtzig Kacheln waren
+   * das achtzig Aufrufe für ein einziges eingetroffenes Poster — achtzigmal je
+   * Treffer, und Treffer kommen beim Aufbau im Sekundentakt. Jetzt erreicht
+   * ein Poster genau die Kacheln, die es zeigen.
+   */
+  private listeners = new Map<string, Set<Listener>>();
+  private anyListeners = new Set<Listener>();
   private gateway: NoriGateway | null = null;
   private unsubscribeTmdb: (() => void) | null = null;
 
@@ -118,9 +128,19 @@ class ArtworkIndex {
     });
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  /** Auf Änderungen an genau einem Titel hören; `"*"` auf alle. */
+  subscribe(slug: string, listener: Listener): () => void {
+    if (slug === "*") {
+      this.anyListeners.add(listener);
+      return () => this.anyListeners.delete(listener);
+    }
+    const set = this.listeners.get(slug) ?? new Set<Listener>();
+    set.add(listener);
+    this.listeners.set(slug, set);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0) this.listeners.delete(slug);
+    };
   }
 
   private key(slug: string, provider: CatalogProvider): string {
@@ -283,7 +303,15 @@ class ArtworkIndex {
   }
 
   private notify(slug: string): void {
-    for (const listener of this.listeners) listener(slug);
+    if (slug === "*") {
+      for (const set of this.listeners.values()) {
+        for (const listener of set) listener();
+      }
+    } else {
+      const set = this.listeners.get(slug);
+      if (set) for (const listener of set) listener();
+    }
+    for (const listener of this.anyListeners) listener();
   }
 
   private schedule<T>(task: () => Promise<T>): Promise<T> {

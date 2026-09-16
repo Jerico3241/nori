@@ -43,6 +43,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { log } from "../services/log";
+import { batched, whenIdle } from "../services/scheduler";
 import { tmdb } from "../services/tmdb";
 import { useData } from "./data";
 import { useLibrary } from "./library";
@@ -73,6 +74,8 @@ export interface HomeFeedView {
 
 /** Wie viele Seed-Titel nach Empfehlungen gefragt werden. Je Seed ein Abruf. */
 const MAX_SEEDS = 3;
+/** Wie viele Titel je Reihe bei TMDB aufgelöst werden. Siehe `askedFor`. */
+const RESOLVE_PER_ROW = 12;
 const HERO_COUNT = 5;
 
 /**
@@ -126,21 +129,17 @@ export function useHomeFeed(): HomeFeedView {
    * zehntausend Objekten. Auf einem Fernseher ist das der Unterschied zwischen
    * einer Seite, die sich bedienen lässt, und einer, die stockt.
    *
-   * Deshalb gebündelt: höchstens alle 800 ms. Die Kacheln selbst bekommen ihre
-   * Bilder unabhängig davon sofort — die hängen am Bildindex, nicht hier.
+   * Deshalb gebündelt: höchstens alle 900 ms, und nie mitten in einem
+   * Tastendruck — `batched` schiebt die Runde auf, solange die Fernbedienung
+   * arbeitet, und holt sie nach, sobald sie ruht. Die Kacheln selbst bekommen
+   * ihre Bilder unabhängig davon sofort; die hängen am Bildindex, nicht hier.
    */
   useEffect(() => {
-    let timer: number | null = null;
-    const stop = tmdb.subscribe(() => {
-      if (timer !== null) return;
-      timer = window.setTimeout(() => {
-        timer = null;
-        setGeneration((value) => value + 1);
-      }, 800);
-    });
+    const update = batched(900, () => setGeneration((value) => value + 1));
+    const stop = tmdb.subscribe(() => update.schedule());
     return () => {
       stop();
-      if (timer !== null) window.clearTimeout(timer);
+      update.cancel();
     };
   }, []);
 
@@ -336,6 +335,47 @@ export function useHomeFeed(): HomeFeedView {
 
     return { hero, rows, hasSignals, enriching };
   }, [titles, index, airing, library, profile, generation, enriching]);
+
+  /**
+   * Die Titel, die auf der Startseite stehen, bei TMDB nachschlagen.
+   *
+   * Das hing vorher an den Kacheln: jede Titelreihe lud ihre ersten sieben
+   * Bilder sofort, und **weil** sie das tat, wurden dieselben sieben Titel bei
+   * TMDB aufgelöst — und erst dadurch konnten sie in der Rangfolge steigen.
+   * Ein Nebeneffekt des Bildladens hielt die Startseite zusammen.
+   *
+   * Seit Bilder erst beim Hinsehen geladen werden, trägt dieser Nebeneffekt
+   * nicht mehr. Deshalb steht die Nachfrage jetzt dort, wo sie hingehört: bei
+   * dem, was die Reihenfolge braucht. Sie läuft in Leerlaufpausen, fragt jeden
+   * Titel höchstens einmal je Sitzung und rührt kein Bild an.
+   */
+  const askedFor = useRef(new Set<string>());
+  useEffect(() => {
+    if (!tmdb.available) return undefined;
+    const wanted: HomeTitle[] = [
+      ...feed.hero.map((candidate) => candidate.title),
+      ...feed.rows.flatMap((row) => (row.titles ?? []).slice(0, RESOLVE_PER_ROW).map((c) => c.title)),
+    ];
+    const fresh = wanted.filter((title) => !askedFor.current.has(homeTitleId(title)));
+    if (fresh.length === 0) return undefined;
+    for (const title of fresh) askedFor.current.add(homeTitleId(title));
+    // Ausdrücklich **ohne** Abbruch beim nächsten Durchgang: die Reihen ändern
+    // sich mit jedem eintreffenden Treffer, und ein Aufräumen würde genau die
+    // Nachfrage abbrechen, die den nächsten Treffer bringt. Die Arbeit ist
+    // klein, einmalig je Titel und in sich abgeschlossen.
+    whenIdle(() => {
+      for (const title of fresh) {
+        void tmdb.ensureArt({
+          slug: title.slug,
+          title: title.title,
+          alternates: title.alts,
+          provider: title.provider,
+          expectedYear: null,
+        }).catch(() => null);
+      }
+    }, 500);
+    return undefined;
+  }, [feed.hero, feed.rows]);
 
   useEffect(() => {
     log("data", "Startseite", feed.rows.map((row) => `${row.title}:${rowSize(row)}`).join(" "));

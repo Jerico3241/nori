@@ -87,7 +87,7 @@ export function Menu<T extends string>({
       className="menu"
       initial={value !== null ? ".menu-item.selected" : ".menu-item"}
     >
-      <div className="menu-list">
+      <div className="menu-list" data-nav-row="">
         {options.map((option) => {
           const selected = option.value === value;
           return (

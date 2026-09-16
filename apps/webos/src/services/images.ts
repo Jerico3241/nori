@@ -5,11 +5,32 @@
 // zusammen (`tmdbImageURL`); hier wird daraus die Größe, die ein Fernseher an
 // dieser Stelle **tatsächlich** braucht.
 //
-// Gerechnet wird in Bildschirmpixeln: gezeichnete CSS-Breite mal
-// Pixelverhältnis. Auf einem 1080p-Panel bekommt eine Posterkachel damit
-// `w342`, auf einem 4K-Panel `w780`; das Kopfbild bekommt auf 4K `original`
-// statt eines auf die dreifache Breite gestreckten `w1280`. Umgekehrt lädt
-// keine Kachel ein Kopfbild.
+// ## Warum nicht einfach `devicePixelRatio`
+//
+// Das war der vorherige Stand, und er war auf genau der Hardware falsch, für
+// die diese App gedacht ist. Ein webOS-Paket mit `"resolution": "1920x1080"`
+// zeichnet in 1920 × 1080 **logischen wie physischen** Bildpunkten; den Rest
+// erledigt der Skalierer des Panels. Viele 4K-Geräte melden trotzdem
+// `devicePixelRatio === 2`, weil sie das Panel beschreiben und nicht die
+// Fläche, auf der die App zeichnet.
+//
+// Die Folge war messbar: Posterkacheln kamen als `w780` statt `w342` (5,2× so
+// viele Bildpunkte zu dekodieren), der Kopfbereich als `original` statt
+// `w1280` — bei TMDB regelmäßig 3840 × 2160 —, und der Schriftzug ebenfalls
+// als `original`, eine PNG-Datei mit Alphakanal in voller Größe. Nichts davon
+// war zu sehen; alles davon kostete Speicher, Dekodierzeit und Bandbreite auf
+// dem schwächsten Gerät.
+//
+// Deshalb gilt hier: **ein Bild braucht nie mehr Bildpunkte, als die
+// Zeichenfläche der App hat.** Die Zeichenfläche steht in `appinfo.json`
+// (`resolution`) und kommt über `__NORI_WEBOS_RESOLUTION__` in den Build — eine
+// Quelle, keine zweite Zahl im Quelltext. Im Browser, wo es kein `appinfo.json`
+// gibt, bleibt es beim echten Pixelverhältnis: dort ist es die Wahrheit.
+//
+// Gerechnet wird weiterhin in Bildschirmpixeln: gezeichnete CSS-Breite mal
+// diesem Verhältnis. Auf einem 1080p-Panel bekommt eine Posterkachel damit
+// `w342`, auf einer echten 4K-Zeichenfläche (3840 CSS-Pixel breit) `w780`.
+// Umgekehrt lädt keine Kachel ein Kopfbild.
 
 export type ImageUse = "poster" | "backdropCard" | "backdropHero" | "still" | "logo";
 
@@ -19,10 +40,12 @@ const LADDER: Record<ImageUse, [number, string][]> = {
   backdropCard: [[800, "w780"], [Infinity, "w1280"]],
   // Bei 1080p ist der Kopfbereich knapp 1560 px breit: `w1280` ist dort ein
   // leichtes Strecken bei einem Bruchteil der Bytes. `original` erst, wenn
-  // das Bild deutlich breiter gezeichnet wird — also auf 4K.
+  // das Bild deutlich breiter gezeichnet wird — also auf einer 4K-Fläche.
   backdropHero: [[1600, "w1280"], [Infinity, "original"]],
   still: [[320, "w300"], [520, "w454_and_h254_bestv2"], [Infinity, "original"]],
-  logo: [[520, "w500"], [Infinity, "original"]],
+  // Der Schriftzug liegt über dem Breitbild und ist höchstens ein Drittel so
+  // breit. `original` ist dafür bei TMDB oft ein PNG in Plakatgröße.
+  logo: [[420, "w300"], [900, "w500"], [Infinity, "original"]],
 };
 
 /** Wie groß eine Verwendung bei 1920 CSS-Pixeln Breite gezeichnet wird, in rem. */
@@ -34,11 +57,69 @@ const RENDERED_REM: Record<ImageUse, number> = {
   logo: 36,
 };
 
-/** Bildschirmpixel je rem. Liest die Wurzelschrift, die mit der Breite skaliert. */
-function pixelsPerRem(): number {
-  const size = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
-  return size * (window.devicePixelRatio || 1);
+/**
+ * Die Breite der Zeichenfläche in Bildpunkten, soweit sie feststeht.
+ *
+ * `__NORI_WEBOS_RESOLUTION__` kommt aus `appinfo.json` und gilt nur dort, wo
+ * webOS die App auch danach zeichnet. Im Browser gibt es diese Zusicherung
+ * nicht — dort entscheidet das Pixelverhältnis.
+ */
+function declaredSurfaceWidth(): number | null {
+  if (!isWebOSRuntime()) return null;
+  const match = /^(\d+)\s*x\s*(\d+)$/i.exec(__NORI_WEBOS_RESOLUTION__ ?? "");
+  const width = match ? Number(match[1]) : NaN;
+  return Number.isFinite(width) && width > 0 ? width : null;
 }
+
+/**
+ * Läuft das hier auf einem Fernseher?
+ *
+ * Absichtlich dieselbe Merkmalsprüfung wie in `services/webos.ts`, aber ohne
+ * Einbindung: diese Datei wird beim ersten Bild gebraucht, und eine
+ * Abhängigkeit in die andere Richtung gäbe es sonst nicht.
+ */
+function isWebOSRuntime(): boolean {
+  const w = window as unknown as { webOSSystem?: unknown; PalmSystem?: unknown };
+  if (w.webOSSystem || w.PalmSystem) return true;
+  return /web0s|webos/i.test(navigator.userAgent);
+}
+
+/**
+ * Das Verhältnis, mit dem CSS-Pixel in Bildpunkte umgerechnet werden.
+ *
+ * Nie mehr als die Zeichenfläche hergibt, und nie mehr als das Panel meldet.
+ */
+export function artworkPixelRatio(): number {
+  const reported = window.devicePixelRatio || 1;
+  const surface = declaredSurfaceWidth();
+  const width = window.innerWidth || 1920;
+  const bound = surface === null ? reported : surface / width;
+  return Math.max(0.5, Math.min(reported, bound, 4));
+}
+
+/**
+ * Bildschirmpixel je rem — gemessen, aber nicht bei jedem Bild neu.
+ *
+ * `getComputedStyle` ist eine Stilabfrage, und diese Funktion lief bisher bei
+ * **jedem Zeichnen jeder Kachel**. Auf einer Startseite mit achtzig Kacheln
+ * waren das achtzig Abfragen je Durchgang für eine Zahl, die sich nur ändert,
+ * wenn sich das Fenster ändert.
+ */
+let pixelsPerRemCache: number | null = null;
+
+function pixelsPerRem(): number {
+  if (pixelsPerRemCache !== null) return pixelsPerRemCache;
+  const size = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+  pixelsPerRemCache = size * artworkPixelRatio();
+  return pixelsPerRemCache;
+}
+
+/** Nach einer Größenänderung neu messen. */
+export function resetImageMetrics(): void {
+  pixelsPerRemCache = null;
+}
+
+window.addEventListener("resize", resetImageMetrics);
 
 const TMDB_SEGMENT = /(\/t\/p\/)([^/]+)(\/)/;
 

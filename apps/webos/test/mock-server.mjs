@@ -14,12 +14,18 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { handleTmdb, seasonCountFor } from "./mock-tmdb.mjs";
+import { handleTmdb, registerCatalogTitles, seasonCountFor } from "./mock-tmdb.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = resolve(HERE, "..");
 const DIST = join(APP, "dist");
 const PORT = Number(process.env.NORI_MOCK_PORT ?? 8799);
+/**
+ * Wie viele Titel je Quelle. Vierzig sind der Regelfall des
+ * Fernbedienungslaufs; `NORI_MOCK_TITLES` stellt für die Leistungsmessung
+ * einen großen Katalog her, wie ihn AniWorld tatsächlich hat.
+ */
+const TITLE_COUNT = Math.max(1, Number(process.env.NORI_MOCK_TITLES ?? 40));
 
 /*
  * Die Titelliste ist nicht beliebig.
@@ -41,7 +47,7 @@ const GENRES = ["Action", "Drama", "Abenteuer", "Comedy", "Mystery", "K-Drama"];
 
 function catalog(provider) {
   const items = [];
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < TITLE_COUNT; i += 1) {
     const suffix = i >= TITLES.length ? ` ${Math.floor(i / TITLES.length) + 1}` : "";
     const title = `${TITLES[i % TITLES.length]}${suffix}`;
     items.push({
@@ -54,6 +60,9 @@ function catalog(provider) {
   }
   return { items, source: "mock", fetchedAt: Date.now() };
 }
+
+// Für die Leistungsmessung darf der TMDB-Nachbau jeden Katalogtitel kennen.
+registerCatalogTitles(catalog("aniworld").items.map((item) => ({ slug: item.slug, title: item.title })));
 
 function series(provider, slug, season) {
   const active = season ?? "1";

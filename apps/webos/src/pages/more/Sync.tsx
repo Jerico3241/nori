@@ -51,7 +51,7 @@ export function SyncPage() {
   return (
     <Screen route={ROUTE} eyebrow="Mehr" title="Abgleich" className="more-sub">
       <div className="settings-grid single">
-        <section className="setting-card" aria-label="Google Drive">
+        <section className="setting-card" data-nav-row="" aria-label="Google Drive">
           <h3>Google Drive</h3>
           <p className="card-note">
             Merkliste, Verlauf, Fortschritt und Einstellungen mit iPhone, iPad und Mac teilen —

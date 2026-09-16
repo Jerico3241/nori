@@ -37,7 +37,7 @@ export function Hero(props: HeroProps) {
 
   return (
     <section className={`hero hero-${props.variant}`} data-reveal="" aria-label={props.title}>
-      <div className="hero-media">
+      <div className="hero-media" data-nav-quiet="">
         <Artwork
           kind="hero"
           src={props.backdrop}
@@ -74,7 +74,7 @@ export function Hero(props: HeroProps) {
             <small>{props.progress.label}</small>
           </div>
         ) : null}
-        <div className="hero-actions">{props.actions}</div>
+        <div className="hero-actions" data-nav-row="">{props.actions}</div>
       </div>
     </section>
   );

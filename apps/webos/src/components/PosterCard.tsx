@@ -48,7 +48,7 @@ export function PosterCard(props: PosterCardProps) {
         else navigate(`/titel/${props.provider}/${encodeURIComponent(props.slug)}`);
       }}
     >
-      <span className="card-art poster-art">
+      <span className="card-art poster-art" data-nav-quiet="">
         <Artwork
           kind="poster"
           slug={props.slug}

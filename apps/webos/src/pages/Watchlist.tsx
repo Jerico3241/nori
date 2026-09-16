@@ -38,6 +38,7 @@ import { useDebounced } from "../hooks/useDebounced";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
+import { performanceProfile } from "../services/performance";
 import { useLibrary } from "../state/library";
 import { searchScore } from "../state/search";
 
@@ -198,7 +199,7 @@ export function WatchlistPage() {
               )}
             />
           ) : (
-            <div className={`catalog-grid${editing ? " editing" : ""}`}>
+            <div className={`catalog-grid${editing ? " editing" : ""}`} data-nav-row="">
               {visible.map((entry, index) => (
                 <PosterCard
                   key={entry.slug}
@@ -210,7 +211,7 @@ export function WatchlistPage() {
                   focusRoute={ROUTE}
                   focusArea="grid"
                   focusKey={`fav-${entry.slug}`}
-                  eager={index < 10}
+                  eager={index < performanceProfile().eagerCards}
                   overlay={editing ? <span className="card-remove"><Icon name="trash" />Entfernen</span> : null}
                   onSelect={editing
                     ? () => library.toggleFavorite(entry.slug, entry.title, entry.provider)

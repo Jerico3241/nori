@@ -65,7 +65,7 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
       aria-label={`Folge ${episode.number}: ${label}${state ? `, ${state}` : ""}`}
       onClick={onSelect}
     >
-      <span className="card-art ep-thumb">
+      <span className="card-art ep-thumb" data-nav-quiet="">
         <Artwork
           kind="still"
           src={extras?.still}

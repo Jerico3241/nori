@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { installNavigation } from "./navigation/engine";
 import { error, log } from "./services/log";
+import { installPerformanceMode, startPerformanceProbe } from "./services/performance";
+import { readSettings } from "./state/settings";
 import { isWebOS, markFlexGapSupport } from "./services/webos";
 import "./styles/theme.css";
 import "./styles/app.css";
@@ -31,6 +33,10 @@ window.addEventListener("error", (event) => {
 // Fernbedienungsnavigation. Die Oberfläche benutzt kein Flex-`gap` mehr, die
 // Messung bleibt für das Protokoll und für eigene Erweiterungen.
 const flexGap = markFlexGapSupport();
+// Der Leistungsmodus steht am Wurzelelement, bevor das erste Bild entsteht:
+// sonst zeichnete der Fernseher die Oberfläche einmal voll und gleich danach
+// sparsam. Gemessen wird erst nach dem ersten Bild (`startPerformanceProbe`).
+installPerformanceMode(readSettings().performance);
 installNavigation();
 
 log(
@@ -45,3 +51,7 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// Der Rechenlauf für den automatischen Leistungsmodus — in einer Lücke nach
+// dem ersten Bild, und nur beim allerersten Start eines Geräts.
+startPerformanceProbe();
