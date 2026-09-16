@@ -35,7 +35,30 @@ demselben Grund wie überall sonst im Protokoll. Im Browser gibt es `cause`
 nicht; dort bleibt die Meldung, die ohnehin schon deutlicher ist.
 
 Betrifft alle, die den Kern benutzen: Windows, webOS und `services/nori-api`.
-Sonst keine Änderung — deshalb je eine Stelle hinter dem Punkt.
+
+### Die gemeinsame Schicht hat kein eigenes `node_modules` mehr
+
+Der CI-Lauf `Build webOS` scheiterte mit 179 Typfehlern — „Cannot find module
+'@nori/core'", „Cannot find module 'react'" —, sobald der Mac-Runner wieder
+lief. Lokal war nichts davon zu sehen: Hier lag zufällig ein
+`shared/nori-app/node_modules`, in einer frischen Arbeitskopie nicht.
+
+Die Ursache ist eine Eigenheit der Auflösung: Wird geteilter Quelltext in
+einer App übersetzt, sucht TypeScript seine Importe **neben der Quelldatei** —
+also unter `shared/nori-app/node_modules` und nicht unter dem der App. Vite
+macht es genauso.
+
+Beide wissen es jetzt besser:
+
+- Vite: `resolve.dedupe: ["react", "react-dom", "@nori/core", "hls.js"]`
+- TypeScript: `paths` je App auf das eigene `node_modules`, und dabei auf die
+  **Typen** (`@types/react`) — eine ausdrückliche Zuordnung schaltet
+  TypeScripts Rückfall auf `@types/...` ab.
+
+Damit ist die Schicht das, was sie sein soll: Quelltext. `@nori/core`, `react`
+und `hls.js` stehen als `peerDependencies`, jede App liefert sie, und die
+eigene `tsconfig.json`, das `package-lock.json` und die devDependencies sind
+weg — geprüft wird die Schicht durch die Typprüfung der Apps.
 
 ## [Windows 2.0.0] · [webOS 2.4.0] — 2026-09-16
 

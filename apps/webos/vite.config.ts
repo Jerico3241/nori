@@ -120,14 +120,18 @@ export default defineConfig(({ command }) => ({
       "@nori/app": resolve(__dirname, "../../shared/nori-app/src/index.ts"),
     },
     /*
-     * Genau eine React-Instanz.
+     * Genau eine Instanz — und zwar die dieser App.
      *
-     * `shared/nori-app` hat für seine Typen ein eigenes `react` im
-     * `node_modules`. Ohne diese Zeile könnte ein Import aus dem geteilten
-     * Quelltext dorthin auflösen — zwei Instanzen, und der Fehler meldet sich
-     * als „Invalid hook call" an einer ganz anderen Stelle.
+     * `shared/nori-app` wird als **Quelltext** eingebunden und bringt selbst
+     * kein `node_modules` mit. Ohne diese Liste suchte Vite `@nori/core`,
+     * `react` und `hls.js` neben der Quelldatei, also unter
+     * `shared/nori-app/node_modules` — das es in einer frischen Arbeitskopie
+     * nicht gibt. In der CI scheiterte genau daran der Lauf `Build webOS`.
+     *
+     * Bei React ist es zusätzlich eine Frage der Richtigkeit: zwei Instanzen
+     * melden sich als „Invalid hook call" an ganz anderer Stelle.
      */
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "@nori/core", "hls.js"],
   },
   define: {
     __NORI_WEBOS_VERSION__: JSON.stringify(appInfo.version),

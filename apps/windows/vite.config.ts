@@ -36,9 +36,19 @@ export default defineConfig({
       // `apps/webos/vite.config.ts`.
       "@nori/app": resolve(__dirname, "../../shared/nori-app/src/index.ts"),
     },
-    // Genau eine React-Instanz, auch wenn der geteilte Quelltext sein eigenes
-    // `node_modules` hat.
-    dedupe: ["react", "react-dom"],
+    /*
+     * Genau eine Instanz — und zwar die dieser App.
+     *
+     * `shared/nori-app` wird als **Quelltext** eingebunden und bringt selbst
+     * kein `node_modules` mit. Ohne diese Liste suchte Vite `@nori/core`,
+     * `react` und `hls.js` neben der Quelldatei, also unter
+     * `shared/nori-app/node_modules` — das es in einer frischen Arbeitskopie
+     * nicht gibt. In der CI scheiterte genau daran der Lauf `Build webOS`.
+     *
+     * Bei React ist es zusätzlich eine Frage der Richtigkeit: zwei Instanzen
+     * melden sich als „Invalid hook call" an ganz anderer Stelle.
+     */
+    dedupe: ["react", "react-dom", "@nori/core", "hls.js"],
   },
   build: {
     // Electron 38 fährt Chromium 140 — hier gibt es keinen Grund, alt zu

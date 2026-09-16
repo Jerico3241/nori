@@ -29,6 +29,24 @@
       ],
       "@nori/app/*": [
         "../../shared/nori-app/src/*"
+      ],
+      "@nori/core": [
+        "./node_modules/@nori/core"
+      ],
+      "react": [
+        "./node_modules/@types/react"
+      ],
+      "hls.js": [
+        "./node_modules/hls.js"
+      ],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime"
+      ],
+      "react/jsx-dev-runtime": [
+        "./node_modules/@types/react/jsx-dev-runtime"
+      ],
+      "react-dom/client": [
+        "./node_modules/@types/react-dom/client"
       ]
     }
   },

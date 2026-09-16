@@ -56,10 +56,21 @@ geöffnet und wie die App beendet wird. Jede App meldet ihre Umsetzung beim
 Start an (`installPlatform`). Wer dort `window.webOS`, `navigator.userAgent`
 oder `process` abfragt, hat die Schicht falsch verstanden.
 
-Beide Apps binden sie als **Quelltext** ein (Vite-Alias auf
-`shared/nori-app/src/index.ts`, dazu `resolve.dedupe: ["react", "react-dom"]`).
-Ohne `dedupe` gäbe es zwei React-Instanzen, und der Fehler meldet sich als
-„Invalid hook call" an ganz anderer Stelle.
+Beide Apps binden sie als **Quelltext** ein — Vite-Alias auf
+`shared/nori-app/src/index.ts`, `tsconfig.json` mit `include` und `paths`.
+
+Die Schicht hat deshalb **kein eigenes `node_modules`** und soll keins
+bekommen: `@nori/core`, `react` und `hls.js` stehen in ihrer `package.json`
+als `peerDependencies`, und jede App liefert sie. Beide Werkzeuge müssen das
+wissen, sonst suchen sie neben der Quelldatei:
+
+- Vite: `resolve.dedupe: ["react", "react-dom", "@nori/core", "hls.js"]`
+- TypeScript: `paths` je App auf das eigene `node_modules` — und dabei auf die
+  **Typen** (`@types/react`), denn eine ausdrückliche Zuordnung schaltet
+  TypeScripts Rückfall auf `@types/...` ab.
+
+Bei React ist es zusätzlich eine Frage der Richtigkeit: zwei Instanzen melden
+sich als „Invalid hook call" an ganz anderer Stelle.
 
 Die Oberflächen bleiben getrennt: webOS ist für drei Meter Abstand und ein
 Steuerkreuz gebaut, Windows für Zeiger, Tastatur und ein Fenster, dessen

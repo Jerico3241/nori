@@ -82,6 +82,11 @@ für drei Meter Abstand und ein Steuerkreuz gebaut, `apps/windows/` für einen
 Zeiger, eine Tastatur und ein Fenster, das seine Größe ändert. Beide sehen
 denselben Katalog, dieselbe Bibliothek und denselben Abgleich.
 
+Die Schicht wird als **Quelltext** eingebunden und hat kein eigenes
+`node_modules`: `@nori/core`, `react` und `hls.js` sind `peerDependencies`,
+die jede App mitbringt. Geprüft wird sie durch die Typprüfung der Apps, nicht
+für sich.
+
 ## Funktionen
 
 ### Katalog & Navigation
