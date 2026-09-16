@@ -95,9 +95,24 @@ async function focused(page) {
   });
 }
 
+/**
+ * Ein Element gezielt fokussieren — und sagen, ob es geklappt hat.
+ *
+ * Das `?.` war eine stumme Falle: Gab es die Karte nicht mehr, blieb der Fokus
+ * stehen, wo er war, und die nächste Prüfung meldete etwas ganz anderes als
+ * das, was schiefging. Genau so entstand einmal „Zurück: Fokus auf demselben
+ * Poster — erwartet popular-aniworld-dark, ist hero-more": Nicht die
+ * Wiederherstellung war kaputt, die Karte war weg.
+ */
 async function focusKey(page, key) {
-  await page.evaluate((k) => document.querySelector(`[data-focus-key="${k}"]`)?.focus(), key);
+  const ok = await page.evaluate((k) => {
+    const el = document.querySelector(`[data-focus-key="${k}"]`);
+    if (!el) return false;
+    el.focus();
+    return document.activeElement === el;
+  }, key);
   await page.waitForTimeout(320);
+  return ok;
 }
 
 async function goto(page, hash, wait = 1800) {
@@ -472,7 +487,6 @@ try {
   check("Reihe → → →: Spur scrollt mit", railScroll.scrollLeft > 0, `scrollLeft ${Math.round(railScroll.scrollLeft)}`);
   check("Reihe: siebte Karte ganz innerhalb der Spur", railScroll.inside, railScroll.key);
   await shot(page, "03-start-weit-rechts");
-  const seventh = railScroll.key;
 
   // Letzte Karte + rechts bleibt stehen.
   for (let i = 0; i < 25; i += 1) await remote(page, "right", 60);
@@ -534,8 +548,23 @@ try {
   await remote(page, "down");
   check("Seitenkopf ↓ Hero", (await focused(page))?.key?.startsWith("hero-"), (await focused(page))?.key ?? "-");
 
-  // Poster 7 öffnen, Zurück, derselbe Poster.
-  await focusKey(page, seventh);
+  // Ein Poster öffnen, Zurück, derselbe Poster.
+  //
+  // Bewusst die Karte, die **jetzt** in der Reihe steht, und nicht die weiter
+  // oben gemerkte: „Neu & beliebt" entsteht aus TMDB-Signalen und wechselt
+  // ihre Besetzung, während die Daten eintreffen (`newAndPopular` in
+  // `state/home.ts`). Zwischen dem Merken und hier liegen über zweihundert
+  // Tastendrücke. Geprüft wird die Fokuswiederherstellung, nicht die
+  // Beständigkeit einer Reihe über diese Strecke — die hat die Startseite
+  // absichtlich nicht.
+  const target = await page.evaluate(() => {
+    const cards = document.querySelector('[data-rail="popular"] .rail-inner')?.children;
+    if (!cards || cards.length === 0) return null;
+    const card = cards[Math.min(6, cards.length - 1)];
+    return card.getAttribute("data-focus-key");
+  });
+  check("Reihe „Neu & beliebt“ hat noch Karten", target !== null, target ?? "keine");
+  check("Die Karte lässt sich fokussieren", await focusKey(page, target), target ?? "-");
   const scrollBefore = await page.evaluate(() => document.querySelector("[data-scroll-y]").scrollTop);
   await remote(page, "ok", 1800);
   check("OK öffnet die Detailseite", page.url().includes("#/titel/"), page.url());
@@ -543,7 +572,7 @@ try {
   const restored = await focused(page);
   const scrollAfter = await page.evaluate(() => document.querySelector("[data-scroll-y]").scrollTop);
   check("Zurück: wieder auf der Startseite", !page.url().includes("#/titel/"), page.url());
-  check("Zurück: Fokus auf demselben Poster", restored?.key === seventh, `erwartet ${seventh}, ist ${restored?.key}`);
+  check("Zurück: Fokus auf demselben Poster", restored?.key === target, `erwartet ${target}, ist ${restored?.key}`);
   check("Zurück: Scrollposition wiederhergestellt", Math.abs(scrollAfter - scrollBefore) < 40, `${Math.round(scrollBefore)} → ${Math.round(scrollAfter)}`);
   const restoredVis = await focusVisibility(page);
   check("Zurück: Poster vollständig sichtbar", restoredVis.ok, restoredVis.reason);
