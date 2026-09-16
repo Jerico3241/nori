@@ -351,6 +351,25 @@ try {
   check("Bedienelemente vorhanden", player.controls >= 6, `${player.controls} Knöpfe`);
   check("Titel und Folge stehen oben", player.title.length > 0, player.title);
   check("Eine Streamadresse wurde aufgelöst", player.src.length > 0, player.src.slice(0, 60));
+
+  // Auf dem Fernseher holt eine Taste die Bedienung zurück, hier die Maus.
+  // Ohne diesen Weg wäre der Player nach vier Sekunden eine schwarze Fläche,
+  // aus der nur noch die Tastatur herausführt.
+  const hiddenFirst = await page.evaluate(() =>
+    !document.querySelector(".player")?.classList.contains("chrome"));
+  await page.mouse.move(700, 400);
+  await page.mouse.move(702, 402);
+  await page.waitForTimeout(500);
+  const chromeBack = await page.evaluate(() => {
+    const top = document.querySelector(".player-top");
+    return {
+      chrome: document.querySelector(".player")?.classList.contains("chrome") ?? false,
+      opacity: top ? getComputedStyle(top).opacity : "?",
+    };
+  });
+  check("Bedienung blendet aus und kehrt bei Mausbewegung zurück",
+    hiddenFirst && chromeBack.chrome && chromeBack.opacity === "1",
+    `ausgeblendet: ${hiddenFirst}, zurück: ${chromeBack.chrome} (${chromeBack.opacity})`);
   await shot("05-player");
 
   // Tastatur im Player: Leertaste, Pfeile, M.
