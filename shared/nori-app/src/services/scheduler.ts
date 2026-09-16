@@ -1,19 +1,23 @@
 // Wann Hintergrundarbeit laufen darf.
 //
-// Auf einem Fernseher gibt es genau einen Thread, der zählt, und genau eine
-// Sache, die darauf sofort passieren muss: die Reaktion auf die Fernbedienung.
-// Alles andere — TMDB-Treffer einarbeiten, Reihen neu bewerten, Reihen
-// nachziehen — ist wichtig, aber nie dringend.
+// Es gibt genau einen Thread, der zählt, und genau eine Sache, die darauf
+// sofort passieren muss: die Reaktion auf die Eingabe. Auf dem Fernseher ist
+// das der Fokuswechsel nach einem Tastendruck, auf dem Desktop das Scrollen
+// unter der Maus. Alles andere — TMDB-Treffer einarbeiten, Reihen neu
+// bewerten, Reihen nachziehen — ist wichtig, aber nie dringend.
 //
 // Zwei Werkzeuge, mehr braucht es nicht:
 //
 //     whenIdle       etwas tun, wenn gerade nichts läuft
-//     batched        etwas gebündelt tun, aber nicht mitten im Tastendruck
+//     batched        etwas gebündelt tun, aber nicht mitten in der Eingabe
+//
+// Ob die Eingabe gerade arbeitet, beantwortet die Plattform
+// (`platform().isInputBusy()`); was das heißt, weiß nur sie.
 //
 // Beide mit Rückfall für Browser ohne `requestIdleCallback` — webOS 6 fährt
 // Chrome 79 und hat es, ältere Stände nicht.
 
-import { navigating } from "../navigation/engine";
+import { platform } from "../platform";
 
 interface IdleWindow {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -31,9 +35,9 @@ export function whenIdle(callback: () => void, timeout = 400): () => void {
   return () => window.clearTimeout(timer);
 }
 
-/** Wie lange nach einem Tastendruck noch gewartet wird, bevor es weitergeht. */
+/** Wie lange nach einer Eingabe noch gewartet wird, bevor es weitergeht. */
 const DEFER_MS = 120;
-/** So oft darf eine Arbeit der Navigation ausweichen, dann läuft sie. */
+/** So oft darf eine Arbeit der Eingabe ausweichen, dann läuft sie. */
 const MAX_DEFERRALS = 3;
 
 export interface Batched {
@@ -54,10 +58,10 @@ export function batched(delayMs: number, run: () => void): Batched {
   let timer: number | null = null;
   let deferrals = 0;
   const fire = () => {
-    // Höchstens dreimal ausweichen. Wer die Pfeiltaste festhält, schiebt die
-    // Arbeit sonst beliebig lange vor sich her — und auf der Startseite ist
-    // genau diese Arbeit das, was die Reihen überhaupt füllt.
-    if (navigating() && deferrals < MAX_DEFERRALS) {
+    // Höchstens dreimal ausweichen. Wer die Pfeiltaste festhält oder lange
+    // scrollt, schiebt die Arbeit sonst beliebig lange vor sich her — und auf
+    // der Startseite ist genau diese Arbeit das, was die Reihen füllt.
+    if (platform().isInputBusy() && deferrals < MAX_DEFERRALS) {
       deferrals += 1;
       timer = window.setTimeout(fire, DEFER_MS);
       return;

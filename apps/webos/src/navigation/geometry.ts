@@ -45,7 +45,7 @@
 // unter einer Kachel erscheint. Die ändert die Kartenhöhe — und damit die
 // Anordnung des Rasters darunter.
 
-import { isVerbose, log } from "../services/log";
+import { isVerbose, log } from "@nori/app";
 import { countCached, countInvalidation, countMeasured } from "./metrics";
 import { targetScroll } from "./scroll";
 

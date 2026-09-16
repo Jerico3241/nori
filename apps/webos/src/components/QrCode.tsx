@@ -18,7 +18,7 @@
 import { encodeQrCode, qrSvgPath } from "@nori/core";
 import { useMemo } from "react";
 
-import { warn } from "../services/log";
+import { warn } from "@nori/app";
 
 export interface QrCodeProps {
   /** Genau die Adresse, die Google geliefert hat. Nie eine gebaute. */

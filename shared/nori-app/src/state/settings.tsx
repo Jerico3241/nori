@@ -82,36 +82,56 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
-/** Der abgelegte Stand. Auch `main.tsx` liest ihn — vor dem ersten Zeichnen. */
-export function readSettings(): DeviceSettings {
-  return read();
+/**
+ * Der abgelegte Stand. Auch der Einstiegspunkt jeder App liest ihn — vor dem
+ * ersten Zeichnen, damit der Leistungsmodus am Wurzelelement steht, bevor
+ * irgendetwas gezeichnet wird.
+ *
+ * `defaults` sind die Vorgaben dieser Plattform. Sie greifen nur dort, wo
+ * nichts gespeichert ist; ein einmal gewählter Wert bleibt.
+ */
+export function readSettings(defaults?: Partial<DeviceSettings>): DeviceSettings {
+  return read(defaults);
 }
 
-function read(): DeviceSettings {
+function read(defaults?: Partial<DeviceSettings>): DeviceSettings {
+  const base: DeviceSettings = { ...DEFAULTS, ...defaults };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
+    if (!raw) return base;
     const parsed = JSON.parse(raw) as Partial<DeviceSettings>;
-    const merged = { ...DEFAULTS, ...parsed };
+    const merged = { ...base, ...parsed };
     // Ein Stand von vor dem Serverweg kennt `tmdbMode` nicht. Wer dort einen
     // eigenen Schlüssel eingetragen hat, meinte damit „dieser Fernseher" — die
     // Voreinstellung „server" würde ihn stillschweigend übergehen.
     if (parsed.tmdbMode === undefined) {
-      merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : DEFAULTS.tmdbMode;
+      merged.tmdbMode = (parsed.tmdbKey ?? "").trim() ? "direct" : base.tmdbMode;
     }
     // Ein Stand von vor dem Leistungsmodus kennt nur „Animationen reduzieren".
     // Wer den eingeschaltet hatte, hat ein Gerät, dem etwas fehlt — die
     // Messung darf das bestätigen, aber nicht dahinter zurückfallen.
-    if (parsed.performance === undefined) merged.performance = DEFAULTS.performance;
+    if (parsed.performance === undefined) merged.performance = base.performance;
     return merged;
   } catch (cause) {
     warn("app", "Einstellungen nicht lesbar", cause);
-    return DEFAULTS;
+    return base;
   }
 }
 
-export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<DeviceSettings>(read);
+/**
+ * Die Vorgaben, mit denen ein Gerät startet.
+ *
+ * Getrennt je Plattform, weil sie sich tatsächlich unterscheiden: Der
+ * Fernseher fragt einen Nori-Server, weil ein Fernseher fremde Abrufe und
+ * `Referer` nicht so frei setzen kann. Der Desktop holt selbst — dort läuft
+ * die Quellenschicht im Hauptprozess, ohne Herkunftsprüfung. Alles andere ist
+ * überall gleich und steht deshalb nur einmal hier.
+ */
+export function SettingsProvider({ children, defaults }: {
+  children: ReactNode;
+  defaults?: Partial<DeviceSettings>;
+}) {
+  const [settings, setSettings] = useState<DeviceSettings>(() => read(defaults));
 
   useEffect(() => {
     try {
@@ -128,7 +148,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((current) => ({ ...current, ...patch }));
   }, []);
 
-  const reset = useCallback(() => setSettings(DEFAULTS), []);
+  const reset = useCallback(() => setSettings({ ...DEFAULTS, ...defaults }), [defaults]);
 
   const value = useMemo(() => ({ settings, update, reset }), [settings, update, reset]);
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

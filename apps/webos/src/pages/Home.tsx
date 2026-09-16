@@ -23,7 +23,17 @@ import { useNavigate } from "react-router-dom";
 import { Hero } from "../components/Hero";
 import { Icon } from "../components/Icon";
 import { LandscapeCard } from "../components/LandscapeCard";
-import { titleMeta } from "../components/meta";
+import {
+  covers,
+  log,
+  performanceProfile,
+  titleMeta,
+  tmdb,
+  useData,
+  useHomeFeed,
+  useLibrary,
+  type HomeRowView,
+} from "@nori/app";
 import { PosterCard } from "../components/PosterCard";
 import { Rail } from "../components/Rail";
 import { ratingText } from "../components/Rating";
@@ -32,13 +42,6 @@ import { EmptyState, ErrorState, RailSkeleton } from "../components/States";
 import { useProgressiveRows, useRailWindow } from "../hooks/useProgressive";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { covers } from "../services/covers";
-import { log } from "../services/log";
-import { performanceProfile } from "../services/performance";
-import { tmdb } from "../services/tmdb";
-import { useData } from "../state/data";
-import { useHomeFeed, type HomeRowView } from "../state/home";
-import { useLibrary } from "../state/library";
 
 const ROUTE = "home";
 

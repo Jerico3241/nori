@@ -41,12 +41,16 @@
 import type { CatalogProvider } from "@nori/core";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
-import { ARTWORK_PRIORITY, requestArtworkSlot } from "../services/artworkQueue";
-import { covers } from "../services/covers";
-import { sizedImage, type ImageUse } from "../services/images";
-import { performanceProfile } from "../services/performance";
-import { tmdb } from "../services/tmdb";
-import { useData } from "../state/data";
+import {
+  ARTWORK_PRIORITY,
+  covers,
+  performanceProfile,
+  requestArtworkSlot,
+  sizedImage,
+  tmdb,
+  useData,
+  type ImageUse,
+} from "@nori/app";
 
 export type ArtworkKind = "poster" | "backdrop" | "hero" | "still";
 

@@ -3,10 +3,15 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
 import { installNavigation } from "./navigation/engine";
-import { error, log } from "./services/log";
-import { installPerformanceMode, startPerformanceProbe } from "./services/performance";
-import { readSettings } from "./state/settings";
-import { isWebOS, markFlexGapSupport } from "./services/webos";
+import {
+  error,
+  installPerformanceMode,
+  installPlatform,
+  log,
+  readSettings,
+  startPerformanceProbe,
+} from "@nori/app";
+import { WEBOS_DEFAULTS, isWebOS, markFlexGapSupport, webOSPlatform } from "./services/webos";
 import "./styles/theme.css";
 import "./styles/app.css";
 import "./styles/player.css";
@@ -33,10 +38,13 @@ window.addEventListener("error", (event) => {
 // Fernbedienungsnavigation. Die Oberfläche benutzt kein Flex-`gap` mehr, die
 // Messung bleibt für das Protokoll und für eigene Erweiterungen.
 const flexGap = markFlexGapSupport();
+// Zuerst die Plattform: alles darunter — Bildgrößen, Hintergrundarbeit,
+// Leistungsmodus — fragt von hier an sie und nicht mehr `isWebOS()`.
+installPlatform(webOSPlatform);
 // Der Leistungsmodus steht am Wurzelelement, bevor das erste Bild entsteht:
 // sonst zeichnete der Fernseher die Oberfläche einmal voll und gleich danach
 // sparsam. Gemessen wird erst nach dem ersten Bild (`startPerformanceProbe`).
-installPerformanceMode(readSettings().performance);
+installPerformanceMode(readSettings(WEBOS_DEFAULTS).performance);
 installNavigation();
 
 log(

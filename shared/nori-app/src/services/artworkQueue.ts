@@ -32,7 +32,7 @@
 // hängt —, gibt eine Frist den Platz nach acht Sekunden zurück; ohne sie
 // blockierte ein einziges totes Bild die ganze Seite.
 
-import { navigating } from "../navigation/engine";
+import { platform } from "../platform";
 import { performanceProfile, subscribePerformance } from "./performance";
 
 export const ARTWORK_PRIORITY = {
@@ -43,7 +43,7 @@ export const ARTWORK_PRIORITY = {
 
 /** Nach dieser Zeit gilt ein Bild als aufgegeben und gibt seinen Platz frei. */
 const WATCHDOG_MS = 8000;
-/** Solange navigiert wird, läuft höchstens ein Abruf. */
+/** Solange die Eingabe arbeitet, läuft höchstens ein Abruf. */
 const BUSY_LIMIT = 1;
 /** Wann nach einer blockierten Runde erneut versucht wird. */
 const RETRY_MS = 120;
@@ -67,7 +67,7 @@ let retryTimer: number | null = null;
 
 function limit(): number {
   const profile = performanceProfile();
-  return navigating() ? Math.min(BUSY_LIMIT, profile.artworkConcurrency) : profile.artworkConcurrency;
+  return platform().isInputBusy() ? Math.min(BUSY_LIMIT, profile.artworkConcurrency) : profile.artworkConcurrency;
 }
 
 function scheduleRetry(): void {
@@ -93,7 +93,7 @@ function pump(): void {
     running += 1;
     slot.start();
   }
-  // Blockiert nur die Navigation, kommt der Rest gleich dran.
+  // Blockiert nur die Eingabe, kommt der Rest gleich dran.
   if (waiting.length > 0) scheduleRetry();
 }
 

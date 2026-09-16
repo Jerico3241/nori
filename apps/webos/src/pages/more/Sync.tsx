@@ -26,9 +26,8 @@ import { DeviceSignInDialog, relativeTime } from "../../components/DeviceSignIn"
 import { Dialog } from "../../components/Overlay";
 import { Screen } from "../../components/Screen";
 import { restoreFocusSoon } from "../../navigation/focusMemory";
-import { useTick } from "../../hooks/useTick";
+import { useSettings, useTick } from "@nori/app";
 import { SpotButton } from "../../navigation/Spot";
-import { useSettings } from "../../state/settings";
 import { syncStatusLabel, useSync } from "../../state/sync";
 import { Info } from "../More";
 

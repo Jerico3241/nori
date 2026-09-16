@@ -34,13 +34,15 @@ import { Icon } from "../components/Icon";
 import { PosterCard } from "../components/PosterCard";
 import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
-import { useDebounced } from "../hooks/useDebounced";
-import { usePersistentState } from "../hooks/usePersistentState";
+import {
+  performanceProfile,
+  searchScore,
+  useDebounced,
+  useLibrary,
+  usePersistentState,
+} from "@nori/app";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { performanceProfile } from "../services/performance";
-import { useLibrary } from "../state/library";
-import { searchScore } from "../state/search";
 
 const ROUTE = "watchlist";
 type Filter = "all" | "unseen" | "started" | "seen";

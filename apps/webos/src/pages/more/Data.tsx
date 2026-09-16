@@ -16,8 +16,7 @@ import { Dialog } from "../../components/Overlay";
 import { Screen } from "../../components/Screen";
 import { restoreFocusSoon } from "../../navigation/focusMemory";
 import { SpotButton } from "../../navigation/Spot";
-import { useLibrary } from "../../state/library";
-import { useSettings } from "../../state/settings";
+import { useLibrary, useSettings } from "@nori/app";
 import { Info, Row } from "../More";
 
 const ROUTE = "more-data";

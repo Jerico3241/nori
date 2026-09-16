@@ -2,7 +2,7 @@
 //
 // TMDB liefert jedes Bild in mehreren Größen, und die Adresse trägt die Größe
 // als Segment (`/t/p/w342/…`). Der Kern setzt Adressen mit einer festen Größe
-// zusammen (`tmdbImageURL`); hier wird daraus die Größe, die ein Fernseher an
+// zusammen (`tmdbImageURL`); hier wird daraus die Größe, die ein Gerät an
 // dieser Stelle **tatsächlich** braucht.
 //
 // ## Warum nicht einfach `devicePixelRatio`
@@ -15,22 +15,20 @@
 // Fläche, auf der die App zeichnet.
 //
 // Die Folge war messbar: Posterkacheln kamen als `w780` statt `w342` (5,2× so
-// viele Bildpunkte zu dekodieren), der Kopfbereich als `original` statt
-// `w1280` — bei TMDB regelmäßig 3840 × 2160 —, und der Schriftzug ebenfalls
-// als `original`, eine PNG-Datei mit Alphakanal in voller Größe. Nichts davon
-// war zu sehen; alles davon kostete Speicher, Dekodierzeit und Bandbreite auf
-// dem schwächsten Gerät.
+// viele Bildpunkte zu dekodieren), der Kopfbereich als `original` — bei TMDB
+// regelmäßig 3840 × 2160 —, und der Schriftzug ebenfalls als `original`, eine
+// PNG-Datei mit Alphakanal in voller Größe. Nichts davon war zu sehen; alles
+// davon kostete Speicher, Dekodierzeit und Bandbreite auf dem schwächsten
+// Gerät.
 //
 // Deshalb gilt hier: **ein Bild braucht nie mehr Bildpunkte, als die
-// Zeichenfläche der App hat.** Die Zeichenfläche steht in `appinfo.json`
-// (`resolution`) und kommt über `__NORI_WEBOS_RESOLUTION__` in den Build — eine
-// Quelle, keine zweite Zahl im Quelltext. Im Browser, wo es kein `appinfo.json`
-// gibt, bleibt es beim echten Pixelverhältnis: dort ist es die Wahrheit.
-//
-// Gerechnet wird weiterhin in Bildschirmpixeln: gezeichnete CSS-Breite mal
-// diesem Verhältnis. Auf einem 1080p-Panel bekommt eine Posterkachel damit
-// `w342`, auf einer echten 4K-Zeichenfläche (3840 CSS-Pixel breit) `w780`.
-// Umgekehrt lädt keine Kachel ein Kopfbild.
+// Zeichenfläche hergibt.** Wie breit die ist, beantwortet die Plattform
+// (`platform().surfaceWidth()`): auf webOS die Auflösung aus `appinfo.json`,
+// auf dem Desktop das Fenster mal seiner DPI-Skalierung, im Browser das echte
+// Pixelverhältnis. Gerechnet wird dann in Bildschirmpixeln: gezeichnete
+// CSS-Breite mal diesem Verhältnis.
+
+import { platform } from "../platform";
 
 export type ImageUse = "poster" | "backdropCard" | "backdropHero" | "still" | "logo";
 
@@ -58,43 +56,14 @@ const RENDERED_REM: Record<ImageUse, number> = {
 };
 
 /**
- * Die Breite der Zeichenfläche in Bildpunkten, soweit sie feststeht.
- *
- * `__NORI_WEBOS_RESOLUTION__` kommt aus `appinfo.json` und gilt nur dort, wo
- * webOS die App auch danach zeichnet. Im Browser gibt es diese Zusicherung
- * nicht — dort entscheidet das Pixelverhältnis.
- */
-function declaredSurfaceWidth(): number | null {
-  if (!isWebOSRuntime()) return null;
-  const match = /^(\d+)\s*x\s*(\d+)$/i.exec(__NORI_WEBOS_RESOLUTION__ ?? "");
-  const width = match ? Number(match[1]) : NaN;
-  return Number.isFinite(width) && width > 0 ? width : null;
-}
-
-/**
- * Läuft das hier auf einem Fernseher?
- *
- * Absichtlich dieselbe Merkmalsprüfung wie in `services/webos.ts`, aber ohne
- * Einbindung: diese Datei wird beim ersten Bild gebraucht, und eine
- * Abhängigkeit in die andere Richtung gäbe es sonst nicht.
- */
-function isWebOSRuntime(): boolean {
-  const w = window as unknown as { webOSSystem?: unknown; PalmSystem?: unknown };
-  if (w.webOSSystem || w.PalmSystem) return true;
-  return /web0s|webos/i.test(navigator.userAgent);
-}
-
-/**
  * Das Verhältnis, mit dem CSS-Pixel in Bildpunkte umgerechnet werden.
  *
- * Nie mehr als die Zeichenfläche hergibt, und nie mehr als das Panel meldet.
+ * Nie mehr, als die Zeichenfläche hergibt, und nie mehr als das Vierfache —
+ * jenseits davon wächst nur die Dekodierzeit.
  */
 export function artworkPixelRatio(): number {
-  const reported = window.devicePixelRatio || 1;
-  const surface = declaredSurfaceWidth();
   const width = window.innerWidth || 1920;
-  const bound = surface === null ? reported : surface / width;
-  return Math.max(0.5, Math.min(reported, bound, 4));
+  return Math.max(0.5, Math.min(platform().surfaceWidth() / width, 4));
 }
 
 /**

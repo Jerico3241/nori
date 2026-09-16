@@ -11,7 +11,7 @@
 import type { CatalogProvider } from "@nori/core";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { sizedImage } from "../services/images";
+import { sizedImage } from "@nori/app";
 import { Artwork } from "./Artwork";
 
 export interface HeroProps {

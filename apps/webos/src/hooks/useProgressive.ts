@@ -28,8 +28,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { navigating } from "../navigation/engine";
-import { performanceProfile } from "../services/performance";
-import { whenIdle } from "../services/scheduler";
+import { performanceProfile, whenIdle } from "@nori/app";
 
 /**
  * Wie viele von `total` Abschnitten gerade eingehängt sein sollen.

@@ -15,8 +15,7 @@ import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { tmdb } from "../services/tmdb";
-import { useLibrary } from "../state/library";
+import { tmdb, useLibrary } from "@nori/app";
 
 const ROUTE = "history";
 

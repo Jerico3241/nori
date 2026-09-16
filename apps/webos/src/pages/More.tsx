@@ -21,14 +21,18 @@ import { DeviceSignInDialog, relativeTime } from "../components/DeviceSignIn";
 import { Icon } from "../components/Icon";
 import { Menu, type MenuOption } from "../components/Overlay";
 import { Screen } from "../components/Screen";
-import { useTick } from "../hooks/useTick";
+import {
+  performanceMode,
+  performanceReason,
+  useData,
+  useLibrary,
+  useSettings,
+  useTick,
+  useTmdbState,
+  type PerformanceSetting,
+} from "@nori/app";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { performanceMode, performanceReason, type PerformanceSetting } from "../services/performance";
-import { useTmdbState } from "../services/tmdbStatus";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
-import { useSettings } from "../state/settings";
 import { syncStatusLabel, useSync } from "../state/sync";
 
 const ROUTE = "more";

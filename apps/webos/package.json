@@ -19,6 +19,7 @@
     "webos:devices": "node tools/webos-cli.mjs devices"
   },
   "dependencies": {
+    "@nori/app": "file:../../shared/nori-app",
     "@nori/core": "file:../../shared/nori-core",
     "hls.js": "^1.7.2",
     "react": "^18.3.1",

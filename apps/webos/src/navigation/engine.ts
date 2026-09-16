@@ -61,7 +61,7 @@ import {
   FOCUSABLE, isUsable, layoutBox, NAV_ROW, observeLayout, refreshMetrics,
   rem, rowOf, scrollExtent, type Box,
 } from "./geometry";
-import { subscribePerformance } from "../services/performance";
+import { subscribePerformance } from "@nori/app";
 import { arrowDirection, isEnter } from "./keys";
 import { countFullScan, countScanned, navMetrics, recordMove, recordSearch } from "./metrics";
 import { scrollContainerTo, settleScroll, targetScroll } from "./scroll";

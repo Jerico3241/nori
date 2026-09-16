@@ -23,11 +23,9 @@ import { DiagnosticsPage } from "./pages/more/Diagnostics";
 import { SyncPage } from "./pages/more/Sync";
 import { WatchlistPage } from "./pages/Watchlist";
 import { PlayerPage } from "./player/PlayerPage";
-import { log } from "./services/log";
+import { DataProvider, LibraryProvider, log, SettingsProvider } from "@nori/app";
 import { exitApp } from "./services/webos";
-import { DataProvider } from "./state/data";
-import { LibraryProvider } from "./state/library";
-import { SettingsProvider } from "./state/settings";
+import { WEBOS_DEFAULTS } from "./services/webos";
 import { SyncProvider } from "./state/sync";
 
 function Shell() {
@@ -136,7 +134,7 @@ function PerTitle({ children }: { children: ReactNode }) {
 
 export function App() {
   return (
-    <SettingsProvider>
+    <SettingsProvider defaults={WEBOS_DEFAULTS}>
       <LibraryProvider>
         <SyncProvider>
           <DataProvider>

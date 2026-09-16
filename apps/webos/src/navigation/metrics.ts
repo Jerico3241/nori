@@ -16,8 +16,7 @@
 // Diagnosebereich. Es ist ein reines Zahlenobjekt, kein Steuerpult: nichts
 // daran verändert das Verhalten der App.
 
-import { isVerbose, log } from "../services/log";
-import { noteFocusLatency } from "../services/performance";
+import { isVerbose, log, noteFocusLatency } from "@nori/app";
 
 export interface NavMetrics {
   /** Tastendrücke seit dem Start. */

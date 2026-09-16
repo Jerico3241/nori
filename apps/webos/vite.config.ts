@@ -103,6 +103,23 @@ const appInfo = JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf
 
 export default defineConfig(({ command }) => ({
   base: "./",
+  /*
+   * Die gemeinsame Anwendungsschicht kommt als Quelltext, nicht als gebautes
+   * Paket.
+   *
+   * Der Grund ist React: `shared/nori-app` bringt Kontexte und Haken mit, und
+   * die funktionieren nur mit **einer** React-Instanz. Ein über `file:`
+   * verknüpftes Paket löst `react` von seinem eigenen Ort aus auf und zöge
+   * eine zweite herein — der Fehler, der sich als „Invalid hook call" meldet
+   * und stundenlang nach etwas ganz anderem aussieht. Als Quelltext
+   * eingebunden gibt es die Frage nicht, und ein Bauschritt weniger gibt es
+   * obendrein.
+   */
+  resolve: {
+    alias: {
+      "@nori/app": resolve(__dirname, "../../shared/nori-app/src/index.ts"),
+    },
+  },
   define: {
     __NORI_WEBOS_VERSION__: JSON.stringify(appInfo.version),
     __NORI_WEBOS_RESOLUTION__: JSON.stringify(appInfo.resolution ?? "1920x1080"),
