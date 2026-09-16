@@ -15,6 +15,7 @@ on:
   push:
     paths:
       - 'apps/webos/**'
+      - 'shared/nori-app/**'
       - 'shared/nori-core/**'
       - 'services/nori-api/**'
       - 'tools/check-webos-package.py'

@@ -1,0 +1,210 @@
+name: Build Windows
+
+# Der einzige Lauf des Projekts auf einem **von GitHub gestellten** Runner —
+# und deshalb der einzige, der Geld kostet.
+#
+# ## Warum nicht der self-hosted Mac
+#
+# Alle anderen Läufe liegen dort, weil bei einem privaten Repository jede
+# GitHub-Minute zählt; das Kontingent war schon einmal aufgebraucht. Für
+# Windows geht das trotzdem nicht ohne: `electron-builder` ruft für die
+# Windows-Ressourcen und die Deinstallationsroutine Windows-Programme auf. Auf
+# einem Mac oder unter Linux braucht es dafür Wine — in **beiden** Hälften,
+# 64 und 32 Bit; ohne die 32-Bit-Hälfte scheitert NSIS mit
+# `failed to load syswow64\ntdll.dll`. Das ließe sich einrichten, ergäbe aber
+# ein kreuzgebautes Paket, das nie auf Windows lief.
+#
+# Hier läuft es auf echtem Windows, und die Desktop-Prüfung startet die
+# gebaute App auf demselben System, für das sie gedacht ist.
+#
+# ## Was das kostet
+#
+# Windows-Runner rechnen mit **Faktor 2**: eine Minute Laufzeit sind zwei
+# Minuten vom Kontingent. Ein Durchlauf liegt bei etwa fünf bis acht Minuten,
+# also rund 10–16 Minuten je Lauf.
+#
+# Deshalb **kein** Auslöser bei jedem Push. Der Lauf startet von Hand oder
+# über einen Tag `windows-v<version>`; dann legt er zusätzlich einen Release
+# an und hängt den Installer daran. Wer ihn doch bei jedem Push haben will,
+# ergänzt hier einen `push:`-Block — mit offenen Augen, was er kostet.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Zusätzlich einen Release anlegen (nur mit passendem Tag)'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'windows-v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Die Version steht in `apps/windows/package.json` und sonst nirgends.
+      # Bei einem Tag muss sie dazu passen, sonst entstünde ein Release
+      # `windows-v2.0.1` mit einer `Nori-Setup-2.0.0.exe` darin.
+      - name: Version bestimmen und gegen den Tag prüfen
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./apps/windows/package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            if [ "${TAG#windows-v}" != "$VERSION" ]; then
+              echo "Tag $TAG, aber apps/windows/package.json sagt $VERSION." >&2
+              exit 1
+            fi
+          fi
+          echo "Nori für Windows $VERSION"
+
+      # Der geteilte Kern zuerst: die Windows-App bindet ihn als `file:`-Paket
+      # ein und braucht seine gebauten Deklarationen für die Typprüfung.
+      - name: Kern bauen und prüfen
+        working-directory: shared/nori-core
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      # `shared/nori-app` bekommt bewusst **kein** `npm install`: Die Schicht
+      # ist Quelltext, ihre Abhängigkeiten stehen als `peerDependencies`, und
+      # die App liefert sie. Ein `node_modules` dort wäre ein zweites React.
+      - name: Windows-App bauen
+        working-directory: apps/windows
+        env:
+          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      # Der Nachbau des Nori-Servers läuft über `https:` und erzeugt sich dafür
+      # ein Wegwerf-Zertifikat. Ohne `openssl` bräche die Prüfung mitten im
+      # Lauf ab, mit einer Meldung, die nach einem Fehler der App aussieht.
+      - name: Voraussetzungen der Desktop-Prüfung
+        shell: bash
+        run: openssl version
+
+      # Playwright ist bewusst keine Abhängigkeit von `apps/windows`: wer an
+      # der App arbeitet, soll für ein `npm install` keinen Browser holen.
+      - name: Desktop-Prüfung
+        working-directory: apps/windows
+        run: |
+          npm i --no-save --no-audit --no-fund playwright
+          node test/desktop.test.mjs
+
+      - name: Bildschirmfotos ablegen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nori-Windows-Screenshots
+          path: apps/windows/test-shots/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Installer und ZIP schnüren
+        working-directory: apps/windows
+        run: npm run package
+
+      # Dieselben 56 Prüfungen noch einmal, aber gegen das **gepackte**
+      # Ergebnis: `electron-builder` entscheidet selbst, was ins `app.asar`
+      # kommt, und was dort fehlt, fällt sonst erst beim Nutzer auf.
+      - name: Desktop-Prüfung gegen das Paket
+        working-directory: apps/windows
+        env:
+          NORI_PACKAGED: release/win-unpacked/Nori.exe
+          NORI_SHOTS: test-shots-packaged
+        run: node test/desktop.test.mjs
+
+      - name: Paket ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nori-Windows-${{ steps.meta.outputs.version }}
+          path: |
+            apps/windows/release/Nori-Setup-*.exe
+            apps/windows/release/Nori-*-portable.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # Nur bei einem Tag. Ein Artefakt verfällt nach 30 Tagen, ein Release
+      # nicht — und eine Adresse auf `github.com` ist die, die man weitergeben
+      # kann.
+      - name: Release anlegen und Installer anhängen
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/${{ github.repository }}"
+
+          python3 tools/changelog-section.py Windows "$VERSION" > notes.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "\`Nori-Setup-$VERSION.exe\` ist ein Installer ohne Administratorrechte."
+            echo "\`Nori-$VERSION-portable.zip\` entpacken und \`Nori.exe\` starten — es wird nichts installiert."
+            echo ""
+            echo "Das Paket ist **nicht signiert**: SmartScreen meldet sich beim ersten Start."
+            echo "Weitere Informationen → Trotzdem ausführen."
+          } >> notes.md
+
+          BODY="$(python3 -c '
+          import json, os
+          print(json.dumps({
+              "tag_name": os.environ["TAG"],
+              "name": "Nori für Windows " + os.environ["VERSION"],
+              "body": open("notes.md", encoding="utf-8").read(),
+              "draft": False,
+              "prerelease": False,
+          }))')"
+
+          ID="$(curl -sS -X POST "$API/releases" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d "$BODY" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or sys.exit("Release nicht angelegt: " + json.dumps(d)[:400]))')"
+
+          for FILE in "apps/windows/release/Nori-Setup-$VERSION.exe" \
+                      "apps/windows/release/Nori-$VERSION-portable.zip"; do
+            NAME="$(basename "$FILE")"
+            curl -sS -X POST \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$NAME" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$FILE" \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print("Angehängt:", d.get("name") or sys.exit("Anhang fehlgeschlagen: " + json.dumps(d)[:400]))'
+          done
+
+      - name: Prüfsummen ins Protokoll
+        if: always()
+        shell: bash
+        run: |
+          cd apps/windows/release 2>/dev/null || exit 0
+          sha256sum Nori-Setup-*.exe Nori-*-portable.zip 2>/dev/null || true

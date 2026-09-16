@@ -209,6 +209,30 @@ Der Hauptprozess wird mit esbuild zu **einer** CommonJS-Datei gebündelt
 Start einzeln von der Platte kommen. CommonJS, weil Electron `preload` nur so
 lädt.
 
+### In der CI bauen
+
+`Build Windows` (`.github/workflows/build-windows.yml`) baut auf einem
+**echten Windows-Runner** — keine Wine-Krücke, und die Desktop-Prüfung läuft
+auf dem System, für das die App gedacht ist. Sie läuft dort zweimal: gegen den
+Quellordner und gegen das gepackte `app.asar`.
+
+Der Lauf startet **nicht** bei jedem Push:
+
+- von Hand über *Actions → Build Windows → Run workflow*, das Ergebnis liegt
+  danach 30 Tage als Artefakt am Lauf;
+- oder über einen Tag `windows-v<version>` — dann legt er zusätzlich einen
+  Release an und hängt Installer und ZIP daran. Die Version im Tag muss zu
+  `apps/windows/package.json` passen, sonst bricht er ab.
+
+Der Grund für den fehlenden Push-Auslöser steht im Kopf der Datei: Es ist der
+einzige Lauf des Projekts auf einem von GitHub gestellten Runner, und
+Windows-Runner rechnen mit Faktor 2 — rund 10 bis 16 Minuten vom Kontingent je
+Durchlauf. Alle anderen Läufe liegen auf dem self-hosted Mac.
+
+Google-Zugangsdaten kommen aus den Repository-Secrets
+`NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET`. Fehlen
+sie, entsteht ein Paket ohne Abgleich — und die Oberfläche sagt das.
+
 ### Von Linux aus bauen
 
 Geht, braucht aber Wine — `electron-builder` ruft für die Windows-Ressourcen
