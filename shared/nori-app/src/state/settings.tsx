@@ -58,6 +58,20 @@ export interface DeviceSettings {
    * einstellen können.
    */
   performance: PerformanceSetting;
+  /**
+   * „Mit Fernseher teilen" — den zusammengeführten Stand zusätzlich im
+   * sichtbaren Drive-Ordner „Nori" ablegen (`drive.file`).
+   *
+   * Auf dem Fernseher ohne Bedeutung: der liest **nur** diesen Spiegel und
+   * käme an `drive.appdata` gar nicht heran. Gemeint sind die Geräte, die
+   * beides können — der Schreibtisch und die Apple-Apps. Dort wird der
+   * Spiegel ausdrücklich eingeschaltet und nie still aktiviert.
+   *
+   * Steht hier und nicht in einem Ansichtszustand, weil er einen Neustart
+   * überleben muss: ein Schalter, der sich beim Beenden selbst zurückstellt,
+   * hört still auf zu tun, was jemand von ihm erwartet.
+   */
+  shareWithTv: boolean;
   debug: boolean;
 }
 
@@ -71,6 +85,7 @@ const DEFAULTS: DeviceSettings = {
   tmdbKey: "",
   reduceEffects: false,
   performance: "auto",
+  shareWithTv: false,
   debug: false,
 };
 
