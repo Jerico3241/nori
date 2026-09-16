@@ -119,6 +119,15 @@ export default defineConfig(({ command }) => ({
     alias: {
       "@nori/app": resolve(__dirname, "../../shared/nori-app/src/index.ts"),
     },
+    /*
+     * Genau eine React-Instanz.
+     *
+     * `shared/nori-app` hat für seine Typen ein eigenes `react` im
+     * `node_modules`. Ohne diese Zeile könnte ein Import aus dem geteilten
+     * Quelltext dorthin auflösen — zwei Instanzen, und der Fehler meldet sich
+     * als „Invalid hook call" an einer ganz anderen Stelle.
+     */
+    dedupe: ["react", "react-dom"],
   },
   define: {
     __NORI_WEBOS_VERSION__: JSON.stringify(appInfo.version),

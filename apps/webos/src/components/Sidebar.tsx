@@ -13,9 +13,9 @@
 // und wer sie über „links" betritt, landet auf dem aktiven Eintrag.
 
 import { useLocation, useNavigate } from "react-router-dom";
+import { Icon, type IconName } from "@nori/app";
 
 import { SpotButton } from "../navigation/Spot";
-import { Icon, type IconName } from "./Icon";
 
 interface Entry {
   to: string;

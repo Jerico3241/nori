@@ -30,11 +30,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ChipRow } from "../components/Chips";
-import { Icon } from "../components/Icon";
 import { PosterCard } from "../components/PosterCard";
 import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
 import {
+  Icon,
   performanceProfile,
   searchScore,
   useDebounced,

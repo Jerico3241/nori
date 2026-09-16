@@ -32,12 +32,12 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { Icon } from "../components/Icon";
 import { useBackHandler } from "../navigation/back";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
 import { arrowDirection, isBack, isEnter, isPause, isPlay, isPlayPause, isStop, seekDirection } from "../navigation/keys";
 import {
   attachPlayback,
+  Icon,
   log,
   useData,
   useLibrary,

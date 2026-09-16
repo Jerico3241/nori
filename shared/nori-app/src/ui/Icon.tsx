@@ -2,7 +2,12 @@
 //
 // Kein Icon-Paket und keine Bilddateien: ein Fernseher lädt sonst für jedes
 // Symbol eine eigene Datei, und ein fremdes Set brächte eine fremde Formsprache
-// mit. Die Pfade sind schlicht — auf drei Metern zählt die Silhouette.
+// mit. Die Pfade sind schlicht — auf drei Metern zählt die Silhouette, und was
+// aus drei Metern trägt, trägt aus einem halben erst recht.
+//
+// Geteilt zwischen allen Nori-Oberflächen: ein Symbolsatz, eine Formsprache.
+// Wie groß ein Symbol gezeichnet wird, entscheidet das Stylesheet der App
+// (`.icon`).
 
 export type IconName =
   | "home" | "grid" | "calendar" | "search" | "heart" | "heartFilled" | "bookmark"

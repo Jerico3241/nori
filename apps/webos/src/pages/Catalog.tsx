@@ -42,11 +42,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigationType, useSearchParams } from "react-router-dom";
 
 import { ChipRow } from "../components/Chips";
-import { Icon } from "../components/Icon";
 import {
   catalogItemId,
   catalogOrderSession,
   fuzzyScore,
+  Icon,
   performanceProfile,
   searchScore,
   titleMeta,

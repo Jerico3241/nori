@@ -5,9 +5,9 @@
 // die Bedienung, die man dann nicht sieht.
 
 import type { Episode, HosterOption, SeasonRef } from "@nori/core";
+import { Icon } from "@nori/app";
 import { availableLanguages, hosterRank } from "@nori/core";
 import { useMemo } from "react";
-import { Icon } from "../components/Icon";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
 
 export interface DrawerProps {

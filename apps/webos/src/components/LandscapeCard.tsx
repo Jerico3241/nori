@@ -8,8 +8,7 @@
 import type { CatalogProvider } from "@nori/core";
 
 import { SpotButton } from "../navigation/Spot";
-import { Artwork } from "./Artwork";
-import { Icon } from "./Icon";
+import { Artwork, Icon } from "@nori/app";
 
 export interface LandscapeCardProps {
   slug: string;

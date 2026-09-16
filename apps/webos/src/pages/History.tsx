@@ -8,14 +8,12 @@ import { formatClock, progressPercent, providerFromPath, resumePosition, type Ca
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Artwork } from "../components/Artwork";
-import { Icon } from "../components/Icon";
 import { Dialog } from "../components/Overlay";
 import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { tmdb, useLibrary } from "@nori/app";
+import { Artwork, Icon, tmdb, useLibrary } from "@nori/app";
 
 const ROUTE = "history";
 

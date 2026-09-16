@@ -11,10 +11,10 @@
 //   geöffnet wurde. Das leistet `SpotArea`.
 
 import type { ReactNode } from "react";
+import { Icon } from "@nori/app";
 
 import { useBackHandler } from "../navigation/back";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
-import { Icon } from "./Icon";
 
 export function Dialog({
   open, onClose, eyebrow, title, className, initial = ".spottable", id, children,

@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { SpotButton } from "../navigation/Spot";
-import { Artwork } from "./Artwork";
+import { Artwork } from "@nori/app";
 
 export interface PosterCardProps {
   slug: string;

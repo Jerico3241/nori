@@ -18,10 +18,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DeviceSignInDialog, relativeTime } from "../components/DeviceSignIn";
-import { Icon } from "../components/Icon";
 import { Menu, type MenuOption } from "../components/Overlay";
 import { Screen } from "../components/Screen";
 import {
+  Icon,
   performanceMode,
   performanceReason,
   useData,

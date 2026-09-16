@@ -21,9 +21,9 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { EpisodeCard } from "../components/EpisodeCard";
 import { Hero } from "../components/Hero";
-import { Icon } from "../components/Icon";
 import {
   covers,
+  Icon,
   log,
   performanceProfile,
   titleMeta,

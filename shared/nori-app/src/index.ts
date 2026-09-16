@@ -52,4 +52,7 @@ export * from "./hooks/useTick";
 export * from "./player/hlsLoader";
 export * from "./player/hlsPlayback";
 
+export * from "./ui/Artwork";
+export * from "./ui/Icon";
+
 export * from "./meta";

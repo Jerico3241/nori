@@ -21,10 +21,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Hero } from "../components/Hero";
-import { Icon } from "../components/Icon";
 import { LandscapeCard } from "../components/LandscapeCard";
 import {
   covers,
+  Icon,
   log,
   performanceProfile,
   titleMeta,

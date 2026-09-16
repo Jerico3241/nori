@@ -33,6 +33,13 @@
 // Browser lud, was er für richtig hielt. Auf der Startseite waren das über
 // hundert Bilder in den ersten Sekunden.
 //
+// ## Geteilt zwischen Fernseher und Schreibtisch
+//
+// Die Klassennamen (`art`, `art-fallback`, `loaded`) sind der einzige Berührungs-
+// punkt mit der Oberfläche; wie eine Bildfläche aussieht, entscheidet jede App
+// in ihrem Stylesheet. Alles andere — welches Bild, in welcher Größe, wann
+// geladen — ist überall dasselbe und steht deshalb nur einmal hier.
+//
 // Und die Nachfrage läuft **auch dann, wenn schon ein Quellcover da ist**: der
 // ältere Stand fragte TMDB nur, wenn gar kein Bild bekannt war. Ein einmal
 // abgelegtes 220-px-Quellcover verhinderte damit für immer das scharfe
