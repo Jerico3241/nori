@@ -9,8 +9,11 @@
 // Der Dienst liefert dieselben Formen wie `services/nori-api`, dazu den
 // gebauten Stand aus `dist/` und einen Tonschnipsel als abspielbare Datei.
 
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { createServer as createTlsServer } from "node:https";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +29,37 @@ const PORT = Number(process.env.NORI_MOCK_PORT ?? 8799);
  * einen großen Katalog her, wie ihn AniWorld tatsächlich hat.
  */
 const TITLE_COUNT = Math.max(1, Number(process.env.NORI_MOCK_TITLES ?? 40));
+/**
+ * `NORI_MOCK_TLS=1` — derselbe Nachbau, aber über `https:`.
+ *
+ * Gebraucht wird das von der Desktop-Prüfung. Nori für Windows lädt seine
+ * Oberfläche von `file://` und lässt nach seiner eigenen Inhaltsrichtlinie nur
+ * `https:` an Bild, Ton und Abrufe heran. Ein Nachbau über `http:` wäre dort
+ * nicht etwa langsam, sondern schlicht gesperrt — und eine Prüfung, die
+ * deshalb die Richtlinie lockert, prüft die App nicht mehr, die ausgeliefert
+ * wird.
+ *
+ * Das Zertifikat ist selbst unterschrieben und gilt für `127.0.0.1`; der
+ * Aufrufer startet Electron mit `--ignore-certificate-errors`. Auf dem
+ * Fernseher bleibt alles wie es war — dort ist `NORI_MOCK_TLS` nicht gesetzt.
+ */
+const TLS = process.env.NORI_MOCK_TLS === "1";
+const SCHEME = TLS ? "https" : "http";
+const ORIGIN = `${SCHEME}://127.0.0.1:${PORT}`;
+
+/** Ein Wegwerf-Zertifikat für 127.0.0.1 — je Lauf ein neues. */
+function selfSigned() {
+  const dir = mkdtempSync(join(tmpdir(), "nori-mock-tls-"));
+  const key = join(dir, "key.pem");
+  const cert = join(dir, "cert.pem");
+  execFileSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+    "-keyout", key, "-out", cert,
+    "-subj", "/CN=127.0.0.1",
+    "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
+  ], { stdio: "ignore" });
+  return { key: readFileSync(key), cert: readFileSync(cert) };
+}
 
 /*
  * Die Titelliste ist nicht beliebig.
@@ -191,7 +225,7 @@ const MIME = {
 };
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
 
-createServer(async (req, res) => {
+const serve = async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   const json = (body, status = 200) => {
     res.writeHead(status, { "Content-Type": "application/json", ...CORS });
@@ -246,7 +280,7 @@ createServer(async (req, res) => {
         }
         return json({
           kind: "mp4",
-          url: `http://127.0.0.1:${PORT}/clip.wav`,
+          url: `${ORIGIN}/clip.wav`,
           hoster: pick.name,
           lang: pick.lang,
           referer: "https://example.invalid/",
@@ -292,6 +326,9 @@ createServer(async (req, res) => {
   }
   res.writeHead(200, { "Content-Type": MIME[extname(file)] ?? "application/octet-stream", ...CORS });
   res.end(readFileSync(file));
-}).listen(PORT, "127.0.0.1", () => {
-  console.log(`[Nori:mock] http://127.0.0.1:${PORT}`);
+};
+
+const server = TLS ? createTlsServer(selfSigned(), serve) : createServer(serve);
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`[Nori:mock] ${ORIGIN}`);
 });
