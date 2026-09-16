@@ -856,6 +856,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("push", on)
         self.assertNotIn("pull_request", on)
 
+    def test_tags_start_no_workflow(self) -> None:
+        # Ein Release-Tag darf weder Builds noch einen zweiten Release anstoßen.
+        for path in sorted((REPO / ".github/workflows").glob("*.yml")):
+            with self.subTest(workflow=path.name):
+                push = triggers(load_workflow(path.name)).get("push")
+                if push is None:
+                    continue
+                self.assertIsInstance(push, dict)
+                self.assertTrue(push.get("branches"), "push ohne Branch-Filter läuft auch für Tags")
+                self.assertNotIn("tags", push)
+
     def test_release_runs_only_after_the_successful_package_job_on_main(self) -> None:
         for name, job, platform, before, verify, upload in self.CASES:
             with self.subTest(workflow=name):

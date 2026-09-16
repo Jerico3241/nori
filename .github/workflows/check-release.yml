@@ -6,6 +6,8 @@ name: Check release pipeline
 # nicht erst beim nächsten Release auf main. Legt nichts an.
 on:
   push:
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'tools/nori-release.py'
       - 'tools/test_nori_release.py'

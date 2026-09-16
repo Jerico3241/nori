@@ -61,7 +61,10 @@ nichts selbst.
 | Version älter als ein vorhandener Tag | Abbruch |
 
 Die Tag-Referenz wird über die API ohne `force` angelegt; gibt es sie
-inzwischen, antwortet GitHub mit 422 und nichts wird veröffentlicht. Die
+inzwischen, antwortet GitHub mit 422 und nichts wird veröffentlicht. Kein
+Workflow reagiert auf Tags: alle Push-Auslöser sind auf Branches beschränkt,
+ein neuer Release-Tag startet also weder Builds noch einen weiteren Release —
+auch nicht, wenn er beim Nachholen mit einem persönlichen Token entsteht. Die
 Release-Jobs einer Plattform laufen nacheinander, und auf `main` werden
 Paket-Läufe nicht mehr abgebrochen, damit ein Release nie mittendrin endet.
 

@@ -2,6 +2,8 @@ name: Build iOS
 
 on:
   push:
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'native/Nori-iOS/**'
       - 'native/NoriCore/**'

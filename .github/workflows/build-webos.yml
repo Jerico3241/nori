@@ -13,6 +13,8 @@ name: Build webOS
 # durchbauen und testen kann, statt sie nur statisch zu prüfen.
 on:
   push:
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'apps/webos/**'
       - 'shared/nori-core/**'
