@@ -1,0 +1,83 @@
+# Wie aus der gebauten Oberfläche ein Windows-Programm wird.
+#
+# ## Was ins Paket kommt
+#
+# Nur `dist` (die Oberfläche), `dist-main` (Hauptprozess und Brücke, gebündelt)
+# und `build/icon.*`. Kein `node_modules`: `tools/build-main.mjs` bündelt den
+# Hauptprozess samt Kern und `linkedom` in eine Datei — das sind ein paar
+# hundert Dateien weniger, die beim Start einzeln von der Platte kommen.
+#
+# ## Zwei Auslieferungsformen
+#
+#   nsis      der gewohnte Installer. Ohne Administratorrechte, mit wählbarem
+#             Zielordner, mit Verknüpfungen und Deinstallation.
+#   zip       eine tragbare Fassung zum Entpacken. Für Rechner, auf denen
+#             nichts installiert werden darf.
+#
+# ## Wo die Daten liegen
+#
+# In `%APPDATA%\Nori` (Electrons `userData`). Ausdrücklich **nicht** neben der
+# EXE, wie es die vorherige Fassung tat: ein Installationsordner unter
+# `Program Files` ist für einen normalen Benutzer nicht beschreibbar, und eine
+# tragbare Fassung auf einem USB-Stick nimmt fremde Bibliotheken mit.
+appId: de.nori.app
+productName: Nori
+copyright: Nori
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-main/**/*
+  - build/icon.png
+  - build/icon.ico
+  - package.json
+  # Ohne diese Zeile nimmt electron-builder die Produktionsabhängigkeiten aus
+  # `package.json` ungefragt mit — React, hls.js, linkedom, den Kern und die
+  # Anwendungsschicht. Die stecken aber alle schon in den zwei Bündeln; das
+  # Archiv wäre sonst 47 MB statt 1 MB und enthielte jede Datei zweimal.
+  - "!node_modules/**/*"
+
+# Die App bringt keine nativen Module mit; `npmRebuild` wäre nur Wartezeit.
+npmRebuild: false
+buildDependenciesFromSource: false
+
+# Kein Ort, an dem Pakete liegen — also auch keine Update-Auskunft im Paket.
+publish: null
+
+# Chromium bringt 55 Sprachdateien mit, 44 MB. Nori spricht deutsch, und was
+# aus Chromium sichtbar wird (Kontextmenü, Fehlerseiten), soll dem folgen;
+# `en-US` bleibt als Rückfall. Das sind 40 MB weniger im Paket.
+electronLanguages:
+  - de
+  - en-US
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  # Gilt für das ZIP; der Installer benennt sich unten selbst.
+  artifactName: Nori-${version}-portable.${ext}
+
+nsis:
+  # Kein Ein-Klick-Installer: Wer ein Programm installiert, soll sehen, wohin.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Nori
+  deleteAppDataOnUninstall: false
+  artifactName: Nori-Setup-${version}.${ext}
+
+linux:
+  # Nur für die Prüfung in dieser Entwicklungsumgebung: dieselbe Oberfläche,
+  # derselbe Hauptprozess, nur ein anderes Betriebssystem. Ausgeliefert wird
+  # Nori auf dem Schreibtisch als Windows-Paket.
+  target: [dir]
+  category: AudioVideo

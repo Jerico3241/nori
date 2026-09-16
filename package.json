@@ -1,12 +1,15 @@
 {
   "name": "nori",
-  "version": "1.8.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "main": "desktop/main.mjs",
   "productName": "Nori",
   "description": "Nori – Anime- und Serien-App",
   "scripts": {
+    "windows:dev": "npm --prefix apps/windows run dev",
+    "windows:build": "npm --prefix apps/windows run build",
+    "windows:package": "npm --prefix apps/windows run package",
+    "windows:test": "npm --prefix apps/windows run test:desktop",
     "webos:dev": "npm --prefix apps/webos run dev",
     "webos:build": "npm --prefix apps/webos run build",
     "webos:package": "npm --prefix apps/webos run webos:package",
