@@ -661,6 +661,9 @@ def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: 
     return errors
 
 
+MASK_LONG_RUNS = re.compile(r"[A-Za-z0-9_]{10,}")
+
+
 def where_they_differ(ours: bytes, reference: bytes) -> str:
     """Wo genau — ohne je ein Byte aus dem produktiven Paket zu zeigen.
 
@@ -674,10 +677,21 @@ def where_they_differ(ours: bytes, reference: bytes) -> str:
     limit = min(len(ours), len(reference))
     at = next((i for i in range(limit) if ours[i] != reference[i]), limit)
     start = max(0, at - 70)
-    context = reference[start:at + 70].decode("utf-8", "replace").replace("\n", "⏎")
+
+    def window(data: bytes, mask: bool) -> str:
+        text = data[start:at + 70].decode("utf-8", "replace").replace("\n", "⏎")
+        # Aus dem Paket nur maskiert: Die Zugangsdaten sind oben schon durch
+        # `""` ersetzt, aber verlassen darf man sich darauf nicht — genau das
+        # aufzudecken ist ja die Aufgabe dieser Prüfung. Alles, was lang genug
+        # für einen Schlüssel ist, wird deshalb unkenntlich. Minifizierte
+        # Bezeichner sind ein bis drei Zeichen lang und bleiben lesbar; nur auf
+        # sie kommt es an.
+        return MASK_LONG_RUNS.sub("…", text) if mask else text
+
     return (
-        f" — ab Byte {at} von {len(reference)} (Paket {len(ours)} Bytes); "
-        f"im Vergleichsbau steht dort: …{context}…"
+        f" — ab Byte {at} von {len(reference)} (Paket {len(ours)} Bytes)"
+        f"; Vergleichsbau: …{window(reference, mask=False)}…"
+        f"; Paket: …{window(ours, mask=True)}…"
     )
 
 
