@@ -130,6 +130,11 @@ von 1.26.0 auf 2.6.0, macOS von 1.21.0, Windows von 2.1.0 und LG webOS von
   zweiten Entwurf, Anhang oder Tag anlegen. Aufgefallen beim Aufräumen von
   rund 900 Läufen, als GitHub die Antwort einer Liste mitten im Körper
   abbrach.
+- **Ein voller Artefakt-Speicher kippt keinen Prüflauf mehr.** Das Testpaket
+  von webOS darf am Hochladen scheitern, ohne den Lauf rot zu machen; Build,
+  Fernbedienungslauf und Paketprüfung stehen für sich. Im Release bleibt das
+  Hochladen zwingend — ohne Paket kein Release —, und `continue-on-error` ist
+  nur an diesem einen Schritt erlaubt, der im Release nicht läuft.
 - **Das Aufräumen findet auch Läufe entfernter Workflows.** GitHub nimmt einen
   Workflow aus seiner Liste, sobald dessen Datei fort ist; seine Läufe bleiben
   liegen. Gesucht wird deshalb in den Läufen des Repositorys **und** je

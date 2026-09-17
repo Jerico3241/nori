@@ -1443,11 +1443,18 @@ class WorkflowTests(unittest.TestCase):
                     steps = job.get("steps", [])
                     names = [step.get("name") for step in steps]
                     for step in steps:
-                        self.assertFalse(step.get("continue-on-error"), step.get("name"))
+                        if step.get("continue-on-error"):
+                            # Erlaubt nur an einem Schritt, der im Release nicht läuft:
+                            # ein Testpaket darf am vollen Artefakt-Speicher scheitern,
+                            # ein Release nie.
+                            self.assertIn("!inputs.release-version", str(step.get("if", "")),
+                                          f"{file}/{job_name}/{step.get('name')}")
                         if "upload-artifact" in str(step.get("uses", "")):
                             self.assertIn("retention-days", step["with"], f"{job_name}/{step.get('name')}")
                     uploads = [i for i, step in enumerate(steps)
-                               if "upload-artifact" in str(step.get("uses", "")) and "failure()" not in str(step.get("if", ""))]
+                               if "upload-artifact" in str(step.get("uses", ""))
+                               and "failure()" not in str(step.get("if", ""))
+                               and not step.get("continue-on-error")]
                     if not uploads:
                         continue
                     checks = [i for i, step in enumerate(steps) if "tools/nori-release.py verify" in step.get("run", "")]
@@ -1459,6 +1466,18 @@ class WorkflowTests(unittest.TestCase):
                     self.assertIs(upload["with"]["overwrite"], True)
                     self.assertEqual(upload["with"]["if-no-files-found"], "error")
                     self.assertLess(names.index("Version prüfen"), uploads[0])
+
+    def test_the_release_upload_is_never_optional(self) -> None:
+        for platform, file in BUILD_WORKFLOWS.items():
+            with self.subTest(workflow=file):
+                for job in load_workflow(file)["jobs"].values():
+                    for step in job.get("steps", []):
+                        if "upload-artifact" not in str(step.get("uses", "")):
+                            continue
+                        condition, optional = str(step.get("if", "")), bool(step.get("continue-on-error"))
+                        release = "!inputs.release-version" not in condition and "failure()" not in condition
+                        # Was im Release hochlädt, muss gelingen.
+                        self.assertFalse(release and optional, f"{file}: {step.get('name')}")
 
     def test_temporary_artifacts_are_short_lived(self) -> None:
         for path in sorted((REPO / ".github/workflows").glob("*.yml")):

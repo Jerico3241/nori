@@ -245,9 +245,31 @@ jobs:
           python3 tools/nori-release.py verify --asset webos --file "$OUT/$ASSET" \
             --release-version "$RELEASE_VERSION" --github-output
 
-      # Im Release nur die Übergabe an den Release-Job: ein Tag. Als Testpaket
-      # drei Tage — was bleiben soll, gehört an einen Release.
+      # Im Release die Übergabe an den Release-Job: ein Tag, und sie **muss**
+      # gelingen — ohne Paket kein Release.
       - name: Paket als Artefakt ablegen
+        if: ${{ inputs.release-version }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: ${{ steps.release-check.outputs.path }}
+          if-no-files-found: error
+          retention-days: ${{ steps.meta.outputs.retention }}
+          overwrite: true
+
+      # Ohne Release nur ein Testpaket zum Herunterladen, drei Tage. Es darf
+      # den Lauf nicht kippen: Ist der Artefakt-Speicher des Repositorys voll,
+      # scheitert jedes Hochladen mit „Artifact storage quota has been hit" —
+      # am 17.09. mehrfach passiert, während Build, Fernbedienungslauf und
+      # Paketprüfung grün waren. Dieselbe Überlegung wie bei den
+      # Bildschirmfotos: ein Diagnoseschritt verdeckt nicht die Prüfung.
+      #
+      # `continue-on-error` steht ausdrücklich nur hier, an einem Schritt, der
+      # im Release gar nicht läuft. Dort bleibt jeder Schritt zwingend, und
+      # `tools/test_nori_release.py` prüft genau das.
+      - name: Testpaket ablegen
+        if: ${{ !inputs.release-version }}
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.artifact }}

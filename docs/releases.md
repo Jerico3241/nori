@@ -273,6 +273,14 @@ Windows lädt bei einem gewöhnlichen Push keine Pakete hoch: Installer und ZIP
 sind zusammen rund 200 MB, und das Artefakt-Kontingent war am 17.09. schon
 einmal erschöpft.
 
+Ist der Speicher voll, scheitert **jedes** Hochladen („Artifact storage quota
+has been hit"). Das Testpaket von webOS darf daran scheitern, ohne den Lauf zu
+kippen — Build, Fernbedienungslauf und Paketprüfung sind dann trotzdem grün,
+und nur das Paket fehlt am Lauf. Im Release ist das Gegenteil richtig: Dort
+muss das Hochladen gelingen, sonst gibt es kein Release. `continue-on-error`
+steht deshalb an genau einem Schritt, der im Release nicht läuft, und
+`tools/test_nori_release.py` lässt es nirgends sonst zu.
+
 ## Release Notes
 
 Aus dem Abschnitt `[Nori <VERSION>]` in `CHANGELOG.md` — fehlt er, entsteht
