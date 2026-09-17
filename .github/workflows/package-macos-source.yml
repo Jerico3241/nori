@@ -72,7 +72,7 @@ jobs:
           name: ${{ steps.meta.outputs.name }}
           path: ${{ steps.meta.outputs.name }}.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Quellpaket aus dem Checkout entfernen
         if: always()

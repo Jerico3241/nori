@@ -148,7 +148,7 @@ jobs:
           name: Nori-webOS-Screenshots
           path: apps/webos/test-shots/*.png
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
       - name: Getesteten Build zum Vergleich ablegen
         run: |
@@ -221,7 +221,7 @@ jobs:
           name: Nori-webOS
           path: apps/webos/*.ipk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       # Zugangsdaten verlassen den Runner nur im hochgeladenen Paket. Die
       # .env.local, der produktive Build und das Paket bleiben nicht im

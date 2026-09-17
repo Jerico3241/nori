@@ -211,23 +211,63 @@ lädt.
 
 ### In der CI bauen
 
-`Build Windows` (`.github/workflows/build-windows.yml`) baut auf einem
-**echten Windows-Runner** — keine Wine-Krücke, und die Desktop-Prüfung läuft
-auf dem System, für das die App gedacht ist. Sie läuft dort zweimal: gegen den
-Quellordner und gegen das gepackte `app.asar`.
+`Build Windows` (`.github/workflows/build-windows.yml`) läuft auf dem
+**self-hosted Mac**, wie alle anderen Läufe des Projekts.
 
-Der Lauf startet **nicht** bei jedem Push:
+Vorher lag er auf einem von GitHub gestellten Windows-Runner. Das geht nicht
+mehr: Bei einem privaten Repository zählen gestellte Runner gegen das
+Minutenkontingent — Windows mit Faktor 2 —, und das Kontingent ist
+aufgebraucht. Gemessen, nicht vermutet:
 
-- von Hand über *Actions → Build Windows → Run workflow*, das Ergebnis liegt
-  danach 30 Tage als Artefakt am Lauf;
-- oder über einen Tag `windows-v<version>` — dann legt er zusätzlich einen
-  Release an und hängt Installer und ZIP daran. Die Version im Tag muss zu
-  `apps/windows/package.json` passen, sonst bricht er ab.
+| Lauf | Sichtbarkeit | Ergebnis |
+| --- | --- | --- |
+| `35225331616` | öffentlich | grün, 14/14 Schritte, 4:25 min |
+| `35227553568` | privat | Startfehler nach 4 s, `billable.WINDOWS.total_ms = 0` |
 
-Der Grund für den fehlenden Push-Auslöser steht im Kopf der Datei: Es ist der
-einzige Lauf des Projekts auf einem von GitHub gestellten Runner, und
-Windows-Runner rechnen mit Faktor 2 — rund 10 bis 16 Minuten vom Kontingent je
-Durchlauf. Alle anderen Läufe liegen auf dem self-hosted Mac.
+Null abrechenbare Millisekunden heißt: Der Job hat nie einen Runner bekommen.
+
+Er startet bei einem Pull Request, der Windows, die geteilte Schicht oder den
+Kern berührt, beim Push desselben Standes auf `main` und von Hand über
+*Actions → Build Windows → Run workflow*. Installer und ZIP liegen danach
+sieben Tage als Artefakt am Lauf und lassen sich von github.com laden. Was
+länger leben soll, gehört an einen Release, nicht an einen Lauf.
+
+**Kein Tag-Auslöser.** Seit der gemeinsamen Release-Pipeline veröffentlicht
+ausschließlich `release.yml`; `tools/test_nori_release.py` besteht darauf, dass
+kein Workflow an einem Tag hängt — sonst stieße ein Release-Tag die Builds ein
+zweites Mal an und legte einen zweiten Release an. Deshalb steht bei `push`
+auch ein Branch-Filter: ein `push` ohne ihn läuft für Tags mit.
+
+Windows ist in dieser Pipeline **noch nicht vorgesehen** — `nori-release.py`
+kennt `ios`, `macos` und `webos`. Einen Release für Windows gibt es damit
+vorerst nicht, nur das Artefakt am Lauf. Was dafür fehlt: ein Eintrag in
+`PLATFORMS`, ein Prüfer für Installer und ZIP, die Version aus
+`apps/windows/package.json` statt aus einem Xcode-Projekt, und der
+`release`-Job im Workflow.
+
+#### Was der Mac kann und was nicht
+
+Bauen und durchspielen kann er alles. `tsc`, `esbuild` und Vite sind
+plattformunabhängig, und die Desktop-Prüfung startet Electron für macOS mit
+demselben Haupt- und Renderer-Code, den Windows später ausführt — das ist die
+Prüfung, die Fehler in der App findet.
+
+Zwei Schritte kann er nicht:
+
+- **Packen.** `electron-builder` ruft für Windows-Ressourcen und die
+  NSIS-Deinstallationsroutine Windows-Programme auf und braucht dafür Wine,
+  in beiden Hälften. Der Schritt *Voraussetzungen fürs Packen* prüft das
+  vorher und sagt es, statt mitten im Packen umzufallen.
+- **Das Paket prüfen.** Was dabei entsteht, ist eine `Nori.exe`; die startet
+  auf einem Mac nicht, auch nicht mit Playwright davor. Dieser Schritt steht
+  unter `if: runner.os == 'Windows'` und springt wieder an, sobald es einen
+  Windows-Runner gibt.
+
+Ein auf dem Mac geschnürtes Paket ist damit **kreuzgebaut und auf dem
+Zielsystem ungetestet**. Wer Installer und ZIP geprüft haben will, braucht
+einen self-hosted Windows-Runner — dann laufen wieder alle Schritte, und die
+Desktop-Prüfung läuft zweimal: gegen den Quellordner und gegen das gepackte
+`app.asar`.
 
 Google-Zugangsdaten kommen aus den Repository-Secrets
 `NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET`. Fehlen

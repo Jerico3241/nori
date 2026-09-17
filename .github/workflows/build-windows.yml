@@ -43,8 +43,8 @@ name: Build Windows
 # ## Wann er läuft
 #
 #   Pull Request   bei jeder Änderung an Windows, der geteilten Schicht oder
-#                  dem Kern — das Ergebnis liegt danach 30 Tage als Artefakt am
-#                  Lauf und lässt sich von github.com laden.
+#                  dem Kern — das Ergebnis liegt danach sieben Tage als
+#                  Artefakt am Lauf und lässt sich von github.com laden.
 #   Push auf main  dasselbe noch einmal auf dem gemergten Stand.
 #   von Hand       Actions → Build Windows → Run workflow.
 #
@@ -172,7 +172,7 @@ jobs:
           name: Nori-Windows-Screenshots
           path: apps/windows/test-shots/*.png
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
       # Erst die Werkzeuge, dann packen — dieselbe Lehre wie bei den
       # Apple-Läufen: eine fehlende Voraussetzung sieht sonst aus wie ein
@@ -228,7 +228,7 @@ jobs:
             apps/windows/release/Nori-Setup-*.exe
             apps/windows/release/Nori-*-portable.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Prüfsummen ins Protokoll
         if: always()
