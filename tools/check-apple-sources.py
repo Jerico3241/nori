@@ -470,7 +470,7 @@ def check_glass_runner() -> None:
         return
 
     where_used = ", ".join(sorted(used))
-    for name in ("build-ios.yml", "build-macos.yml", "package-ios-ipa.yml"):
+    for name in ("build-ios.yml", "build-macos.yml"):
         workflow = ROOT / ".github/workflows" / name
         if not workflow.exists():
             continue
@@ -509,7 +509,7 @@ def check_ios_runner() -> None:
         return
 
     apis = ", ".join(sorted(used))
-    for name in ("build-ios.yml", "package-ios-ipa.yml"):
+    for name in ("build-ios.yml",):
         workflow = ROOT / ".github/workflows" / name
         if not workflow.exists():
             continue
@@ -557,17 +557,26 @@ def check_ios_package_oauth() -> None:
     Workflow stellte `Google.local.xcconfig` nicht bereit, und weil eine fehlende
     Konfiguration für Entwicklungs-Builds erlaubt ist, blieb der Lauf grün.
 
-    Geprüft wird, dass `Package iOS IPA` die Konfiguration vor dem Build mit
-    `tools/configure-google-oauth.py --ios` schreibt, das gebaute Programm und
-    die fertige IPA vor dem Hochladen prüft und nirgends ein Client-Secret
-    anfasst — und dass die iOS-`Info.plist` die Client-ID weiterhin aus der
-    Build-Einstellung bezieht und kein Secret kennt.
+    Geprüft wird, dass der Job `ipa` in `Build iOS` die Konfiguration vor dem
+    Build mit `tools/configure-google-oauth.py --ios` schreibt, das gebaute
+    Programm und die fertige IPA vor dem Hochladen prüft und nirgends ein
+    Client-Secret anfasst — und dass die iOS-`Info.plist` die Client-ID
+    weiterhin aus der Build-Einstellung bezieht und kein Secret kennt.
+
+    Bis 2.6.0 stand das in einem eigenen Workflow `Package iOS IPA`; seitdem
+    ist es ein Job neben dem Simulator-Build, und nur dieser Job zählt — der
+    Simulator-Build lädt bei einem Fehlschlag sein eigenes Protokoll hoch.
     """
-    name = "package-ios-ipa.yml"
+    name = "build-ios.yml"
     workflow = ROOT / ".github/workflows" / name
     if not workflow.exists():
         return
-    text = workflow.read_text()
+    whole = workflow.read_text()
+    job = re.search(r"^  ipa:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", whole, re.MULTILINE | re.DOTALL)
+    if job is None:
+        add("ERROR", name, "Der Job `ipa` fehlt — ohne ihn gibt es keine geprüfte IPA.")
+        return
+    text = job.group(1)
 
     def position(pattern: str) -> int:
         match = re.search(pattern, text)
@@ -588,7 +597,7 @@ def check_ios_package_oauth() -> None:
     if verify_ipa < 0 or upload < 0 or verify_ipa > upload:
         add("ERROR", name, "Vor dem Hochladen fehlt `tools/configure-google-oauth.py --verify-ios-ipa` "
             "für die fertige IPA.")
-    if re.search(r"GOOGLE_CLIENT_SECRET|--macos\b|--webos\b", text):
+    if re.search(r"GOOGLE_CLIENT_SECRET|--macos\b|--webos\b", whole):
         add("ERROR", name, "Der iOS-Paketlauf fasst eine fremde Google-Konfiguration an. "
             "iOS bekommt nur seine Client-ID, nie ein Secret.")
 

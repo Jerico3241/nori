@@ -21,11 +21,14 @@ Native iPhone/iPad App mit SwiftUI und AVPlayer. Der aktuelle iOS-Client arbeite
 
 ### Ohne eigenen Mac: aus der CI herunterladen
 
-Der Workflow **Package iOS IPA** legt bei jedem Push auf `main`, der den
-iOS-Ordner berührt, eine unsignierte IPA als Artefakt ab. Unter *Actions →
-Package iOS IPA → letzter Lauf → Artifacts* liegt sie als
-`Nori-iOS-<Version>-unsigned`. Haltbarkeit 30 Tage. Von Hand anstoßen geht über
-*Run workflow*.
+Jeder Release hängt die unsignierte IPA als `Nori-iOS-v<Version>.ipa` an —
+unter *Releases* im Repository, dauerhaft, neben den Paketen der anderen
+Plattformen und `checksums-sha256.txt`.
+
+Ein Testpaket zwischen zwei Releases: *Actions → Build iOS → Run workflow →
+„IPA bauen“*. Es liegt drei Tage am Lauf als
+`Nori-iOS-v<Version>-<Commit>`. Bei einem gewöhnlichen Push entsteht keine
+IPA mehr, nur der Simulator-Build.
 
 ### Auf einem Mac mit Xcode
 

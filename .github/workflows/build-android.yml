@@ -20,6 +20,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   core:
     runs-on: [self-hosted, macOS]
@@ -106,3 +109,4 @@ jobs:
           name: nori-android-build-log
           path: ${{ runner.temp }}/nori-android-build.log
           if-no-files-found: ignore
+          retention-days: 3

@@ -1,5 +1,16 @@
 name: Build iOS
 
+# Ein Lauf für iOS/iPadOS, zwei Jobs:
+#
+#   simulator  Typprüfung bei jedem Push, der iOS oder den Kern berührt.
+#   ipa        Die unsignierte IPA — für einen Release, aufgerufen von
+#              `Nori Release` mit `release-version`, oder als Testpaket von
+#              Hand (Actions → Build iOS → Run workflow → „IPA bauen").
+#
+# Bis 2.6.0 lag die IPA in einem eigenen Lauf `Package iOS IPA`, der bei jedem
+# Push auf main eine IPA baute und einen Release `ios-v…` anlegte. Beides ist
+# hier aufgegangen: Dauerhaft liegen Pakete an einem gemeinsamen GitHub
+# Release, ein Lauf ist nur Bauplatz (docs/releases.md).
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
@@ -10,18 +21,46 @@ on:
       - 'tools/require-xcode.sh'
       - '.github/workflows/build-ios.yml'
   workflow_dispatch:
+    inputs:
+      ipa:
+        description: 'Unsignierte IPA als Testpaket bauen (drei Tage am Lauf)'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      release-version:
+        description: Gemeinsame Nori-Version des Releases
+        type: string
+        required: true
+    outputs:
+      asset:
+        description: Dateiname der geprüften IPA
+        value: ${{ jobs.ipa.outputs.asset }}
+      sha256:
+        description: Prüfsumme der geprüften IPA
+        value: ${{ jobs.ipa.outputs.sha256 }}
 
+# Im Release eine eigene Gruppe je Lauf. `github.workflow` ist dort der Name
+# des Aufrufers; alle Plattform-Läufe teilten sich sonst eine Gruppe, und der
+# dritte würfe den wartenden zweiten hinaus. Ein Release bricht nie mittendrin ab.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ inputs.release-version && format('nori-release-{0}-ios', github.run_id) || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !inputs.release-version }}
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  simulator:
+    name: Simulator-Build
+    if: ${{ !inputs.release-version && !inputs.ipa }}
     runs-on: [self-hosted, macOS]
     timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Toolchain prüfen
         run: tools/require-xcode.sh 26
@@ -56,3 +95,178 @@ jobs:
           name: nori-ios-xcodebuild-log
           path: ${{ runner.temp }}/nori-ios-xcodebuild.log
           if-no-files-found: ignore
+          retention-days: 3
+
+  ipa:
+    name: IPA
+    if: ${{ inputs.release-version || inputs.ipa }}
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    outputs:
+      asset: ${{ steps.meta.outputs.asset }}
+      sha256: ${{ steps.release-check.outputs.sha256 }}
+    env:
+      RELEASE_VERSION: ${{ inputs.release-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Toolchain prüfen
+        run: tools/require-xcode.sh 26
+
+      # Gemeinsame Version, Build und Dateiname aus dem Commit. Im Release muss
+      # die Nummer die bestätigte sein; ein Testpaket trägt den Commit im Namen.
+      - name: Version prüfen
+        id: meta
+        run: python3 tools/nori-release.py meta --platform ios --release-version "$RELEASE_VERSION" --github-output
+
+      # Ein verteilbares IPA ohne Google-Client-ID ist ein Fehler. Nori 1.25.0
+      # (37) ging so hinaus: `Nori.xcconfig` bindet `Google.local.xcconfig` nur
+      # optional ein — für Entwicklungs-Builds gewollt —, im Runner-Checkout gibt
+      # es die Datei aber nicht, der Build lief grün, und die App meldete
+      # „ohne Google-Abgleich gebaut".
+      #
+      # Die iOS-Client-ID ist kein Secret, gehört aber nicht ins Repository. Sie
+      # liegt auf dem Runner unter ~/.config/nori/secrets/google-ios-client-id,
+      # neben den OAuth-JSON der anderen Plattformen, und dasselbe Werkzeug wie
+      # am Entwicklerrechner schreibt daraus die nicht eingecheckte
+      # Google.local.xcconfig. Fehlt die Datei, bricht der Job hier ab.
+      - name: Google OAuth für iOS bereitstellen
+        run: python3 tools/configure-google-oauth.py --ios
+
+      - name: Swift-Pakete auflösen
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori
+
+      - name: Unsigniert für das Gerät bauen
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project native/Nori-iOS/Nori.xcodeproj \
+            -scheme Nori \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ipa" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM= \
+            ONLY_ACTIVE_ARCH=NO \
+            build | tee "$RUNNER_TEMP/nori-ipa.log"
+
+      - name: Google OAuth im gebauten Programm prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/ipa/Build/Products" -name 'Nori.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          python3 tools/configure-google-oauth.py --verify-ios-app "$APP"
+
+      # CFBundleShortVersionString, CFBundleVersion und Bundle-ID des gebauten
+      # Programms gegen den Commit — das ist, was das Gerät später vergleicht.
+      - name: Version im gebauten Programm prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/ipa/Build/Products" -name 'Nori.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          python3 tools/nori-release.py check-app --platform ios --app "$APP" --release-version "$RELEASE_VERSION"
+
+      - name: In eine IPA packen
+        id: pack
+        shell: bash
+        env:
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/ipa/Build/Products" -name 'Nori.app' -path '*iphoneos*' | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "Build lief durch, aber Nori.app fehlt." >&2
+            exit 1
+          fi
+
+          WORK="$RUNNER_TEMP/payload"
+          OUT="$RUNNER_TEMP/nori-ipa"
+          rm -rf "$WORK" "$OUT"
+          mkdir -p "$WORK/Payload" "$OUT"
+          cp -R "$APP" "$WORK/Payload/Nori.app"
+          rm -f "$WORK/Payload/Nori.app/embedded.mobileprovision"
+          (cd "$WORK" && zip -qry "$OUT/$ASSET" Payload)
+
+          echo "path=$OUT/$ASSET" >> "$GITHUB_OUTPUT"
+          ls -lh "$OUT/$ASSET"
+
+      - name: Inhalt der IPA protokollieren
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/payload/Payload/Nori.app"
+          PLIST="$APP/Info.plist"
+
+          echo "── Info.plist ───────────────────────────────"
+          for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion \
+                     CFBundleIconName CFBundleExecutable MinimumOSVersion \
+                     DTPlatformName DTPlatformVersion DTSDKName DTXcode \
+                     LSRequiresIPhoneOS UIDeviceFamily; do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || echo "— fehlt —")"
+            printf '%-30s %s\n' "$key" "$value"
+          done
+
+          echo "── Icons im Bundle ──────────────────────────"
+          ls "$APP" | grep -i -E 'assets\.car|appicon' || echo "weder Assets.car noch AppIcon-Dateien"
+
+          echo "── Signatur ─────────────────────────────────"
+          codesign -dv "$APP" 2>&1 | head -5 || echo "nicht signiert (erwartet)"
+
+          echo "── Architektur und Build-Version ────────────"
+          otool -l "$APP/Nori" 2>/dev/null \
+            | grep -A 5 LC_BUILD_VERSION | head -12 || echo "LC_BUILD_VERSION nicht lesbar"
+          file "$APP/Nori" 2>/dev/null || true
+
+          echo "── Aufbau der IPA ───────────────────────────"
+          unzip -l "${{ steps.pack.outputs.path }}" | head -8
+
+      # Unabhängig von jeder Build-Einstellung: die fertige IPA wird selbst
+      # entpackt und ihre Info.plist geprüft. Erst danach wird hochgeladen.
+      - name: Google OAuth in der fertigen IPA prüfen
+        run: python3 tools/configure-google-oauth.py --verify-ios-ipa "${{ steps.pack.outputs.path }}"
+
+      # Name, Version und Build der IPA gegen das Projekt, keine fremden
+      # Zugangsdaten, Tokens oder lokalen Dateien — und die Prüfsumme genau
+      # dieser geprüften Datei. Der Release veröffentlicht nur eine IPA mit
+      # derselben Prüfsumme.
+      - name: IPA für den Release prüfen
+        id: release-check
+        run: python3 tools/nori-release.py verify --asset ios --file "${{ steps.pack.outputs.path }}" --release-version "$RELEASE_VERSION" --github-output
+
+      # Im Release nur die Übergabe an den Release-Job: ein Tag. Als Testpaket
+      # drei Tage — was bleiben soll, gehört an einen Release.
+      - name: IPA hochladen
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: ${{ steps.pack.outputs.path }}
+          if-no-files-found: error
+          retention-days: ${{ steps.meta.outputs.retention }}
+          overwrite: true
+
+      - name: Lokale Google-Konfiguration entfernen
+        if: always()
+        run: |
+          rm -f native/Nori-iOS/Config/Google.local.xcconfig
+          rm -rf "$RUNNER_TEMP/payload" "$RUNNER_TEMP/nori-ipa"
+
+      - name: Build-Log bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-ipa-log
+          path: ${{ runner.temp }}/nori-ipa.log
+          if-no-files-found: ignore
+          retention-days: 3

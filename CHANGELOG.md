@@ -3,9 +3,183 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.21.0**, iOS/iPadOS **1.26.0**,
-Windows **2.1.0**, LG webOS **2.5.0**.
+Seit 2.6.0 tragen alle Plattformen dieselbe Nummer: Nori **2.6.0** für
+iOS/iPadOS, macOS, Windows und LG webOS, veröffentlicht als ein gemeinsamer
+GitHub Release `Nori v2.6.0`. Die Abschnitte darunter stammen aus der Zeit
+getrennter Stände; zuletzt waren das iOS/iPadOS 1.26.0, macOS 1.21.0,
+Windows 2.1.0 und LG webOS 2.5.0.
+
+## [Nori 2.6.0] — 2026-09-17
+
+Ab dieser Version tragen alle Nori-Apps **dieselbe Versionsnummer** und
+erscheinen gemeinsam in **einem** GitHub Release: Tag `v2.6.0`, Titel
+„Nori v2.6.0“. An den Apps selbst ändert sich dabei nichts — Funktionen,
+Oberflächen, Bibliotheksschema (v6), Abgleich und Anmeldung sind die des
+Stands darunter. Dessen Änderungen (iOS 1.26.0 · macOS 1.21.0 · Windows
+2.1.0 · webOS 2.5.0) stecken in diesem Release, denn einen eigenen Release
+hatten sie nie.
+
+**Warum 2.6.0.** Die höchste bisher vergebene Nummer ist webOS 2.5.0. Die
+erste gemeinsame Nummer liegt darüber, damit nie zwei verschiedene Pakete
+dieselbe Nummer tragen. Keine Plattform wird zurückgestuft: iOS/iPadOS geht
+von 1.26.0 auf 2.6.0, macOS von 1.21.0, Windows von 2.1.0 und LG webOS von
+2.5.0.
+
+### Allgemein
+
+- **Eine Versionsnummer für alle Plattformen.** iOS/iPadOS, macOS, Windows
+  und LG webOS tragen 2.6.0 — ebenso der gemeinsame Kern, die
+  Anwendungsschicht und der Nori-Server.
+- **Ein Release je Version.** Der Workflow „Nori Release“ baut alle gewählten
+  Plattformen aus demselben Commit, prüft jedes Paket und hängt alle an einen
+  Release `Nori v<Version>` mit dem Tag `v<Version>`. Getrennte Tags wie
+  `ios-v…` oder `webos-v…` entstehen nicht mehr; die vorhandenen bleiben
+  unverändert stehen.
+- **Einheitliche Dateinamen** nach dem Schema
+  `Nori-<Plattform>-v<Version>.<Endung>`.
+- **Prüfsummen.** Jeder Release enthält `checksums-sha256.txt` mit der
+  SHA-256-Summe jedes Pakets.
+- **Neue Stände werden als neuer erkannt.** Die Buildnummern steigen mit:
+  iOS/iPadOS 41 (vorher 40), macOS 32 (vorher 31). Ein Release entsteht nur,
+  wenn seine Version über jeder bisher vergebenen liegt — auch über den alten
+  Plattform-Tags — und die Buildnummern über denen jedes früheren Releases.
+
+| Plattform | Datei im Release |
+| --- | --- |
+| iOS / iPadOS | `Nori-iOS-v2.6.0.ipa` |
+| macOS | `Nori-macOS-Source-v2.6.0.zip` |
+| Windows | `Nori-Windows-v2.6.0.exe` (Installer), `Nori-Windows-v2.6.0.zip` (ohne Installation) |
+| LG webOS | `Nori-webOS-v2.6.0.ipk` |
+
+### iOS / iPadOS
+
+- Version 2.6.0 (vorher 1.26.0), Build 41. Keine funktionale Änderung.
+- Die IPA heißt jetzt `Nori-iOS-v2.6.0.ipa` und ist weiterhin unsigniert.
+- Eine IPA entsteht nicht mehr bei jedem Push auf `main`, sondern im Release
+  oder von Hand über „Build iOS“ → „IPA bauen“. Vor dem Packen wird die
+  Version des gebauten Programms mit dem Commit verglichen.
+
+### macOS
+
+- Version 2.6.0 (vorher 1.21.0), Build 32. Keine funktionale Änderung.
+- „Neu in“ im Einstellungsfenster nennt die gemeinsame Version.
+- Das Quellpaket heißt `Nori-macOS-Source-v2.6.0.zip` und wird direkt aus dem
+  Commit geschnürt, nicht mehr aus dem Arbeitsverzeichnis. Vorher entsteht ein
+  Release-Build der App, dessen Version und Build geprüft werden.
+
+### Android / Google TV
+
+- Keine App in diesem Repository und deshalb nicht Teil des Releases; die
+  Release Notes sagen das ausdrücklich. Der von Hand gestartete Durchbau des
+  Swift-Kerns für Android bleibt, wie er ist.
+
+### Windows
+
+- Version 2.6.0 (vorher 2.1.0). Keine funktionale Änderung.
+- Installer `Nori-Windows-v2.6.0.exe` und die Fassung ohne Installation
+  `Nori-Windows-v2.6.0.zip` gehören jetzt zum gemeinsamen Release. Vor der
+  Veröffentlichung wird beides geprüft: Produktversion der Programme und
+  Inhalt von `app.asar`.
+- „Build Windows“ baut, prüft und packt auf demselben Mac wie die übrigen
+  Läufe. Installer und ZIP entstehen dort ohne Wine — `electron-builder` 26
+  braucht es unter macOS nicht mehr; nachgestellt am 17.09.
+- Kein eigener Tag `windows-v…` mehr. Installer und ZIP eines gewöhnlichen
+  Pushs werden gepackt und geprüft, aber nicht mehr hochgeladen.
+
+### webOS
+
+- Version 2.6.0 (vorher 2.5.0). Keine funktionale Änderung.
+- Im Release heißt das Paket `Nori-webOS-v2.6.0.ipk`;
+  `npm run webos:package` legt es weiterhin als
+  `tv.nori.app_<Version>_all.ipk` ab.
+- Bildschirmfotos des Fernbedienungslaufs werden nur noch bei einem
+  Fehlschlag hochgeladen.
+
+### Technische Änderungen
+
+- **Build-System: ein zentraler Release-Workflow.**
+  `.github/workflows/release.yml` („Nori Release“, nur von Hand) prüft die
+  Version, testet den gemeinsamen Kern (Swift, TypeScript, Nori-Server), baut
+  die gewählten Plattformen, prüft die Pakete, legt den Release an, prüft ihn
+  von außen nach und räumt erst dann auf. Scheitert ein Schritt, wird weder
+  veröffentlicht noch aufgeräumt. Ein Probelauf baut und prüft alles, ohne zu
+  veröffentlichen.
+- **Weniger Workflows.** „Package iOS IPA“ ist in „Build iOS“ aufgegangen,
+  „Package macOS Source“ in „Build macOS“. Die vier Plattform-Läufe lassen
+  sich vom Release aufrufen und legen keine eigenen Releases mehr an.
+- **Aufräumen nach dem Release.** Nach einem veröffentlichten und
+  nachgeprüften Release löscht der Workflow alte, abgeschlossene Läufe der
+  Nori-Build- und Release-Workflows samt Protokollen und Artefakten. Stehen
+  bleiben der laufende Release, unfertige und neuere Läufe sowie die
+  Prüfläufe des veröffentlichten Stands und offener Pull Requests. Releases,
+  Anhänge, Tags, Branches und Workflow-Dateien bleiben unberührt.
+- **Kurze Aufbewahrung.** Übergabe-Artefakte eines Releases einen Tag,
+  Testpakete und Diagnose drei Tage (vorher bis zu 30 bzw. 90 Tage).
+- **Versionswerkzeug** `tools/nori-version.py` mit `show`, `check`, `set` und
+  `bump patch|minor|major`. Es kennt alle 15 Dateien, in denen die Nummer
+  steht, und erhöht die Buildnummern mit. `check --against origin/main`
+  verlangt eine höhere Nummer, sobald sich etwas ändert, das in einem Paket
+  landet — geprüft bei jedem Push im Lauf „Check release pipeline“.
+- `tools/nori-release.py` neu gefasst: gemeinsamer Tag und Release, Prüfer
+  für Windows-Installer und -ZIP, Prüfsummendatei, Nachprüfung und
+  Aufräumen. Das Nachholen einzelner Plattform-Releases (`from-run`)
+  entfällt — ein Release baut immer frisch.
+- Die Lockfiles tragen jetzt ebenfalls die gemeinsame Nummer. Die von
+  `apps/windows` bildet dazu die Abhängigkeiten der Anwendungsschicht so ab,
+  wie sie seit 2.4.0 in deren `package.json` stehen.
+- Kern, Nori-Server, Abgleich und TMDB: unverändert.
+
+### Bekannte Einschränkungen
+
+- **Windows im Release braucht den Google-Desktop-Client.** Solange die
+  Repository-Secrets `NORI_GOOGLE_DESKTOP_CLIENT_ID` und
+  `NORI_GOOGLE_DESKTOP_CLIENT_SECRET` fehlen, bricht ein Release mit Windows
+  sofort ab; Windows lässt sich dann im Release abwählen.
+- **Windows-Pakete sind kreuzgebaut.** Sie entstehen auf einem Mac; die
+  Prüfung gegen das gepackte Programm läuft nur auf einem Windows-Rechner.
+  Nicht signiert — SmartScreen fragt beim ersten Start nach.
+- **macOS weiterhin als Quellpaket.** Für ein installierbares Programm fehlen
+  ein Zertifikat „Developer ID Application“ und die Notarisierung.
+- **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
+  werden.
+
+### Tests
+
+Am Runner-Mac (Xcode 27 Beta, Node 26, Python 3.14), 17.09.:
+
+- `tools/test_nori_release.py`: 82 Tests, darunter die Struktur aller
+  Workflows (Auslöser, `needs`, `if`, Rechte, Aufbewahrung, Reihenfolge von
+  Prüfung und Hochladen). `tools/test_nori_version.py`: 31 Tests.
+  `test_check_webos_package.py` 22, `test_configure_google_oauth.py` 26.
+- `swift test`: 515 Tests. `check-apple-sources.py`: keine Auffälligkeiten —
+  und die Gegenprobe mit verschobener IPA-Prüfung schlägt an.
+- `shared/nori-core`: 221 Tests, `services/nori-api`: 13 Tests,
+  `apps/webos`: `tsc` und Vite, Paket samt `check-webos-package.py
+  --production`.
+- Echte Pakete, gebaut wie in den neuen Jobs und mit `nori-release.py
+  verify` geprüft: IPA aus einem Release-Build für das Gerät,
+  macOS-Release-Build (x86_64 und arm64) samt Quellpaket mit 127 Dateien und
+  erhaltenen Symlinks, `.ipk`, Windows-Installer und -ZIP mit Produktversion
+  2.6.0.0 — ohne Wine gepackt. Damit einmal `publish`, `validate` und
+  `cleanup` gegen den GitHub-Nachbau; `shasum -a 256 -c` bestätigt die
+  Prüfsummendatei. Das war vor dem Zusammenführen mit `main`, also mit den
+  Buildnummern 40 und 31.
+- Lesend gegen GitHub: `prepare` für v2.6.0 besteht (Buildnummern der alten
+  Tags höchstens 39 bzw. 30). Der Aufräumplan für die echten Läufe ergibt
+  913 von 922 löschbar, 9 geschützt, keinen fremden Workflow.
+- CI des Branches auf dem Runner: Build iOS (nur Simulator, IPA-Job
+  übersprungen), Build macOS (nur Debug), Swift tests, Check Apple sources,
+  Check release pipeline und Build Windows grün — Letzterer mit
+  Desktop-Prüfung, Rosetta-Prüfung, Installer und ZIP ohne Wine und
+  `verify` beider Pakete, ohne Hochladen. Build webOS scheiterte damals am
+  Referenzvergleich des Pakets; dessen Korrektur kam mit dem Stand darunter.
+- Danach `main` hereingeholt (iOS 1.26.0 · macOS 1.21.0 · Windows 2.1.0 ·
+  webOS 2.5.0): Versionen auf 2.6.0 angeglichen, Buildnummern auf 41 und 32,
+  und alle Prüfungen noch einmal — Werkzeuge, Apple-Quellen, `swift test`,
+  Versionsvergleich gegen `main`, Notes.
+- Nicht geprüft: ein echter Release-Lauf in Actions (er soll erst nach dem
+  Merge von Hand gestartet werden), Windows mit eingebautem Google-Client
+  (Secrets fehlen) und das Windows-Paket auf echtem Windows.
 
 ## [iOS 1.26.0] · [macOS 1.21.0] · [Windows 2.1.0] · [webOS 2.5.0] — 2026-09-17
 

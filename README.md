@@ -15,12 +15,25 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 ## Aktueller Stand
 
-| Plattform | Version | Status |
-| --- | --- | --- |
-| iOS / iPadOS | **1.26.0** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.21.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
-| Windows | **2.1.0** | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
-| LG webOS | **2.5.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+Nori **2.6.0** — seit 2.6.0 tragen alle Apps dieselbe Versionsnummer und
+erscheinen gemeinsam in einem GitHub Release `Nori v2.6.0` (Tag `v2.6.0`).
+Wie ein Release entsteht: [docs/releases.md](docs/releases.md).
+
+| Plattform | Version | Paket im Release | Status |
+| --- | --- | --- | --- |
+| iOS / iPadOS | **2.6.0** (Build 41) | `Nori-iOS-v2.6.0.ipa`, unsigniert | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **2.6.0** (Build 32) | `Nori-macOS-Source-v2.6.0.zip`, Quellpaket | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| Windows | **2.6.0** | `Nori-Windows-v2.6.0.exe`, `Nori-Windows-v2.6.0.zip` | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
+| LG webOS | **2.6.0** | `Nori-webOS-v2.6.0.ipk` | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+| Android / Google TV | — | — | Keine App in diesem Repository |
+
+Die Nummer setzt und prüft `tools/nori-version.py`:
+
+```bash
+python3 tools/nori-version.py show     # alle Stellen mit ihrer Nummer
+python3 tools/nori-version.py bump minor
+python3 tools/nori-version.py check
+```
 
 ## Projektstruktur
 
@@ -476,9 +489,9 @@ Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am g
 
 Der Lauf **Build webOS** liegt auf demselben Runner, braucht dort aber kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
 
-GitHub-Releases entstehen automatisch und plattformgetrennt als letzter Job der Paket-Läufe auf `main` — erst nachdem das Paket gebaut und mit allen Produktions- und Zugangsdatenprüfungen bestanden hat: `ios-v<VERSION>` mit der unsignierten IPA aus **Package iOS IPA**, `webos-v<VERSION>` mit dem produktiven `.ipk` aus **Build webOS**, `macos-v<VERSION>` mit dem Quellpaket aus **Package macOS Source**. Jede Version bekommt höchstens einen Release; Tags werden nie verschoben. Einzelheiten: [docs/releases.md](docs/releases.md).
+Ein Release entsteht von Hand und für alle Plattformen zugleich: **GitHub → Actions → Nori Release → Run workflow → Version 2.6.0**. Der Lauf prüft Version und Changelog, testet den gemeinsamen Kern, baut iOS, macOS, webOS und Windows aus demselben Commit, prüft jedes Paket, legt den Release `Nori v<VERSION>` mit dem Tag `v<VERSION>` und `checksums-sha256.txt` an, prüft ihn nach und löscht erst dann alte Läufe der Nori-Workflows. Jede Version bekommt genau einen Release; Tags werden nie verschoben, Releases nie gelöscht. Einzelheiten: [docs/releases.md](docs/releases.md).
 
-Release-Quellpakete müssen neben dem jeweiligen Plattformordner auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md` enthalten, damit die Symlinks im Xcode-Projekt auflösbar bleiben.
+Das macOS-Quellpaket enthält neben `native/Nori-macOS` auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md`, damit die Symlinks im Xcode-Projekt auflösbar bleiben. Es wird aus dem Commit selbst geschnürt; Symlinks bleiben Symlinks.
 
 ## Technische Hinweise
 

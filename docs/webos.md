@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.3.0**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.6.0** — der gemeinsamen Nori-Version. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -415,7 +415,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.3.0_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.6.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -435,14 +435,26 @@ npm run dev            # hört auf 0.0.0.0:8730, TMDB ohne Einrichtung
 derselben Nummer, aber unterschiedlichem Inhalt, sind hinterher nicht mehr
 unterscheidbar — und der Fernseher installiert das zweite nicht über das erste.
 
-Zu erhöhen sind `apps/webos/appinfo.json`, `apps/webos/package.json`,
-`shared/nori-core/package.json`, `services/nori-api/package.json` und
-`API_VERSION` in `services/nori-api/src/server.ts`; dazu gehört ein Abschnitt
-`## [webOS x.y.z]` im `CHANGELOG.md` und die Zeile in seiner Übersicht. Die
-Oberfläche zeigt die Nummer unter Mehr → Nori; sie wird beim Bauen aus
-`appinfo.json` gelesen. `python3 tools/check-webos-package.py` vergleicht alle vier
-Stellen samt Paketnamen und den Dateien im Paket und bricht ab, wenn eine
-abweicht.
+Seit 2.6.0 ist das die **gemeinsame Nori-Version** aller Plattformen. Gesetzt
+wird sie an einer Stelle für alle:
+
+```bash
+python3 tools/nori-version.py bump patch    # oder minor, major, set x.y.z
+```
+
+Das Werkzeug schreibt sie unter anderem in `apps/webos/appinfo.json`,
+`apps/webos/package.json`, `shared/nori-core/package.json`,
+`shared/nori-app/package.json`, `services/nori-api/package.json` und
+`API_VERSION` in `services/nori-api/src/server.ts`. Dazu gehört ein Abschnitt
+`## [Nori x.y.z]` im `CHANGELOG.md` und `Nori **x.y.z**` in seiner Übersicht.
+Die Oberfläche zeigt die Nummer unter Mehr → Nori; sie wird beim Bauen aus
+`appinfo.json` gelesen. `python3 tools/check-webos-package.py` vergleicht die
+webOS-Stellen samt Paketnamen und den Dateien im Paket,
+`python3 tools/nori-version.py check` alle Stellen aller Plattformen.
+
+Im GitHub Release heißt das Paket `Nori-webOS-v<VERSION>.ipk`
+([releases.md](releases.md)); `npm run webos:package` legt es weiterhin als
+`tv.nori.app_<VERSION>_all.ipk` ab. Für `ares-install` ist der Name gleich.
 
 ## Entwicklungsstand
 
@@ -623,8 +635,9 @@ demselben self-hosted Mac wie alle anderen Läufe (siehe
 `docs/self-hosted-runner.md`) — ist der aus, wartet der Job in der
 Warteschlange, statt zu scheitern. Xcode braucht er nicht, nur Node.
 
-Das Artefakt `Nori-webOS` ist seit 2.2.1 das **installierbare Paket mit
-Google-Abgleich**. Der Fernbedienungslauf läuft gegen einen Build mit leeren
+Das abgelegte Paket ist seit 2.2.1 das **installierbare Paket mit
+Google-Abgleich** — im Release als `Nori-webOS-v<VERSION>.ipk`, bei einem
+gewöhnlichen Push als Testpaket mit dem Commit im Namen. Der Fernbedienungslauf läuft gegen einen Build mit leeren
 TV-Variablen; danach schreibt `tools/configure-google-oauth.py --webos` die
 `.env.local` aus `~/.config/nori/secrets/google-webos-oauth.json` auf dem
 Runner, der produktive Build wird gepackt und mit

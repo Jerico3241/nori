@@ -11,6 +11,12 @@ name: Build webOS
 # Anders als die Swift-Läufe braucht dieser hier kein Xcode, nur Node. Er ist
 # damit der einzige Lauf des Projekts, der eine Änderung tatsächlich
 # durchbauen und testen kann, statt sie nur statisch zu prüfen.
+#
+# Derselbe Lauf baut das `.ipk` für einen Release: `Nori Release` ruft ihn mit
+# `release-version` auf. Das Paket heißt dann `Nori-webOS-v<VERSION>.ipk` und
+# liegt nur einen Tag als Übergabe am Lauf; ein Testpaket aus einem Push trägt
+# den Commit im Namen und bleibt drei Tage. Einen eigenen Release legt dieser
+# Lauf nicht mehr an.
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
@@ -25,15 +31,27 @@ on:
       - 'tools/configure-google-oauth.py'
       - 'tools/test_configure_google_oauth.py'
       - 'tools/nori-release.py'
+      - 'tools/nori-version.py'
       - '.github/workflows/build-webos.yml'
-      - '.github/workflows/release.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-version:
+        description: Gemeinsame Nori-Version des Releases
+        type: string
+        required: true
+    outputs:
+      asset:
+        description: Dateiname des geprüften Pakets
+        value: ${{ jobs.build.outputs.asset }}
+      sha256:
+        description: Prüfsumme des geprüften Pakets
+        value: ${{ jobs.build.outputs.sha256 }}
 
-# Auf main wird ein laufender Lauf nicht abgebrochen: sein letzter Job legt den
-# GitHub-Release an und soll nie mittendrin enden.
+# Im Release eine eigene Gruppe je Lauf — Begründung in build-ios.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ inputs.release-version && format('nori-release-{0}-webos', github.run_id) || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !inputs.release-version }}
 
 permissions:
   contents: read
@@ -43,10 +61,21 @@ jobs:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 20
     outputs:
+      asset: ${{ steps.meta.outputs.asset }}
       sha256: ${{ steps.release-check.outputs.sha256 }}
+    env:
+      RELEASE_VERSION: ${{ inputs.release-version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Gemeinsame Version und Dateiname aus dem Commit. Im Release muss die
+      # Nummer die bestätigte sein; ein Testpaket trägt den Commit im Namen.
+      - name: Version prüfen
+        id: meta
+        run: python3 tools/nori-release.py meta --platform webos --release-version "$RELEASE_VERSION" --github-output
 
       # Node ist auf dem Runner nicht garantiert und soll auch nicht in einer
       # Version festhängen, die zufällig dort liegt.
@@ -126,21 +155,11 @@ jobs:
           kill "$MOCK" 2>/dev/null || true
           exit "$STATUS"
 
-      # Nur bei einem Fehlschlag, vorher `always()`.
-      #
-      # Bildschirmfotos sind Diagnose, nicht Ergebnis: Auf einem grünen Lauf
-      # sieht sie niemand an. Am 17.09. haben sie einen solchen Lauf gekippt —
-      # der Fernbedienungslauf meldete 341/341, der Upload danach scheiterte an
-      # `Artifact storage quota has been hit`, und alles ab dort wurde
-      # übersprungen: der produktive Build, das Paket und sein
-      # Referenzvergleich. Ein Diagnoseschritt hat die eigentliche Prüfung
-      # verdeckt.
-      #
-      # `continue-on-error` wäre der naheliegende Griff und ist hier verboten:
-      # `tools/test_nori_release.py` lässt in einem Paket-Job keinen Schritt zu,
-      # der übergangen werden darf — sonst entstünde ein Paket über einer
-      # ausgefallenen Prüfung. `if: failure()` erreicht dasselbe, ohne die Regel
-      # anzutasten: Auf dem grünen Weg läuft der Schritt gar nicht erst.
+      # Nur bei einem Fehlschlag: Bildschirmfotos sind Diagnose, nicht
+      # Ergebnis. Am 17.09. hat ihr Hochladen auf einem grünen Lauf das
+      # Artefakt-Kontingent gesprengt und damit Paket und Referenzvergleich
+      # übersprungen. `if: failure()` statt `continue-on-error`, das in einem
+      # Paket-Job nicht vorkommen darf.
       - name: Bildschirmfotos ablegen
         if: failure()
         uses: actions/upload-artifact@v4
@@ -198,30 +217,44 @@ jobs:
       # Test-Zugangsdaten, keine Tokens, keine .env, keine OAuth-JSON — und
       # derselbe Stand wie der getestete Build.
       - name: Paket prüfen
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          VERSION="$(node -p "require('./apps/webos/appinfo.json').version")"
           python3 tools/check-webos-package.py --production \
             --ipk "apps/webos/tv.nori.app_${VERSION}_all.ipk" \
             --reference-dist "$RUNNER_TEMP/webos-dist-tested"
 
-      # Name und Version des produktiven Pakets, keine .env, keine fremden
-      # Zugangsdaten — und die Prüfsumme genau dieses geprüften Pakets. Der
-      # Release-Job veröffentlicht nur ein .ipk mit derselben Prüfsumme, also nie
+      # Unter dem gemeinsamen Namen `Nori-webOS-v<VERSION>.ipk` ablegen und
+      # noch einmal prüfen: Version und Paketname im Paket, keine .env, keine
+      # fremden Zugangsdaten — und die Prüfsumme genau dieser Datei. Der
+      # Release veröffentlicht nur ein .ipk mit derselben Prüfsumme, also nie
       # den Build ohne Google-Zugang aus dem Fernbedienungslauf.
       - name: Paket für den Release prüfen
         id: release-check
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ASSET: ${{ steps.meta.outputs.asset }}
         run: |
-          VERSION="$(node -p "require('./apps/webos/appinfo.json').version")"
-          python3 tools/nori-release.py verify --platform webos \
-            --file "apps/webos/tv.nori.app_${VERSION}_all.ipk" --github-output
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/nori-webos"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          cp "apps/webos/tv.nori.app_${VERSION}_all.ipk" "$OUT/$ASSET"
+          echo "path=$OUT/$ASSET" >> "$GITHUB_OUTPUT"
+          python3 tools/nori-release.py verify --asset webos --file "$OUT/$ASSET" \
+            --release-version "$RELEASE_VERSION" --github-output
 
+      # Im Release nur die Übergabe an den Release-Job: ein Tag. Als Testpaket
+      # drei Tage — was bleiben soll, gehört an einen Release.
       - name: Paket als Artefakt ablegen
         uses: actions/upload-artifact@v4
         with:
-          name: Nori-webOS
-          path: apps/webos/*.ipk
+          name: ${{ steps.meta.outputs.artifact }}
+          path: ${{ steps.release-check.outputs.path }}
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ steps.meta.outputs.retention }}
+          overwrite: true
 
       # Zugangsdaten verlassen den Runner nur im hochgeladenen Paket. Die
       # .env.local, der produktive Build und das Paket bleiben nicht im
@@ -230,20 +263,5 @@ jobs:
         if: always()
         run: |
           rm -f apps/webos/.env.local
-          rm -rf apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
+          rm -rf apps/webos/dist "$RUNNER_TEMP/webos-dist-tested" "$RUNNER_TEMP/nori-webos"
           rm -f apps/webos/*.ipk
-
-  # GitHub-Release `webos-v<VERSION>` mit genau dem geprüften produktiven .ipk —
-  # nur auf main, nur nach einem grünen Build-Job. Gibt es den Release schon,
-  # endet er grün.
-  release:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/release.yml
-    with:
-      platform: webos
-      artifact: Nori-webOS
-      sha256: ${{ needs.build.outputs.sha256 }}

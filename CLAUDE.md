@@ -102,6 +102,7 @@ Vor jedem Push:
 ```bash
 python3 tools/check-apple-sources.py
 cd native && swift test
+python3 tools/nori-version.py check --against origin/main
 ```
 
 Die echten App-Typechecks laufen über GitHub Actions auf dem self-hosted Mac:
@@ -135,9 +136,10 @@ npm --prefix apps/windows run package        # Installer und ZIP
 
 `test:desktop` startet die **gebaute** App über `_electron.launch` und dazu
 einen Nachbau des Nori-Servers über `https:`. Unter Linux braucht es
-`xvfb-run -a` davor. Wer den Installer plattformübergreifend bauen will,
-braucht Wine (`wine64` **und** `wine32:i386`) — ohne die 32-Bit-Hälfte
-scheitert die Deinstallationsroutine von NSIS.
+`xvfb-run -a` davor. Wer den Installer unter Linux bauen will, braucht Wine
+(`wine64` **und** `wine32:i386`) — ohne die 32-Bit-Hälfte scheitert die
+Deinstallationsroutine von NSIS. Auf dem Mac geht es ohne Wine, auf einem
+Apple-Chip aber nur mit Rosetta 2 (`docs/windows.md`).
 
 Wer `shared/nori-app/**` ändert, ändert **beide** Apps. Dann gehören beide
 Läufe dazu, nicht nur der der eigenen Plattform.
@@ -147,39 +149,53 @@ Läufe dazu, nicht nur der der eigenen Plattform.
 - Oberflächentexte, README und Commit-Nachrichten sind deutsch.
 - Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`, `Windows: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- App-Versionen stammen auf den Apple-Plattformen ausschließlich aus `MARKETING_VERSION` der jeweiligen Xcode-Projekte.
+- Die öffentliche Version ist für **alle** Plattformen dieselbe (Nori-Version, seit 2.6.0). Auf den Apple-Plattformen gelangt sie ausschließlich über `MARKETING_VERSION` der Xcode-Projekte ins Bundle.
 - `config/contract.json` enthält keine App-Version.
 
-### Versionsnummer bei webOS
+### Versionsnummer
 
-Jedes neue installierbare webOS-Paket braucht eine **höhere** Nummer. Es dürfen
-niemals zwei unterschiedliche `.ipk` mit derselben Version entstehen: auf dem
-Fernseher installiert steht dann eine Fassung, die sich von außen nicht mehr von
+iOS/iPadOS, macOS, Windows und LG webOS tragen **eine gemeinsame Nummer**
+`x.y.z` — ebenso Kern, Anwendungsschicht und Nori-Server. Gesetzt und geprüft
+wird sie mit einem Werkzeug, das jede Stelle kennt (Xcode-Projekte,
+`NoriRelease.version` der Mac-App, `appinfo.json`, alle `package.json` und
+`package-lock.json`, `API_VERSION`):
+
+```bash
+python3 tools/nori-version.py show
+python3 tools/nori-version.py bump patch|minor|major   # oder: set x.y.z
+python3 tools/nori-version.py check --against origin/main
+```
+
+Jeder neue installierbare Stand braucht eine **höhere** Nummer. Es dürfen
+niemals zwei unterschiedliche Pakete mit derselben Version entstehen: auf einem
+Gerät installiert steht dann eine Fassung, die sich von außen nicht mehr von
 der anderen unterscheiden lässt, und ein Fehlerbericht dazu ist nicht mehr
-zuzuordnen.
+zuzuordnen. `bump` und `set` erhöhen deshalb auch `CURRENT_PROJECT_VERSION`
+(die Buildnummer) von iOS und macOS. Nach Semantic Versioning: Fehlerbehebung
+→ `patch`, neue Funktion → `minor`, Inkompatibles → `major`.
 
-Gleich stehen müssen `apps/webos/appinfo.json`, `apps/webos/package.json`,
-`shared/nori-core/package.json`, `shared/nori-app/package.json`,
-`services/nori-api/package.json`, `API_VERSION` in
-`services/nori-api/src/server.ts` und ein Abschnitt `[webOS <version>]` in
-`CHANGELOG.md` samt der Übersicht am Dateianfang.
-`tools/check-webos-package.py` prüft das, einschließlich der Version **im
-gebauten `.ipk`**.
+Dazu gehören ein Abschnitt `## [Nori x.y.z]` in `CHANGELOG.md` (Unterabschnitte
+*Allgemein*, *iOS / iPadOS*, *macOS*, *Android / Google TV*, *Windows*,
+*webOS*, *Technische Änderungen* — nur die mit echten Änderungen),
+`Nori **x.y.z**` in dessen Übersicht und in `README.md` unter „Aktueller
+Stand“, auf dem Mac die Hinweise in `NoriRelease.highlights`.
 
-Weil `shared/nori-app/` in beiden Apps steckt, gilt: Wer dort etwas ändert,
-erhöht **beide** Versionen — die von webOS und die von Windows. Sonst gäbe es
-zwei verschiedene Fassungen unter derselben Nummer.
+`check` verlangt auf einem Branch, der etwas ändert, das in einem Paket landet,
+eine Nummer über jeder auf `main`; „Check release pipeline“ prüft das bei jedem
+Push. `tools/check-webos-package.py` prüft zusätzlich die Version **im gebauten
+`.ipk`**, `tools/nori-release.py verify` die in IPA, Quellpaket, Installer und
+ZIP.
 
-### Versionsnummer bei Windows
+### Releases
 
-Die Windows-Version steht in `apps/windows/package.json` und im
-`package.json` der Wurzel; beide müssen übereinstimmen, und ein Installer mit
-neuem Inhalt braucht eine neue Nummer — aus demselben Grund wie beim
-Fernseher. `electron-builder` nimmt die Nummer aus
-`apps/windows/package.json` und setzt sie in Dateinamen,
-Windows-Ressourcen und Deinstallationseintrag. Ein Abschnitt
-`[Windows <version>]` in `CHANGELOG.md` und die Übersicht am Dateianfang
-gehören dazu.
+Ein Release entsteht nur über den Workflow **Nori Release**
+(`.github/workflows/release.yml`, von Hand): ein Tag `v<VERSION>`, ein GitHub
+Release `Nori v<VERSION>`, Pakete `Nori-<Plattform>-v<VERSION>.<Endung>` und
+`checksums-sha256.txt`. Keine Plattform-Tags mehr (`ios-v…`, `webos-v…`), kein
+Tag von Hand, kein Release aus einem Plattform-Lauf. Erst nach dem
+nachgeprüften Release löscht er alte Läufe der Nori-Workflows — nie Releases,
+Anhänge, Tags oder Branches. Regeln: `docs/releases.md`, Logik:
+`tools/nori-release.py`.
 
 ## Datenmodell
 

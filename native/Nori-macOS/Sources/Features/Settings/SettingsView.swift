@@ -97,13 +97,17 @@ private struct WhatsNewSettingsTab: View {
     }
 }
 
-/// Kurzfassung des Changelogs für das Einstellungsfenster. Die App wird als
-/// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
-/// Vollständig in CHANGELOG.md im Projektverzeichnis.
+/// Kurzfassung des Changelogs für das Einstellungsfenster. Vollständig in
+/// CHANGELOG.md im Projektverzeichnis und an jedem GitHub Release.
+///
+/// `version` ist die gemeinsame Nori-Version aller Plattformen und muss
+/// `MARKETING_VERSION` entsprechen — `tools/nori-version.py` setzt und prüft
+/// beide zusammen.
 enum NoriRelease {
-    static let version = "1.21.0"
+    static let version = "2.6.0"
 
     static let highlights = [
+        "Nori trägt jetzt auf allen Plattformen dieselbe Versionsnummer: 2.6.0 folgt auf macOS 1.21.0. Neue Stände erscheinen als ein gemeinsamer GitHub Release je Version, mit einer Prüfsumme für jede Datei.",
         "Folgen, Staffeln und ganze Serien lassen sich von Hand als gesehen oder ungesehen markieren — im Kontextmenü der Folgenzeile und über das neue Menü neben „Abspielen“.",
         "Eine Serie lässt sich aus „Schau weiter“ nehmen, ohne den Stand zu verlieren: Angefangene Folgen werden zurückgesetzt, abgeschlossene bleiben abgeschlossen.",
         "Die Suche verzeiht Tippfehler und kennt Zweit- und Originaltitel. „shingeki no kyojin“ findet den Titel, den die Quelle „Attack on Titan“ nennt, „Damonenjager“ den „Dämonenjäger“.",

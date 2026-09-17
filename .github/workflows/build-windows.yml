@@ -1,119 +1,140 @@
 name: Build Windows
 
-# Der Lauf, der Nori für Windows baut — auf dem self-hosted Mac, wie alle
-# anderen Läufe des Projekts.
+# Der Lauf, der Nori für Windows baut, prüft und packt — auf dem self-hosted
+# Mac, wie alle anderen Läufe des Projekts.
 #
-# ## Warum nicht mehr auf einem Windows-Runner von GitHub
+# ## Warum nicht auf einem Windows-Runner von GitHub
 #
-# Weil es ihn nicht mehr gibt. Bei einem privaten Repository zählen gestellte
-# Runner gegen das Minutenkontingent, Windows mit Faktor 2, und das Kontingent
-# ist aufgebraucht — derselbe Grund, aus dem alle Apple-Läufe hier liegen.
-# Gemessen, nicht vermutet: Lauf 35225331616 lief am öffentlichen Repository
-# grün durch (14/14 Schritte, 4:25 min), Lauf 35227553568 zwanzig Minuten
-# später am privaten scheiterte nach vier Sekunden mit
-# `billable.WINDOWS.total_ms = 0` — der Job bekam nie einen Runner.
+# Weil keiner mehr startet: Bei einem privaten Repository zählen gestellte
+# Runner gegen das Minutenkontingent, Windows doppelt, und das Kontingent ist
+# aufgebraucht. Gemessen, nicht vermutet: Lauf 35225331616 lief am
+# öffentlichen Repository grün durch, Lauf 35227553568 am privaten endete nach
+# vier Sekunden mit `billable.WINDOWS.total_ms = 0` — der Job bekam nie einen
+# Runner.
 #
-# ## Was der Mac kann und was nicht
+# ## Was der Mac kann — und was nicht
 #
-# Bauen und durchspielen kann er alles: `tsc`, `esbuild` und Vite sind
-# plattformunabhängig, und die Desktop-Prüfung startet Electron für macOS mit
-# demselben Haupt- und Renderer-Code, den Windows später ausführt. Das ist die
-# Prüfung, die Fehler in der App findet.
+# Bauen, durchspielen und packen. `electron-builder` 26 schreibt Symbol und
+# Versionsangaben der EXE mit `resedit` (reines JavaScript) und liest die
+# NSIS-Deinstallationsroutine auf macOS ohne Wine aus dem fertigen Installer
+# (`UninstallerReader`). Wine braucht es nur unter Linux; auf einem Apple-Chip
+# aber Rosetta 2, weil der mitgelieferte NSIS-Compiler ein Intel-Programm ist.
+# Am 17.09. auf dem Runner-Mac nachgestellt: Installer und ZIP entstanden ohne
+# Wine, und `tools/nori-release.py verify` las Produktversion und `app.asar`
+# daraus.
 #
-# Zwei Schritte kann er **nicht**:
+# Nicht kann er: das gepackte `Nori.exe` starten. Die Desktop-Prüfung läuft
+# gegen Electron für macOS mit demselben Haupt- und Renderer-Code; die Prüfung
+# gegen das Paket nur auf einem Windows-Runner. Ein hier geschnürtes Paket ist
+# kreuzgebaut und auf dem Zielsystem ungetestet.
 #
-#   Packen   `electron-builder` ruft für Windows-Ressourcen und die
-#            NSIS-Deinstallationsroutine Windows-Programme auf. Auf einem Mac
-#            braucht es dafür Wine — in **beiden** Hälften, 64 und 32 Bit;
-#            ohne die 32-Bit-Hälfte scheitert NSIS an
-#            `failed to load syswow64\ntdll.dll`. Der Schritt darunter prüft
-#            das vorher und sagt genau das, statt mitten im Packen
-#            umzufallen.
-#
-#   Das Paket prüfen   Was dabei entsteht, ist eine `Nori.exe`. Die lässt sich
-#            auf einem Mac nicht starten, auch nicht unter Wine mit Playwright
-#            davor. Dieser Schritt läuft deshalb nur auf einem
-#            Windows-Runner — und steht hier, damit er wieder anspringt, sobald
-#            es einen gibt.
-#
-# Ein auf dem Mac geschnürtes Paket ist damit kreuzgebaut und auf dem Zielsystem
-# ungetestet. Wer Installer und ZIP wirklich geprüft haben will, braucht einen
-# self-hosted Windows-Runner. Siehe docs/windows.md.
+# Ein self-hosted Windows-Runner lässt sich ohne Änderung an dieser Datei
+# wählen: Repository-Variable `NORI_WINDOWS_RUNNER`, etwa
+# `["self-hosted", "Windows"]`. Dann läuft auch die Prüfung gegen das Paket.
+# Was er mitbringen muss: docs/windows.md.
 #
 # ## Wann er läuft
 #
-#   Pull Request   bei jeder Änderung an Windows, der geteilten Schicht oder
-#                  dem Kern — das Ergebnis liegt danach sieben Tage als
-#                  Artefakt am Lauf und lässt sich von github.com laden.
-#   Push auf main  dasselbe noch einmal auf dem gemergten Stand.
-#   von Hand       Actions → Build Windows → Run workflow.
+#   Push      bei jeder Änderung an Windows, der geteilten Schicht oder dem
+#             Kern: bauen, prüfen, packen — ohne Hochladen (rund 200 MB)
+#   von Hand  Actions → Build Windows → Run workflow; Installer und ZIP
+#             liegen danach drei Tage am Lauf
+#   Release   aufgerufen von `Nori Release` mit `release-version`; dann
+#             sind die Google-Secrets Pflicht
 #
-# Kein Tag-Auslöser, und der Branch-Filter bei `push` ist keine Zierde.
-# Seit der gemeinsamen Release-Pipeline veröffentlicht ausschließlich
-# `release.yml`, und `tools/test_nori_release.py` besteht darauf, dass **kein**
-# Workflow an einem Tag hängt — auch nicht mittelbar über ein `push` ohne
-# Branch-Filter, das für Tags mitläuft. Sonst stieße ein Release-Tag die Builds
-# ein zweites Mal an und legte einen zweiten Release an.
-#
-# Windows ist in dieser Pipeline noch nicht vorgesehen: `nori-release.py` kennt
-# ios, macos und webos. Installer und ZIP liegen deshalb vorerst als Artefakt
-# am Lauf, nicht an einem Release. Siehe docs/windows.md.
+# Kein Tag-Auslöser: veröffentlicht wird ausschließlich über `Nori Release`.
 on:
-  pull_request:
-    paths:
-      - 'apps/windows/**'
-      - 'shared/nori-app/**'
-      - 'shared/nori-core/**'
-      - '.github/workflows/build-windows.yml'
   push:
-    branches: [main]
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'apps/windows/**'
       - 'shared/nori-app/**'
       - 'shared/nori-core/**'
+      - 'tools/nori-release.py'
+      - 'tools/nori-version.py'
       - '.github/workflows/build-windows.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-version:
+        description: Gemeinsame Nori-Version des Releases
+        type: string
+        required: true
+    secrets:
+      NORI_GOOGLE_DESKTOP_CLIENT_ID:
+        required: false
+      NORI_GOOGLE_DESKTOP_CLIENT_SECRET:
+        required: false
+    outputs:
+      asset_installer:
+        description: Dateiname des geprüften Installers
+        value: ${{ jobs.build.outputs.asset_installer }}
+      asset_portable:
+        description: Dateiname des geprüften ZIP
+        value: ${{ jobs.build.outputs.asset_portable }}
+      sha256_installer:
+        description: Prüfsumme des geprüften Installers
+        value: ${{ jobs.build.outputs.sha256_installer }}
+      sha256_portable:
+        description: Prüfsumme des geprüften ZIP
+        value: ${{ jobs.build.outputs.sha256_portable }}
 
+# Im Release eine eigene Gruppe je Lauf — Begründung in build-ios.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ inputs.release-version && format('nori-release-{0}-windows', github.run_id) || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !inputs.release-version }}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    runs-on: [self-hosted, macOS]
-    timeout-minutes: 30
+    runs-on: ${{ vars.NORI_WINDOWS_RUNNER && fromJSON(vars.NORI_WINDOWS_RUNNER) || fromJSON('["self-hosted", "macOS"]') }}
+    timeout-minutes: 40
+    outputs:
+      asset_installer: ${{ steps.meta.outputs.asset_windows_installer }}
+      asset_portable: ${{ steps.meta.outputs.asset_windows_portable }}
+      sha256_installer: ${{ steps.installer.outputs.sha256 }}
+      sha256_portable: ${{ steps.release-check.outputs.sha256 }}
+    env:
+      RELEASE_VERSION: ${{ inputs.release-version }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      # Die Version steht in `apps/windows/package.json` und sonst nirgends —
-      # `electron-builder` nimmt sie von dort in Dateinamen,
-      # Windows-Ressourcen und Deinstallationseintrag. Sie muss zur Wurzel
-      # passen, sonst tragen Installer und Repository verschiedene Nummern.
-      - name: Version bestimmen
+      # Die Version steht in `apps/windows/package.json`; `electron-builder`
+      # nimmt sie von dort in Dateinamen, Versionsangaben der EXE und
+      # Deinstallationseintrag. Sie ist die gemeinsame Nori-Version — alle
+      # Stellen gleich, im Release die bestätigte.
+      - name: Version prüfen
         id: meta
         shell: bash
+        run: python3 tools/nori-release.py meta --platform windows --release-version "$RELEASE_VERSION" --github-output
+
+      # Ein Release ohne eingebauten Google-Client wäre eine Fassung ohne
+      # Abgleich — dieselbe Lehre wie bei der iOS-IPA 1.25.0. Geprüft wird nur,
+      # ob die Secrets gesetzt sind; ihr Wert erscheint nirgends.
+      - name: Google-Zugang für den Release prüfen
+        if: ${{ inputs.release-version }}
+        shell: bash
+        env:
+          HAS_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID != '' }}
+          HAS_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET != '' }}
         run: |
-          set -euo pipefail
-          VERSION="$(node -p "require('./apps/windows/package.json').version")"
-          ROOT="$(node -p "require('./package.json').version")"
-          if [ "$VERSION" != "$ROOT" ]; then
-            echo "apps/windows/package.json sagt $VERSION, package.json sagt $ROOT." >&2
+          if [ "$HAS_ID" != "true" ] || [ "$HAS_SECRET" != "true" ]; then
+            echo "::error::Für ein Windows-Release fehlen die Repository-Secrets NORI_GOOGLE_DESKTOP_CLIENT_ID und NORI_GOOGLE_DESKTOP_CLIENT_SECRET (docs/windows.md)."
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Nori für Windows $VERSION"
+          echo "Google-Desktop-Client ist hinterlegt."
 
       # Der geteilte Kern zuerst: die Windows-App bindet ihn als `file:`-Paket
       # ein und braucht seine gebauten Deklarationen für die Typprüfung.
@@ -150,21 +171,7 @@ jobs:
           npm i --no-save --no-audit --no-fund playwright
           node test/desktop.test.mjs
 
-      # Nur bei einem Fehlschlag, vorher `always()`.
-      #
-      # Bildschirmfotos sind Diagnose, nicht Ergebnis: Auf einem grünen Lauf
-      # sieht sie niemand an. Am 17.09. haben sie einen solchen Lauf gekippt —
-      # der Fernbedienungslauf meldete 341/341, der Upload danach scheiterte an
-      # `Artifact storage quota has been hit`, und alles ab dort wurde
-      # übersprungen: der produktive Build, das Paket und sein
-      # Referenzvergleich. Ein Diagnoseschritt hat die eigentliche Prüfung
-      # verdeckt.
-      #
-      # `continue-on-error` wäre der naheliegende Griff und ist hier verboten:
-      # `tools/test_nori_release.py` lässt in einem Paket-Job keinen Schritt zu,
-      # der übergangen werden darf — sonst entstünde ein Paket über einer
-      # ausgefallenen Prüfung. `if: failure()` erreicht dasselbe, ohne die Regel
-      # anzutasten: Auf dem grünen Weg läuft der Schritt gar nicht erst.
+      # Nur bei einem Fehlschlag — Begründung in build-webos.yml.
       - name: Bildschirmfotos ablegen
         if: failure()
         uses: actions/upload-artifact@v4
@@ -174,44 +181,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-      # Erst die Werkzeuge, dann packen — dieselbe Lehre wie bei den
-      # Apple-Läufen: eine fehlende Voraussetzung sieht sonst aus wie ein
-      # Fehler im Quelltext. `electron-builder` bricht ohne die 32-Bit-Hälfte
-      # von Wine mitten in NSIS ab, mit einer Meldung über `syswow64\ntdll.dll`,
-      # die niemand ohne Vorwissen einordnet.
+      # Wine braucht es auf dem Mac nicht (Kopf dieser Datei), wohl aber
+      # Rosetta 2 auf einem Apple-Chip: Der NSIS-Compiler, den
+      # `electron-builder` mitbringt, liegt für macOS nur als Intel-Programm
+      # vor. Ohne Rosetta bräche das Packen mit einer Meldung ab, die niemand
+      # darauf zurückführt.
       - name: Voraussetzungen fürs Packen
         shell: bash
         run: |
-          set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "Windows-Runner — kein Wine nötig."
-            exit 0
+          if [ "$RUNNER_OS" = "macOS" ] && [ "$(uname -m)" = "arm64" ]; then
+            if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+              echo "::error::Rosetta 2 fehlt – der NSIS-Compiler von electron-builder ist ein Intel-Programm. Einrichten: softwareupdate --install-rosetta --agree-to-license (docs/self-hosted-runner.md)."
+              exit 1
+            fi
+            echo "Rosetta 2 vorhanden."
           fi
-          MISSING=""
-          command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1 || MISSING="wine64"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Wine fehlt auf diesem Runner — ohne es entsteht kein Windows-Paket."
-            {
-              echo "  Gebraucht werden beide Hälften, 64 und 32 Bit."
-              echo "  Ohne die 32-Bit-Hälfte scheitert NSIS an syswow64\\ntdll.dll."
-              echo "  Einrichtung: docs/windows.md, Abschnitt 'In der CI bauen'."
-              echo "  Alternative ohne Wine: ein self-hosted Windows-Runner."
-            } >&2
-            exit 1
-          fi
-          wine64 --version 2>/dev/null || wine --version
 
+      # `npm run package` baut noch einmal — mit denselben Werten wie oben.
       - name: Installer und ZIP schnüren
         working-directory: apps/windows
+        env:
+          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
         run: npm run package
 
-      # Dieselben 56 Prüfungen noch einmal, aber gegen das **gepackte**
-      # Ergebnis: `electron-builder` entscheidet selbst, was ins `app.asar`
-      # kommt, und was dort fehlt, fällt sonst erst beim Nutzer auf.
-      # Nur auf einem Windows-Runner: Was `electron-builder` ablegt, ist eine
-      # `Nori.exe`, und die startet auf einem Mac nicht — auch nicht mit
-      # Playwright davor. Der Schritt bleibt stehen, damit er wieder
-      # anspringt, sobald ein Windows-Runner da ist.
+      # Dieselben Prüfungen noch einmal, aber gegen das **gepackte** Ergebnis:
+      # `electron-builder` entscheidet selbst, was ins `app.asar` kommt, und
+      # was dort fehlt, fällt sonst erst beim Nutzer auf. Nur auf einem
+      # Windows-Runner — `Nori.exe` startet auf dem Mac nicht.
       - name: Desktop-Prüfung gegen das Paket
         if: runner.os == 'Windows'
         working-directory: apps/windows
@@ -220,19 +217,70 @@ jobs:
           NORI_SHOTS: test-shots-packaged
         run: node test/desktop.test.mjs
 
-      - name: Paket ablegen
+      # Installer und ZIP unter den gemeinsamen Namen ablegen und prüfen:
+      # Produktversion der EXE, `app.asar` mit Version und Programm, keine
+      # fremden Zugangsdaten, keine Tokens — im Release zusätzlich, dass der
+      # Google-Desktop-Client wirklich eingebaut ist (`--production`).
+      - name: Installer für den Release prüfen
+        id: installer
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ASSET: ${{ steps.meta.outputs.asset_windows_installer }}
+          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/nori-windows"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          cp "apps/windows/release/Nori-Setup-$VERSION.exe" "$OUT/$ASSET"
+          python3 tools/nori-release.py verify --asset windows-installer --file "$OUT/$ASSET" \
+            --release-version "$RELEASE_VERSION" --github-output
+
+      - name: Pakete für den Release prüfen
+        id: release-check
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ASSET: ${{ steps.meta.outputs.asset_windows_portable }}
+          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/nori-windows"
+          cp "apps/windows/release/Nori-$VERSION-portable.zip" "$OUT/$ASSET"
+          PRODUCTION=""
+          if [ -n "$RELEASE_VERSION" ]; then
+            PRODUCTION="--production"
+          fi
+          python3 tools/nori-release.py verify --asset windows-portable --file "$OUT/$ASSET" \
+            --release-version "$RELEASE_VERSION" $PRODUCTION --github-output
+
+      # Im Release nur die Übergabe an den Release-Job: ein Tag. Von Hand als
+      # Testpaket drei Tage. Bei einem Push gar nicht: Installer und ZIP sind
+      # zusammen rund 200 MB, und das Artefakt-Kontingent des Repositorys war
+      # schon einmal voll. Gepackt und geprüft wird trotzdem.
+      - name: Pakete ablegen
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: Nori-Windows-${{ steps.meta.outputs.version }}
-          path: |
-            apps/windows/release/Nori-Setup-*.exe
-            apps/windows/release/Nori-*-portable.zip
+          name: ${{ steps.meta.outputs.artifact }}
+          path: ${{ runner.temp }}/nori-windows/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ steps.meta.outputs.retention }}
+          overwrite: true
 
       - name: Prüfsummen ins Protokoll
         if: always()
         shell: bash
         run: |
-          cd apps/windows/release 2>/dev/null || exit 0
-          sha256sum Nori-Setup-*.exe Nori-*-portable.zip 2>/dev/null || true
+          cd "$RUNNER_TEMP/nori-windows" 2>/dev/null || exit 0
+          (shasum -a 256 ./* || sha256sum ./*) 2>/dev/null || true
+
+      # Das Paket trägt im Release den Google-Desktop-Client. Weder das Paket
+      # noch der gebaute Hauptprozess bleiben im Arbeitsverzeichnis liegen.
+      - name: Pakete aus dem Checkout entfernen
+        if: always()
+        shell: bash
+        run: rm -rf apps/windows/release apps/windows/dist apps/windows/dist-main "$RUNNER_TEMP/nori-windows"
