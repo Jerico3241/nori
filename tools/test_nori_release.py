@@ -1145,7 +1145,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         path = self.path.split("?")[0]
         self.server.seen.append((self.command, path, self.headers.get("Authorization"), body))
-        status, headers, payload = self.server.routes.get((self.command, path), (404, {}, b'{"message": "Not Found"}'))
+        answer = self.server.routes.get((self.command, path), (404, {}, b'{"message": "Not Found"}'))
+        # Eine Liste beantwortet jeden Aufruf anders — für die Wiederholungen.
+        if isinstance(answer, list):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
+        status, headers, payload = answer
         self.send_response(status)
         for name, value in headers.items():
             self.send_header(name, value)
@@ -1174,10 +1178,15 @@ class GitHubRequestTests(unittest.TestCase):
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         self.github = self.tool.GitHub("owner/nori", self.TOKEN, api=self.base, uploads=self.base, opener=opener)
+        self.tool.RETRY_PAUSE = 0
 
     def route(self, method: str, path: str, status: int = 200, payload: object = None, headers=None, raw: bytes | None = None):
         body = raw if raw is not None else json.dumps(payload if payload is not None else {}).encode()
         self.server.routes[(method, path)] = (status, headers or {}, body)
+
+    def routes(self, method: str, path: str, answers: list[tuple[int, object]]) -> None:
+        """Mehrere Antworten hintereinander: (Status, Nutzlast)."""
+        self.server.routes[(method, path)] = [(status, {}, json.dumps(payload).encode()) for status, payload in answers]
 
     def test_missing_tag_and_annotated_tag(self) -> None:
         self.assertIsNone(self.github.tag_commit("v2.6.0"))
@@ -1247,6 +1256,34 @@ class GitHubRequestTests(unittest.TestCase):
                 with self.assertRaises(self.tool.GitHubError) as caught:
                     self.github.delete_run(run_id)
                 self.assertEqual(caught.exception.rate_limited, limited)
+
+    def test_reads_are_retried_writes_are_not(self) -> None:
+        # Lesen: erst 500, dann 502, dann die Antwort — der Aufruf gelingt.
+        self.routes("GET", "/repos/owner/nori/releases/tags/v2.6.0",
+                    [(500, {"message": "boom"}), (502, {"message": "bad gateway"}), (200, {"id": 7, "draft": False})])
+        self.assertEqual(self.github.release_by_tag("v2.6.0")["id"], 7)
+        self.assertEqual(len([1 for method, path, *_ in self.server.seen if path.endswith("v2.6.0")]), 3)
+
+        # Schreiben: ein Versuch. Ein zweites POST könnte einen zweiten Entwurf anlegen.
+        self.server.seen.clear()
+        self.route("POST", "/repos/owner/nori/releases", 500, {"message": "boom"})
+        with self.assertRaises(self.tool.GitHubError):
+            self.github.create_draft(self.tool.Meta("2.6.0", "c" * 40, {}, {}), "Notes")
+        self.assertEqual(len(self.server.seen), 1)
+
+        # Eine klare Antwort wird nicht wiederholt, auch nicht beim Lesen.
+        self.server.seen.clear()
+        self.route("GET", "/repos/owner/nori/actions/runs/9", 422, {"message": "nope"})
+        with self.assertRaises(self.tool.GitHubError):
+            self.github.run(9)
+        self.assertEqual(len(self.server.seen), 1)
+
+    def test_transient_read_errors_give_up_after_three_tries(self) -> None:
+        self.route("GET", "/repos/owner/nori/releases/tags/v2.6.0", 503, {"message": "unavailable"})
+        with self.assertRaises(self.tool.GitHubError) as caught:
+            self.github.release_by_tag("v2.6.0")
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(self.server.seen), self.tool.RETRIES)
 
     def test_paging(self) -> None:
         self.route("GET", "/repos/owner/nori/actions/workflows/9/runs",

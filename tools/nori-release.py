@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -1086,6 +1087,12 @@ def https_context() -> ssl.SSLContext:
 # Das Einzige, was dieses Werkzeug löschen darf.
 DELETABLE = re.compile(r"^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/(runs|artifacts)/[1-9]\d*$")
 
+# Störungen, die beim nächsten Versuch weg sind: ein abgeschnittener
+# Antwortkörper oder eine Verbindung, die nicht zustande kam.
+TRANSIENT = (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError, TimeoutError)
+RETRIES = 3
+RETRY_PAUSE = 2.0
+
 
 class GitHub:
     """Die wenigen REST-Aufrufe, die Release und Aufräumen brauchen."""
@@ -1106,6 +1113,37 @@ class GitHub:
     def request(self, method: str, url: str, payload: object = None, data: bytes | None = None,
                 content_type: str | None = None, accept: str = "application/vnd.github+json",
                 missing_ok: bool = False, raw: bool = False):
+        """Ein Aufruf; lesende werden bei einer Störung wiederholt.
+
+        Wiederholt wird nur, was sich gefahrlos wiederholen lässt: `GET` und
+        `DELETE`. Ein zweites `POST` könnte einen zweiten Entwurf, einen
+        zweiten Anhang oder einen zweiten Tag anlegen — lieber ein roter Lauf
+        als das.
+
+        Der Anlass: Beim Aufräumen von rund 900 Läufen brach GitHub die
+        Antwort einer Liste mitten im Körper ab (`IncompleteRead`), und der
+        Lauf endete an einer Stelle, an der nichts falsch war.
+        """
+        attempts = RETRIES if method in ("GET", "DELETE") else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._once(method, url, payload, data, content_type, accept, missing_ok, raw)
+            except TRANSIENT as error:
+                if attempt == attempts:
+                    raise
+                reason = f"{type(error).__name__}: {error}"
+            except GitHubError as error:
+                # 0 heißt „nicht erreichbar", 5xx „gerade nicht". Alles andere
+                # — 404, 422, eine Bremse — ist eine Antwort und keine Störung.
+                if attempt == attempts or not (error.status == 0 or error.status >= 500):
+                    raise
+                reason = str(error)
+            pause = RETRY_PAUSE * attempt
+            print(f"  {reason} – noch einmal in {pause:.0f} s ({attempt}/{attempts - 1})")
+            time.sleep(pause)
+
+    def _once(self, method: str, url: str, payload: object, data: bytes | None,
+              content_type: str | None, accept: str, missing_ok: bool, raw: bool):
         if not url.startswith("http"):
             url = f"{self.api}/repos/{self.repository}{url}"
         path = urllib.parse.urlsplit(url).path

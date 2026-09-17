@@ -124,6 +124,12 @@ von 1.26.0 auf 2.6.0, macOS von 1.21.0, Windows von 2.1.0 und LG webOS von
   für Windows-Installer und -ZIP, Prüfsummendatei, Nachprüfung und
   Aufräumen. Das Nachholen einzelner Plattform-Releases (`from-run`)
   entfällt — ein Release baut immer frisch.
+- **Lesende Aufrufe an GitHub werden wiederholt**, bis zu dreimal mit
+  wachsender Pause: bei abgebrochener Antwort, nicht erreichbarem Dienst oder
+  5xx. Schreibende ausdrücklich nicht — ein zweites `POST` könnte einen
+  zweiten Entwurf, Anhang oder Tag anlegen. Aufgefallen beim Aufräumen von
+  rund 900 Läufen, als GitHub die Antwort einer Liste mitten im Körper
+  abbrach.
 - Die Lockfiles tragen jetzt ebenfalls die gemeinsame Nummer. Die von
   `apps/windows` bildet dazu die Abhängigkeiten der Anwendungsschicht so ab,
   wie sie seit 2.4.0 in deren `package.json` stehen.
