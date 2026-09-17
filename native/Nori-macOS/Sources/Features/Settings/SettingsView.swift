@@ -101,12 +101,15 @@ private struct WhatsNewSettingsTab: View {
 /// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
 /// Vollständig in CHANGELOG.md im Projektverzeichnis.
 enum NoriRelease {
-    static let version = "1.20.1"
+    static let version = "1.21.0"
 
     static let highlights = [
-        "Das Öffnen einer Folge brachte Nori unter macOS 27 zum Absturz. Der Player benutzt jetzt direkt die Wiedergabeansicht von AppKit — mit derselben Systemsteuerung.",
-        "Die nächste Folge startet nach dem Countdown wieder. Vorher blieb der Player danach ohne Meldung bei „Folge wird gelesen …“ stehen.",
-        "Scheitert ein Hoster, beginnen „Erneut versuchen“ und „Anderen Hoster“ an der Stelle, an der die Folge stand, statt von vorn.",
+        "Folgen, Staffeln und ganze Serien lassen sich von Hand als gesehen oder ungesehen markieren — im Kontextmenü der Folgenzeile und über das neue Menü neben „Abspielen“.",
+        "Eine Serie lässt sich aus „Schau weiter“ nehmen, ohne den Stand zu verlieren: Angefangene Folgen werden zurückgesetzt, abgeschlossene bleiben abgeschlossen.",
+        "Die Suche verzeiht Tippfehler und kennt Zweit- und Originaltitel. „shingeki no kyojin“ findet den Titel, den die Quelle „Attack on Titan“ nennt, „Damonenjager“ den „Dämonenjäger“.",
+        "Die Merkliste zeigt jetzt den Sehstand — „S1 · F7 · 58 %“ statt nur des Titels.",
+        "Bricht ein Stream ab, sucht Nori selbst weiter: höchstens drei Quellen je Folge, und eine, die eben nichts lieferte, wird nicht erneut angeboten.",
+        "Behoben: Die Folgenliste las den Fortschritt unter der Vorgabe der Seitenleiste statt unter der Quelle der geöffneten Serie. Bei einer Serienstream-Serie mit dem Schalter auf Anime gingen beide Stände durcheinander.",
     ]
 }
 
