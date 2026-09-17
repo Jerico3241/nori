@@ -777,37 +777,61 @@ def only_minifier_renames(ours: bytes, reference: bytes,
             continue
         start, end = span
         reason = None
+        dotted = False
         if end - start > MAX_MINIFIED_NAME:
             reason = f"länger als {MAX_MINIFIED_NAME} Zeichen"
         else:
-            # Was unmittelbar daneben steht, entscheidet, ob es ein Bezeichner
-            # ist oder der Inhalt einer Zeichenkette bzw. ein Eigenschaftsname.
+            # Was unmittelbar daneben steht, entscheidet, wofür der Name steht.
             before = reference[start - 1:start]
             after = reference[end:end + 1]
             if before in (b'"', b"'", b"`", b"\\") or after in (b'"', b"'", b"`"):
+                # Der Inhalt einer Zeichenkette. Das ist nie eine Umbenennung.
                 reason = "grenzt an ein Anführungszeichen"
             elif before == b".":
-                reason = "steht hinter einem Punkt"
-        spots.append((start, end, reason))
+                dotted = True
+        spots.append([start, end, reason, dotted])
         index = end
 
+    # Zwei Durchgänge, und die Reihenfolge ist der Punkt.
+    #
+    # Zuerst nur die freistehenden Namen: Sie sind der Beleg, dass der
+    # Minifizierer anders benannt hat, und aus ihnen entsteht die Zuordnung.
     mapping: dict[bytes, bytes] = {}
     backwards: dict[bytes, bytes] = {}
-    for start, end, reason in spots:
-        if reason is not None:
+    for spot in spots:
+        start, end, reason, dotted = spot
+        if reason is not None or dotted:
             continue
         theirs, mine = reference[start:end], ours[start:end]
         if mapping.setdefault(theirs, mine) != mine:
-            spots[spots.index((start, end, reason))] = (
-                start, end, f"{theirs.decode()} steht schon für {mapping[theirs].decode()}")
+            spot[2] = f"{theirs.decode()} steht schon für {mapping[theirs].decode()}"
         elif backwards.setdefault(mine, theirs) != theirs:
-            spots[spots.index((start, end, reason))] = (
-                start, end, f"{backwards[mine].decode()} und {theirs.decode()} fallen zusammen")
+            spot[2] = f"{backwards[mine].decode()} und {theirs.decode()} fallen zusammen"
+
+    # Danach die hinter einem Punkt. Ein Eigenschaftsname ist kein Name, den
+    # esbuild von sich aus umbenennt — deshalb war er bisher rundheraus
+    # verboten. Lauf 35243770094 zeigt, dass das zu grob ist: Dort tauschen
+    # `K`- und `W`-Familie durchgängig die Plätze, 374 Stellen, und vier davon
+    # stehen hinter einem Punkt (`.Kc` → `.Wc`, `.Wg` → `.Kg`). Wer ein
+    # Modul-Namensobjekt bündelt, liest die umbenannte Bindung eben als
+    # Eigenschaft.
+    #
+    # Durchgelassen wird deshalb **nur**, was oben schon an einem
+    # freistehenden Bezeichner belegt wurde. Eine Eigenschaft, die sich ohne
+    # zugehörige Umbenennung ändert, fällt weiterhin auf — und genau davor
+    # sollte die Regel schützen.
+    for spot in spots:
+        start, end, reason, dotted = spot
+        if reason is not None or not dotted:
+            continue
+        theirs, mine = reference[start:end], ours[start:end]
+        if mapping.get(theirs) != mine:
+            spot[2] = "hinter einem Punkt, ohne dieselbe Umbenennung an einem Bezeichner"
 
     bad = [spot for spot in spots if spot[2] is not None]
     if report is not None and bad:
         report.append(f"{len(spots)} abweichende Stelle(n), davon {len(bad)} keine Umbenennung")
-        for start, end, reason in bad[:6]:
+        for start, end, reason, _ in bad[:6]:
             # Zum Anzeigen den **ganzen** Namen, nicht das Bruchstück aus dem
             # Suchfenster. Fürs Urteil genügt das Bruchstück — ein Name, der
             # weiter reicht als vier Zeichen, misst darin immer mindestens
