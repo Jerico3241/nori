@@ -1444,11 +1444,15 @@ class WorkflowTests(unittest.TestCase):
                     names = [step.get("name") for step in steps]
                     for step in steps:
                         if step.get("continue-on-error"):
-                            # Erlaubt nur an einem Schritt, der im Release nicht läuft:
-                            # ein Testpaket darf am vollen Artefakt-Speicher scheitern,
-                            # ein Release nie.
-                            self.assertIn("!inputs.release-version", str(step.get("if", "")),
-                                          f"{file}/{job_name}/{step.get('name')}")
+                            # Erlaubt nur beim **Hochladen** und nur an einem Schritt,
+                            # der im Release nicht läuft: Ein Testpaket darf am vollen
+                            # Artefakt-Speicher scheitern, ein Release nie — und eine
+                            # Prüfung nie. Ohne die erste Bedingung hätte auch der
+                            # Fernbedienungslauf optional werden können, mit seinen 341
+                            # Prüfungen; nachgestellt, die Reihe blieb grün.
+                            where = f"{file}/{job_name}/{step.get('name')}"
+                            self.assertIn("upload-artifact", str(step.get("uses", "")), where)
+                            self.assertIn("!inputs.release-version", str(step.get("if", "")), where)
                         if "upload-artifact" in str(step.get("uses", "")):
                             self.assertIn("retention-days", step["with"], f"{job_name}/{step.get('name')}")
                     uploads = [i for i, step in enumerate(steps)
