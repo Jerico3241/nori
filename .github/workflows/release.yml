@@ -1,21 +1,24 @@
 name: Release
 
-# Legt GitHub-Releases an — plattformgetrennt, jede Version genau einmal.
+# Legt GitHub-Releases an — ein gemeinsamer Release pro Version, alle
+# Plattformen als Anhänge.
 #
 # Kein eigener Auslöser über Tags. Dieser Workflow ist der letzte Job der
 # Paket-Läufe `Package iOS IPA`, `Build webOS` und `Package macOS Source` und
 # startet dort nur, wenn deren Paket-Job auf `main` mit allen Produktions- und
-# Zugangsdatenprüfungen grün war (`needs:` ohne `always()`). Veröffentlicht
-# wird genau das Artefakt dieses Laufs, erkannt an der Prüfsumme, die der
-# Paket-Job nach seinen Prüfungen festgehalten hat. Gebaut wird hier nichts.
+# Zugangsdatenprüfungen grün war (`needs:` ohne `always()`). Jeder Lauf hängt
+# sein geprüftes Plattform-Paket an den gemeinsamen Entwurf `v<VERSION>` an,
+# erkannt an der Prüfsumme, die der Paket-Job nach seinen Prüfungen festgehalten
+# hat. Veröffentlicht wird der Release erst, wenn alle Plattformen angehängt
+# sind. Gebaut wird hier nichts.
 #
 # Die Regeln — Tag-Schema, keine Duplikate, nie verschieben, Release Notes ohne
 # interne Einzelheiten — stehen in tools/nori-release.py, die Tests in
 # tools/test_nori_release.py, die Beschreibung in docs/releases.md.
 #
-# Von Hand (workflow_dispatch) lässt sich nur ein Release für einen schon
-# abgeschlossenen, erfolgreichen Paket-Lauf nachholen: den jüngsten auf main,
-# für die Version, die main gerade trägt. Standardmäßig als Probelauf.
+# Von Hand (workflow_dispatch) lässt sich nur ein Plattform-Paket für einen
+# schon abgeschlossenen, erfolgreichen Paket-Lauf nachholen: den jüngsten auf
+# main, für die Version, die main gerade trägt. Standardmäßig als Probelauf.
 on:
   workflow_call:
     inputs:
@@ -64,10 +67,11 @@ jobs:
     name: GitHub-Release
     runs-on: [self-hosted, macOS]
     timeout-minutes: 20
-    # Ein Release wird nie mitten im Veröffentlichen abgebrochen; Läufe
-    # derselben Plattform warten aufeinander.
+    # Ein Release wird nie mitten im Veröffentlichen abgebrochen; alle
+    # Plattform-Läufe derselben Version warten aufeinander, weil sie denselben
+    # Entwurf anhängen.
     concurrency:
-      group: nori-release-${{ inputs.platform }}
+      group: nori-release-v${{ github.ref }}
       cancel-in-progress: false
     steps:
       - name: Checkout

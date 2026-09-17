@@ -172,8 +172,9 @@ jobs:
           path: ${{ runner.temp }}/nori-ipa.log
           if-no-files-found: ignore
 
-  # GitHub-Release `ios-v<VERSION>` mit genau der geprüften IPA — nur auf main,
-  # nur nach einem grünen Paket-Job. Gibt es den Release schon, endet er grün.
+  # Hängt die geprüfte IPA an den gemeinsamen Release `v<VERSION>` an — nur auf
+  # main, nur nach einem grünen Paket-Job. Veröffentlicht wird der Release erst,
+  # wenn alle Plattformen angehängt sind. Trägt er dieses Paket schon, endet er grün.
   release:
     needs: package
     if: github.ref == 'refs/heads/main'

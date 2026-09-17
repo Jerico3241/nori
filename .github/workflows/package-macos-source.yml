@@ -78,9 +78,10 @@ jobs:
         if: always()
         run: rm -f Nori-macOS-*-source.zip
 
-  # GitHub-Release `macos-v<VERSION>` mit genau dem geprüften Quellpaket — nur
-  # auf main, nur nach einem grünen Paket-Job. Gibt es den Release schon, endet
-  # er grün.
+  # Hängt das geprüfte Quellpaket an den gemeinsamen Release `v<VERSION>` an —
+  # nur auf main, nur nach einem grünen Paket-Job. Veröffentlicht wird der
+  # Release erst, wenn alle Plattformen angehängt sind. Trägt er dieses Paket
+  # schon, endet er grün.
   release:
     needs: package
     if: github.ref == 'refs/heads/main'

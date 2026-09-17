@@ -53,25 +53,10 @@ OTHER_COMMIT = "b" * 40
 
 CHANGELOG = """# Changelog
 
-## [webOS 2.2.1] — 2026-09-13
+## [iOS 2.3.0] · [macOS 2.3.0] · [webOS 2.3.0] — 2026-09-17
 
-Nur ein Paketierungsfehler. Kein App-Code geändert; OAuth-Fluss und Scope
-unverändert. iOS und macOS unverändert.
-
-### Behoben
-
-- **Das installierbare Paket hatte keinen Google-Zugang.** Der Workflow baute
-  ohne `VITE_NORI_GOOGLE_TV_CLIENT_ID` aus der `.env.local`.
-- Jetzt schreibt der Runner die Zugangsdaten aus `~/.config/nori/secrets`.
-- Die Liste lädt schneller.
-
-### Tests
-
-- 22 neue Tests.
-
-## [iOS 1.25.2] · [macOS 1.20.1] — 2026-09-13
-
-Abschließende Apple-Prüfung, z. B. Player auf iPad und Mac. Keine Änderung an OAuth.
+Erste einheitliche Version: alle Plattformen teilen sich den Tag v2.3.0. Keine
+Änderung an OAuth.
 
 ### Behoben — macOS
 
@@ -88,9 +73,12 @@ Abschließende Apple-Prüfung, z. B. Player auf iPad und Mac. Keine Änderung an
 
 - **Menüs der unteren Leiste standen auf dem Kopf.**
 
-```bash
-python3 tools/configure-google-oauth.py --ios
-```
+### Behoben — webOS
+
+- **Das installierbare Paket hatte keinen Google-Zugang.** Der Workflow baute
+  ohne `VITE_NORI_GOOGLE_TV_CLIENT_ID` aus der `.env.local`.
+- Jetzt schreibt der Runner die Zugangsdaten aus `~/.config/nori/secrets`.
+- Die Liste lädt schneller.
 
 ### Geprüft, ohne Änderung
 
@@ -125,8 +113,8 @@ def pbxproj(version: str, build: str, bundle: str, second_version: str | None = 
 
 def make_repo(root: Path) -> str:
     files = {
-        "native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("1.25.2", "39", "to.nori.ios"),
-        "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj": pbxproj("1.20.1", "30", "to.nori.macos"),
+        "native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("2.3.0", "40", "to.nori.ios"),
+        "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj": pbxproj("2.3.0", "31", "to.nori.macos"),
         "native/Nori-macOS/Nori/NoriApp.swift": "@main struct NoriApp {}\n",
         "native/Nori-macOS/Config/Google.local.xcconfig.example": "GOOGLE_CLIENT_ID = <aus der OAuth-JSON>\n",
         "native/NoriCore/Sources/NoriCore/Models.swift": "struct Models {}\n",
@@ -135,7 +123,7 @@ def make_repo(root: Path) -> str:
         "config/contract.json": "{}\n",
         "README.md": "# Nori\n",
         "CHANGELOG.md": CHANGELOG,
-        "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.2.1"}) + "\n",
+        "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.3.0"}) + "\n",
     }
     for name, text in files.items():
         path = root / name
@@ -156,7 +144,7 @@ def make_secrets(directory: Path) -> None:
     (directory / "google-ios-client-id").write_text(IOS_ID + "\n")
 
 
-def make_ipa(directory: Path, version: str = "1.25.2", build: str = "39", bundle: str = "to.nori.ios",
+def make_ipa(directory: Path, version: str = "2.3.0", build: str = "40", bundle: str = "to.nori.ios",
              name: str | None = None, extra: dict[str, bytes] | None = None, apps: tuple[str, ...] = ("Nori.app",)) -> Path:
     path = directory / (name or f"Nori-iOS-{version}-unsigned.ipa")
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -182,7 +170,7 @@ def targz(entries: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def make_ipk(directory: Path, version: str = "2.2.1", name: str | None = None, control_version: str | None = None,
+def make_ipk(directory: Path, version: str = "2.3.0", name: str | None = None, control_version: str | None = None,
              appinfo_version: str | None = None, extra: dict[str, bytes] | None = None, raw: bytes | None = None) -> Path:
     path = directory / (name or f"tv.nori.app_{version}_all.ipk")
     if raw is not None:
@@ -274,8 +262,9 @@ class FakeGitHub:
         stored["draft"] = False
         return dict(stored)
 
-    def release_by_tag(self, tag):
-        return next((dict(r) for r in self.release_list if r["tag_name"] == tag and not r["draft"]), None)
+    def release_by_tag(self, tag, draft=False):
+        matches = [r for r in self.release_list if r["tag_name"] == tag and (r["draft"] if draft else not r["draft"])]
+        return dict(matches[0]) if matches else None
 
     def run(self, run_id):
         return self.runs[run_id]
@@ -320,7 +309,7 @@ class ReleaseTestCase(unittest.TestCase):
         git(self.repo, "commit", "-qm", "Änderung")
         self.commit = git(self.repo, "rev-parse", "HEAD")
 
-    def source_zip(self, name: str = "Nori-macOS-1.20.1-source.zip", exclude: tuple[str, ...] = ()) -> Path:
+    def source_zip(self, name: str = "Nori-macOS-2.3.0-source.zip", exclude: tuple[str, ...] = ()) -> Path:
         path = self.out / name
         path.unlink(missing_ok=True)  # zip ergänzt sonst ein vorhandenes Archiv
         command = ["zip", "-r", "-y", "-q", str(path), *self.tool.SOURCE_PATHS["macos"]]
@@ -341,11 +330,14 @@ class ReleaseTestCase(unittest.TestCase):
 class MetaTests(ReleaseTestCase):
     def test_versions_tags_and_assets_come_from_the_commit(self) -> None:
         ios, macos, webos = self.meta("ios"), self.meta("macos"), self.meta("webos")
-        self.assertEqual((ios.version, ios.build, ios.commit), ("1.25.2", "39", self.commit))
-        self.assertEqual((ios.tag, ios.title, ios.asset), ("ios-v1.25.2", "Nori iOS 1.25.2", "Nori-iOS-1.25.2-unsigned.ipa"))
-        self.assertEqual((macos.tag, macos.title, macos.asset), ("macos-v1.20.1", "Nori macOS 1.20.1", "Nori-macOS-1.20.1-source.zip"))
-        self.assertEqual((webos.tag, webos.title, webos.asset), ("webos-v2.2.1", "Nori webOS 2.2.1", "tv.nori.app_2.2.1_all.ipk"))
+        self.assertEqual((ios.version, ios.build, ios.commit), ("2.3.0", "40", self.commit))
+        self.assertEqual((ios.tag, ios.title, ios.asset), ("v2.3.0", "Nori 2.3.0", "Nori-iOS-2.3.0-unsigned.ipa"))
+        self.assertEqual((macos.tag, macos.title, macos.asset), ("v2.3.0", "Nori 2.3.0", "Nori-macOS-2.3.0-source.zip"))
+        self.assertEqual((webos.tag, webos.title, webos.asset), ("v2.3.0", "Nori 2.3.0", "tv.nori.app_2.3.0_all.ipk"))
         self.assertIsNone(webos.build)
+        # Ein Tag für alle Plattformen.
+        self.assertEqual(ios.tag, macos.tag)
+        self.assertEqual(macos.tag, webos.tag)
 
     def test_invalid_version_is_an_error(self) -> None:
         for bad in ("1.25", "1.25.2-beta", "v1.25.2", "01.25.2", "1.25.2.1", ""):
@@ -355,17 +347,17 @@ class MetaTests(ReleaseTestCase):
                     self.meta("ios")
 
     def test_invalid_webos_version_is_an_error(self) -> None:
-        self.commit_file("apps/webos/appinfo.json", json.dumps({"id": "tv.nori.app", "version": "2.2"}))
+        self.commit_file("apps/webos/appinfo.json", json.dumps({"id": "tv.nori.app", "version": "2.3"}))
         with self.assertRaisesRegex(self.tool.ReleaseError, "Ungültige Versionsnummer"):
             self.meta("webos")
 
     def test_inconsistent_marketing_version_is_an_error(self) -> None:
-        self.commit_file("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", pbxproj("1.25.2", "39", "to.nori.ios", "1.25.3"))
+        self.commit_file("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", pbxproj("2.3.0", "40", "to.nori.ios", "2.3.1"))
         with self.assertRaisesRegex(self.tool.ReleaseError, "uneinheitlich"):
             self.meta("ios")
 
     def test_invalid_build_number_is_an_error(self) -> None:
-        self.commit_file("native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj", pbxproj("1.20.1", "30a", "to.nori.macos"))
+        self.commit_file("native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj", pbxproj("2.3.0", "31a", "to.nori.macos"))
         with self.assertRaisesRegex(self.tool.ReleaseError, "Buildnummer"):
             self.meta("macos")
 
@@ -375,13 +367,18 @@ class DecisionTests(ReleaseTestCase):
         return self.tool.decide(self.meta("ios"), tag_commit, list(releases), list(tags))
 
     def test_new_version_is_created(self) -> None:
-        self.assertEqual(self.decide(tags=["ios-v1.25.1"]).action, "create")
+        self.assertEqual(self.decide(tags=["v2.2.0"]).action, "create")
 
-    def test_existing_release_is_skipped(self) -> None:
-        release = {"tag_name": "ios-v1.25.2", "draft": False}
+    def test_existing_published_release_with_this_asset_is_skipped(self) -> None:
+        release = {"tag_name": "v2.3.0", "draft": False, "assets": [{"name": "Nori-iOS-2.3.0-unsigned.ipa"}]}
         self.assertEqual(self.decide(self.commit, [release]).action, "skip")
-        # Auch wenn ein späterer main-Commit dieselbe Version trägt: kein zweiter Release.
+        # Auch wenn ein späterer main-Commit dieselbe Version trägt: kein zweiter Anhang.
         self.assertEqual(self.decide(OTHER_COMMIT, [release]).action, "skip")
+
+    def test_existing_release_without_this_asset_is_an_error(self) -> None:
+        release = {"tag_name": "v2.3.0", "draft": False, "assets": [{"name": "Nori-macOS-2.3.0-source.zip"}]}
+        with self.assertRaisesRegex(self.tool.ReleaseError, "ohne Nori-iOS-2.3.0-unsigned.ipa"):
+            self.decide(self.commit, [release])
 
     def test_existing_tag_without_release_is_not_released(self) -> None:
         with self.assertRaisesRegex(self.tool.ReleaseError, "ohne Release"):
@@ -391,60 +388,89 @@ class DecisionTests(ReleaseTestCase):
         with self.assertRaisesRegex(self.tool.ReleaseError, "zeigt auf bbbbbbb"):
             self.decide(OTHER_COMMIT)
 
-    def test_leftover_draft_is_an_error(self) -> None:
-        with self.assertRaisesRegex(self.tool.ReleaseError, "Entwurf"):
-            self.decide(None, [{"tag_name": "ios-v1.25.2", "draft": True}])
+    def test_existing_draft_is_an_attach_decision(self) -> None:
+        draft = {"tag_name": "v2.3.0", "draft": True, "assets": [{"name": "Nori-macOS-2.3.0-source.zip"}]}
+        decision = self.decide(None, [draft])
+        self.assertEqual(decision.action, "attach")
+        self.assertIs(decision.draft, draft)
+
+    def test_draft_already_carrying_this_asset_is_an_error(self) -> None:
+        draft = {"tag_name": "v2.3.0", "draft": True, "assets": [{"name": "Nori-iOS-2.3.0-unsigned.ipa"}]}
+        with self.assertRaisesRegex(self.tool.ReleaseError, "bereits"):
+            self.decide(None, [draft])
+
+    def test_draft_with_unexpected_asset_is_an_error(self) -> None:
+        draft = {"tag_name": "v2.3.0", "draft": True, "assets": [{"name": "fremd.zip"}]}
+        with self.assertRaisesRegex(self.tool.ReleaseError, "unerwartete"):
+            self.decide(None, [draft])
+
+    def test_multiple_drafts_are_an_error(self) -> None:
+        drafts = [{"tag_name": "v2.3.0", "draft": True, "assets": []}, {"tag_name": "v2.3.0", "draft": True, "assets": []}]
+        with self.assertRaisesRegex(self.tool.ReleaseError, "mehrere Entwürfe"):
+            self.decide(None, drafts)
 
     def test_older_version_than_existing_is_an_error(self) -> None:
-        with self.assertRaisesRegex(self.tool.ReleaseError, "älter als das vorhandene ios-v1.26.0"):
-            self.decide(tags=["ios-v1.9.4", "ios-v1.26.0", "macos-v9.0.0"])
+        with self.assertRaisesRegex(self.tool.ReleaseError, "älter als das vorhandene v2.4.0"):
+            self.decide(tags=["v2.2.0", "v2.4.0"])
 
 
 class PublishTests(ReleaseTestCase):
-    def test_new_version_creates_exactly_one_release(self) -> None:
-        github = self.github(tags={"ios-v1.9.4": OTHER_COMMIT})
+    def test_first_platform_creates_draft_and_waits(self) -> None:
+        github = self.github(tags={"v2.2.0": OTHER_COMMIT})
         asset = make_ipa(self.out)
-        self.assertEqual(self.release("ios", asset, github), "created")
-        self.assertEqual(github.writes, ["draft", "upload", "tag", "publish"])
-        self.assertEqual(github.tag_refs["ios-v1.25.2"], self.commit)
-        [release] = [r for r in github.release_list if r["tag_name"] == "ios-v1.25.2"]
-        self.assertFalse(release["draft"])
-        self.assertEqual(release["name"], "Nori iOS 1.25.2")
-        self.assertEqual([a["name"] for a in release["assets"]], ["Nori-iOS-1.25.2-unsigned.ipa"])
-        self.assertIn("Unsigned IPA – muss vor der Installation mit einer gültigen Signatur signiert werden.", release["body"])
-        self.assertIn("**Build:** 39", release["body"])
-        self.assertIn(self.commit[:7], release["body"])
-        self.assertEqual(self.production_calls, ["Nori-iOS-1.25.2-unsigned.ipa"])
+        self.assertEqual(self.release("ios", asset, github), "attached")
+        self.assertEqual(github.writes, ["draft", "upload"])
+        # Noch kein Tag: der Entwurf wartet auf die anderen Plattformen.
+        self.assertNotIn("v2.3.0", github.tag_refs)
+        [draft] = [r for r in github.release_list if r["tag_name"] == "v2.3.0"]
+        self.assertTrue(draft["draft"])
+        self.assertEqual(draft["name"], "Nori 2.3.0")
+        self.assertEqual([a["name"] for a in draft["assets"]], ["Nori-iOS-2.3.0-unsigned.ipa"])
+        self.assertIn("### iOS/iPadOS", draft["body"])
+        self.assertIn("### macOS", draft["body"])
+        self.assertIn("### LG webOS", draft["body"])
+        self.assertIn("**Build:** 40", draft["body"])
+        self.assertIn(self.commit[:7], draft["body"])
+        self.assertEqual(self.production_calls, ["Nori-iOS-2.3.0-unsigned.ipa"])
 
-    def test_webos_and_macos_release_their_own_packages(self) -> None:
+    def test_all_platforms_combine_into_one_release(self) -> None:
         github = self.github()
+        # Drei Läufe, jede Plattform hängt ihr Paket an denselben Entwurf.
+        self.assertEqual(self.release("ios", make_ipa(self.out), github), "attached")
+        self.assertEqual(self.release("macos", self.source_zip(), github), "attached")
         self.assertEqual(self.release("webos", make_ipk(self.out), github), "created")
-        self.assertEqual(self.release("macos", self.source_zip(), github), "created")
-        self.assertEqual(sorted(github.tag_refs), ["macos-v1.20.1", "webos-v2.2.1"])
-        assets = {r["tag_name"]: [a["name"] for a in r["assets"]] for r in github.release_list}
-        self.assertEqual(assets, {"webos-v2.2.1": ["tv.nori.app_2.2.1_all.ipk"],
-                                  "macos-v1.20.1": ["Nori-macOS-1.20.1-source.zip"]})
+        self.assertEqual(github.writes, ["draft", "upload", "upload", "upload", "tag", "publish"])
+        self.assertEqual(github.tag_refs["v2.3.0"], self.commit)
+        [release] = [r for r in github.release_list if r["tag_name"] == "v2.3.0"]
+        self.assertFalse(release["draft"])
+        self.assertEqual(release["name"], "Nori 2.3.0")
+        self.assertEqual(sorted(a["name"] for a in release["assets"]),
+                         ["Nori-iOS-2.3.0-unsigned.ipa", "Nori-macOS-2.3.0-source.zip", "tv.nori.app_2.3.0_all.ipk"])
+        self.assertEqual(sorted(self.production_calls),
+                         ["Nori-iOS-2.3.0-unsigned.ipa", "Nori-macOS-2.3.0-source.zip", "tv.nori.app_2.3.0_all.ipk"])
 
-    def test_existing_release_is_not_duplicated(self) -> None:
-        github = self.github(tags={"ios-v1.25.2": OTHER_COMMIT},
-                             releases=[{"id": 7, "tag_name": "ios-v1.25.2", "draft": False, "assets": []}])
+    def test_existing_published_release_with_this_asset_is_skipped(self) -> None:
+        github = self.github(tags={"v2.3.0": OTHER_COMMIT}, releases=[
+            {"id": 7, "tag_name": "v2.3.0", "draft": False,
+             "assets": [{"name": "Nori-iOS-2.3.0-unsigned.ipa"}, {"name": "Nori-macOS-2.3.0-source.zip"},
+                         {"name": "tv.nori.app_2.3.0_all.ipk"}]}])
         self.assertEqual(self.release("ios", make_ipa(self.out), github), "skip")
         self.assertEqual(github.writes, [])
-        self.assertEqual(github.tag_refs["ios-v1.25.2"], OTHER_COMMIT)
+        self.assertEqual(github.tag_refs["v2.3.0"], OTHER_COMMIT)
         self.assertEqual(len(github.release_list), 1)
 
     def test_existing_tag_creates_no_release(self) -> None:
-        github = self.github(tags={"ios-v1.25.2": self.commit})
+        github = self.github(tags={"v2.3.0": self.commit})
         with self.assertRaisesRegex(self.tool.ReleaseError, "ohne Release"):
             self.release("ios", make_ipa(self.out), github)
         self.assertEqual(github.writes, [])
 
     def test_tag_on_wrong_commit_is_an_error_and_not_moved(self) -> None:
-        github = self.github(tags={"webos-v2.2.1": OTHER_COMMIT})
+        github = self.github(tags={"v2.3.0": OTHER_COMMIT})
         with self.assertRaisesRegex(self.tool.ReleaseError, "nicht verschoben"):
             self.release("webos", make_ipk(self.out), github)
         self.assertEqual(github.writes, [])
-        self.assertEqual(github.tag_refs["webos-v2.2.1"], OTHER_COMMIT)
+        self.assertEqual(github.tag_refs["v2.3.0"], OTHER_COMMIT)
 
     def test_dry_run_writes_nothing(self) -> None:
         github = self.github()
@@ -469,13 +495,13 @@ class PublishTests(ReleaseTestCase):
     def test_wrong_artifact_is_an_error(self) -> None:
         github = self.github()
         with self.assertRaisesRegex(self.tool.ReleaseError, "Falsches Paket"):
-            self.release("ios", make_ipa(self.out, version="1.25.2", name="Nori-iOS-1.25.1-unsigned.ipa"), github)
+            self.release("ios", make_ipa(self.out, version="2.3.0", name="Nori-iOS-2.2.9-unsigned.ipa"), github)
         with self.assertRaisesRegex(self.tool.ReleaseError, "Falsches Paket"):
-            self.release("webos", make_ipa(self.out, name="tv.nori.app_2.2.1_all.zip"), github)
+            self.release("webos", make_ipa(self.out, name="tv.nori.app_2.3.0_all.zip"), github)
         other = self.out / "zwei"
         other.mkdir()
         make_ipk(other)
-        (other / "tv.nori.app_2.2.1_all.log").write_text("Protokoll")
+        (other / "tv.nori.app_2.3.0_all.log").write_text("Protokoll")
         with self.assertRaisesRegex(self.tool.ReleaseError, "genau eine Datei"):
             self.tool.find_asset(other, self.meta("webos"))
         self.assertEqual(github.writes, [])
@@ -493,7 +519,7 @@ class PublishTests(ReleaseTestCase):
     def test_asset_version_must_match_tag(self) -> None:
         github = self.github()
         with self.assertRaisesRegex(self.tool.ReleaseError, "CFBundleShortVersionString"):
-            self.release("ios", make_ipa(self.out, version="1.25.1", name="Nori-iOS-1.25.2-unsigned.ipa"), github)
+            self.release("ios", make_ipa(self.out, version="2.2.9", name="Nori-iOS-2.3.0-unsigned.ipa"), github)
         with self.assertRaisesRegex(self.tool.ReleaseError, r"Version \(control\)"):
             self.release("webos", make_ipk(self.out, control_version="2.2.0"), github)
         self.assertEqual(github.writes, [])
@@ -504,15 +530,19 @@ class PublishTests(ReleaseTestCase):
         with self.assertRaisesRegex(self.tool.ReleaseError, "weicht vom geprüften Paket ab"):
             self.release("ios", make_ipa(self.out), github)
         self.assertEqual(github.writes, ["draft", "upload"])
-        self.assertNotIn("ios-v1.25.2", github.tag_refs)
+        self.assertNotIn("v2.3.0", github.tag_refs)
         self.assertTrue(github.release_list[0]["draft"])
 
     def test_tag_race_leaves_draft_unpublished(self) -> None:
         github = self.github()
         github.tag_race = True
+        # Zwei Pakete anhängen, das dritte löst das Veröffentlichen aus, wo der
+        # Tag-Race auftritt.
+        self.release("ios", make_ipa(self.out), github)
+        self.release("macos", self.source_zip(), github)
         with self.assertRaisesRegex(self.tool.ReleaseError, "inzwischen vorhanden"):
-            self.release("ios", make_ipa(self.out), github)
-        self.assertEqual(github.writes, ["draft", "upload", "tag"])
+            self.release("webos", make_ipk(self.out), github)
+        self.assertEqual(github.writes, ["draft", "upload", "upload", "upload", "tag"])
         self.assertTrue(github.release_list[0]["draft"])
 
     def test_publish_requires_checksum_from_package_job(self) -> None:
@@ -547,7 +577,7 @@ class VerifyTests(ReleaseTestCase):
         self.assertRejected("ios", make_ipa(self.out, apps=("Nori.app", "Other.app")), "genau Payload/Nori.app")
         self.assertRejected("ios", make_ipa(self.out, extra={"build.txt": b"x"}), "außerhalb von Payload")
         self.assertRejected("ios", make_ipa(self.out, extra={"Payload/../evil": b"x"}), "unzulässiger Pfad")
-        broken = self.out / "Nori-iOS-1.25.2-unsigned.ipa"
+        broken = self.out / "Nori-iOS-2.3.0-unsigned.ipa"
         broken.write_bytes(b"kein zip")
         self.assertRejected("ios", broken, "kein gültiges ZIP")
 
@@ -573,8 +603,8 @@ class VerifyTests(ReleaseTestCase):
                 self.assertRejected("ios", make_ipa(self.out, extra={"Payload/Nori.app/main.jsbundle": content}), message)
 
     def test_ipk_versions_must_match(self) -> None:
-        self.assertRejected("webos", make_ipk(self.out, control_version="2.2.0"), r"Version \(control\)")
-        self.assertRejected("webos", make_ipk(self.out, appinfo_version="2.2.0"), r"appinfo\.json")
+        self.assertRejected("webos", make_ipk(self.out, control_version="2.2.9"), r"Version \(control\)")
+        self.assertRejected("webos", make_ipk(self.out, appinfo_version="2.2.9"), r"appinfo\.json")
         self.assertRejected("webos", make_ipk(self.out, raw=b"kein ar"), "kein ar-Archiv")
 
     def test_ipk_forbidden_content(self) -> None:
@@ -619,43 +649,46 @@ class VerifyTests(ReleaseTestCase):
 
 
 class NotesTests(ReleaseTestCase):
-    def notes(self, key: str) -> str:
+    def notes(self, key: str = "ios") -> str:
         return self.tool.build_notes(self.meta(key), "owner/nori")
 
-    def test_ios_notes(self) -> None:
-        notes = self.notes("ios")
-        for expected in ("**Plattform:** iOS/iPadOS", "**Version:** 1.25.2", "**Build:** 39",
-                         f"[`{self.commit[:7]}`](https://github.com/owner/nori/commit/{self.commit})",
-                         "> Unsigned IPA – muss vor der Installation mit einer gültigen Signatur signiert werden.",
-                         "### Behoben — beide Apple-Apps", "### Behoben — iOS/iPadOS",
-                         "- **Nach dem Countdown startete die nächste Folge nicht.** Die neue Folge startet",
-                         "  - Unterpunkt ohne Einzelheiten.", "Abschließende Apple-Prüfung, z. B. Player auf iPad und Mac."):
-            self.assertIn(expected, notes)
-        for unexpected in ("Behoben — macOS", "Geprüft, ohne Änderung", "Bild-Cache", "configure-google-oauth",
-                           "Refresh-Token", "OAuth", "webOS 2.2.1", "Paketierungsfehler"):
-            self.assertNotIn(unexpected, notes)
-
-    def test_macos_notes(self) -> None:
-        notes = self.notes("macos")
-        self.assertIn("### Behoben — macOS", notes)
-        self.assertIn("### Behoben — beide Apple-Apps", notes)
-        self.assertNotIn("iOS/iPadOS", notes)
-        self.assertIn("**Build:** 30", notes)
-        self.assertIn("Paket: `Nori-macOS-1.20.1-source.zip`", notes)
-
-    def test_webos_notes_leave_out_internal_credential_details(self) -> None:
-        notes = self.notes("webos")
+    def test_notes_combine_all_platforms(self) -> None:
+        notes = self.notes()
+        # Gemeinsamer Kopf: eine Version für alle Plattformen.
+        self.assertIn("**Version:** 2.3.0", notes)
+        self.assertIn(f"[`{self.commit[:7]}`](https://github.com/owner/nori/commit/{self.commit})", notes)
+        # Alle drei Plattform-Blöcke sind vorhanden.
+        self.assertIn("### iOS/iPadOS", notes)
+        self.assertIn("### macOS", notes)
+        self.assertIn("### LG webOS", notes)
+        # Plattform-Hinweise je Plattform.
+        self.assertIn("> Unsigned IPA – muss vor der Installation mit einer gültigen Signatur signiert werden.", notes)
         self.assertIn("> Installationspaket für LG webOS.", notes)
-        self.assertNotIn("**Build:**", notes)
-        self.assertIn("Nur ein Paketierungsfehler. iOS und macOS unverändert.", notes)
+        # Plattform-Builds nur dort, wo sie existieren (webOS hat keinen).
+        self.assertIn("**Build:** 40", notes)
+        self.assertIn("**Build:** 31", notes)
+        self.assertEqual(notes.count("**Build:**"), 2)
+        # Alle drei Pakete stehen oben.
+        self.assertIn("`Nori-iOS-2.3.0-unsigned.ipa`", notes)
+        self.assertIn("`Nori-macOS-2.3.0-source.zip`", notes)
+        self.assertIn("`tv.nori.app_2.3.0_all.ipk`", notes)
+        # Plattform-spezifische Changelog-Abschnitte erscheinen im jeweiligen Block.
+        self.assertIn("### Behoben — beide Apple-Apps", notes)
+        self.assertIn("### Behoben — iOS/iPadOS", notes)
+        self.assertIn("### Behoben — macOS", notes)
         self.assertIn("- **Das installierbare Paket hatte keinen Google-Zugang.**\n- Die Liste lädt schneller.", notes)
-        for unexpected in ("VITE_", ".env", "OAuth", "Zugangsdaten", "secrets", "Runner", "22 neue Tests"):
+        for unexpected in ("Refresh-Token", "configure-google-oauth", "VITE_", ".env", "22 neue Tests"):
             self.assertNotIn(unexpected, notes)
+
+    def test_notes_are_the_same_for_any_platform_meta(self) -> None:
+        # Der Body ist gemeinschaftlich: egal welche Plattform den Entwurf anlegt.
+        self.assertEqual(self.notes("ios"), self.notes("macos"))
+        self.assertEqual(self.notes("macos"), self.notes("webos"))
 
     def test_missing_changelog_section_is_an_error(self) -> None:
-        self.commit_file("CHANGELOG.md", CHANGELOG.replace("[webOS 2.2.1]", "[webOS 2.2.0]"))
-        with self.assertRaisesRegex(self.tool.ReleaseError, r"keinen Abschnitt \[webOS 2\.2\.1\]"):
-            self.notes("webos")
+        self.commit_file("CHANGELOG.md", CHANGELOG.replace("[webOS 2.3.0]", "[webOS 2.2.0]"))
+        with self.assertRaisesRegex(self.tool.ReleaseError, r"keinen Abschnitt \[webOS 2\.3\.0\]"):
+            self.notes()
 
     def test_public_text_check_rejects_credentials(self) -> None:
         for text in (f"Wert {TV_ID}", f"Wert {SECRET_PREFIX}inventedSecretValue123", f"Wert {ACCESS_TOKEN}",
@@ -679,7 +712,7 @@ class FromRunTests(ReleaseTestCase):
         self.github_fake.runs["42"] = self.run_data
         self.github_fake.job_lists["42"] = [{"name": "package", "conclusion": "success", "steps": [
             {"name": name, "conclusion": "success"} for name in self.platform.required_steps]}]
-        self.github_fake.artifact_lists["42"] = [{"id": 5, "name": "Nori-iOS-1.25.2-unsigned", "expired": False}]
+        self.github_fake.artifact_lists["42"] = [{"id": 5, "name": "Nori-iOS-2.3.0-unsigned", "expired": False}]
         self.github_fake.latest[self.platform.workflow] = self.run_data
 
     def from_run(self, dry_run: bool = False):
@@ -691,10 +724,12 @@ class FromRunTests(ReleaseTestCase):
         self.assertEqual(self.github_fake.writes, [])
         self.assertEqual(self.github_fake.downloads, [])
 
-    def test_successful_latest_run_is_released(self) -> None:
-        self.assertEqual(self.from_run(), "created")
-        self.assertEqual(self.github_fake.tag_refs["ios-v1.25.2"], self.commit)
-        self.assertEqual(self.production_calls, ["Nori-iOS-1.25.2-unsigned.ipa"])
+    def test_successful_latest_run_attaches_package(self) -> None:
+        # Ein einzelner Paket-Lauf hängt sein Paket an den Entwurf an; veröffentlicht
+        # wird erst, wenn alle drei Plattformen da sind.
+        self.assertEqual(self.from_run(), "attached")
+        self.assertNotIn("v2.3.0", self.github_fake.tag_refs)
+        self.assertEqual(self.production_calls, ["Nori-iOS-2.3.0-unsigned.ipa"])
 
     def test_failed_or_cancelled_packaging_creates_no_release(self) -> None:
         for conclusion in ("failure", "cancelled", "timed_out", None):
@@ -721,7 +756,7 @@ class FromRunTests(ReleaseTestCase):
         self.assertRefused("jüngste")
 
     def test_run_for_another_version_is_refused(self) -> None:
-        self.commit_file("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", pbxproj("1.25.3", "40", "to.nori.ios"))
+        self.commit_file("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", pbxproj("2.3.1", "41", "to.nori.ios"))
         self.assertRefused("anderen Stand")
 
     def test_expired_artifact_is_refused(self) -> None:

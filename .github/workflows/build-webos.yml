@@ -199,9 +199,10 @@ jobs:
           rm -rf apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
           rm -f apps/webos/*.ipk
 
-  # GitHub-Release `webos-v<VERSION>` mit genau dem geprüften produktiven .ipk —
-  # nur auf main, nur nach einem grünen Build-Job. Gibt es den Release schon,
-  # endet er grün.
+  # Hängt das geprüfte produktive .ipk an den gemeinsamen Release `v<VERSION>` an
+  # — nur auf main, nur nach einem grünen Build-Job. Veröffentlicht wird der
+  # Release erst, wenn alle Plattformen angehängt sind. Trägt er dieses Paket
+  # schon, endet er grün.
   release:
     needs: build
     if: github.ref == 'refs/heads/main'

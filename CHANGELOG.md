@@ -3,9 +3,34 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.2.1**.
+Alle Plattformen teilen sich eine Versionsnummer und einen gemeinsamen Release
+mit dem Tag `v<VERSION>`. Die einheitliche Nummerierung beginnt mit **2.3.0**
+(macOS, iOS/iPadOS und LG webOS). Windows bleibt vorerst auf einem eigenen
+Stand (**1.8.0**).
+
+## [iOS 2.3.0] · [macOS 2.3.0] · [webOS 2.3.0] — 2026-09-17
+
+Erste einheitliche Version: alle Plattformen teilen sich den Tag `v2.3.0` und
+landen als Anhänge in einem gemeinsamen GitHub-Release. Statt dreier
+plattformgetrennter Releases (`ios-v…`, `macos-v…`, `webos-v…`) gibt es jetzt
+ genau einen Release pro Version. Die Build-Pipelines bleiben plattformgetrennt;
+veröffentlicht wird erst, wenn alle Plattform-Pakete geprüft und angehängt sind.
+Keine Änderung an OAuth, Sync, Player oder TMDB.
+
+### Geändert — Release-Pipeline
+
+- **Ein gemeinsamer Release pro Version.** Die drei Plattform-Pakete (iOS IPA,
+  macOS-Quellpaket, webOS-IPK) sind Anhänge desselben Releases mit dem
+  einheitlichen Tag `v<VERSION>`.
+- **Eine Versionsnummer für alle Plattformen.** iOS, macOS und webOS tragen
+  jetzt dieselbe `x.y.z`; der Tag wird daraus abgeleitet, nicht mehr pro
+  Plattform.
+- **Veröffentlichung erst, wenn alle Plattformen angehängt sind.** Der erste
+  fertige Plattform-Lauf legt einen Entwurf an, die nächsten hängen ihr Paket an,
+  der letzte veröffentlicht. Fällt eine Plattform durch, bleibt der Entwurf
+  unauffällig liegen, bis sie nachgebaut ist.
+- Die Sicherheitsprüfungen (Prüfsumme, `on-main`, Produktionscheck, keine
+  Zugangsdaten) bleiben für jedes Plattform-Paket einzeln bestehen.
 
 ## [webOS 2.2.1] — 2026-09-13
 

@@ -1,14 +1,18 @@
 # GitHub-Releases
 
-Nori hat je Plattform eine eigene Versionsnummer, deshalb auch eigene Releases.
-Sie entstehen automatisch, sobald eine neue Version auf `main` gebaut und
-geprüft ist — niemand setzt dafür einen Tag von Hand.
+Nori hat eine einheitliche Versionsnummer für alle Plattformen und deshalb auch
+einen gemeinsamen Release pro Version. Er entsteht automatisch, sobald die
+Plattform-Pakete auf `main` gebaut und geprüft sind — niemand setzt dafür einen
+Tag von Hand.
 
-| Plattform | Tag | Titel | Anhang | Quelle |
-| --- | --- | --- | --- | --- |
-| iOS/iPadOS | `ios-v<VERSION>` | Nori iOS `<VERSION>` | `Nori-iOS-<VERSION>-unsigned.ipa` | Package iOS IPA |
-| LG webOS | `webos-v<VERSION>` | Nori webOS `<VERSION>` | `tv.nori.app_<VERSION>_all.ipk` | Build webOS |
-| macOS | `macos-v<VERSION>` | Nori macOS `<VERSION>` | `Nori-macOS-<VERSION>-source.zip` | Package macOS Source |
+| Plattform | Anhang | Quelle |
+| --- | --- | --- |
+| iOS/iPadOS | `Nori-iOS-<VERSION>-unsigned.ipa` | Package iOS IPA |
+| LG webOS | `tv.nori.app_<VERSION>_all.ipk` | Build webOS |
+| macOS | `Nori-macOS-<VERSION>-source.zip` | Package macOS Source |
+
+Alle drei Anhänge landen im selben Release mit dem einheitlichen Tag `v<VERSION>`
+(z. B. `v2.3.0`).
 
 ## Ablauf
 
@@ -43,21 +47,26 @@ nichts selbst.
 4. Die Produktionsprüfung der Plattform noch einmal gegen genau diese Datei:
    `configure-google-oauth.py --verify-ios-ipa` bzw.
    `check-webos-package.py --production`.
-5. Release Notes aus `CHANGELOG.md` erzeugen.
-6. Prüfen, dass der Commit auf `main` liegt.
-7. Unsichtbaren Entwurf anlegen, Paket anhängen, den Anhang über die
-   Prüfsumme gegenprüfen, annotierten Tag auf den geprüften Commit setzen,
-   veröffentlichen, Endzustand prüfen.
+5. Prüfen, dass der Commit auf `main` liegt.
+6. Den Entwurf anlegen, falls er noch fehlt, sonst das Paket anhängen, den
+   Anhang über die Prüfsumme gegenprüfen. Ist der Entwurf durch diesen Anhang
+   vollständig (alle drei Plattformen), annotierten Tag auf den geprüften
+   Commit setzen, veröffentlichen, Endzustand prüfen — sonst wartet er auf
+   die anderen Plattformen.
 
-## Duplikate und Tags
+## Sammel-Release, Duplikate und Tags
 
 | Zustand | Ergebnis |
 | --- | --- |
-| weder Tag noch Release | Release wird angelegt |
-| Release existiert | grün, keine Änderung — auch wenn ein späterer Commit dieselbe Version trägt |
+| weder Tag noch Entwurf | Entwurf wird angelegt, Paket angehängt |
+| Entwurf existiert, Paket fehlt noch | Paket wird angehängt |
+| Entwurf ist vollständig (alle drei Plattformen) | Tag wird gesetzt, Release wird veröffentlicht |
+| Release veröffentlicht, trägt dieses Paket schon | grün, keine Änderung |
+| Release veröffentlicht, ohne dieses Paket | Abbruch — nicht nachträglich anhängbar |
 | Tag ohne Release | Abbruch, nichts wird angelegt |
 | Tag auf anderem Commit | Abbruch, der Tag wird nicht verschoben |
-| unveröffentlichter Entwurf | Abbruch, der Entwurf wird weder überschrieben noch gelöscht |
+| unveröffentlichter Entwurf, trägt dieses Paket schon | Abbruch — bitte von Hand prüfen |
+| mehrere Entwürfe derselben Version | Abbruch — bitte von Hand aufräumen |
 | Version älter als ein vorhandener Tag | Abbruch |
 
 Die Tag-Referenz wird über die API ohne `force` angelegt; gibt es sie
@@ -65,17 +74,20 @@ inzwischen, antwortet GitHub mit 422 und nichts wird veröffentlicht. Kein
 Workflow reagiert auf Tags: alle Push-Auslöser sind auf Branches beschränkt,
 ein neuer Release-Tag startet also weder Builds noch einen weiteren Release —
 auch nicht, wenn er beim Nachholen mit einem persönlichen Token entsteht. Die
-Release-Jobs einer Plattform laufen nacheinander, und auf `main` werden
-Paket-Läufe nicht mehr abgebrochen, damit ein Release nie mittendrin endet.
+Release-Jobs einer Version laufen nacheinander (gleiche `concurrency`-Gruppe),
+und auf `main` werden Paket-Läufe nicht mehr abgebrochen, damit ein Release nie
+mittendrin endet.
 
-Ein abgebrochener Zustand (Tag ohne Release, Entwurf) wird bewusst nicht
-automatisch repariert: erst von Hand ansehen, dann Entwurf bzw. Tag selbst
-entfernen und den Release-Job neu starten („Re-run failed jobs").
+Ein abgebrochener Zustand (Tag ohne Release, mehrere Entwürfe, Entwurf mit
+unerwartetem Anhang) wird bewusst nicht automatisch repariert: erst von Hand
+ansehen, dann aufräumen und den Release-Job neu starten („Re-run failed jobs").
 
 ## Release Notes
 
-Aus dem Abschnitt `[<Plattform> <Version>]` in `CHANGELOG.md` — fehlt er,
-entsteht kein Release. Oben stehen Plattform, Version, Build und Commit, dazu
+Der gemeinsame Release-Body fasst alle drei Plattformen zusammen. Für jede
+Plattform wird der Abschnitt `[<Plattform> <Version>]` aus `CHANGELOG.md`
+gerendert — fehlt einer, entsteht kein Release. Oben stehen Version, Commit und
+die Liste der Pakete; je Plattform stehen Version, Build (wo vorhanden) und
 der Hinweis zum Paket:
 
 - iOS: „Unsigned IPA – muss vor der Installation mit einer gültigen Signatur
@@ -85,8 +97,8 @@ der Hinweis zum Paket:
 
 Übernommen werden nur die Abschnitte *Behoben*, *Geändert*, *Hinzugefügt*,
 *Neu*, *Entfernt*, *Verbessert*, *Sicherheit*, *Bekannte Einschränkungen* und
-*Hinweis zum Update*, und davon nur die für diese Plattform (`### Behoben —
-macOS` fehlt in den iOS-Notes, `— beide Apple-Apps` steht in beiden). Tests,
+*Hinweis zum Update*, und davon nur die für die jeweilige Plattform (`### Behoben —
+macOS` fehlt im iOS-Block, `— beide Apple-Apps` steht in beiden). Tests,
 Prüfprotokolle und Codeblöcke bleiben draußen. Sätze und Punkte, die interne
 OAuth-, Secret-, Token-, `.env`-, xcconfig- oder Runner-Einzelheiten nennen,
 fallen weg; bei einem Punkt mit fetter Überschrift bleibt die Überschrift.

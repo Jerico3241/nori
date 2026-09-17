@@ -95,9 +95,9 @@ class Platform:
     required_steps: tuple[str, ...]  # müssen in diesem Lauf grün sein (from-run)
     hint: str
 
-    @property
-    def tag_prefix(self) -> str:
-        return f"{self.key}-v"
+    # Einheitlicher Tag für alle Plattformen: `v<VERSION>`. Die Plattform
+    # steckt nur noch im Anhang, nicht mehr im Tag.
+    tag_prefix = "v"
 
 
 # Soll macOS später ein `.app.zip` oder `.dmg` statt des Quellpakets
@@ -188,6 +188,14 @@ def platform_for(key: str) -> Platform:
         raise ReleaseError(f"Unbekannte Plattform {key!r} – erwartet {', '.join(sorted(PLATFORMS))}") from None
 
 
+EXPECTED_PLATFORMS = ("ios", "macos", "webos")
+
+
+def expected_assets(version: str) -> list[str]:
+    """Eines je Plattform, sortiert wie die Paket-Läufe."""
+    return [platform_for(key).asset.format(version=version) for key in EXPECTED_PLATFORMS]
+
+
 # ── Version aus dem Commit ───────────────────────────────────────────────────
 
 
@@ -201,11 +209,11 @@ class Meta:
 
     @property
     def tag(self) -> str:
-        return f"{self.platform.tag_prefix}{self.version}"
+        return f"v{self.version}"
 
     @property
     def title(self) -> str:
-        return f"Nori {self.platform.label} {self.version}"
+        return f"Nori {self.version}"
 
     @property
     def asset(self) -> str:
@@ -716,24 +724,40 @@ def check_public_text(text: str) -> None:
             raise ReleaseError(f"Release Notes enthalten Zugangsdaten aus {origin} – kein Release")
 
 
-def build_notes(meta: Meta, repository: str) -> str:
-    changelog = file_at(meta.commit, "CHANGELOG.md")
-    section = changelog_tool().extract(changelog, meta.platform.label, meta.version)
+def platform_section(key: str, commit: str, repository: str) -> str:
+    """Öffentlicher Block einer Plattform für den gemeinsamen Release-Body."""
+    platform = platform_for(key)
+    read = read_meta(key, commit)
+    meta = Meta(platform, read.version, read.build, read.bundle_id, commit)
+    changelog = file_at(commit, "CHANGELOG.md")
+    section = changelog_tool().extract(changelog, platform.label, meta.version)
     if section is None:
         raise ReleaseError(
-            f"CHANGELOG.md hat in {meta.commit[:7]} keinen Abschnitt [{meta.platform.label} {meta.version}] – kein Release"
+            f"CHANGELOG.md hat in {commit[:7]} keinen Abschnitt [{platform.label} {meta.version}] – kein Release"
         )
-    changes = public_changes(section, meta.platform.key) or (
+    changes = public_changes(section, platform.key) or (
         "Keine gesonderten Hinweise für diese Plattform; Einzelheiten stehen in `CHANGELOG.md`."
     )
-    facts = [f"- **Plattform:** {meta.platform.display}", f"- **Version:** {meta.version}"]
+    lines = [f"### {platform.display}", "", f"- **Version:** {meta.version}"]
     if meta.build:
-        facts.append(f"- **Build:** {meta.build}")
-    facts.append(f"- **Commit:** [`{meta.commit[:7]}`](https://github.com/{repository}/commit/{meta.commit})")
-    notes = "\n".join([
-        *facts, "", f"> {meta.platform.hint}", "", "## Änderungen", "", changes, "", "---", "",
-        f"Paket: `{meta.asset}`", "",
-    ])
+        lines.append(f"- **Build:** {meta.build}")
+    lines.append(f"> {platform.hint}")
+    lines += ["", changes, ""]
+    return "\n".join(lines)
+
+
+def build_notes(meta: Meta, repository: str) -> str:
+    """Ein gemeinsamer Body für alle Plattformen derselben Version.
+
+    Der Entwurf wird vom ersten fertigen Plattform-Lauf angelegt; sein Body gilt
+    für den ganzen Release, deshalb fasst er alle Plattformen zusammen. Jeder
+    Plattform-Lauf prüft die Notes vor dem Anlegen bzw. Anhängen neu.
+    """
+    blocks = [platform_section(key, meta.commit, repository) for key in EXPECTED_PLATFORMS]
+    facts = [f"- **Version:** {meta.version}",
+             f"- **Commit:** [`{meta.commit[:7]}`](https://github.com/{repository}/commit/{meta.commit})"]
+    packages = "\n".join(f"- `{platform_for(key).asset.format(version=meta.version)}`" for key in EXPECTED_PLATFORMS)
+    notes = "\n".join([*facts, "", "## Pakete", "", packages, "", "## Änderungen", "", *blocks])
     check_public_text(notes)
     return notes
 
@@ -868,7 +892,14 @@ class GitHub:
     def publish(self, release: dict) -> dict:
         return self.request("PATCH", f"/releases/{release['id']}", {"draft": False})
 
-    def release_by_tag(self, tag: str) -> dict | None:
+    def release_by_tag(self, tag: str, draft: bool = False) -> dict | None:
+        # GitHub löst `/releases/tags/<tag>` nur für veröffentlichte Releases auf;
+        # ein Entwurf mit dem Tag steht in der Liste. `draft=True` sucht dort.
+        if draft:
+            for release in self.releases():
+                if release.get("tag_name") == tag and release.get("draft"):
+                    return release
+            return None
         return self.request("GET", f"/releases/tags/{urllib.parse.quote(tag)}", missing_ok=True)
 
     def run(self, run_id: str) -> dict:
@@ -914,20 +945,41 @@ def github_from_environment() -> GitHub:
 
 @dataclass(frozen=True)
 class Decision:
-    action: str  # create | skip
+    # create: Entwurf fehlt, wird angelegt.
+    # attach: Entwurf existiert, dieses Plattform-Paket kommt noch hinzu.
+    # skip:   Release ist veröffentlicht und trägt dieses Paket bereits.
+    # publish: Entwurf ist durch diesen Anhang vollständig und wird veröffentlicht.
+    action: str  # create | attach | skip | publish
     reason: str
+    draft: dict | None = None
 
 
 def decide(meta: Meta, tag_commit: str | None, releases: list[dict], tags: list[str]) -> Decision:
-    """Neu anlegen, erfolgreich überspringen oder abbrechen — nie verschieben."""
+    """Entwurf anlegen, Paket anhängen, überspringen oder veröffentlichen — nie verschieben."""
     same = [release for release in releases if release.get("tag_name") == meta.tag]
-    if any(not release.get("draft") for release in same):
-        moved = "" if tag_commit in (None, meta.commit) else f" (Tag auf {tag_commit[:7]}, dieser Lauf {meta.commit[:7]})"
-        return Decision("skip", f"Release {meta.tag} existiert bereits{moved} – kein zweiter Release, der Tag bleibt, wo er ist.")
-    if same:
+    published = [release for release in same if not release.get("draft")]
+    drafts = [release for release in same if release.get("draft")]
+    if published:
+        assets = [item.get("name") for item in published[0].get("assets", [])]
+        if meta.asset in assets:
+            moved = "" if tag_commit in (None, meta.commit) else f" (Tag auf {tag_commit[:7]}, dieser Lauf {meta.commit[:7]})"
+            return Decision("skip", f"Release {meta.tag} existiert bereits{moved} und trägt {meta.asset} – kein zweiter Anhang.")
         raise ReleaseError(
-            f"Für {meta.tag} liegt ein unveröffentlichter Entwurf – er wird weder überschrieben noch gelöscht. Bitte von Hand prüfen."
+            f"Release {meta.tag} ist veröffentlicht, aber ohne {meta.asset} – nicht nachträglich anhängbar. Bitte von Hand prüfen."
         )
+    if drafts:
+        draft = drafts[0]
+        if len(drafts) > 1:
+            raise ReleaseError(f"Für {meta.tag} liegen mehrere Entwürfe – Bitte von Hand aufräumen, bevor es weitergeht.")
+        assets = [item.get("name") for item in draft.get("assets", [])]
+        if meta.asset in assets:
+            raise ReleaseError(
+                f"Entwurf {meta.tag} trägt {meta.asset} bereits – nicht noch einmal angehängt. Bitte von Hand prüfen."
+            )
+        unexpected = [name for name in assets if name not in expected_assets(meta.version)]
+        if unexpected:
+            raise ReleaseError(f"Entwurf {meta.tag} trägt unerwartete Anhänge {unexpected} – wird nicht fortgesetzt.")
+        return Decision("attach", f"Entwurf {meta.tag} existiert – {meta.asset} wird angehängt.", draft)
     if tag_commit is not None:
         if tag_commit != meta.commit:
             raise ReleaseError(
@@ -945,20 +997,57 @@ def decide(meta: Meta, tag_commit: str | None, releases: list[dict], tags: list[
     )
     if newer:
         raise ReleaseError(f"{meta.tag} ist älter als das vorhandene {newer[-1]} – kein Release.")
-    return Decision("create", f"{meta.tag} ist neu – Release wird angelegt.")
+    return Decision("create", f"{meta.tag} ist neu – Entwurf wird angelegt.")
 
 
 def check_uploaded(github, release: dict, meta: Meta, asset: Path, digest: str) -> None:
-    assets = github.assets(release)
-    if [item.get("name") for item in assets] != [meta.asset]:
-        raise ReleaseError(f"Entwurf {meta.tag} trägt unerwartete Anhänge – wird nicht veröffentlicht")
-    uploaded = assets[0]
+    uploaded = next((item for item in github.assets(release) if item.get("name") == meta.asset), None)
+    if uploaded is None:
+        raise ReleaseError(f"Anhang {meta.asset} fehlt am Entwurf {meta.tag} – wird nicht veröffentlicht")
     if uploaded.get("state") != "uploaded" or uploaded.get("size") != asset.stat().st_size:
         raise ReleaseError(f"Anhang {meta.asset} ist unvollständig hochgeladen – Entwurf wird nicht veröffentlicht")
     remote = uploaded.get("digest")
     matches = (remote == f"sha256:{digest}") if remote else (hashlib.sha256(github.download_asset(uploaded)).hexdigest() == digest)
     if not matches:
         raise ReleaseError(f"Hochgeladener Anhang {meta.asset} weicht vom geprüften Paket ab – Entwurf wird nicht veröffentlicht")
+
+
+def ready_to_publish(github, meta: Meta) -> bool:
+    """True, sobald der Entwurf genau die erwarteten Plattform-Pakete trägt."""
+    draft = github.release_by_tag(meta.tag, draft=True)
+    if not draft or not draft.get("draft"):
+        return False
+    present = sorted(item.get("name") for item in github.assets(draft))
+    return present == sorted(expected_assets(meta.version))
+
+
+def publish_draft(github, meta: Meta) -> str:
+    """Veröffentlicht den vollständigen Entwurf: Tag setzen, Endzustand prüfen."""
+    draft = github.release_by_tag(meta.tag, draft=True)
+    if not draft or not draft.get("draft"):
+        raise ReleaseError(f"Entwurf {meta.tag} ist nicht auffindbar – wird nicht veröffentlicht.")
+    present = sorted(item.get("name") for item in github.assets(draft))
+    if present != sorted(expected_assets(meta.version)):
+        raise ReleaseError(f"Entwurf {meta.tag} ist unvollständig ({present}) – wird nicht veröffentlicht.")
+    message = meta.title + (f" ({meta.build})" if meta.build else "")
+    try:
+        github.create_tag(meta.tag, meta.commit, message)
+    except GitHubError as error:
+        if error.status == 422:
+            raise ReleaseError(
+                f"Tag {meta.tag} ist inzwischen vorhanden – nicht verschoben; der Entwurf bleibt zur Prüfung liegen."
+            ) from None
+        raise
+    if github.tag_commit(meta.tag) != meta.commit:
+        raise ReleaseError(f"Tag {meta.tag} zeigt nicht auf {meta.commit[:7]} – Entwurf wird nicht veröffentlicht.")
+    github.publish(draft)
+    final = github.release_by_tag(meta.tag)
+    if not final or final.get("draft") or final.get("id") != draft.get("id"):
+        raise ReleaseError(f"Release {meta.tag} ist nach dem Veröffentlichen nicht auffindbar")
+    if sorted(item.get("name") for item in final.get("assets", [])) != sorted(expected_assets(meta.version)):
+        raise ReleaseError(f"Release {meta.tag} trägt unerwartete Anhänge")
+    print(f"Release veröffentlicht: {meta.title} – {final.get('html_url', '')}")
+    return "created"
 
 
 def run_release(meta: Meta, locate: Callable[[], Path], github, expected_sha256: str | None,
@@ -972,40 +1061,30 @@ def run_release(meta: Meta, locate: Callable[[], Path], github, expected_sha256:
     digest = verify_asset(meta, asset, expected_sha256)
     print(f"Paket geprüft: {asset.name} ({asset.stat().st_size} Bytes, sha256 {digest})")
     production_check(meta, asset)
-    notes = build_notes(meta, repository)
     if not github.on_main(meta.commit):
         raise ReleaseError(f"Commit {meta.commit[:7]} liegt nicht auf main – kein Release.")
     if dry_run:
-        print(f"Probelauf: {meta.title} würde mit {asset.name} auf {meta.commit[:7]} angelegt. Release Notes:\n")
+        notes = build_notes(meta, repository)
+        print(f"Probelauf: {meta.title} würde {asset.name} auf {meta.commit[:7]} anhängen. Release Notes:\n")
         print(notes)
         return "dry-run"
 
-    # Erst ein unsichtbarer Entwurf mit geprüftem Anhang, dann der Tag, dann die
-    # Veröffentlichung. Scheitert ein Schritt, bleibt nichts Halbes öffentlich
-    # stehen, und der nächste Lauf bricht mit einer klaren Meldung ab.
-    draft = github.create_draft(meta, notes)
+    # Der erste Plattform-Lauf legt den Entwurf an, die nächsten hängen ihr Paket
+    # an denselben Entwurf. Veröffentlicht wird erst, wenn alle Plattformen da
+    # sind. Scheitert ein Schritt, bleibt der Entwurf unauffällig liegen und der
+    # nächste Lauf meldet klar, was fehlt.
+    if decision.action == "create":
+        draft = github.create_draft(meta, build_notes(meta, repository))
+    else:
+        draft = decision.draft
     github.upload(draft, asset, meta.asset, meta.platform.content_type)
     check_uploaded(github, draft, meta, asset, digest)
-    message = meta.title + (f" ({meta.build})" if meta.build else "")
-    try:
-        github.create_tag(meta.tag, meta.commit, message)
-    except GitHubError as error:
-        if error.status == 422:
-            raise ReleaseError(
-                f"Tag {meta.tag} ist inzwischen vorhanden – nicht verschoben; der Entwurf bleibt zur Prüfung liegen."
-            ) from None
-        raise
-    if github.tag_commit(meta.tag) != meta.commit:
-        raise ReleaseError(f"Tag {meta.tag} zeigt nicht auf {meta.commit[:7]} – Entwurf wird nicht veröffentlicht.")
-    github.publish(draft)
 
-    final = github.release_by_tag(meta.tag)
-    if not final or final.get("draft") or final.get("id") != draft.get("id"):
-        raise ReleaseError(f"Release {meta.tag} ist nach dem Veröffentlichen nicht auffindbar")
-    if [item.get("name") for item in final.get("assets", [])] != [meta.asset]:
-        raise ReleaseError(f"Release {meta.tag} trägt unerwartete Anhänge")
-    print(f"Release angelegt: {meta.title} – {final.get('html_url', '')}")
-    return "created"
+    if not ready_to_publish(github, meta):
+        present = sorted(item.get("name") for item in github.assets(github.release_by_tag(meta.tag, draft=True) or {}))
+        print(f"Entwurf {meta.tag} noch nicht vollständig ({present}) – wartet auf die anderen Plattformen.")
+        return "attached"
+    return publish_draft(github, meta)
 
 
 def check_run(platform: Platform, run: dict, jobs: list[dict]) -> None:
