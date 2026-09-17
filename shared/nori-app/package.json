@@ -1,6 +1,6 @@
 {
   "name": "@nori/app",
-  "version": "2.4.1",
+  "version": "2.6.0",
   "private": true,
   "type": "module",
   "description": "Gemeinsame Anwendungsschicht der Nori-Clients — Daten, Zustand, TMDB, Bilder, Abgleich. Ohne Oberfläche und ohne Plattformannahmen.",

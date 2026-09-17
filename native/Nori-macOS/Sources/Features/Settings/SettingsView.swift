@@ -97,16 +97,18 @@ private struct WhatsNewSettingsTab: View {
     }
 }
 
-/// Kurzfassung des Changelogs für das Einstellungsfenster. Die App wird als
-/// ZIP verteilt, es gibt also keine Release-Seite, auf der so etwas stünde.
-/// Vollständig in CHANGELOG.md im Projektverzeichnis.
+/// Kurzfassung des Changelogs für das Einstellungsfenster. Vollständig in
+/// CHANGELOG.md im Projektverzeichnis und an jedem GitHub Release.
+///
+/// `version` ist die gemeinsame Nori-Version aller Plattformen und muss
+/// `MARKETING_VERSION` entsprechen — `tools/nori-version.py` setzt und prüft
+/// beide zusammen.
 enum NoriRelease {
-    static let version = "1.20.1"
+    static let version = "2.6.0"
 
     static let highlights = [
-        "Das Öffnen einer Folge brachte Nori unter macOS 27 zum Absturz. Der Player benutzt jetzt direkt die Wiedergabeansicht von AppKit — mit derselben Systemsteuerung.",
-        "Die nächste Folge startet nach dem Countdown wieder. Vorher blieb der Player danach ohne Meldung bei „Folge wird gelesen …“ stehen.",
-        "Scheitert ein Hoster, beginnen „Erneut versuchen“ und „Anderen Hoster“ an der Stelle, an der die Folge stand, statt von vorn.",
+        "Nori trägt jetzt auf allen Plattformen dieselbe Versionsnummer. 2.6.0 folgt auf macOS 1.20.1; an der Mac-App selbst ändert sich dabei nichts.",
+        "Neue Stände erscheinen als ein gemeinsamer GitHub Release je Version („Nori v2.6.0“), mit einheitlichen Dateinamen und einer Prüfsumme für jede Datei.",
     ]
 }
 
