@@ -82,6 +82,36 @@ Die Eingabe bestätigt nur, was im Repository steht. Trägt `main` eine andere
 Nummer, bricht der Lauf sofort ab — eine Version kommt nie aus dem Eingabefeld
 in ein Paket.
 
+## Vor dem ersten Release: Artefakt-Speicher
+
+Ein Release reicht die Pakete über Actions-Artefakte vom Paket-Job an den
+Release-Job weiter. Am 17.09. war das Artefakt-Kontingent des Repositorys
+**voll** — 214 Artefakte mit zusammen rund 2,5 GB, davon 1,4 GB aus alten
+Android-Läufen und 0,7 GB Bildschirmfotos; das früheste läuft erst am 26.09.
+ab. Jedes Hochladen scheitert dann mit „Artifact storage quota has been hit“,
+also auch der erste Release (er bricht sauber ab, es entsteht nichts).
+
+Das Aufräumen des Release-Workflows kann das nicht lösen: Es läuft mit
+Absicht erst **nach** einem erfolgreichen Release. Einmalig also von Hand —
+entweder unter *Actions* die alten Läufe löschen oder nur die Artefakte, am
+eigenen Rechner:
+
+```bash
+gh api --paginate 'repos/Jerico3241/nori/actions/artifacts?per_page=100' --jq '.artifacts[].id' \
+  | while read -r id; do gh api -X DELETE "repos/Jerico3241/nori/actions/artifacts/$id"; sleep 1; done
+```
+
+Das löscht nur Actions-Artefakte (derzeit gibt es keinen GitHub Release, und
+Releases wären davon ohnehin nicht betroffen). GitHub rechnet den Verbrauch
+nur alle 6 bis 12 Stunden neu; erst danach geht das Hochladen wieder.
+
+Danach bleibt der Speicher klein: Übergabe-Artefakte leben einen Tag und
+werden nach dem Veröffentlichen gelöscht, Testpakete und Diagnose drei Tage,
+Windows lädt bei einem Push nichts hoch, und jeder Release löscht alte Läufe
+samt ihren Artefakten. Zwei Releases kurz hintereinander brauchen trotzdem
+Platz für zwei Sätze Pakete (je rund 220 MB), weil GitHub gelöschte
+Artefakte erst bei der nächsten Neuberechnung abzieht.
+
 ## Ablauf
 
 ```text
