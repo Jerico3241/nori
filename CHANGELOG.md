@@ -165,11 +165,17 @@ Am Runner-Mac (Xcode 27 Beta, Node 26, Python 3.14), 17.09.:
 - Lesend gegen GitHub: `prepare` für v2.6.0 besteht (Buildnummern der alten
   Tags höchstens 39 bzw. 30). Der Aufräumplan für die echten Läufe ergibt
   913 von 922 löschbar, 9 geschützt, keinen fremden Workflow.
+- CI des Branches auf dem Runner: Build iOS (nur Simulator, IPA-Job
+  übersprungen), Build macOS (nur Debug), Swift tests, Check Apple sources,
+  Check release pipeline und Build Windows grün — Letzterer mit
+  Desktop-Prüfung, Rosetta-Prüfung, Installer und ZIP ohne Wine und
+  `verify` beider Pakete, ohne Hochladen. Build webOS: Fernbedienungslauf
+  grün, rot erst beim Referenzvergleich des Pakets — derselbe Fehler wie
+  vorher auf `main` (Kurznamen des Minifiers), behoben in einem eigenen
+  Pull Request.
 - Nicht geprüft: ein echter Release-Lauf in Actions (er soll erst nach dem
-  Merge von Hand gestartet werden), der Fernbedienungs- und der Desktoplauf
-  mit dieser Nummer (laufen in der CI des Branches), Windows mit
-  eingebautem Google-Client (Secrets fehlen) und das Windows-Paket auf echtem
-  Windows.
+  Merge von Hand gestartet werden), Windows mit eingebautem Google-Client
+  (Secrets fehlen) und das Windows-Paket auf echtem Windows.
 
 ## [webOS 2.4.1] — 2026-09-16
 
