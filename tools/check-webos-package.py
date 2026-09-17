@@ -658,11 +658,17 @@ def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: 
             reference_bytes = reference_bytes.replace(old, new)
         if ours == reference_bytes:
             continue
-        renames = only_minifier_renames(ours, reference_bytes)
+        report: list[str] = []
+        renames = only_minifier_renames(ours, reference_bytes, report)
         if renames is None:
+            # Der Bericht steht **hinter** der Fundstelle, nicht statt ihrer:
+            # Er zählt alle Abweichungen auf, nicht nur die erste, und sagt zu
+            # jeder, warum sie nicht als Umbenennung durchgeht. Ohne ihn bleibt
+            # nur Raten, und das hat hier schon Läufe gekostet.
             errors.append(
                 f"{rel}: Referenz-Vergleich — {key} unterscheidet sich über die "
                 f"Zugangsdaten hinaus{where_they_differ(ours, reference_bytes)}"
+                + ("".join(f"\n    {line}" for line in report) if report else "")
             )
         else:
             shown = ", ".join(f"{a.decode()}→{b.decode()}" for a, b in sorted(renames.items())[:5])
@@ -680,7 +686,20 @@ MINIFIED_NAME = re.compile(rb"[A-Za-z_$][A-Za-z0-9_$]*")
 MAX_MINIFIED_NAME = 4
 
 
-def only_minifier_renames(ours: bytes, reference: bytes) -> dict[bytes, bytes] | None:
+IDENTIFIER_BYTE = re.compile(rb"[A-Za-z0-9_$]")
+
+
+def full_token(data: bytes, start: int, end: int) -> tuple[int, int]:
+    """Den Bereich nach beiden Seiten bis an die Grenzen des Bezeichners."""
+    while start > 0 and IDENTIFIER_BYTE.match(data, start - 1):
+        start -= 1
+    while end < len(data) and IDENTIFIER_BYTE.match(data, end):
+        end += 1
+    return start, end
+
+
+def only_minifier_renames(ours: bytes, reference: bytes,
+                          report: list[str] | None = None) -> dict[bytes, bytes] | None:
     """Unterscheiden sich die beiden nur darin, wie der Minifizierer benennt?
 
     Der Lauf baut zweimal aus demselben Quelltext — einmal mit leeren
@@ -731,45 +750,106 @@ def only_minifier_renames(ours: bytes, reference: bytes) -> dict[bytes, bytes] |
     Gibt die Zuordnung zurück, wenn all das zutrifft, sonst `None`.
     """
     if len(ours) != len(reference):
+        if report is not None:
+            report.append(f"verschiedene Längen: Paket {len(ours)}, Vergleichsbau {len(reference)}")
         return None
-
-    mapping: dict[bytes, bytes] = {}
-    backwards: dict[bytes, bytes] = {}
-    index = 0
-    size = len(reference)
 
     def token_at(data: bytes, position: int) -> tuple[int, int] | None:
         """Der ganze Bezeichner, in dem `position` liegt."""
-        match = None
-        for candidate in MINIFIED_NAME.finditer(data, max(0, position - MAX_MINIFIED_NAME), position + MAX_MINIFIED_NAME + 1):
+        for candidate in MINIFIED_NAME.finditer(data, max(0, position - MAX_MINIFIED_NAME),
+                                                position + MAX_MINIFIED_NAME + 1):
             if candidate.start() <= position < candidate.end():
-                match = candidate
-                break
-        return (match.start(), match.end()) if match else None
+                return candidate.start(), candidate.end()
+        return None
 
+    # Erst alle abweichenden Stellen sammeln, dann urteilen. Beim ersten
+    # Verstoß auszusteigen wäre schneller, würde aber genau das verschweigen,
+    # was man zum Verstehen braucht: wie viele es sind und wie sie aussehen.
+    spots: list[tuple[int, int, str | None]] = []
+    index = 0
+    size = len(reference)
     while index < size:
         if ours[index] == reference[index]:
             index += 1
             continue
-
         span = token_at(reference, index)
         if span is None or span != token_at(ours, index):
-            return None
+            spots.append((index, index + 1, "kein Bezeichner auf beiden Seiten"))
+            index += 1
+            continue
         start, end = span
+        reason = None
+        dotted = False
         if end - start > MAX_MINIFIED_NAME:
-            return None
-        # Was unmittelbar daneben steht, entscheidet, ob es ein Bezeichner ist
-        # oder der Inhalt einer Zeichenkette bzw. ein Eigenschaftsname.
-        before = reference[start - 1:start]
-        after = reference[end:end + 1]
-        if before in (b'"', b"'", b"`", b".", b"\\") or after in (b'"', b"'", b"`"):
-            return None
-
-        theirs, mine = reference[start:end], ours[start:end]
-        if mapping.setdefault(theirs, mine) != mine or backwards.setdefault(mine, theirs) != theirs:
-            return None
+            reason = f"länger als {MAX_MINIFIED_NAME} Zeichen"
+        else:
+            # Was unmittelbar daneben steht, entscheidet, wofür der Name steht.
+            before = reference[start - 1:start]
+            after = reference[end:end + 1]
+            if before in (b'"', b"'", b"`", b"\\") or after in (b'"', b"'", b"`"):
+                # Der Inhalt einer Zeichenkette. Das ist nie eine Umbenennung.
+                reason = "grenzt an ein Anführungszeichen"
+            elif before == b".":
+                dotted = True
+        spots.append([start, end, reason, dotted])
         index = end
 
+    # Zwei Durchgänge, und die Reihenfolge ist der Punkt.
+    #
+    # Zuerst nur die freistehenden Namen: Sie sind der Beleg, dass der
+    # Minifizierer anders benannt hat, und aus ihnen entsteht die Zuordnung.
+    mapping: dict[bytes, bytes] = {}
+    backwards: dict[bytes, bytes] = {}
+    for spot in spots:
+        start, end, reason, dotted = spot
+        if reason is not None or dotted:
+            continue
+        theirs, mine = reference[start:end], ours[start:end]
+        if mapping.setdefault(theirs, mine) != mine:
+            spot[2] = f"{theirs.decode()} steht schon für {mapping[theirs].decode()}"
+        elif backwards.setdefault(mine, theirs) != theirs:
+            spot[2] = f"{backwards[mine].decode()} und {theirs.decode()} fallen zusammen"
+
+    # Danach die hinter einem Punkt. Ein Eigenschaftsname ist kein Name, den
+    # esbuild von sich aus umbenennt — deshalb war er bisher rundheraus
+    # verboten. Lauf 35243770094 zeigt, dass das zu grob ist: Dort tauschen
+    # `K`- und `W`-Familie durchgängig die Plätze, 374 Stellen, und vier davon
+    # stehen hinter einem Punkt (`.Kc` → `.Wc`, `.Wg` → `.Kg`). Wer ein
+    # Modul-Namensobjekt bündelt, liest die umbenannte Bindung eben als
+    # Eigenschaft.
+    #
+    # Durchgelassen wird deshalb **nur**, was oben schon an einem
+    # freistehenden Bezeichner belegt wurde. Eine Eigenschaft, die sich ohne
+    # zugehörige Umbenennung ändert, fällt weiterhin auf — und genau davor
+    # sollte die Regel schützen.
+    for spot in spots:
+        start, end, reason, dotted = spot
+        if reason is not None or not dotted:
+            continue
+        theirs, mine = reference[start:end], ours[start:end]
+        if mapping.get(theirs) != mine:
+            spot[2] = "hinter einem Punkt, ohne dieselbe Umbenennung an einem Bezeichner"
+
+    bad = [spot for spot in spots if spot[2] is not None]
+    if report is not None and bad:
+        report.append(f"{len(spots)} abweichende Stelle(n), davon {len(bad)} keine Umbenennung")
+        for start, end, reason, _ in bad[:6]:
+            # Zum Anzeigen den **ganzen** Namen, nicht das Bruchstück aus dem
+            # Suchfenster. Fürs Urteil genügt das Bruchstück — ein Name, der
+            # weiter reicht als vier Zeichen, misst darin immer mindestens
+            # fünf und fällt damit ohnehin durch. Zum Lesen genügt es nicht:
+            # `'gment'` statt `'react.fragment'` schickt den Nächsten auf die
+            # falsche Fährte.
+            whole = full_token(reference, start, end)
+            theirs = reference[whole[0]:whole[1]].decode("utf-8", "replace")
+            mine = MASK_LONG_RUNS.sub("…", ours[whole[0]:whole[1]].decode("utf-8", "replace"))
+            report.append(f"  Byte {start}: Vergleichsbau {theirs!r}, Paket {mine!r} — {reason}")
+        if len(bad) > 6:
+            report.append(f"  … und {len(bad) - 6} weitere")
+    if bad:
+        return None
+    if report is not None:
+        report.append(f"{len(spots)} Umbenennung(en) an {len(mapping)} Namen")
     return mapping
 
 

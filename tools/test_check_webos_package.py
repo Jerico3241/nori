@@ -319,6 +319,45 @@ class CheckWebosPackageTests(unittest.TestCase):
         )
         self.assertIsNone(tool.only_minifier_renames(smuggled, reference))
 
+    def test_dotted_name_needs_a_free_identifier_to_vouch_for_it(self) -> None:
+        """Ein Eigenschaftsname geht nur mit Beleg durch.
+
+        Lauf 35243770094: `K`- und `W`-Familie tauschen durchgängig die
+        Plätze, 374 Stellen, vier davon hinter einem Punkt (`.Kc` → `.Wc`,
+        `.Wg` → `.Kg`). Wer ein Modul-Namensobjekt bündelt, liest die
+        umbenannte Bindung eben als Eigenschaft — das ist dieselbe
+        Umbenennung, nicht eine zweite Änderung.
+        """
+        tool = load_tool()
+        reference = b"var Kc=1,Wg=2,Ky=3;Kc+Wg+Ky;ns.Kc;ns.Wg;ns.Wg"
+        ours = b"var Wc=1,Kg=2,Wy=3;Wc+Kg+Wy;ns.Wc;ns.Kg;ns.Kg"
+        self.assertEqual(
+            tool.only_minifier_renames(ours, reference),
+            {b"Kc": b"Wc", b"Wg": b"Kg", b"Ky": b"Wy"},
+        )
+
+    def test_dotted_name_without_a_matching_rename_still_fails(self) -> None:
+        tool = load_tool()
+        self.assertIsNone(tool.only_minifier_renames(b"var Wc=1;Wc;ns.abc", b"var Kc=1;Kc;ns.tok"))
+
+    def test_lone_property_change_still_fails(self) -> None:
+        tool = load_tool()
+        self.assertIsNone(tool.only_minifier_renames(b"var a=1;a;ns.abc", b"var a=1;a;ns.tok"))
+
+    def test_string_stays_forbidden_even_with_a_matching_rename(self) -> None:
+        # Auch wenn `Kc`→`Wc` anderswo belegt ist: In Anführungszeichen ist es
+        # Inhalt, kein Name.
+        tool = load_tool()
+        report: list[str] = []
+        self.assertIsNone(tool.only_minifier_renames(b'var Wc=1;Wc;x="Wc"', b'var Kc=1;Kc;x="Kc"', report))
+        self.assertTrue(any("Anführungszeichen" in line for line in report), report)
+
+    def test_report_counts_every_spot(self) -> None:
+        tool = load_tool()
+        report: list[str] = []
+        tool.only_minifier_renames(b"var Wy=1;Wy+Wy", b"var Ky=1;Ky+Ky", report)
+        self.assertEqual(report, ["3 Umbenennung(en) an 1 Namen"])
+
     def test_only_minifier_renames_accepts_consistent_swap(self) -> None:
         tool = load_tool()
         reference = b"var Wy=1,Ky=2;Wy+Ky"

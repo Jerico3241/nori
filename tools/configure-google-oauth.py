@@ -377,10 +377,20 @@ def artifact_text(path: Path) -> str:
     for file in path.rglob("*"):
         if file.is_file() and file.stat().st_size < 64 * 1024 * 1024:
             raw = file.read_bytes()
+            # Eine Info.plist im Binärformat ist für die Textsuche unten
+            # unlesbar und muss vorher nach XML. Das macht `plistlib` aus der
+            # Standardbibliothek — nicht `plutil`: Das Werkzeug gibt es nur auf
+            # macOS, und der Aufruf warf auf jedem anderen Rechner
+            # FileNotFoundError mitten in der Prüfung. Die Suche nach fremden
+            # Client-IDs und nach Client-Secrets im Bundle lief dort also nie,
+            # obwohl sie der eigentliche Zweck dieser Funktion ist.
             if file.name == "Info.plist" and raw.startswith(b"bplist"):
-                converted = subprocess.run(["plutil", "-convert", "xml1", "-o", "-", str(file)],
-                                           capture_output=True)
-                raw = converted.stdout
+                try:
+                    raw = plistlib.dumps(plistlib.loads(raw), fmt=plistlib.FMT_XML)
+                except Exception:
+                    # Eine unlesbare Info.plist ist kein Grund, die Prüfung
+                    # abzubrechen — die Rohbytes durchsuchen wir trotzdem.
+                    pass
             chunks.append(raw.decode("utf-8", "replace"))
     return "\n".join(chunks)
 
