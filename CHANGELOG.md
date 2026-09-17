@@ -4,8 +4,49 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.3.0**.
+unterschiedlich schnell bewegen: macOS **1.21.0**, iOS/iPadOS **1.26.0**,
+Windows **1.9.0**, LG webOS **2.4.0**.
+
+## [iOS 1.26.0] · [macOS 1.21.0] · [webOS 2.4.0] · [Windows 1.9.0] — Cross-Platform-Parität
+
+Die im vorigen webOS-Release gebauten Funktionen — Markierungen,
+Untertitel-Einstellungen, Skip-Schnittstelle, eigene Listen, zentrale
+Abschluss-Schwelle — lagen nur im gemeinsamen TypeScript-Kern und der
+webOS-Oberfläche. Dieser Release hebt die Parität an: der Swift-Kern
+(`native/NoriCore`) spiegelt nun dieselben Modelle und Regeln, und iOS-
+bzw. macOS-Oberflächen nutzen sie. Windows läuft über dieselbe Web-App
+wie webOS und erbt die Funktionen dadurch ohnehin.
+
+### Hinzugefügt
+- **Swift-Kern spiegelt den TypeScript-Kern**: `SkipSegment`-,
+  `CustomList`-Modelle, `completionThreshold`, `markEpisode`/`markSeason`/
+  `markSeries` und `activeSkipSegment`/`firstSkipSegment` in
+  `native/NoriCore`. Dieselben Regeln, damit der Google-Drive-Abgleich
+  denselben Stand liest.
+- **iOS: „Als gesehen / als ungesehen“** im Folgen-Kontextmenü und
+  „Staffel/Serie als gesehen/ungesehen“ im Serien-Menü — über die
+  zentrale Markierung, kein eigener Schreibweg.
+- **macOS: „Markieren“-Menü** in der Detailseiten-Werkzeugleiste und
+  „Als gesehen/ungesehen“ im Folgen-Kontextmenü.
+- **iOS/macOS: Untertitel-Einstellungen** (Bevorzugte Sprache + ein/aus)
+  in den Wiedergabe-Einstellungen; der Player wählt die Spur, wo der
+  Stream sie liefert.
+- **Sync-Merge für eigene Listen** auch im Swift-Kern (jüngster
+  `updatedAt` je Liste), synchronisiert über Google Drive.
+
+### Geändert
+- `LibraryData` (Swift) um optionale `subtitlePref`, `subtitlesEnabled`,
+  `lists` erweitert; alte `library.json` dekodieren mit Voreinstellungen
+  weiter — rückwärtskompatibel.
+- iOS/macOS `markSeasonWatched`/`forgetSeason` nutzen nun die zentrale
+  `markSeason`-Markierung statt eigener Schreibvorgänge je Folge.
+
+### Tests
+- Swift-Tests (`MarkingTests.swift`) für Markierung, Untertitel, Listen,
+  Skip-Segmente; Sync-Listen-Tests ergänzt. Spiegeln die
+  TypeScript-Testfälle.
+- TypeScript-Kern: 233 Tests bestanden. webOS-Typecheck und -Build
+  bestanden.
 
 ## [webOS 2.3.0] — Zusammenhängendes Wiedergabe-Erlebnis
 

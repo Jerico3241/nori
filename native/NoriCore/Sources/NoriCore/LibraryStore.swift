@@ -53,6 +53,11 @@ final class LibraryStore {
     /// erste Eintrag gilt als der jüngste. Das ist keine Erfindung, sondern
     /// genau die Aussage, die in der Reihenfolge steckt.
     var favoriteAddedAt: [String: Double] = [:]
+    /// Eigene Listen neben der Merkliste. Leeres Dictionary heißt „keine eigenen
+    /// Listen angelegt“. Optional in der Ablageform; eine Bibliothek ohne
+    /// `lists` ist gültig. Die bestehende Merkliste (favorites) bleibt der
+    /// Sonderfall und wird nicht zu einer dieser Listen.
+    var lists: [String: CustomList] = [:]
 
     // Einstellungen. Eine Zuweisung desselben Wertes ist **keine** Änderung:
     // der Player setzt Hoster und Sprache bei jedem Start. Bekäme derselbe
@@ -74,6 +79,15 @@ final class LibraryStore {
     var preferredQuality: String = "auto" { didSet { preferenceChanged(.preferredQuality, oldValue != preferredQuality) } }
     var autoplayNext: Bool = true { didSet { preferenceChanged(.autoplayNext, oldValue != autoplayNext) } }
     var playbackSpeed: Float = 1.0 { didSet { preferenceChanged(.playbackSpeed, oldValue != playbackSpeed) } }
+    /// Bevorzugte Untertitelsprache, z. B. „DE“ oder „EN“. Leer oder „off“ heißt aus.
+    ///
+    /// `subtitlePref` ohne eingeschaltete Untertitel ist das saubere „aus“.
+    /// Nicht jeder Hoster liefert Untertitel — die Einstellung ist ein Wunsch,
+    /// kein Anspruch, und greift nur, wo der Stream sie anbietet. Synchronisiert
+    /// wie die anderen Personen-Einstellungen.
+    var subtitlePref: String = "off" { didSet { preferenceChanged(.subtitlePref, oldValue != subtitlePref) } }
+    /// Ob Untertitel angezeigt werden. Voreinstellung aus.
+    var subtitlesEnabled: Bool = false { didSet { preferenceChanged(.subtitlesEnabled, oldValue != subtitlesEnabled) } }
     var provider: CatalogProvider = .aniworld { didSet { preferenceChanged(.provider, oldValue != provider) } }
     /// Was die Bibliothek zeigt. Vorgabe „Alle": beide Quellen in einer
     /// Liste. `provider` bleibt daneben bestehen und entscheidet, welche
@@ -395,13 +409,51 @@ final class LibraryStore {
         persist()
     }
 
+    // MARK: - Manuelle Markierung „gesehen“ / „ungesehen“
+    //
+    // Dünn gehaltene Hüllen um die reinen Funktionen in `Marking.swift`. Sie
+    // schreiben den Fortschrittsspeicher über denselben Pfad wie das
+    // automatische Sichern, damit der Geräteabgleich denselben Stand liest.
+
+    /// Eine einzelne Folge als gesehen oder ungesehen markieren.
+    func markEpisode(_ episode: Episode, season: String, slug: String, title: String, provider: CatalogProvider, completed: Bool) {
+        let ctx = MarkContext(slug: slug, title: title, season: season, provider: provider)
+        progress = markEpisodeProgress(progress, ctx: ctx, episode: episode, completed: completed, now: now)
+        lastProgressKey = nil
+        pendingProgressTick = false
+        progressRevision &+= 1
+        watchRevision &+= 1
+        persist()
+    }
+
+    /// Eine komplette Staffel als gesehen oder ungesehen markieren.
+    func markSeason(_ episodes: [Episode], season: String, slug: String, title: String, provider: CatalogProvider, completed: Bool) {
+        let ctx = MarkContext(slug: slug, title: title, season: season, provider: provider)
+        progress = markSeasonProgress(progress, ctx: ctx, episodes: episodes, completed: completed, now: now)
+        lastProgressKey = nil
+        pendingProgressTick = false
+        progressRevision &+= 1
+        watchRevision &+= 1
+        persist()
+    }
+
+    /// Eine komplette Serie als gesehen oder ungesehen markieren.
+    func markSeries(slug: String, title: String, provider: CatalogProvider, seasons: [(season: String, episodes: [Episode])], completed: Bool) {
+        progress = markSeriesProgress(progress, slug: slug, title: title, provider: provider, seasons: seasons, completed: completed, now: now)
+        lastProgressKey = nil
+        pendingProgressTick = false
+        progressRevision &+= 1
+        watchRevision &+= 1
+        persist()
+    }
+
     /// Einen Eintrag ablegen. Gibt zurück, ob es nur ein Takt war.
     private func store(_ item: WatchProgress) -> Bool {
         let path = normalizeEpisodePath(item.episodePath)
         var next = item
         next.episodePath = path
         next.provider = next.provider ?? providerFromPath(path)
-        if next.durationSec >= 20, next.positionSec >= next.durationSec * 0.9 { next.completed = true }
+        if next.durationSec >= 20, next.positionSec >= next.durationSec * completionThreshold { next.completed = true }
         let key = progressKey(path: path, provider: next.provider)
         let previous = progress[key]
         progress[key] = next
@@ -654,12 +706,17 @@ final class LibraryStore {
         preferredQuality = bag.preferredQuality ?? "auto"
         autoplayNext = bag.autoplayNext ?? true
         playbackSpeed = bag.playbackSpeed ?? 1.0
+        // Untertitel-Einstellungen sind neu. Fehlen sie, bleibt die Voreinstellung
+        // „aus“ — ein bestehender Stand verändert sich dadurch nicht.
+        subtitlePref = bag.subtitlePref ?? "off"
+        subtitlesEnabled = bag.subtitlesEnabled ?? false
         if let raw = bag.provider, let next = CatalogProvider(rawValue: raw) { provider = next }
         // Ältere Stände kennen den Bereich nicht. Sie bekommen „Alle" — das
         // ist der Sinn der gemeinsamen Bibliothek, nicht ein Verlust.
         scope = bag.scope.flatMap(LibraryScope.init(rawValue:)) ?? .all
         favoriteSource = bag.favoriteSource?.compactMapValues { CatalogProvider(rawValue: $0) } ?? [:]
         favoriteAddedAt = backfillAddedAt(bag.favoriteAddedAt ?? [:], favorites: favorites)
+        lists = decodeLists(bag.lists ?? [:])
         progress = migrateProgress(bag.progress)
         // Ein übernommener Stand kann alles geändert haben.
         lastProgressKey = nil
@@ -711,6 +768,24 @@ final class LibraryStore {
             if migrated[key] == nil || item.updatedAt > migrated[key]!.updatedAt { migrated[key] = item }
         }
         return migrated
+    }
+
+    /// Eine Roh-Listen-Abbildung auf gültige `CustomList`-Objekte normalisieren.
+    ///
+    /// Dasselbe wie `decodeLists` im TypeScript-Kern. Fehlt ein Feld oder hat
+    /// den falschen Typ, fällt die Liste auf brauchbare Werte zurück, statt die
+    /// ganze Bibliothek unlesbar zu machen.
+    private func decodeLists(_ raw: [String: CustomList]) -> [String: CustomList] {
+        var out: [String: CustomList] = [:]
+        for (id, list) in raw where !id.isEmpty {
+            out[id] = CustomList(
+                id: id,
+                name: list.name.isEmpty ? id : list.name,
+                items: list.items.filter { !$0.isEmpty },
+                updatedAt: list.updatedAt.isFinite && list.updatedAt > 0 ? list.updatedAt : 0
+            )
+        }
+        return out
     }
 
     /// Ältere Einträge derselben Folge unter einem anderen Schlüssel entfernen.
@@ -775,7 +850,7 @@ final class LibraryStore {
     }
 
     private func makeBag(modifiedAt: Double) -> LibraryData {
-        LibraryData(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, preferredQuality: preferredQuality, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt, sync: makeSyncMeta(generatedAt: modifiedAt))
+        LibraryData(version: Self.schemaVersion, modifiedAt: modifiedAt, favorites: favorites, recents: recents, titles: titles, progress: progress, langPref: langPref, hosterPref: hosterPref, resumeEnabled: resumeEnabled, autoplayNext: autoplayNext, playbackSpeed: playbackSpeed, preferredQuality: preferredQuality, subtitlePref: subtitlePref, subtitlesEnabled: subtitlesEnabled, provider: provider.rawValue, scope: scope.rawValue, favoriteSource: favoriteSource.mapValues(\.rawValue), favoriteAddedAt: favoriteAddedAt, lists: lists, sync: makeSyncMeta(generatedAt: modifiedAt))
     }
 
     private func makeSyncMeta(generatedAt: Double) -> SyncMeta {
@@ -834,4 +909,168 @@ final class LibraryStore {
         return "unknown"
         #endif
     }
+}
+
+// MARK: - Manuelle Markierung „gesehen“ / „ungesehen“
+//
+// Die automatische Vollendung setzt `completed` nur über den Fortschritt.
+// Diese Funktionen erlauben die bewusste Markierung, ohne dass dafür wirklich
+// abgespielt werden muss. Sie nutzen denselben Speicher (progress-Einträge),
+// damit der Geräteabgleich denselben Stand liest wie das automatische Sichern.
+// Dieselben Regeln wie `markEpisode` / `markSeason` / `markSeries` im
+// TypeScript-Kern (`shared/nori-core/src/library.ts`).
+//
+// Für „gesehen“ wird ein Eintrag mit `completed: true` angelegt, der die
+// Metadaten der Folge trägt — Staffel, Nummer, Titel, Pfad. Damit erscheint die
+// Folge nicht mehr in „Weiterschauen“ und zählt in den Staffel-Statistiken.
+// Für „ungesehen“ wird der Eintrag entfernt; hat er nie bestanden, ändert sich
+// nichts.
+
+/// Der Kontext einer Markierung: zu welcher Serie und Quelle sie gehört.
+struct MarkContext {
+    let slug: String
+    let title: String
+    let season: String
+    let provider: CatalogProvider
+}
+
+/// Eine einzelne Folge als gesehen oder ungesehen markieren.
+func markEpisodeProgress(
+    _ progress: [String: WatchProgress],
+    ctx: MarkContext,
+    episode: Episode,
+    completed: Bool,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: WatchProgress] {
+    markEntryProgress(progress, ctx: ctx, episode: episode, now: now, completed: completed)
+}
+
+/// Eine komplette Staffel als gesehen oder ungesehen markieren.
+func markSeasonProgress(
+    _ progress: [String: WatchProgress],
+    ctx: MarkContext,
+    episodes: [Episode],
+    completed: Bool,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: WatchProgress] {
+    var out = progress
+    for episode in episodes { out = markEntryProgress(out, ctx: ctx, episode: episode, now: now, completed: completed) }
+    return out
+}
+
+/// Eine komplette Serie als gesehen oder ungesehen markieren.
+///
+/// `seasons` trägt je Staffel ihre Folgen. Nur Folgen, die Nori kennt, werden
+/// markiert — unbekannte bleiben unangetastet, statt für sie Einträge aus
+/// nichts zu erfinden.
+func markSeriesProgress(
+    _ progress: [String: WatchProgress],
+    slug: String,
+    title: String,
+    provider: CatalogProvider,
+    seasons: [(season: String, episodes: [Episode])],
+    completed: Bool,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: WatchProgress] {
+    var out = progress
+    for (season, episodes) in seasons {
+        let ctx = MarkContext(slug: slug, title: title, season: season, provider: provider)
+        out = markSeasonProgress(out, ctx: ctx, episodes: episodes, completed: completed, now: now)
+    }
+    return out
+}
+
+/// Kern der Markierung: einen Eintrag setzen oder entfernen.
+private func markEntryProgress(
+    _ progress: [String: WatchProgress],
+    ctx: MarkContext,
+    episode: Episode,
+    now: Double,
+    completed: Bool
+) -> [String: WatchProgress] {
+    let path = normalizeEpisodePath(episode.path)
+    let key = progressKey(path: path, provider: ctx.provider)
+    if completed {
+        var out = progress
+        let existing = out[key]
+        // Eine manuelle Markierung trägt keine echte Position. `completed` allein
+        // reicht; `durationSec` 0 verhindert, dass `isEpisodeComplete` die
+        // Schwelle bemüht — die wäre bei Dauer 0 ohnehin nie erfüllt.
+        out[key] = WatchProgress(
+            slug: ctx.slug,
+            title: ctx.title,
+            season: ctx.season,
+            episode: episode.number,
+            episodePath: path,
+            germanTitle: episode.germanTitle,
+            englishTitle: episode.englishTitle,
+            positionSec: existing?.positionSec ?? 0,
+            durationSec: existing?.durationSec ?? 0,
+            updatedAt: now,
+            lang: existing?.lang,
+            completed: true,
+            provider: ctx.provider
+        )
+        return out
+    }
+    guard progress[key] != nil else { return progress }
+    var out = progress
+    out.removeValue(forKey: key)
+    return out
+}
+
+// MARK: - Eigene Listen
+
+/// Eine neue leere Liste oder eine bestehende mit gleichem Namen zurückgeben.
+func ensureList(
+    _ lists: [String: CustomList],
+    id: String,
+    name: String,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: CustomList] {
+    if let existing = lists[id], existing.name == name { return lists }
+    var out = lists
+    out[id] = lists[id].map { CustomList(id: id, name: name, items: $0.items, updatedAt: now) }
+        ?? CustomList(id: id, name: name, items: [], updatedAt: now)
+    return out
+}
+
+/// Einen Titel (`provider|slug`) zu einer Liste hinzufügen oder entfernen.
+func toggleListItem(
+    _ lists: [String: CustomList],
+    id: String,
+    item: String,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: CustomList] {
+    guard var list = lists[id] else { return lists }
+    if let index = list.items.firstIndex(of: item) {
+        list.items.remove(at: index)
+    } else {
+        list.items.insert(item, at: 0)
+    }
+    list.updatedAt = now
+    var out = lists
+    out[id] = list
+    return out
+}
+
+/// Eine Liste umbenennen.
+func renameList(
+    _ lists: [String: CustomList],
+    id: String,
+    name: String,
+    now: Double = Date().timeIntervalSince1970 * 1000
+) -> [String: CustomList] {
+    guard let list = lists[id], list.name != name else { return lists }
+    var out = lists
+    out[id] = CustomList(id: id, name: name, items: list.items, updatedAt: now)
+    return out
+}
+
+/// Eine Liste löschen.
+func deleteList(_ lists: [String: CustomList], id: String) -> [String: CustomList] {
+    guard lists[id] != nil else { return lists }
+    var out = lists
+    out.removeValue(forKey: id)
+    return out
 }

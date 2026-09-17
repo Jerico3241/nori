@@ -147,6 +147,13 @@ private struct PlaybackSettingsTab: View {
                     Text("1,5×").tag(Float(1.5))
                     Text("2×").tag(Float(2.0))
                 }
+                Toggle("Untertitel", isOn: $library.subtitlesEnabled)
+                Picker("Untertitelsprache", selection: $library.subtitlePref) {
+                    Text("Aus").tag("off")
+                    Text("Deutsch").tag("DE")
+                    Text("Englisch").tag("EN")
+                }
+                .disabled(!library.subtitlesEnabled)
             }
         }
         .formStyle(.grouped)

@@ -15,4 +15,4 @@ Daten (Merkliste, Verlauf) liegen im Ordner Nori-Daten neben der EXE.
 Falls Windows SmartScreen kommt:
   Weitere Informationen → Trotzdem ausführen.
 
-Paket 1.8.0 · 2026-09-04
+Paket 1.9.0 · 2026-09-04

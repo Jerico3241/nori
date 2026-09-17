@@ -128,6 +128,29 @@ final class LibrarySyncTests: XCTestCase {
         }
     }
 
+    // MARK: - Eigene Listen
+
+    /// Je Liste gewinnt der jüngste updatedAt; die Einträge werden als Ganzes
+    /// übernommen. Dieselbe Regel wie `shared/nori-core/test/sync.test.ts`.
+    func testListsMergeYoungestWins() {
+        let a = LibraryData(modifiedAt: 1000, sync: SyncMeta(formatVersion: 1, deviceId: "deviceA"),
+            lists: ["isekai": CustomList(id: "isekai", name: "Isekai", items: ["aniworld|a"], updatedAt: 1000)])
+        let b = LibraryData(modifiedAt: 2000, sync: SyncMeta(formatVersion: 1, deviceId: "deviceB"),
+            lists: ["isekai": CustomList(id: "isekai", name: "Isekai", items: ["aniworld|b", "aniworld|a"], updatedAt: 2000)])
+        for order in [[a, b], [b, a]] {
+            let merged = mergeLibrarySnapshots(order, now: 3000)
+            XCTAssertEqual(merged.lists?["isekai"]?.items.count, 2)
+            XCTAssertEqual(merged.lists?["isekai"]?.items, ["aniworld|b", "aniworld|a"])
+        }
+    }
+
+    /// Eine Datei ohne Listen-Feld trägt keine Listen in den Abgleich ein.
+    func testListsWithoutEntryStayEmpty() {
+        let a = LibraryData(modifiedAt: 1000, sync: SyncMeta(formatVersion: 1, deviceId: "deviceA"))
+        let merged = mergeLibrarySnapshots([a], now: 1000)
+        XCTAssertEqual(merged.lists ?? [:], [:])
+    }
+
     // MARK: - Hilfen
 
     private func preferenceText(_ data: LibraryData) -> [String: String] {

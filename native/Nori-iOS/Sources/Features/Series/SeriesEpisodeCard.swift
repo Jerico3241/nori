@@ -78,6 +78,18 @@ struct SeriesEpisodeCard: View {
         }
         .buttonStyle(NoriPressStyle(scale: 0.985))
         .accessibilityLabel(accessibleLabel(complete: complete, ratio: ratio))
+        .contextMenu {
+            Button {
+                library.markEpisode(episode, season: season, slug: detail.slug, title: detail.title, provider: provider, completed: true)
+            } label: {
+                Label("Als gesehen markieren", systemImage: "checkmark.circle")
+            }
+            Button {
+                library.markEpisode(episode, season: season, slug: detail.slug, title: detail.title, provider: provider, completed: false)
+            } label: {
+                Label("Als ungesehen markieren", systemImage: "circle")
+            }
+        }
     }
 
     // MARK: - Bild

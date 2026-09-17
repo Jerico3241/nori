@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  episodePathFor, scopeIncludesItem, scopeIncludesProvider, seriesPath,
+  activeSkipSegment, episodePathFor, firstSkipSegment, scopeIncludesItem,
+  scopeIncludesProvider, seriesPath,
   type CatalogItem, type WatchProgress,
 } from "../src/models.js";
 import {
@@ -118,4 +119,17 @@ test("Bereich filtert nach Quelle und Genre", () => {
   assert.equal(scopeIncludesItem("serienstream", serie), true);
   // Einträge ohne Quelle stammen aus älteren Ständen und fallen nicht raus.
   assert.equal(scopeIncludesProvider("aniworld", null), true);
+});
+
+test("Skip-Segmente: activeSkipSegment findet den treffenden Abschnitt", () => {
+  const segments = [
+    { type: "intro", start: 10, end: 80 },
+    { type: "outro", start: 1320, end: 1400 },
+  ] as const;
+  assert.equal(activeSkipSegment(segments, 5), null);
+  assert.equal(activeSkipSegment(segments, 30)?.type, "intro");
+  assert.equal(activeSkipSegment(segments, 1350)?.type, "outro");
+  assert.equal(activeSkipSegment(segments, 100), null);
+  assert.equal(firstSkipSegment(segments, "outro")?.end, 1400);
+  assert.equal(firstSkipSegment(segments, "recap"), null);
 });

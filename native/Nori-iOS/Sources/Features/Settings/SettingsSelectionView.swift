@@ -114,6 +114,50 @@ struct LanguageSettingsView: View {
 // MARK: - Qualität
 
 /// Die Obergrenze der Bildhöhe.
+struct SubtitlePrefSettingsView: View {
+    @Environment(LibraryStore.self) private var library
+    var body: some View {
+        SettingsSelectionView(
+            title: "Untertitelsprache",
+            options: NoriSubtitleOption.allCases,
+            label: \.label,
+            note: \.note,
+            selection: Binding(
+                get: { NoriSubtitleOption.from(library.subtitlePref) },
+                set: { library.subtitlePref = $0.rawValue }
+            ),
+            footnote: """
+            Untertitel erscheinen nur, wo der Stream sie anbietet — viele Hoster \n            liefern gar keine. Ist die gewünschte Spur nicht vorhanden, nimmt Nori \n            eine andere, statt die Wiedergabe zu verhindern.
+            """
+        )
+    }
+}
+
+/// Die Untertitel-Optionen — dieselben Sprachen wie die Tonspur plus „aus“.
+enum NoriSubtitleOption: String, CaseIterable, Identifiable {
+    case off
+    case german = "DE"
+    case english = "EN"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .off: return "Aus"
+        case .german: return "Deutsch"
+        case .english: return "Englisch"
+        }
+    }
+    var note: String {
+        switch self {
+        case .off: return "Keine Untertitel zeigen."
+        case .german: return "Deutsche Untertitel, sofern vorhanden."
+        case .english: return "Englische Untertitel, sofern vorhanden."
+        }
+    }
+    static func from(_ raw: String) -> NoriSubtitleOption {
+        NoriSubtitleOption(rawValue: raw) ?? .off
+    }
+}
+
 struct QualitySettingsView: View {
     @Environment(LibraryStore.self) private var library
 

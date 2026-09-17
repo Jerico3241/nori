@@ -178,6 +178,24 @@ struct SeriesView: View {
                     Label("Staffel als gesehen markieren", systemImage: "checkmark.circle")
                 }
                 .disabled(detail.episodes.isEmpty)
+                Button {
+                    markSeasonUnwatched(detail)
+                } label: {
+                    Label("Staffel als ungesehen markieren", systemImage: "circle")
+                }
+                .disabled(detail.episodes.isEmpty)
+                Button {
+                    markSeriesWatched(detail)
+                } label: {
+                    Label("Serie als gesehen markieren", systemImage: "checkmark.circle.fill")
+                }
+                .disabled(detail.seasons.isEmpty)
+                Button {
+                    markSeriesUnwatched(detail)
+                } label: {
+                    Label("Serie als ungesehen markieren", systemImage: "circle.dashed")
+                }
+                .disabled(detail.seasons.isEmpty)
 
                 if library.hasProgress(slug: slug, season: season, source: source) {
                     Button(role: .destructive) {
@@ -239,37 +257,33 @@ struct SeriesView: View {
         Task { await load(season: next) }
     }
 
-    /// Eine ganze Staffel auf einmal — ein Schreibvorgang, nicht einer je Folge.
+    /// Eine ganze Staffel auf einmal — über die zentrale Markierung, nicht
+    /// ein eigener Schreibweg je Folge. Dasselbe wie der webOS-Pfad und der
+    /// TypeScript-Kern: der Geräteabgleich liest denselben Stand.
     private func markSeasonWatched(_ detail: SeriesDetail) {
-        let now = Date().timeIntervalSince1970
-        let items = detail.episodes.map { episode in
-            // Die Laufzeit, sofern schon eine bekannt ist: sie stehen zu
-            // lassen ist richtiger, als sie beim Abhaken auf null zu setzen.
-            let known = library.progress(
-                slug: slug, season: season, episode: episode.number, path: episode.path, provider: source
-            )
-            return WatchProgress(
-                slug: slug, title: detail.title, season: season, episode: episode.number,
-                episodePath: episode.path, germanTitle: episode.germanTitle,
-                englishTitle: episode.englishTitle,
-                positionSec: known?.durationSec ?? 0, durationSec: known?.durationSec ?? 0,
-                updatedAt: now, lang: known?.lang, completed: true, provider: source
-            )
-        }
-        library.upsert(contentsOf: items)
+        library.markSeason(detail.episodes, season: season, slug: slug, title: detail.title, provider: source, completed: true)
+    }
+
+    private func markSeasonUnwatched(_ detail: SeriesDetail) {
+        library.markSeason(detail.episodes, season: season, slug: slug, title: detail.title, provider: source, completed: false)
+    }
+
+    /// Die komplette Serie — alle Staffeln, die Nori kennt. Da die Detailseite
+    /// nur die Folgen der gewählten Staffel hält, werden die übrigen Staffeln
+    /// hier nicht mit Folgen versorgt: die zentrale `markSeries` berührt nur
+    /// Episoden, die übergeben werden, und erfindet keine dazu.
+    private func markSeriesWatched(_ detail: SeriesDetail) {
+        let seasons = detail.seasons.map { (season: $0.id, episodes: $0.id == season ? detail.episodes : []) }
+        library.markSeries(slug: slug, title: detail.title, provider: source, seasons: seasons, completed: true)
+    }
+
+    private func markSeriesUnwatched(_ detail: SeriesDetail) {
+        let seasons = detail.seasons.map { (season: $0.id, episodes: $0.id == season ? detail.episodes : []) }
+        library.markSeries(slug: slug, title: detail.title, provider: source, seasons: seasons, completed: false)
     }
 
     private func forgetSeason(_ detail: SeriesDetail) {
-        let now = Date().timeIntervalSince1970
-        let items = detail.episodes.map { episode in
-            WatchProgress(
-                slug: slug, title: detail.title, season: season, episode: episode.number,
-                episodePath: episode.path, germanTitle: episode.germanTitle,
-                englishTitle: episode.englishTitle, positionSec: 0, durationSec: 0,
-                updatedAt: now, provider: source
-            )
-        }
-        library.upsert(contentsOf: items)
+        library.markSeason(detail.episodes, season: season, slug: slug, title: detail.title, provider: source, completed: false)
     }
 
     private func loadArt() async {

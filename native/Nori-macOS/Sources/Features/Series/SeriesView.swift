@@ -59,6 +59,31 @@ struct SeriesView: View {
                 }
                 .help("Cover manuell auswählen, wenn das automatische nicht passt")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if let detail, !detail.episodes.isEmpty {
+                        Button("Staffel als gesehen markieren") {
+                            library.markSeason(detail.episodes, season: season, slug: slug, title: detail.title, provider: library.provider, completed: true)
+                        }
+                        Button("Staffel als ungesehen markieren") {
+                            library.markSeason(detail.episodes, season: season, slug: slug, title: detail.title, provider: library.provider, completed: false)
+                        }
+                    }
+                    if let detail, !detail.seasons.isEmpty {
+                        Button("Serie als gesehen markieren") {
+                            let seasons = detail.seasons.map { (season: $0.id, episodes: $0.id == season ? detail.episodes : []) }
+                            library.markSeries(slug: slug, title: detail.title, provider: library.provider, seasons: seasons, completed: true)
+                        }
+                        Button("Serie als ungesehen markieren") {
+                            let seasons = detail.seasons.map { (season: $0.id, episodes: $0.id == season ? detail.episodes : []) }
+                            library.markSeries(slug: slug, title: detail.title, provider: library.provider, seasons: seasons, completed: false)
+                        }
+                    }
+                } label: {
+                    Label("Markieren", systemImage: "checkmark.circle")
+                }
+                .help("Folgenvortschritt manuell setzen")
+            }
         }
         .task { await load(season: nil) }
         .task(id: detail?.coverPath) {
@@ -761,6 +786,13 @@ struct EpisodeRow: View {
             Button("Abspielen") { play(resumeAt) }
             if resumeAt >= 8 {
                 Button("Von vorne abspielen") { play(0) }
+            }
+            Divider()
+            Button("Als gesehen markieren") {
+                library.markEpisode(episode, season: season, slug: series.slug, title: series.title, provider: library.provider, completed: true)
+            }
+            Button("Als ungesehen markieren") {
+                library.markEpisode(episode, season: season, slug: series.slug, title: series.title, provider: library.provider, completed: false)
             }
         }
     }

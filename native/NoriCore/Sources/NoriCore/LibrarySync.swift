@@ -34,6 +34,8 @@ enum LibrarySyncLimits {
     static let maxRecents = 100
     static let maxProgress = 20_000
     static let maxTitles = 50_000
+    /// Wie viele eigene Listen ein Gerätestand höchstens mitbringen darf.
+    static let maxLists = 200
     /// Wie weit ein Zeitstempel in der Zukunft liegen darf, bevor er als
     /// kaputte Uhr gilt: 24 Stunden.
     static let futureToleranceMs: Double = 24 * 60 * 60 * 1000
@@ -137,6 +139,8 @@ enum SyncPreference: String, CaseIterable {
     case preferredQuality
     case autoplayNext
     case playbackSpeed
+    case subtitlePref
+    case subtitlesEnabled
     case provider
     case scope
 }
@@ -159,12 +163,21 @@ struct LibraryData: Codable {
     var autoplayNext: Bool?
     var playbackSpeed: Float?
     var preferredQuality: String?
+    /// Bevorzugte Untertitelsprache, z. B. „DE“ oder „EN“. Leer oder „off“ heißt aus.
+    /// Neu; ältere Dateien ohne das Feld dekodieren mit „off“.
+    var subtitlePref: String?
+    /// Ob Untertitel angezeigt werden. Neu; Voreinstellung aus.
+    var subtitlesEnabled: Bool?
     var provider: String?
     var scope: String?
     var favoriteSource: [String: String]?
     /// Neu in v5. Optional, damit ältere library.json weiter dekodieren;
     /// fehlt der Eintrag, leitet `backfillAddedAt` ihn aus `favorites` ab.
     var favoriteAddedAt: [String: Double]?
+    /// Eigene Listen neben der Merkliste. Optional — eine Bibliothek ohne
+    /// `lists` ist gültig. Die bestehende Merkliste (favorites) bleibt der
+    /// Sonderfall und wird nicht zu einer dieser Listen.
+    var lists: [String: CustomList]?
     /// Neu in v6. Fehlt in jeder älteren Datei und wird beim Laden ergänzt.
     var sync: SyncMeta?
     // `cloudSyncEnabled` und `cloudLastSync` standen hier, solange iCloud
@@ -184,10 +197,13 @@ struct LibraryData: Codable {
         autoplayNext: Bool? = nil,
         playbackSpeed: Float? = nil,
         preferredQuality: String? = nil,
+        subtitlePref: String? = nil,
+        subtitlesEnabled: Bool? = nil,
         provider: String? = nil,
         scope: String? = nil,
         favoriteSource: [String: String]? = nil,
         favoriteAddedAt: [String: Double]? = nil,
+        lists: [String: CustomList]? = nil,
         sync: SyncMeta? = nil
     ) {
         self.version = version
@@ -202,10 +218,13 @@ struct LibraryData: Codable {
         self.autoplayNext = autoplayNext
         self.playbackSpeed = playbackSpeed
         self.preferredQuality = preferredQuality
+        self.subtitlePref = subtitlePref
+        self.subtitlesEnabled = subtitlesEnabled
         self.provider = provider
         self.scope = scope
         self.favoriteSource = favoriteSource
         self.favoriteAddedAt = favoriteAddedAt
+        self.lists = lists
         self.sync = sync
     }
 }
@@ -253,10 +272,14 @@ extension LibraryData {
         autoplayNext = value(.autoplayNext)
         playbackSpeed = value(.playbackSpeed)
         preferredQuality = value(.preferredQuality)
+        subtitlePref = value(.subtitlePref)
+        subtitlesEnabled = value(.subtitlesEnabled)
         provider = value(.provider)
         scope = value(.scope)
         favoriteSource = value(.favoriteSource)
         favoriteAddedAt = value(.favoriteAddedAt)
+        lists = ((try? container.decodeIfPresent([String: Skippable<CustomList>].self, forKey: .lists)) ?? nil)?
+            .compactMapValues(\.value)
         sync = value(.sync)
     }
 }
@@ -481,6 +504,28 @@ func mergeLibrarySnapshots(_ snapshots: [LibraryData], now: Double) -> LibraryDa
     }
     out.titles = titles.prefix(LibrarySyncLimits.maxTitles).reduce(into: [String: String]()) { $0[$1.key] = $1.value.value }
 
+    // --- Eigene Listen -------------------------------------------------------
+    //
+    // Je Liste gewinnt der jüngste updatedAt; bei Gleichstand die größere
+    // deviceId. Die Listeneinträge werden als Ganzes übernommen — eine Liste
+    // ist eine geordnete Menge, und ein Mischen einzelner Einträge zweier
+    // Geräte würde die Reihenfolge zerstören. Wer auf zwei Geräten dieselbe
+    // Liste pflegt, gewinnt der jüngste Stand.
+    var lists: [String: Ranked<CustomList>] = [:]
+    for input in inputs {
+        let deviceId = input.sync?.deviceId ?? ""
+        for (id, list) in input.lists ?? [:] {
+            let stamp = sanitizedStamp(list.updatedAt, now: now)
+            lists[id] = prefer(lists[id], Ranked(value: list, stamp: stamp, deviceId: deviceId))
+        }
+    }
+    out.lists = lists
+        .sorted { lhs, rhs in
+            lhs.value.stamp != rhs.value.stamp ? lhs.value.stamp > rhs.value.stamp : lhs.key < rhs.key
+        }
+        .prefix(LibrarySyncLimits.maxLists)
+        .reduce(into: [String: CustomList]()) { $0[$1.key] = $1.value.value }
+
     out.modifiedAt = inputs.compactMap(\.modifiedAt).max() ?? 0
     out.sync = SyncMeta(
         formatVersion: librarySyncFormatVersion,
@@ -525,6 +570,8 @@ private func apply(_ preference: SyncPreference, from source: LibraryData, to ta
     case .preferredQuality: target.preferredQuality = source.preferredQuality
     case .autoplayNext: target.autoplayNext = source.autoplayNext
     case .playbackSpeed: target.playbackSpeed = source.playbackSpeed
+    case .subtitlePref: target.subtitlePref = source.subtitlePref
+    case .subtitlesEnabled: target.subtitlesEnabled = source.subtitlesEnabled
     case .provider: target.provider = source.provider
     case .scope: target.scope = source.scope
     }

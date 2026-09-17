@@ -283,6 +283,64 @@ struct WatchProgress: Codable, Identifiable, Hashable {
     var id: String { "\(provider?.rawValue ?? providerFromPath(episodePath).rawValue)|\(episodePath)" }
 }
 
+/// Ein überspringbarer Abschnitt einer Folge — Intro, Outro oder Zusammenfassung.
+///
+/// Die Zeitmarken in Sekunden ab Folgenbeginn. Nori zieht diese Daten nicht aus
+/// einer Vermutung, sondern nur, wenn eine Quelle sie verlässlich liefert. Fehlen
+/// zuverlässige Marken, bleibt die Liste leer und „Intro überspringen“ erscheint
+/// nicht — ein fester 90-Sekunden-Wert wäre geraten und bleibt aus.
+///
+/// Die Schnittstelle ist so gebaut, dass ein Provider später Marken ergänzen
+/// kann, ohne dass der Player dafür geändert werden muss. Dasselbe Modell wie
+/// `SkipSegment` im TypeScript-Kern.
+enum SkipSegmentType: String, Codable, Hashable, Sendable {
+    case intro
+    case outro
+    case recap
+}
+
+struct SkipSegment: Codable, Hashable, Sendable {
+    var type: SkipSegmentType
+    var start: Double
+    var end: Double
+}
+
+/// Prüft, ob eine Position innerhalb eines überspringbaren Abschnitts liegt.
+///
+/// Gibt das Segment zurück, dessen Bereich die Position umschließt, sonst nil.
+func activeSkipSegment(_ segments: [SkipSegment], position: Double) -> SkipSegment? {
+    for segment in segments where position >= segment.start && position < segment.end {
+        return segment
+    }
+    return nil
+}
+
+/// Das erste Segment eines Typs, falls vorhanden.
+func firstSkipSegment(_ segments: [SkipSegment], type: SkipSegmentType) -> SkipSegment? {
+    segments.first { $0.type == type }
+}
+
+/// Eine benutzerdefinierte Liste — „Favoriten“, „Später ansehen“, „Isekai“ usw.
+///
+/// Neben der Merkliste (favorites) kann ein Nutzer eigene Listen anlegen. Eine
+/// Liste ist eine geordnete Menge von Titeln, getrennt nach Quelle, weil derselbe
+/// Slug bei AniWorld und Serienstream zwei verschiedene Serien meinen kann.
+///
+/// Die bestehende Merkliste bleibt unangetastet — sie ist keine dieser Listen,
+/// sondern der Sonderfall, den es schon immer gab. Neue Listen sind optional;
+/// eine Bibliothek ohne `lists` ist vollkommen gültig. Dasselbe Modell wie
+/// `CustomList` im TypeScript-Kern.
+struct CustomList: Codable, Hashable, Sendable {
+    /// Stabile Kennung der Liste.
+    var id: String
+    /// Anzeigename, frei durch den Nutzer.
+    var name: String
+    /// Geordnete Liste von `provider|slug`, zuletzt hinzugefügt vorn.
+    var items: [String]
+    /// Wann die Liste zuletzt verändert wurde, Millisekunden seit 1970.
+    var updatedAt: Double
+}
+
 struct RecentItem: Codable, Hashable {
     var slug: String
     var title: String
@@ -373,10 +431,18 @@ func progressKey(path: String, provider: CatalogProvider? = nil) -> String {
     return "\(provider.rawValue)|\(clean)"
 }
 
+/// Zentrale Abschluss-Schwelle. Eine Folge gilt als gesehen, wenn der
+/// Wiedergabefortschritt mindestens diesen Anteil der Dauer erreicht.
+///
+/// Gehalten als *eine* Konstante, nicht mehrfach im Code — derselbe Wert wie
+/// `COMPLETION_THRESHOLD` im TypeScript-Kern und `completionThreshold` in
+/// `config/contract.json`. Wer ihn ändert, ändert alle drei.
+public let completionThreshold: Double = 0.9
+
 func isEpisodeComplete(_ item: WatchProgress?) -> Bool {
     guard let item else { return false }
     if item.completed == true { return true }
-    return item.durationSec >= 20 && item.positionSec >= item.durationSec * 0.9
+    return item.durationSec >= 20 && item.positionSec >= item.durationSec * completionThreshold
 }
 
 func watchRatio(_ item: WatchProgress?) -> Double {

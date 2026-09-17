@@ -548,6 +548,23 @@ struct PlayerScreen: View {
         subtitleGroup = group
         subtitleChoices = [PlayerChoice(id: Self.subtitleOff, label: "Aus")]
             + group.options.map { PlayerChoice(id: $0.displayName, label: $0.displayName) }
+        // Die gespeicherte Untertitel-Präferenz greift nur, wo der Stream Spuren
+        // liefert. Sie ist ein Wunsch, kein Anspruch — wie auf webOS.
+        if library.subtitlesEnabled {
+            let want = library.subtitlePref
+            if let option = preferredSubtitleOption(in: group, pref: want) {
+                item.select(option, in: group)
+                activeSubtitle = option.displayName
+            }
+        }
+    }
+
+    /// Die zur Präferenz passende Spur, falls der Stream eine führt. Nur eine
+    /// ungefähre Übereinstimmung — die Anzeigen der Hoster sind nicht normiert.
+    private func preferredSubtitleOption(in group: AVMediaSelectionGroup, pref: String) -> AVMediaSelectionOption? {
+        guard !pref.isEmpty, pref != "off" else { return nil }
+        let needle = pref.lowercased()
+        return group.options.first { $0.displayName.lowercased().contains(needle) } ?? group.options.first
     }
 
     @MainActor

@@ -120,6 +120,22 @@ struct MoreView: View {
             }
             SettingsDivider()
             SettingsToggleRow(
+                symbol: "captions.bubble",
+                title: "Untertitel",
+                subtitle: "Bevorzugte Spur, wo der Stream sie liefert",
+                isOn: $library.subtitlesEnabled
+            )
+            SettingsDivider()
+            SettingsLinkRow(
+                symbol: "text.bubble",
+                title: "Untertitelsprache",
+                subtitle: "Bevorzugte Sprache für Untertitel",
+                value: library.subtitlesEnabled ? NoriSubtitleOption.from(library.subtitlePref).label : "Aus"
+            ) {
+                SubtitlePrefSettingsView()
+            }
+            SettingsDivider()
+            SettingsToggleRow(
                 symbol: "arrow.clockwise",
                 title: "Resume automatisch",
                 subtitle: "An gespeicherter Position fortsetzen",
