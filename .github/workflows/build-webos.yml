@@ -13,6 +13,8 @@ name: Build webOS
 # durchbauen und testen kann, statt sie nur statisch zu prüfen.
 on:
   push:
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'apps/webos/**'
       - 'shared/nori-core/**'
@@ -21,12 +23,16 @@ on:
       - 'tools/test_check_webos_package.py'
       - 'tools/configure-google-oauth.py'
       - 'tools/test_configure_google_oauth.py'
+      - 'tools/nori-release.py'
       - '.github/workflows/build-webos.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
+# Auf main wird ein laufender Lauf nicht abgebrochen: sein letzter Job legt den
+# GitHub-Release an und soll nie mittendrin enden.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -35,6 +41,8 @@ jobs:
   build:
     runs-on: [self-hosted, macOS]
     timeout-minutes: 20
+    outputs:
+      sha256: ${{ steps.release-check.outputs.sha256 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -162,6 +170,17 @@ jobs:
             --ipk "apps/webos/tv.nori.app_${VERSION}_all.ipk" \
             --reference-dist "$RUNNER_TEMP/webos-dist-tested"
 
+      # Name und Version des produktiven Pakets, keine .env, keine fremden
+      # Zugangsdaten — und die Prüfsumme genau dieses geprüften Pakets. Der
+      # Release-Job veröffentlicht nur ein .ipk mit derselben Prüfsumme, also nie
+      # den Build ohne Google-Zugang aus dem Fernbedienungslauf.
+      - name: Paket für den Release prüfen
+        id: release-check
+        run: |
+          VERSION="$(node -p "require('./apps/webos/appinfo.json').version")"
+          python3 tools/nori-release.py verify --platform webos \
+            --file "apps/webos/tv.nori.app_${VERSION}_all.ipk" --github-output
+
       - name: Paket als Artefakt ablegen
         uses: actions/upload-artifact@v4
         with:
@@ -179,3 +198,18 @@ jobs:
           rm -f apps/webos/.env.local
           rm -rf apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
           rm -f apps/webos/*.ipk
+
+  # GitHub-Release `webos-v<VERSION>` mit genau dem geprüften produktiven .ipk —
+  # nur auf main, nur nach einem grünen Build-Job. Gibt es den Release schon,
+  # endet er grün.
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      platform: webos
+      artifact: Nori-webOS
+      sha256: ${{ needs.build.outputs.sha256 }}

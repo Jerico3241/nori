@@ -2,6 +2,8 @@ name: Build macOS
 
 on:
   push:
+    # Nur Branches: ein Release-Tag startet keinen Lauf.
+    branches: ['**']
     paths:
       - 'native/Nori-macOS/**'
       - 'native/NoriCore/**'

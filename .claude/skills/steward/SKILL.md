@@ -82,6 +82,9 @@ Tags:
 
 - `ios-vX.Y.Z`
 - `macos-vX.Y.Z`
+- `webos-vX.Y.Z`
+
+Releases werden nicht von Hand getaggt. Sie entstehen automatisch als letzter Job von `Package iOS IPA`, `Build webOS` und `Package macOS Source` auf `main`, sobald dort eine neue Version gebaut und geprüft ist — Voraussetzung ist ein Abschnitt `[<Plattform> <Version>]` in `CHANGELOG.md`. Regeln und Nachholen: `docs/releases.md`, Logik: `tools/nori-release.py`.
 
 Ein Release-Quellpaket muss enthalten:
 
