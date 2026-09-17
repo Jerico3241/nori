@@ -359,6 +359,11 @@ class FakeGitHub:
     def workflows(self):
         return list(self.workflow_list)
 
+    def runs(self):
+        # Wie bei GitHub: quer über alle Workflows, auch die ohne Eintrag.
+        return [dict(run) for items in self.run_lists.values() for run in items
+                if run["id"] not in self.deleted_runs]
+
     def workflow_runs(self, workflow_id):
         return [dict(run) for run in self.run_lists.get(workflow_id, []) if run["id"] not in self.deleted_runs]
 
@@ -1030,9 +1035,12 @@ class CleanupTests(ReleaseTestCase):
         wf = ".github/workflows/"
         self.github_fake.workflow_list = [
             {"id": 1, "path": wf + "release.yml"}, {"id": 2, "path": wf + "build-ios.yml"},
-            {"id": 3, "path": wf + "package-ios-ipa.yml"}, {"id": 4, "path": wf + "codeql.yml"},
+            {"id": 4, "path": wf + "codeql.yml"},
             {"id": 5, "path": "dynamic/dependabot/dependabot-updates"}, {"id": 6, "path": wf + "check-sources.yml"},
         ]
+        # `package-ios-ipa.yml` steht bewusst **nicht** in der Workflow-Liste:
+        # GitHub nimmt einen Workflow heraus, sobald seine Datei fort ist. Seine
+        # Läufe müssen trotzdem weg — sie kommen über die Liste des Repositorys.
         self.github_fake.pull_heads = {"d" * 40}
         runs = {
             1: [workflow_run(self.CURRENT, wf + "release.yml", "2026-09-17T12:00:00Z", "in_progress", self.commit),
@@ -1062,12 +1070,16 @@ class CleanupTests(ReleaseTestCase):
 
     def test_deletes_only_old_finished_runs_of_nori_build_workflows(self) -> None:
         result = self.cleanup()
-        # Älteste zuerst.
+        # Älteste zuerst; 2001 gehört zu einem Workflow, den GitHub nicht mehr auflistet.
         self.assertEqual(self.github_fake.deleted_runs, [1003, 2001, 3001, 4001])
+        self.assertNotIn(".github/workflows/package-ios-ipa.yml",
+                         [w["path"] for w in self.github_fake.workflow_list])
         self.assertEqual(result["deleted"], 4)
         self.assertEqual(result["kept"], {
             "dieser Lauf": 1, "noch nicht abgeschlossen": 2, "nach diesem Lauf gestartet": 1,
             "Prüflauf des veröffentlichten Stands oder eines offenen Pull Requests": 2,
+            # CodeQL und Dependabot werden jetzt gesehen und ausdrücklich übergangen.
+            "anderer Workflow": 2,
         })
         # Nie: der laufende Lauf, fremde Workflows, Releases, Tags.
         self.assertNotIn(self.CURRENT, self.github_fake.deleted_runs)
@@ -1145,7 +1157,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else b""
         path = self.path.split("?")[0]
         self.server.seen.append((self.command, path, self.headers.get("Authorization"), body))
-        status, headers, payload = self.server.routes.get((self.command, path), (404, {}, b'{"message": "Not Found"}'))
+        answer = self.server.routes.get((self.command, path), (404, {}, b'{"message": "Not Found"}'))
+        # Eine Liste beantwortet jeden Aufruf anders — für die Wiederholungen.
+        if isinstance(answer, list):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
+        status, headers, payload = answer
         self.send_response(status)
         for name, value in headers.items():
             self.send_header(name, value)
@@ -1174,10 +1190,15 @@ class GitHubRequestTests(unittest.TestCase):
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         self.github = self.tool.GitHub("owner/nori", self.TOKEN, api=self.base, uploads=self.base, opener=opener)
+        self.tool.RETRY_PAUSE = 0
 
     def route(self, method: str, path: str, status: int = 200, payload: object = None, headers=None, raw: bytes | None = None):
         body = raw if raw is not None else json.dumps(payload if payload is not None else {}).encode()
         self.server.routes[(method, path)] = (status, headers or {}, body)
+
+    def routes(self, method: str, path: str, answers: list[tuple[int, object]]) -> None:
+        """Mehrere Antworten hintereinander: (Status, Nutzlast)."""
+        self.server.routes[(method, path)] = [(status, {}, json.dumps(payload).encode()) for status, payload in answers]
 
     def test_missing_tag_and_annotated_tag(self) -> None:
         self.assertIsNone(self.github.tag_commit("v2.6.0"))
@@ -1247,6 +1268,34 @@ class GitHubRequestTests(unittest.TestCase):
                 with self.assertRaises(self.tool.GitHubError) as caught:
                     self.github.delete_run(run_id)
                 self.assertEqual(caught.exception.rate_limited, limited)
+
+    def test_reads_are_retried_writes_are_not(self) -> None:
+        # Lesen: erst 500, dann 502, dann die Antwort — der Aufruf gelingt.
+        self.routes("GET", "/repos/owner/nori/releases/tags/v2.6.0",
+                    [(500, {"message": "boom"}), (502, {"message": "bad gateway"}), (200, {"id": 7, "draft": False})])
+        self.assertEqual(self.github.release_by_tag("v2.6.0")["id"], 7)
+        self.assertEqual(len([1 for method, path, *_ in self.server.seen if path.endswith("v2.6.0")]), 3)
+
+        # Schreiben: ein Versuch. Ein zweites POST könnte einen zweiten Entwurf anlegen.
+        self.server.seen.clear()
+        self.route("POST", "/repos/owner/nori/releases", 500, {"message": "boom"})
+        with self.assertRaises(self.tool.GitHubError):
+            self.github.create_draft(self.tool.Meta("2.6.0", "c" * 40, {}, {}), "Notes")
+        self.assertEqual(len(self.server.seen), 1)
+
+        # Eine klare Antwort wird nicht wiederholt, auch nicht beim Lesen.
+        self.server.seen.clear()
+        self.route("GET", "/repos/owner/nori/actions/runs/9", 422, {"message": "nope"})
+        with self.assertRaises(self.tool.GitHubError):
+            self.github.run(9)
+        self.assertEqual(len(self.server.seen), 1)
+
+    def test_transient_read_errors_give_up_after_three_tries(self) -> None:
+        self.route("GET", "/repos/owner/nori/releases/tags/v2.6.0", 503, {"message": "unavailable"})
+        with self.assertRaises(self.tool.GitHubError) as caught:
+            self.github.release_by_tag("v2.6.0")
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(len(self.server.seen), self.tool.RETRIES)
 
     def test_paging(self) -> None:
         self.route("GET", "/repos/owner/nori/actions/workflows/9/runs",
@@ -1394,11 +1443,22 @@ class WorkflowTests(unittest.TestCase):
                     steps = job.get("steps", [])
                     names = [step.get("name") for step in steps]
                     for step in steps:
-                        self.assertFalse(step.get("continue-on-error"), step.get("name"))
+                        if step.get("continue-on-error"):
+                            # Erlaubt nur beim **Hochladen** und nur an einem Schritt,
+                            # der im Release nicht läuft: Ein Testpaket darf am vollen
+                            # Artefakt-Speicher scheitern, ein Release nie — und eine
+                            # Prüfung nie. Ohne die erste Bedingung hätte auch der
+                            # Fernbedienungslauf optional werden können, mit seinen 341
+                            # Prüfungen; nachgestellt, die Reihe blieb grün.
+                            where = f"{file}/{job_name}/{step.get('name')}"
+                            self.assertIn("upload-artifact", str(step.get("uses", "")), where)
+                            self.assertIn("!inputs.release-version", str(step.get("if", "")), where)
                         if "upload-artifact" in str(step.get("uses", "")):
                             self.assertIn("retention-days", step["with"], f"{job_name}/{step.get('name')}")
                     uploads = [i for i, step in enumerate(steps)
-                               if "upload-artifact" in str(step.get("uses", "")) and "failure()" not in str(step.get("if", ""))]
+                               if "upload-artifact" in str(step.get("uses", ""))
+                               and "failure()" not in str(step.get("if", ""))
+                               and not step.get("continue-on-error")]
                     if not uploads:
                         continue
                     checks = [i for i, step in enumerate(steps) if "tools/nori-release.py verify" in step.get("run", "")]
@@ -1410,6 +1470,18 @@ class WorkflowTests(unittest.TestCase):
                     self.assertIs(upload["with"]["overwrite"], True)
                     self.assertEqual(upload["with"]["if-no-files-found"], "error")
                     self.assertLess(names.index("Version prüfen"), uploads[0])
+
+    def test_the_release_upload_is_never_optional(self) -> None:
+        for platform, file in BUILD_WORKFLOWS.items():
+            with self.subTest(workflow=file):
+                for job in load_workflow(file)["jobs"].values():
+                    for step in job.get("steps", []):
+                        if "upload-artifact" not in str(step.get("uses", "")):
+                            continue
+                        condition, optional = str(step.get("if", "")), bool(step.get("continue-on-error"))
+                        release = "!inputs.release-version" not in condition and "failure()" not in condition
+                        # Was im Release hochlädt, muss gelingen.
+                        self.assertFalse(release and optional, f"{file}: {step.get('name')}")
 
     def test_temporary_artifacts_are_short_lived(self) -> None:
         for path in sorted((REPO / ".github/workflows").glob("*.yml")):
