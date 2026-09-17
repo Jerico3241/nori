@@ -359,6 +359,11 @@ class FakeGitHub:
     def workflows(self):
         return list(self.workflow_list)
 
+    def runs(self):
+        # Wie bei GitHub: quer über alle Workflows, auch die ohne Eintrag.
+        return [dict(run) for items in self.run_lists.values() for run in items
+                if run["id"] not in self.deleted_runs]
+
     def workflow_runs(self, workflow_id):
         return [dict(run) for run in self.run_lists.get(workflow_id, []) if run["id"] not in self.deleted_runs]
 
@@ -1030,9 +1035,12 @@ class CleanupTests(ReleaseTestCase):
         wf = ".github/workflows/"
         self.github_fake.workflow_list = [
             {"id": 1, "path": wf + "release.yml"}, {"id": 2, "path": wf + "build-ios.yml"},
-            {"id": 3, "path": wf + "package-ios-ipa.yml"}, {"id": 4, "path": wf + "codeql.yml"},
+            {"id": 4, "path": wf + "codeql.yml"},
             {"id": 5, "path": "dynamic/dependabot/dependabot-updates"}, {"id": 6, "path": wf + "check-sources.yml"},
         ]
+        # `package-ios-ipa.yml` steht bewusst **nicht** in der Workflow-Liste:
+        # GitHub nimmt einen Workflow heraus, sobald seine Datei fort ist. Seine
+        # Läufe müssen trotzdem weg — sie kommen über die Liste des Repositorys.
         self.github_fake.pull_heads = {"d" * 40}
         runs = {
             1: [workflow_run(self.CURRENT, wf + "release.yml", "2026-09-17T12:00:00Z", "in_progress", self.commit),
@@ -1062,12 +1070,16 @@ class CleanupTests(ReleaseTestCase):
 
     def test_deletes_only_old_finished_runs_of_nori_build_workflows(self) -> None:
         result = self.cleanup()
-        # Älteste zuerst.
+        # Älteste zuerst; 2001 gehört zu einem Workflow, den GitHub nicht mehr auflistet.
         self.assertEqual(self.github_fake.deleted_runs, [1003, 2001, 3001, 4001])
+        self.assertNotIn(".github/workflows/package-ios-ipa.yml",
+                         [w["path"] for w in self.github_fake.workflow_list])
         self.assertEqual(result["deleted"], 4)
         self.assertEqual(result["kept"], {
             "dieser Lauf": 1, "noch nicht abgeschlossen": 2, "nach diesem Lauf gestartet": 1,
             "Prüflauf des veröffentlichten Stands oder eines offenen Pull Requests": 2,
+            # CodeQL und Dependabot werden jetzt gesehen und ausdrücklich übergangen.
+            "anderer Workflow": 2,
         })
         # Nie: der laufende Lauf, fremde Workflows, Releases, Tags.
         self.assertNotIn(self.CURRENT, self.github_fake.deleted_runs)

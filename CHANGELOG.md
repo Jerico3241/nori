@@ -130,6 +130,12 @@ von 1.26.0 auf 2.6.0, macOS von 1.21.0, Windows von 2.1.0 und LG webOS von
   zweiten Entwurf, Anhang oder Tag anlegen. Aufgefallen beim Aufräumen von
   rund 900 Läufen, als GitHub die Antwort einer Liste mitten im Körper
   abbrach.
+- **Das Aufräumen findet auch Läufe entfernter Workflows.** GitHub nimmt einen
+  Workflow aus seiner Liste, sobald dessen Datei fort ist; seine Läufe bleiben
+  liegen. Gesucht wird deshalb in den Läufen des Repositorys **und** je
+  Workflow. Ohne das wären die 124 Läufe von „Package iOS IPA" und „Package
+  macOS Source" nie abgetragen worden, obwohl beide ausdrücklich in der Liste
+  stehen.
 - Die Lockfiles tragen jetzt ebenfalls die gemeinsame Nummer. Die von
   `apps/windows` bildet dazu die Abhängigkeiten der Anwendungsschicht so ab,
   wie sie seit 2.4.0 in deren `package.json` stehen.

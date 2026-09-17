@@ -232,7 +232,10 @@ begonnen haben — mitsamt ihren Protokollen und Artefakten:
 - Nori Release (`release.yml`)
 - Build iOS, Build macOS, Build webOS, Build Windows, Build Android core
 - Swift tests, Check Apple sources, Check release pipeline
-- die entfernten Package iOS IPA, Package macOS Source und Build Android
+- die entfernten Package iOS IPA, Package macOS Source und Build Android —
+  GitHub nimmt einen Workflow aus seiner Liste, sobald dessen Datei fort ist,
+  während die Läufe liegen bleiben. Gesucht wird deshalb in den Läufen des
+  Repositorys **und** je Workflow, und entschieden wird am Pfad des Laufs.
 
 Dazu die Übergabe-Artefakte `nori-release-*` des laufenden Releases — ihr
 Inhalt hängt da bereits am Release.

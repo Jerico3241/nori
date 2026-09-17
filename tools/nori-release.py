@@ -1262,6 +1262,10 @@ class GitHub:
     def workflows(self) -> list[dict]:
         return self.paged("/actions/workflows", key="workflows")
 
+    def runs(self) -> list[dict]:
+        """Alle Läufe des Repositorys, quer über die Workflows."""
+        return self.paged("/actions/runs", key="workflow_runs")
+
     def workflow_runs(self, workflow_id: int) -> list[dict]:
         return self.paged(f"/actions/workflows/{int(workflow_id)}/runs", key="workflow_runs")
 
@@ -1575,17 +1579,25 @@ def cleanup(github, meta: Meta, platforms: list[str], keep_run: int, dry_run: bo
         raise ReleaseError(f"Lauf {keep_run} nicht gefunden – ohne ihn wird nichts gelöscht")
     protected = {meta.commit, *github.open_pull_heads()}
 
+    # Zwei Quellen, zusammengeführt. Die Liste der Läufe des Repositorys nennt
+    # auch die von Workflows, deren Datei es nicht mehr gibt — GitHub nimmt
+    # solche Workflows aus `/actions/workflows`, ihre Läufe bleiben aber
+    # liegen. Genau dafür stehen entfernte Dateien in CLEANUP_WORKFLOWS. Die
+    # Liste je Workflow kommt dazu, weil die des Repositorys bei sehr vielen
+    # Läufen begrenzt ist; wer dann übrig bleibt, folgt beim nächsten Release.
+    found: dict[int, dict] = {run["id"]: run for run in github.runs()}
+    for workflow in github.workflows():
+        if workflow.get("path") in CLEANUP_WORKFLOWS:
+            found.update({run["id"]: run for run in github.workflow_runs(workflow["id"])})
+
     candidates: list[dict] = []
     kept: dict[str, int] = {}
-    for workflow in github.workflows():
-        if workflow.get("path") not in CLEANUP_WORKFLOWS:
-            continue
-        for run in github.workflow_runs(workflow["id"]):
-            reason = keep_reason(run, keep_run, started, protected)
-            if reason:
-                kept[reason] = kept.get(reason, 0) + 1
-            else:
-                candidates.append(run)
+    for run in found.values():
+        reason = keep_reason(run, keep_run, started, protected)
+        if reason:
+            kept[reason] = kept.get(reason, 0) + 1
+        else:
+            candidates.append(run)
     candidates.sort(key=lambda run: (str(run.get("created_at")), run.get("id", 0)))
 
     deleted, stopped = 0, ""
