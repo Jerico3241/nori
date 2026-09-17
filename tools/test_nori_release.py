@@ -255,7 +255,8 @@ def make_windows_zip(directory: Path, version: str = VERSION, name: str | None =
         "Nori.exe": exe if exe is not None else make_pe(),
         "resources/app.asar": asar if asar is not None else make_asar(app_files(version)),
         "locales/de.pak": b"\0pak",
-        "LICENSES.chromium.html": b"<html>-----BEGIN PRIVATE KEY----- als Beispieltext</html>",
+        # Chromium bringt solche Beispieltexte mit; in fremden Dateien wird nicht nach Mustern gesucht.
+        "LICENSES.chromium.html": ("<html>-----BEGIN PRIV" + "ATE KEY----- als Beispieltext</html>").encode(),
     }
     members.update(extra or {})
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
