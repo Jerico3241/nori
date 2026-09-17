@@ -6,6 +6,7 @@
 // Serie → Poster → Buchstabe.
 
 import type { CatalogProvider } from "@nori/core";
+import type { ReactNode } from "react";
 
 import { SpotButton } from "../navigation/Spot";
 import { Artwork } from "./Artwork";
@@ -23,6 +24,8 @@ export interface LandscapeCardProps {
   focusArea: string;
   focusKey: string;
   eager?: boolean;
+  /** Ein Schild über dem Bild — sagt, was OK gerade tut. */
+  overlay?: ReactNode;
   onSelect(): void;
 }
 
@@ -54,6 +57,7 @@ export function LandscapeCard(props: LandscapeCardProps) {
             <i style={{ width: `${percent}%` }} />
           </span>
         ) : null}
+        {props.overlay}
       </span>
       <span className="card-title">{props.title}</span>
       {props.subtitle ? <span className="card-sub">{props.subtitle}</span> : null}

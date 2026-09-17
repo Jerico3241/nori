@@ -24,7 +24,8 @@
 // der Modus ist sichtbar und mit einem zweiten Druck wieder aus.
 
 import {
-  isEpisodeComplete, normalizeTitle, progressPercent, providerFromPath, type WatchProgress,
+  providerFromPath, rankSearch, watchStateText, watchSummary,
+  type WatchProgress, type WatchState, type WatchSummary,
 } from "@nori/core";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -39,24 +40,15 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
 import { useLibrary } from "../state/library";
-import { searchScore } from "../state/search";
 
 const ROUTE = "watchlist";
-type Filter = "all" | "unseen" | "started" | "seen";
-type WatchState = Exclude<Filter, "all">;
+type Filter = "all" | WatchState;
 
 interface Entry {
   slug: string;
   title: string;
   provider: ReturnType<ReturnType<typeof useLibrary>["favoriteProvider"]>;
-  state: WatchState;
-  latest: WatchProgress | null;
-}
-
-export function watchStateOf(entries: WatchProgress[]): WatchState {
-  const touched = entries.filter((item) => item.positionSec > 0 || item.completed === true);
-  if (touched.length === 0) return "unseen";
-  return touched.every((item) => isEpisodeComplete(item)) ? "seen" : "started";
+  summary: WatchSummary;
 }
 
 export function WatchlistPage() {
@@ -78,22 +70,25 @@ export function WatchlistPage() {
     return library.state.favorites.map((slug) => {
       const provider = library.favoriteProvider(slug);
       const progress = bySeries.get(`${provider}|${slug}`) ?? [];
-      const latest = [...progress].sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
-      return { slug, title: library.state.titles[slug] ?? slug, provider, state: watchStateOf(progress), latest };
+      return {
+        slug,
+        title: library.state.titles[slug] ?? slug,
+        provider,
+        summary: watchSummary(progress),
+      };
     });
   }, [library]);
 
   const stats = useMemo(() => ({
     saved: entries.length,
-    started: entries.filter((entry) => entry.state === "started").length,
-    seen: entries.filter((entry) => entry.state === "seen").length,
+    started: entries.filter((entry) => entry.summary.state === "started").length,
+    seen: entries.filter((entry) => entry.summary.state === "seen").length,
   }), [entries]);
 
   const visible = useMemo(() => {
-    const needle = normalizeTitle(debounced.trim());
-    return entries.filter((entry) =>
-      (filter === "all" || entry.state === filter)
-      && (needle.length < 2 || searchScore({ title: entry.title, alts: [] }, needle) >= 0));
+    const pool = entries.filter((entry) => filter === "all" || entry.summary.state === filter);
+    // Dieselbe Suche wie im Katalog und auf iPhone und Mac — samt Tippfehlern.
+    return rankSearch(pool, debounced, (entry) => ({ title: entry.title, alts: [] }));
   }, [entries, filter, debounced]);
 
   useEffect(() => restoreFocusSoon(ROUTE, ["grid", "chips", "top"], {
@@ -101,13 +96,7 @@ export function WatchlistPage() {
     ready: true,
   }), []);
 
-  const subtitle = (entry: Entry): string => {
-    if (entry.state === "unseen") return "Noch nicht begonnen";
-    if (entry.state === "seen") return "Komplett gesehen";
-    const latest = entry.latest;
-    if (!latest) return "Angefangen";
-    return `S${latest.season} · F${latest.episode} · ${progressPercent(latest)} %`;
-  };
+  const subtitle = (entry: Entry): string => watchStateText(entry.summary);
 
   return (
     <Screen
@@ -206,7 +195,7 @@ export function WatchlistPage() {
                   provider={entry.provider}
                   title={entry.title}
                   subtitle={subtitle(entry)}
-                  percent={entry.state === "seen" ? 100 : entry.state === "started" && entry.latest ? progressPercent(entry.latest) : 0}
+                  percent={Math.round(entry.summary.ratio * 100)}
                   focusRoute={ROUTE}
                   focusArea="grid"
                   focusKey={`fav-${entry.slug}`}

@@ -24,7 +24,9 @@
 // Neurendern, zehntausend Mal in der Sekunde, solange eine Folge lief.
 
 import {
-  NoriError, availableLanguages, episodePathFor, nextEpisode, orderHosters, previousEpisode,
+  NoriError, availableLanguages, emptyRecovery, episodePathFor, nextEpisode, noteSourceFailure,
+  noteSourceSuccess, noteSourceSwitch, planRecovery, previousEpisode, recoveryForEpisode,
+  remainingSources,
   resumePosition,
   type CatalogProvider, type Episode, type HosterOption, type PlaySource, type SeriesDetail,
   type WatchInfo,
@@ -86,7 +88,16 @@ export function PlayerPage() {
   const [phase, setPhase] = useState<Phase>("resolving");
   const [statusText, setStatusText] = useState("Stream wird gesucht …");
   const [errorText, setErrorText] = useState("");
-  const [failedHosters, setFailedHosters] = useState<string[]>([]);
+  /**
+   * Welche Quellen für diese Folge schon gescheitert sind und wie oft
+   * gewechselt wurde.
+   *
+   * Die Regeln stehen im Kern (`planRecovery`) und damit auf iPhone, Mac und
+   * Fernseher dieselben. Vorher war das hier eine eigene Liste, und die
+   * Apple-Apps hatten gar keine — dort bot „Anderen Hoster" den nächsten der
+   * Rangfolge an, auch wenn das derselbe war, der eben nicht ging.
+   */
+  const [recovery, setRecovery] = useState(() => emptyRecovery());
 
   const [lang, setLang] = useState(library.state.langPref);
   const [chrome, setChrome] = useState(true);
@@ -187,7 +198,7 @@ export function PlayerPage() {
     setStatusText("Folge wird geöffnet …");
     setInfo(null);
     setSource(null);
-    setFailedHosters([]);
+    setRecovery((state) => recoveryForEpisode(state, `${provider}|${episodePath}`));
     watch(provider, episodePath).then(
       (value) => {
         if (cancelled) return;
@@ -224,6 +235,7 @@ export function PlayerPage() {
       });
       log("resolver", "Stream", resolved.hoster, resolved.lang, resolved.kind);
       setSource(resolved);
+      setRecovery((state) => noteSourceSuccess(state));
       setPhase("playing");
     } catch (cause) {
       const message = cause instanceof NoriError
@@ -237,11 +249,46 @@ export function PlayerPage() {
 
   useEffect(() => {
     if (!info) return;
-    void resolveWith(undefined, failedHosters);
+    void resolveWith(undefined, recovery.failed);
     // Nur bei neuen Hosterdaten oder gewechselter Sprache neu auflösen — nicht
     // bei jedem Rendern.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info, lang]);
+
+  /**
+   * Ein Stream ist mitten in der Wiedergabe abgebrochen.
+   *
+   * Nicht einfach den Fehler stehen lassen: eine Schutzseite oder eine
+   * abgelaufene Adresse ist beim nächsten Hoster regelmäßig nicht da. Wie weit
+   * das gehen darf, entscheidet der Kern (`planRecovery`) — mit Budget, damit
+   * es nicht in eine Schleife läuft, und mit derselben Regel wie auf iPhone
+   * und Mac.
+   *
+   * Der Stand wird hier **lokal** fortgeschrieben und dann gesetzt: `recovery`
+   * aus dem Zustand wäre in diesem Aufruf noch der von vor dem Fehlschlag.
+   */
+  const recoverFrom = useCallback((message: string) => {
+    const current = source ? { hoster: source.hoster, lang: source.lang } : null;
+    const failed = noteSourceFailure(recovery, current);
+    const step = planRecovery(failed, info?.hosters ?? [], current, library.state.hosterPref);
+
+    if (step.kind === "switch") {
+      const advanced = noteSourceSwitch(failed);
+      setRecovery(advanced);
+      warn("playback", message, "— weiter mit", step.option.name);
+      void resolveWith(step.option, advanced.failed);
+      return;
+    }
+    if (step.kind === "retry") {
+      setRecovery(failed);
+      warn("playback", message, "— noch einmal");
+      void resolveWith(undefined, failed.failed);
+      return;
+    }
+    setRecovery(failed);
+    setErrorText([message, step.reason].filter(Boolean).join("\n"));
+    setPhase("error");
+  }, [source, recovery, info, library.state.hosterPref, resolveWith]);
 
   // ---- Wiedergabe anhängen -----------------------------------------------
 
@@ -255,17 +302,14 @@ export function PlayerPage() {
       kind: source.kind,
       startAt: startAt.current,
       onEngine: (engine) => log("playback", "Engine", engine),
-      onFatal: (message) => {
-        setErrorText(message);
-        setPhase("error");
-      },
+      onFatal: (message) => recoverFrom(message),
     });
     playbackRef.current = playback;
     return () => {
       playback.destroy();
       playbackRef.current = null;
     };
-  }, [source, phase, gateway]);
+  }, [source, phase, gateway, recoverFrom]);
 
   // ---- Fortschritt --------------------------------------------------------
 
@@ -614,11 +658,8 @@ export function PlayerPage() {
 
   const remainingHosters = useMemo(() => {
     if (!info) return [] as HosterOption[];
-    return orderHosters(
-      info.hosters.filter((h) => h.lang.toLowerCase() === lang.toLowerCase()),
-      library.state.hosterPref,
-    ).filter((h) => !failedHosters.includes(`${h.name}|${h.lang}`));
-  }, [info, lang, library.state.hosterPref, failedHosters]);
+    return remainingSources(recovery, info.hosters, lang, library.state.hosterPref);
+  }, [info, lang, library.state.hosterPref, recovery]);
 
   const languages = useMemo(() => (info ? availableLanguages(info.hosters) : []), [info]);
 
@@ -652,9 +693,9 @@ export function PlayerPage() {
                   className="primary"
                   focusKey="error-next-hoster"
                   onClick={() => {
-                    const failed = source ? [`${source.hoster}|${source.lang}`] : [];
-                    setFailedHosters((list) => [...list, ...failed]);
-                    void resolveWith(remainingHosters[0]);
+                    const next = remainingHosters[0];
+                    setRecovery((state) => noteSourceSwitch(state));
+                    void resolveWith(next);
                   }}
                 >
                   Anderen Hoster versuchen ({remainingHosters[0].name})

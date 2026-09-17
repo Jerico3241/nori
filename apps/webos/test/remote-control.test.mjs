@@ -796,6 +796,70 @@ try {
   check("Merkliste auf der Detailseite", ((await page.textContent('[data-focus-key="favorite"]')) ?? "").includes("Gemerkt"));
   check("Ähnliche Titel nur aus Noris Bestand", (await page.$$eval("[data-rail^='similar'] .poster-card", (e) => e.length)) > 0);
 
+  // --- Sehstand von Hand -------------------------------------------------------
+  //
+  // Eine Fernbedienung hat keinen langen Druck. Der Modus ist deshalb sichtbar
+  // und schaltet um, was OK tut — dieselbe Regel wie „Bearbeiten" in der
+  // Merkliste. Geprüft wird an der Ablage, nicht an der Beschriftung: was hier
+  // geschrieben wird, liest morgen ein iPhone aus Drive.
+  await focusKey(page, "season-mark");
+  await remote(page, "ok", 400);
+  check("Sehstand-Modus schaltet um", ((await page.textContent('[data-focus-key="season-mark"]')) ?? "").includes("Fertig"));
+  await focusKey(page, "episode-2");
+  await remote(page, "ok", 600);
+  const marked = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const entry = Object.values(bag.progress ?? {}).find((i) => i.slug === "frieren" && i.episode === 2);
+    return { completed: entry?.completed === true, stamp: entry?.updatedAt ?? 0, hash: location.hash };
+  });
+  check("Sehstand-Modus: OK hakt die Folge ab statt abzuspielen",
+    marked.completed && marked.hash.includes("#/titel/"), `completed=${marked.completed}, ${marked.hash}`);
+  // Millisekunden, nicht Sekunden: ein Eintrag in Sekunden wäre gegen jeden
+  // echten Zeitstempel tausendfach zu alt und verlöre jede Zusammenführung.
+  check("Marke trägt Millisekunden", marked.stamp > 1_600_000_000_000, String(marked.stamp));
+  const shownDone = await page.$eval('[data-focus-key="episode-2"]', (el) => el.className.includes("done"));
+  check("Abgehakte Folge zeigt „Gesehen“", shownDone);
+
+  await remote(page, "ok", 600);
+  const unmarked = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const entry = Object.values(bag.progress ?? {}).find((i) => i.slug === "frieren" && i.episode === 2);
+    return { completed: entry?.completed === true, position: entry?.positionSec ?? -1 };
+  });
+  check("Noch einmal OK setzt sie wieder auf ungesehen",
+    !unmarked.completed && unmarked.position === 0, `completed=${unmarked.completed}, pos=${unmarked.position}`);
+
+  await focusKey(page, "season-mark");
+  await remote(page, "ok", 400);
+  check("Zweiter Druck beendet den Modus", ((await page.textContent('[data-focus-key="season-mark"]')) ?? "").includes("Sehstand"));
+
+  await focusKey(page, "more");
+  await remote(page, "ok", 700);
+  await focusKey(page, "info-season-seen");
+  await remote(page, "ok", 900);
+  const wholeSeason = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const all = Object.values(bag.progress ?? {}).filter((i) => i.slug === "frieren" && i.season === "1");
+    return { count: all.length, done: all.filter((i) => i.completed === true).length };
+  });
+  check("„Staffel gesehen“ hakt jede Folge ab",
+    wholeSeason.count > 1 && wholeSeason.done === wholeSeason.count, `${wholeSeason.done}/${wholeSeason.count}`);
+  const seasonCount = await page.textContent(".season-count");
+  check("Staffelzeile nennt den Stand", /\d+ von \d+ gesehen/.test(seasonCount ?? ""), seasonCount ?? "-");
+
+  await focusKey(page, "more");
+  await remote(page, "ok", 700);
+  await focusKey(page, "info-series-reset");
+  await remote(page, "ok", 900);
+  const afterReset = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const all = Object.values(bag.progress ?? {}).filter((i) => i.slug === "frieren");
+    return { done: all.filter((i) => i.completed === true).length, kept: all.length };
+  });
+  check("„Fortschritt vergessen“ setzt zurück, ohne zu löschen",
+    afterReset.done === 0 && afterReset.kept > 0, `${afterReset.done} gesehen, ${afterReset.kept} Einträge`);
+  await shot(page, "10b-detail-sehstand");
+
   await goto(page, "#/titel/aniworld/vinland-saga", 3000);
   const offset = await page.$$eval(".ep-card", (els) => els.slice(0, 2).map((el) => ({
     title: el.querySelector(".ep-title")?.textContent ?? "",
@@ -906,17 +970,37 @@ try {
 
   // --- 5. Weiterschauen ----------------------------------------------------------
   section("Weiterschauen");
-  // Fünf weitere Titel mit Fortschritt, damit die Reihe eine erste und eine letzte Karte hat.
+  // Fünf weitere Titel mit Fortschritt, damit die Reihe eine erste und eine
+  // letzte Karte hat.
+  //
+  // Die Vorlage steht hier ausdrücklich und wird nicht mehr aus dem ersten
+  // Eintrag der Ablage geklont: seit „Weiterschauen" nur noch **angefasste**
+  // Folgen zählt (Position > 0), hing der Lauf davon ab, welcher Eintrag dort
+  // zufällig vorne stand — ein zurückgesetzter hätte sechs leere Klone ergeben
+  // und die Reihe geleert.
   await page.evaluate(() => {
     const bag = JSON.parse(localStorage.getItem("nori.library"));
-    const [key, item] = Object.entries(bag.progress)[0];
+    const now = Date.now();
     const slugs = ["one-piece", "vinland-saga", "jujutsu-kaisen", "dandadan", "monster", "dark"];
     slugs.forEach((slug, i) => {
       const path = `/anime/stream/${slug}/staffel-1/episode-${i + 2}`;
-      bag.progress[`aniworld|${path}`] = { ...item, slug, title: slug.replace(/-/g, " "), episode: i + 2, episodePath: path, updatedAt: item.updatedAt - (i + 1) * 60_000 };
+      bag.progress[`aniworld|${path}`] = {
+        slug,
+        title: slug.replace(/-/g, " "),
+        season: "1",
+        episode: i + 2,
+        episodePath: path,
+        germanTitle: "",
+        englishTitle: "",
+        positionSec: 300,
+        durationSec: 1400,
+        updatedAt: now - (i + 1) * 60_000,
+        lang: "DE",
+        completed: false,
+        provider: "aniworld",
+      };
     });
     localStorage.setItem("nori.library", JSON.stringify(bag));
-    void key;
   });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(5000);
@@ -933,6 +1017,41 @@ try {
   const lastCont = await focusVisibility(page);
   check("Weiterschauen: letzte Karte vollständig sichtbar", lastCont.ok, lastCont.reason);
   await shot(page, "16-start-weiterschauen-letzte");
+
+  // --- Titel aus der Reihe nehmen ----------------------------------------------
+  //
+  // Der Knopf steht am Ende der Reihe, nicht über ihr: „runter" vom Hero muss
+  // weiterhin auf der ersten Karte landen (das prüft „Hero ↓ Weiterschauen"
+  // oben). Entfernt wird nicht gelöscht — der Eintrag bleibt mit Position 0
+  // stehen, sonst brächte ihn der nächste Abgleich zurück.
+  // Der letzte Titel der Reihe, nicht der erste: der läuft gleich noch.
+  const removeTarget = cont[cont.length - 1].key;
+  await focusKey(page, "continue-edit");
+  await remote(page, "ok", 400);
+  check("„Titel entfernen“ schaltet die Reihe um",
+    ((await page.textContent('[data-focus-key="continue-edit"]')) ?? "").includes("Fertig"));
+  await focusKey(page, removeTarget);
+  await remote(page, "ok", 800);
+  const removed = await page.evaluate((key) => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const slug = key.split("-").slice(2).join("-");
+    const left = Object.values(bag.progress ?? {}).filter((i) => i.slug === slug);
+    return {
+      cards: document.querySelectorAll('[data-rail="continue"] .land-card:not(.rail-action)').length,
+      kept: left.length,
+      started: left.filter((i) => i.positionSec > 0).length,
+      hash: location.hash,
+    };
+  }, removeTarget);
+  check("OK nimmt den Titel aus der Reihe, statt ihn zu starten",
+    removed.cards === cont.length - 1 && removed.hash === "#/",
+    `${removed.cards} Karten, ${removed.hash}`);
+  check("Entfernen löscht nichts, es setzt zurück",
+    removed.kept > 0 && removed.started === 0, `${removed.kept} Einträge, ${removed.started} angefangen`);
+  await focusKey(page, "continue-edit");
+  await remote(page, "ok", 400);
+  check("Zweiter Druck beendet den Modus",
+    ((await page.textContent('[data-focus-key="continue-edit"]')) ?? "").includes("Titel entfernen"));
 
   await focusKey(page, cont[0].key);
   await remote(page, "ok", 3500);

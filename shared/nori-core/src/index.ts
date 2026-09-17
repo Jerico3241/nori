@@ -10,6 +10,12 @@ export * from "./http.js";
 export * from "./dom.js";
 export * from "./client.js";
 export * from "./library.js";
+// Sehstand: herleiten und von Hand setzen. Gilt für jede Nori-App mit Player.
+export * from "./watch.js";
+// Countdown, Quellenwechsel nach Fehlschlag, Übersprungmarken.
+export * from "./playback.js";
+// Die Titelsuche — dieselben Stufen auf Fernseher, iPhone und Mac.
+export * from "./search.js";
 export * from "./sync.js";
 export * from "./sync-engine.js";
 export * from "./hash.js";

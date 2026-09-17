@@ -245,9 +245,17 @@ enum CatalogRanking {
 
 // MARK: - Suche
 
-/// Die Katalogsuche über `CatalogEntry`. Schlüssel und Suchbegriffe stehen in
-/// `CatalogSearch.swift`, das beide Apple-Targets bauen.
+/// Die Katalogsuche über `CatalogEntry`. Stufen, Tippfehler und Schlüssel
+/// stehen in `CatalogSearch.swift`, das beide Apple-Targets bauen.
 extension CatalogSearch {
+    /// Die vorbereiteten Suchfelder eines Eintrags.
+    ///
+    /// Beide entstehen einmal je Katalogstand im `CatalogBuilder` — hier wird
+    /// nur noch verglichen.
+    static func prepared(_ entry: CatalogEntry) -> Prepared {
+        Prepared(title: entry.titleKey, haystack: entry.searchKey)
+    }
+
     static func matches(_ entry: CatalogEntry, terms: [String]) -> Bool {
         guard !terms.isEmpty else { return true }
         for term in terms where !entry.searchKey.contains(term) {
@@ -334,18 +342,41 @@ enum CatalogStableOrder {
 /// bei zehntausend Einträgen sichtbar.
 enum CatalogEngine {
     static func results(for query: CatalogQuery, in entries: [CatalogEntry], now: Date) -> [CatalogEntry] {
-        let terms = CatalogSearch.terms(query.text)
         var kept: [CatalogEntry] = []
         kept.reserveCapacity(entries.count)
-
         for entry in entries {
-            guard CatalogSearch.matches(entry, terms: terms) else { continue }
             guard passesFilters(entry, query.filters) else { continue }
             guard passesQuick(entry, query.quick, now: now) else { continue }
             kept.append(entry)
         }
 
-        return CatalogRanking.sort(kept, by: query.sort, now: now)
+        let needle = CatalogSearch.needle(query.text)
+        guard needle.count >= CatalogSearch.minLength else {
+            return CatalogRanking.sort(kept, by: query.sort, now: now)
+        }
+
+        // Mit Suchbegriff entscheidet die **Stufe** und nicht die gewählte
+        // Sortierung: wer tippt, sucht einen bestimmten Titel und nicht den
+        // beliebtesten unter den Treffern. Die gewählte Sortierung bleibt
+        // trotzdem gültig — innerhalb einer Stufe. Sortiert wird dabei nur über
+        // die Treffer, die sind bei einer Suche wenige.
+        let hits = CatalogSearch.ranked(kept, needle: needle, prepared: CatalogSearch.prepared)
+        var out: [CatalogEntry] = []
+        out.reserveCapacity(hits.count)
+        var group: [CatalogEntry] = []
+        var groupScore = -1
+        for hit in hits {
+            if !group.isEmpty, hit.score != groupScore {
+                out.append(contentsOf: CatalogRanking.sort(group, by: query.sort, now: now))
+                group.removeAll(keepingCapacity: true)
+            }
+            groupScore = hit.score
+            group.append(hit.item)
+        }
+        if !group.isEmpty {
+            out.append(contentsOf: CatalogRanking.sort(group, by: query.sort, now: now))
+        }
+        return out
     }
 
     /// Die erweiterten Filter. Alle sind **und**-verknüpft: „Anime + Fantasy +

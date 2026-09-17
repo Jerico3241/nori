@@ -26,7 +26,9 @@ export interface EpisodeExtras {
   runtime?: number | null;
 }
 
-export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, focusRoute, extras, onSelect }: {
+export function EpisodeCard({
+  episode, slug, provider, seriesTitle, progress, focusRoute, extras, marking, onSelect,
+}: {
   episode: Episode;
   slug: string;
   provider: CatalogProvider;
@@ -34,6 +36,15 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
   progress: WatchProgress | null;
   focusRoute: string;
   extras?: EpisodeExtras | null;
+  /**
+   * „Sehstand ändern" ist an: OK setzt die Folge auf gesehen oder ungesehen,
+   * statt sie abzuspielen.
+   *
+   * Derselbe Griff wie „Bearbeiten" in der Merkliste — kein langer Druck und
+   * keine Farbtaste, die man erst suchen muss. Eine Fernbedienung hat eine
+   * Taste dafür, und die ist bereits belegt.
+   */
+  marking?: boolean;
   onSelect(): void;
 }) {
   const percent = progressPercent(progress);
@@ -58,11 +69,14 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
   return (
     <SpotButton
       card
-      className={`ep-card${done ? " done" : ""}`}
+      className={`ep-card${done ? " done" : ""}${marking ? " marking" : ""}`}
       focusRoute={focusRoute}
       focusArea="episodes"
       focusKey={`episode-${episode.number}`}
-      aria-label={`Folge ${episode.number}: ${label}${state ? `, ${state}` : ""}`}
+      aria-label={marking
+        ? `Folge ${episode.number}: ${label}, ${done ? "als ungesehen markieren" : "als gesehen markieren"}`
+        : `Folge ${episode.number}: ${label}${state ? `, ${state}` : ""}`}
+      aria-pressed={marking ? done : undefined}
       onClick={onSelect}
     >
       <span className="card-art ep-thumb">
@@ -76,6 +90,12 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
         />
         <span className="ep-number" aria-hidden="true">{episode.number}</span>
         {done ? <span className="ep-done"><Icon name="check" />Gesehen</span> : null}
+        {marking ? (
+          <span className="ep-mark">
+            <Icon name={done ? "close" : "check"} />
+            {done ? "Ungesehen" : "Gesehen"}
+          </span>
+        ) : null}
         {percent > 0 && !done ? (
           <span className="card-progress" aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
         ) : null}

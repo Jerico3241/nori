@@ -739,6 +739,7 @@ struct ContinueRow: View {
 /// Fortschrittsbalken und Restzeit. Als Bild dient das Breitbild aus TMDB —
 /// die Quellen liefern keine Standbilder je Folge.
 struct ContinueCard: View {
+    @Environment(LibraryStore.self) private var library
     let item: WatchProgress
 
     @State private var details = CoverDetails()
@@ -803,6 +804,19 @@ struct ContinueCard: View {
         }
         .help(item.title)
         .onHover { hovering = $0 }
+        .contextMenu {
+            // „Entfernen" löscht nichts: es setzt die angefangenen Folgen
+            // dieser Serie auf null zurück. Abgeschlossene bleiben
+            // abgeschlossen — wer eine Serie aus der Reihe nimmt, will sie
+            // loswerden und nicht seinen Stand. Die Regel steht im Kern
+            // (`WatchMarks`) und gilt genauso auf iPhone und Fernseher.
+            Button("Aus „Schau weiter" entfernen") {
+                library.removeFromContinueWatching(slug: item.slug, provider: kind)
+            }
+            Button("Fortschritt dieser Serie vergessen") {
+                library.resetSeriesProgress(slug: item.slug, provider: kind)
+            }
+        }
         .task(id: item.id) {
             details = await CoverIndex.shared.detailsLoading(
                 slug: item.slug,

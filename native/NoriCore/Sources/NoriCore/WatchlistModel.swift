@@ -2,10 +2,14 @@ import Foundation
 
 // Die Merkliste als Rechnung, getrennt von ihrer Darstellung.
 //
-// Alles, was die Merkliste an Entscheidungen trifft — ist ein Titel
-// ungesehen, angefangen oder gesehen, wie weit ist er, welche Titel bleiben
+// Alles, was die Merkliste an Entscheidungen trifft — welche Titel bleiben
 // nach Suche und Filtern übrig, in welcher Reihenfolge stehen sie — steht
 // hier und nirgends sonst. Die SwiftUI-Ansicht liest das Ergebnis.
+//
+// Ob ein Titel ungesehen, angefangen oder gesehen ist, steht in
+// `WatchMarks.swift`: dort wird der Sehstand auch gesetzt, und beides gehört
+// zusammen. Die Mac-App baut diese Datei hier nicht — sie hat eine eigene,
+// schlankere Merkliste —, den Sehstand braucht sie trotzdem.
 //
 // Der Grund ist nicht Ordnungsliebe: der Status stand vorher an keiner
 // Stelle, und eine Ansicht, die ihn selbst herleitet, leitet ihn an der
@@ -14,156 +18,6 @@ import Foundation
 // Antworten, ohne dass eine davon falsch aussähe.
 //
 // Hier statt im iOS-Target, weil `swift test` nur diesen Kern erreicht.
-
-// MARK: - Status
-
-/// Der persönliche Stand zu einem gemerkten Titel.
-///
-/// Drei Fälle, und die Grenze zwischen dem ersten und dem zweiten ist die,
-/// die man leicht falsch zieht: „ungesehen" heißt **nicht** „noch nicht
-/// fertig". Ein Titel, in dem 40 von 50 Folgen laufen, ist angefangen, nicht
-/// ungesehen.
-enum WatchState: String, Codable, CaseIterable, Hashable {
-    /// Gemerkt, aber noch nie etwas davon abgespielt.
-    case unseen
-    /// Es läuft etwas, es ist aber noch nicht durch.
-    case started
-    /// Alles, was Nori zu dem Titel kennt, ist abgeschlossen.
-    case seen
-
-    var label: String {
-        switch self {
-        case .unseen: return "Ungesehen"
-        case .started: return "Angefangen"
-        case .seen: return "Gesehen"
-        }
-    }
-}
-
-/// Was aus dem Fortschritt eines Titels herausgelesen werden kann.
-///
-/// ## Wofür „ratio" steht
-///
-/// Der Stand **in der zuletzt gesehenen Folge**, nicht der Anteil der
-/// gesehenen Folgen an der Serie. Das ist eine bewusste Einschränkung: wie
-/// viele Folgen eine Serie insgesamt hat, steht nur auf der Detailseite der
-/// Quelle, und die müsste für jede Kachel der Merkliste einzeln geholt
-/// werden. Ein Balken, der „74 % der Serie" behauptet und dabei durch die
-/// Zahl der *bisher geöffneten* Folgen teilt, wäre schlicht falsch — er
-/// stünde bei der ersten Folge einer Serie mit fünfzig auf 100 %.
-///
-/// Die Oberfläche schreibt deshalb „S1 · F7 · 58 %" daneben: Staffel, Folge,
-/// und wie weit in dieser Folge. Damit sagt der Balken genau das, was er
-/// misst.
-struct WatchSummary: Hashable {
-    var state: WatchState
-    /// Stand in der laufenden Folge, 0…1. Bei `seen` immer 1, bei `unseen`
-    /// immer 0.
-    var ratio: Double
-    /// Die Staffel, in der zuletzt etwas lief.
-    var season: String?
-    /// Die Folge, in der zuletzt etwas lief.
-    var episode: Int?
-    /// Wie viele Folgen dieses Titels abgeschlossen sind.
-    var completedEpisodes: Int
-    /// Wann zuletzt etwas davon lief, in Millisekunden seit 1970.
-    var lastWatched: Double?
-
-    init(
-        state: WatchState,
-        ratio: Double,
-        season: String? = nil,
-        episode: Int? = nil,
-        completedEpisodes: Int = 0,
-        lastWatched: Double? = nil
-    ) {
-        self.state = state
-        self.ratio = ratio
-        self.season = season
-        self.episode = episode
-        self.completedEpisodes = completedEpisodes
-        self.lastWatched = lastWatched
-    }
-
-    static let none = WatchSummary(state: .unseen, ratio: 0)
-
-    /// Der Wert, nach dem „Fortschritt" sortiert.
-    ///
-    /// Nicht `ratio` allein: wer in Folge 40 bei 10 % steht, ist weiter als
-    /// jemand bei 90 % der ersten Folge, und eine Sortierung, die das
-    /// umdreht, sieht aus wie ein Fehler. Die Zahl der abgeschlossenen Folgen
-    /// führt deshalb, der Stand in der laufenden entscheidet innerhalb davon.
-    var sortValue: Double { Double(completedEpisodes) + min(max(ratio, 0), 1) }
-
-    /// Die Zeile unter dem Titel, so wie sie in der Vorlage steht.
-    var stateText: String {
-        switch state {
-        case .unseen:
-            return "Noch nicht begonnen"
-        case .seen:
-            return "Komplett gesehen"
-        case .started:
-            let percent = Int((ratio * 100).rounded())
-            guard let season, let episode else { return "Angefangen · \(percent) %" }
-            return "\(seasonLabel(season)) · F\(episode) · \(percent) %"
-        }
-    }
-
-    /// „S1", oder „Filme" für die Sonderstaffel beider Quellen.
-    private func seasonLabel(_ season: String) -> String {
-        season == "filme" ? "Filme" : "S\(season)"
-    }
-}
-
-/// Den Stand eines Titels aus seinem Fortschritt herleiten.
-///
-/// `entries` sind **alle** Einträge zu diesem Titel und dieser Quelle; die
-/// Auswahl trifft der Aufrufer, weil derselbe Slug bei AniWorld und
-/// Serienstream stehen kann und die beiden Stände einander nicht
-/// überschreiben dürfen.
-///
-/// „Gesehen" heißt hier: jede Folge, die Nori von diesem Titel kennt, ist
-/// abgeschlossen — und er kennt mindestens eine. Mehr ist ohne die
-/// Folgenliste der Quelle nicht zu behaupten, und das Gegenteil zu behaupten
-/// wäre schlechter: ein Titel, dessen sämtliche geöffneten Folgen durch sind,
-/// als „angefangen" zu führen, macht den Filter „Gesehen" dauerhaft leer.
-func watchSummary(for entries: [WatchProgress]) -> WatchSummary {
-    // Ein Eintrag mit Position 0 und ohne Abschluss entsteht schon beim
-    // bloßen Öffnen einer Folge. Er ist kein „angefangen".
-    let touched = entries.filter { $0.positionSec > 0 || $0.completed == true }
-    guard !touched.isEmpty else { return .none }
-
-    let completed = touched.filter { isEpisodeComplete($0) }
-    let latest = touched.max { $0.updatedAt < $1.updatedAt }
-    let lastWatched = latest?.updatedAt
-
-    if completed.count == touched.count {
-        return WatchSummary(
-            state: .seen,
-            ratio: 1,
-            season: latest?.season,
-            episode: latest?.episode,
-            completedEpisodes: completed.count,
-            lastWatched: lastWatched
-        )
-    }
-
-    // Der Balken zeigt die Folge, in der zuletzt etwas lief — auch dann,
-    // wenn sie schon durch ist und nur die Folge danach noch aussteht. Eine
-    // beliebige offene Folge dafür zu suchen, führte zu Sprüngen, die zu
-    // nichts gehören, was jemand zuletzt getan hat.
-    let current = latest.flatMap { isEpisodeComplete($0) ? nil : $0 }
-        ?? touched.filter { !isEpisodeComplete($0) }.max { $0.updatedAt < $1.updatedAt }
-
-    return WatchSummary(
-        state: .started,
-        ratio: watchRatio(current),
-        season: current?.season ?? latest?.season,
-        episode: current?.episode ?? latest?.episode,
-        completedEpisodes: completed.count,
-        lastWatched: lastWatched
-    )
-}
 
 // MARK: - Eintrag
 

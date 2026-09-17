@@ -77,7 +77,56 @@ struct SeriesEpisodeCard: View {
             .contentShape(RoundedRectangle(cornerRadius: SeriesMetrics.card, style: .continuous))
         }
         .buttonStyle(NoriPressStyle(scale: 0.985))
+        .contextMenu { menu(item: item, complete: complete) }
         .accessibilityLabel(accessibleLabel(complete: complete, ratio: ratio))
+        .accessibilityAction(named: complete ? "Als ungesehen markieren" : "Als gesehen markieren") {
+            setWatched(!complete)
+        }
+    }
+
+    // MARK: - Aktionen
+
+    /// Gesehen, ungesehen, von vorn.
+    ///
+    /// Die Regeln dafür stehen im Kern (`WatchMarks`) und nicht hier: derselbe
+    /// Griff gibt es auf dem Mac und am Fernseher, und „gesehen" muss auf
+    /// allen dreien dasselbe schreiben — sonst nimmt der nächste Abgleich es
+    /// wieder zurück.
+    @ViewBuilder
+    private func menu(item: WatchProgress?, complete: Bool) -> some View {
+        Button {
+            setWatched(!complete)
+        } label: {
+            Label(
+                complete ? "Als ungesehen markieren" : "Als gesehen markieren",
+                systemImage: complete ? "circle" : "checkmark.circle"
+            )
+        }
+
+        Button {
+            play(episode, 0)
+        } label: {
+            Label("Von vorn abspielen", systemImage: "backward.end.fill")
+        }
+
+        if let item, item.positionSec > 0 {
+            Button(role: .destructive) {
+                library.upsert(contentsOf: [WatchMarks.reset(item)])
+            } label: {
+                Label("Fortschritt zurücksetzen", systemImage: "arrow.counterclockwise")
+            }
+        }
+    }
+
+    private func setWatched(_ seen: Bool) {
+        library.setWatched(
+            seen,
+            slug: detail.slug,
+            title: detail.title,
+            season: season,
+            episode: episode,
+            provider: provider
+        )
     }
 
     // MARK: - Bild

@@ -356,10 +356,23 @@ export function findProgressByEpisode(
   return best;
 }
 
-/** Je Serie der jüngste unfertige Eintrag, nach Zeit sortiert, höchstens 16. */
+/**
+ * Je Serie der jüngste **angefasste** Eintrag, sofern er nicht durch ist —
+ * nach Zeit sortiert, höchstens 16.
+ *
+ * „Angefasst" heißt Position > 0 oder abgeschlossen, dieselbe Grenze wie in
+ * `watchSummary`. Bis hierher zählte jeder Eintrag, auch der leere, den schon
+ * das bloße Öffnen einer Folge anlegt. Das hatte zwei Folgen: eine nur
+ * angetippte Folge stand in „Weiterschauen", und „Aus Weiterschauen entfernen"
+ * konnte gar nicht wirken — der zurückgesetzte Eintrag wäre mit Position 0
+ * sofort wieder dagewesen.
+ *
+ * Dieselbe Regel wie `LibraryStore.continueWatching()` im Swift-Kern.
+ */
 export function continueWatching(progress: Record<string, WatchProgress>): WatchProgress[] {
   const latest = new Map<string, WatchProgress>();
   for (const item of Object.values(progress)) {
+    if (!(item.positionSec > 0 || item.completed === true)) continue;
     const provider = item.provider ?? providerFromPath(item.episodePath);
     const key = `${provider}|${item.slug}`;
     const current = latest.get(key);

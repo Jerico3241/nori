@@ -167,7 +167,9 @@ struct NoriHomeView: View {
                 items: feed.continueWatching,
                 width: landscapeWidth,
                 preparing: preparing,
-                onPlay: resume
+                onPlay: resume,
+                onRestart: restart,
+                onRemove: removeFromContinueWatching
             )
         case .newAndPopular:
             HomePosterSection(
@@ -256,6 +258,26 @@ struct NoriHomeView: View {
         run(id: item.id) {
             try await HomePlayback.target(for: item, library: library)
         }
+    }
+
+    /// Dieselbe Folge, aber von vorn.
+    private func restart(_ item: WatchProgress) {
+        run(id: item.id) {
+            var target = try await HomePlayback.target(for: item, library: library)
+            target = SeriesView.PlayTarget(
+                series: target.series,
+                episode: target.episode,
+                resumeAt: 0,
+                provider: target.provider
+            )
+            return target
+        }
+    }
+
+    /// Die Serie aus der Reihe nehmen — ohne „gesehen" zu verlieren.
+    private func removeFromContinueWatching(_ item: WatchProgress) {
+        let provider = item.provider ?? providerFromPath(item.episodePath)
+        library.removeFromContinueWatching(slug: item.slug, provider: provider)
     }
 
     private func start(_ candidate: HomeCandidate) {

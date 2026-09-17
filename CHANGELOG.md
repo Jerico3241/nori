@@ -4,8 +4,126 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
-unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.2.1**.
+unterschiedlich schnell bewegen: macOS **1.21.0**, iOS/iPadOS **1.26.0**,
+Windows **1.8.0**, LG webOS **2.3.0**.
+
+## [iOS 1.26.0] · [macOS 1.21.0] · [webOS 2.3.0] — 2026-09-17
+
+Sehstand, Suche und Fehlerbehandlung des Players gehören ab hier **Nori** und
+nicht einer Plattform. Vier Regeln, die bisher an drei Stellen standen und an
+drei Stellen unterschiedlich ausfielen, liegen jetzt je einmal in
+`native/NoriCore/` und in `shared/nori-core/` und werden von beiden Testreihen
+gegen dieselben Fälle geprüft. Bibliotheksschema unverändert **v6**; Google
+Drive, OAuth, Merge-Regeln und das Ablageformat sind nicht angefasst — ein
+Gerät mit altem Stand liest den neuen und umgekehrt.
+
+### Neu — auf allen Plattformen
+
+- **Gesehen und ungesehen von Hand**, je Folge, je Staffel, je Serie.
+  Auf iOS im Kontextmenü der Folgenkarte und im „…"-Menü der Detailseite, auf
+  dem Mac im Kontextmenü der Folgenzeile und in einem eigenen Menü neben
+  „Abspielen", am Fernseher über „Sehstand" in der Staffelzeile (OK setzt dann
+  den Stand, statt abzuspielen) und über die Knöpfe unter „Mehr".
+  „Serie als gesehen" holt die fehlenden Staffeln nach und schreibt **einmal**.
+- **„Aus Weiterschauen entfernen"** auf der Startseite aller drei Plattformen:
+  auf Apple im Kontextmenü der Kachel, am Fernseher über „Titel entfernen" am
+  Ende der Reihe. Es löscht nichts — angefangene Folgen werden zurückgesetzt,
+  abgeschlossene bleiben abgeschlossen.
+- **Fortschritt zurücksetzen** je Folge, je Staffel und je Serie.
+- **Fehlertolerante Suche auf iPhone, iPad und Mac.** Die Stufen und die
+  Tippfehlertoleranz gab es bisher nur am Fernseher, obwohl an ihnen nichts
+  TV-spezifisch ist. „pokemon" trifft „Pokémon", „shingeki no kyojin" trifft
+  den Eintrag, den die Quelle „Attack on Titan" nennt, und „Damonenjager" den
+  „Dämonenjäger". Bei einer Suche entscheidet jetzt die Trefferstufe die
+  Reihenfolge, die gewählte Sortierung innerhalb einer Stufe.
+- **Automatischer Quellenwechsel nach einem abgebrochenen Stream** — mit
+  Budget: höchstens drei Wechsel je Folge, eine gescheiterte Quelle wird für
+  diese Folge nicht wieder angeboten, danach steht eine Meldung statt einer
+  Schleife. Die Auswahl von Hand bleibt vollständig.
+
+### Geändert
+
+- **Der Countdown zur nächsten Folge steht überall auf zehn Sekunden.** Er
+  stand auf acht auf iPhone und Mac und auf zehn am Fernseher; beides war
+  hartcodiert. Jetzt kommt er aus dem Kern und aus `config/contract.json`. Am
+  Fernseher bleibt er einstellbar — mit einer Fernbedienung braucht man länger.
+- **„Weiterschauen" zählt nur noch angefasste Folgen.** Eine Folge, die man nur
+  geöffnet und nicht gesehen hat, legt einen Eintrag mit Position 0 an; der
+  stand bisher in der Reihe. Eine halb gesehene Folge bleibt weiterhin stehen,
+  auch wenn danach eine andere nur geöffnet wurde.
+- Die Merkliste am Fernseher rechnet ihren Sehstand jetzt mit `watchSummary`
+  aus dem Kern statt mit einer eigenen Fassung und sucht mit `rankSearch`.
+
+### Behoben
+
+- **„Staffel als gesehen markieren" auf iOS stempelte in Sekunden statt in
+  Millisekunden.** Jeder so gesetzte Eintrag war gegen echte Zeitstempel
+  tausendfach zu alt: der Verlauf sortierte ihn ans Ende, und beim nächsten
+  Abgleich hat ihn die Fassung eines anderen Geräts stillschweigend wieder
+  überschrieben. Die Marke entsteht jetzt an genau einer Stelle im Kern.
+- **„Anderen Hoster versuchen" bot auf iPhone und Mac den gerade gescheiterten
+  erneut an.** Es nahm den ersten der Rangfolge, der nicht der laufende war —
+  bei zwei kaputten Hostern ließ sich das endlos abwechseln.
+- **Die Folgenliste des Mac las den Fortschritt unter der falschen Quelle.**
+  Sie benutzte die Vorgabe der Seitenleiste statt der Quelle der geöffneten
+  Serie; bei einer Serienstream-Serie mit dem Schalter auf Anime gingen beide
+  Stände durcheinander. Der Fortschritt ist nach `provider|episodePath`
+  getrennt, und genau dafür.
+- Ziffern werden in der Suche nicht mehr als Tippfehler behandelt: „1998" ist
+  kein Vertipper von „1999", sondern ein anderes Jahr.
+
+### Vorbereitet, nicht behauptet
+
+- **Übersprungmarken** (`SkipSegment`: Intro, Abspann, Rückblick) gibt es als
+  Modell, Prüfung und Abfrage „liegt gerade eine Marke an" — in beiden Kernen.
+  Eine **Datenquelle gibt es nicht**: weder AniWorld noch Serienstream nennen
+  Zeitmarken, TMDB kennt sie nicht. Feste Zeiten zu erfinden wäre schlechter
+  als nichts, also bietet Nori nichts an. Wer später eine Quelle anbindet,
+  füllt `SkipSegmentSource` und muss an den Oberflächen nichts mehr bauen.
+
+### Merkliste auf dem Mac
+
+Sie zeigt jetzt einen Sehstand — „S1 · F7 · 58 %", „Komplett gesehen", „Noch
+nicht begonnen" —, gerechnet mit demselben `watchSummary` wie iPhone und
+Fernseher. Bis hierher stand dort nur der Titel. Im Kontextmenü liegt
+zusätzlich „Fortschritt vergessen".
+
+### Kern
+
+Neu und in beiden Sprachen gleich:
+
+| Swift | TypeScript | Inhalt |
+| --- | --- | --- |
+| `WatchMarks.swift` | `watch.ts` | Sehstand setzen, `watchSummary`, Zählstände |
+| `Playback.swift` | `playback.ts` | Countdown, Quellenwechsel, Übersprungmarken |
+| `CatalogSearch.swift` | `search.ts` | Stufen, Tippfehler, Reihenfolge |
+
+`apps/webos/src/state/search.ts` ist entfallen — der Inhalt steht jetzt im Kern.
+
+### Contract
+
+`config/contract.json` neu: `rules.continueWatching`, `rules.watchMarks`,
+`rules.search`, `rules.playbackRecovery`, `rules.skipSegments`, das Modell
+`SkipSegment`; `rules.autoplay` nennt zehn Sekunden.
+
+### Tests
+
+- Swift: `WatchMarksTests` (14), `PlaybackTests` (15),
+  `CatalogSearchRankingTests` (10) neu. Nicht ausgeführt — in dieser Umgebung
+  gibt es keine Swift-Toolchain; der Nachweis läuft über `Swift tests`,
+  `Build iOS` und `Build macOS` auf dem Mac-Runner.
+- TypeScript: `watch.test.ts` (16), `playback.test.ts` (15),
+  `search.test.ts` (11) neu — dieselben Fälle wie in Swift.
+  `npm --prefix shared/nori-core test`: **264 bestanden**.
+- webOS: `npm run test:tv` mit echten LG-Tastencodes, **323 bestanden** — 13
+  davon neu für Sehstand und „Titel entfernen", und sie prüfen die Ablage, nicht
+  die Beschriftung: was der Fernseher schreibt, liest morgen ein iPhone aus
+  Drive.
+  Der Knopf „Titel entfernen" steht bewusst am **Ende** der Reihe
+  „Weiterschauen": in der Kopfzeile war er ein Fokusstopp zwischen Hero und
+  erster Karte, und der Lauf hat genau das gemeldet.
+- `python3 tools/check-apple-sources.py`, `npm --prefix apps/webos run build`,
+  `python3 tools/check-webos-package.py`.
 
 ## [webOS 2.2.1] — 2026-09-13
 
