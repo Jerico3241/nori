@@ -247,6 +247,84 @@ class CheckWebosPackageTests(unittest.TestCase):
         result = self.check(self.package(extra={"assets/new.js": b"1"}), reference=self.reference(bundle(client_id="", secret="")))
         self.assert_failed(result, "nur im Paket")
 
+    # MARK: - Namensvergabe des Minifizierers
+
+    # Der Lauf baut zweimal aus demselben Quelltext. Am 17.09.2026 unterschieden
+    # sich die beiden Bündel an genau einer Stelle: ein minifizierter Bezeichner
+    # hieß `Wy` statt `Ky`. Gleiche Länge, gleiche Stelle, kein Code dazu oder
+    # weg. Das darf die Prüfung nicht mehr für eingeschleusten Inhalt halten —
+    # alles andere schon.
+
+    def test_renamed_minified_identifier_is_accepted(self) -> None:
+        tested = bundle(client_id="", secret="").replace(b"var e=", b"var q=").replace(b"window.nori=e", b"window.nori=q")
+        errors, passed = self.check(self.package(), reference=self.reference(tested))
+        self.assertEqual(errors, [])
+        self.assertTrue(any("andere Namensvergabe" in line for line in passed), passed)
+
+    def test_inconsistent_rename_still_fails(self) -> None:
+        # Derselbe Name im Vergleichsbau, zwei verschiedene im Paket.
+        tool = load_tool()
+        self.assertIsNone(tool.only_minifier_renames(b"var Ky=1;Ky+Jy", b"var Wy=1;Wy+Wy"))
+
+    def test_changed_string_content_is_not_a_rename(self) -> None:
+        # Gleich lang, gleiche Stelle — aber in Anführungszeichen. Genau das
+        # soll die Prüfung weiterhin melden.
+        tool = load_tool()
+        self.assertIsNone(tool.only_minifier_renames(b'var a="Ky";a', b'var a="Wy";a'))
+
+    def test_changed_property_name_is_not_a_rename(self) -> None:
+        tested = bundle(client_id="", secret="").replace(b"window.nori", b"window.nora")
+        self.assert_failed(self.check(self.package(), reference=self.reference(tested)),
+                           "über die Zugangsdaten hinaus")
+
+    def test_longer_name_shifts_length_and_fails(self) -> None:
+        tested = bundle(client_id="", secret="").replace(b"var e=", b"var eee=")
+        self.assert_failed(self.check(self.package(), reference=self.reference(tested)),
+                           "über die Zugangsdaten hinaus")
+
+    def test_only_minifier_renames_rejects_long_tokens(self) -> None:
+        # Direkt an der Funktion: Ein Name jenseits der Minifizierer-Länge geht
+        # nicht durch, auch wenn er gleich lang ersetzt wird.
+        tool = load_tool()
+        ours = b"var alphaFive=1;alphaFive()"
+        reference = b"var betaFivee=1;betaFivee()"
+        self.assertIsNone(tool.only_minifier_renames(ours, reference))
+
+    def test_the_real_case_from_2026_09_17(self) -> None:
+        """Der Ausschnitt, an dem Lauf 35238195932 gescheitert ist.
+
+        Byte 7763 von 424767, mitten in Reacts minifiziertem Code. Ein
+        Bezeichner anders, sonst nichts — und daneben vier Abweichungen, die
+        weiterhin auffallen müssen.
+        """
+        tool = load_tool()
+        reference = (b'"),Uy=Symbol.for("react.fragment"),By=Object.prototype.hasOwnProperty,'
+                     b"Wy=Oy.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentOwner")
+
+        self.assertEqual(
+            tool.only_minifier_renames(reference.replace(b",Wy=Oy.", b",Ky=Oy."), reference),
+            {b"Wy": b"Ky"},
+        )
+        # Gleich lang, aber keine Umbenennung:
+        for changed in (
+            reference.replace(b'"react.fragment"', b'"react.fragmenX"'),      # Zeichenkette
+            reference.replace(b".ReactCurrentOwner", b".ReactCurrentOwneX"),   # Eigenschaft
+            reference.replace(b"Object.prototype", b"Object.prototypX"),       # Eigenschaft
+        ):
+            self.assertIsNone(tool.only_minifier_renames(changed, reference), changed[-40:])
+        # Und ein eingeschleuster Wert verschiebt ohnehin die Länge:
+        smuggled = reference.replace(
+            b"hasOwnProperty",
+            b'hasOwnProperty,z="123456789012-' + b"a" * 32 + SUFFIX.encode() + b'"',
+        )
+        self.assertIsNone(tool.only_minifier_renames(smuggled, reference))
+
+    def test_only_minifier_renames_accepts_consistent_swap(self) -> None:
+        tool = load_tool()
+        reference = b"var Wy=1,Ky=2;Wy+Ky"
+        ours = b"var Ky=1,Wy=2;Ky+Wy"
+        self.assertEqual(tool.only_minifier_renames(ours, reference), {b"Wy": b"Ky", b"Ky": b"Wy"})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
