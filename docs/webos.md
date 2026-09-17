@@ -1,6 +1,6 @@
 # Nori für LG webOS
 
-Die TV-Fassung von Nori, Stand **2.2.1**. Eigenständige App, kein skalierter
+Die TV-Fassung von Nori, Stand **2.6.0** — der gemeinsamen Nori-Version. Eigenständige App, kein skalierter
 Webauftritt: vollständig mit der Fernbedienung bedienbar, auf 1920 × 1080
 ausgelegt und proportional bis 3840 × 2160 skalierend.
 
@@ -415,7 +415,7 @@ selbst (ar plus tar, siehe `apps/webos/tools/package-ipk.mjs`).
 cd apps/webos
 npm install
 npm run build          # prüft Typen und baut nach dist/
-npm run webos:package  # ergibt tv.nori.app_2.2.1_all.ipk
+npm run webos:package  # ergibt tv.nori.app_2.6.0_all.ipk
 ```
 
 Vom Repository-Stamm aus geht auch `npm run webos:build` und
@@ -539,6 +539,27 @@ Startseite „Jetzt ansehen", im Katalog die erste Karte, auf der Detailseite
 Die Seitenleiste erreicht man mit „links" am Zeilenanfang und landet dort auf
 dem aktiven Eintrag; „rechts" führt zurück auf die zuletzt fokussierte Karte.
 
+### Sehstand ändern
+
+Eine Fernbedienung hat keinen langen Druck und kein Kontextmenü. Wo iPhone und
+Mac ein Menü aufklappen, schaltet Nori am Fernseher deshalb einen **sichtbaren
+Modus** um — derselbe Griff wie „Bearbeiten" in der Merkliste:
+
+| Wo | Knopf | Was OK dann tut |
+| --- | --- | --- |
+| Detailseite, Staffelzeile | **Sehstand** | die fokussierte Folge auf gesehen oder ungesehen setzen |
+| Startseite, Ende von „Weiterschauen" | **Titel entfernen** | die Serie aus der Reihe nehmen |
+| Merkliste, Kopfzeile | **Bearbeiten** | den Titel von der Merkliste nehmen |
+
+Ein zweiter Druck auf denselben Knopf beendet den Modus. Staffel und ganze
+Serie stehen unter **Mehr** auf der Detailseite; dort steht auch der Sehstand
+als Text.
+
+Der Knopf „Titel entfernen" liegt am **Ende** der Reihe und nicht über ihr. In
+der Kopfzeile wäre er ein Fokusstopp zwischen Hero und erster Karte: jedes
+„runter" von „Jetzt ansehen" landete auf einem Knopf statt auf dem, was man
+weiterschauen will. Der Fernbedienungslauf prüft genau diesen Weg.
+
 ## Unterstützte Stände
 
 Gebaut wird auf **Chrome 79** — die Engine von webOS 6. Damit läuft dieselbe
@@ -614,8 +635,9 @@ demselben self-hosted Mac wie alle anderen Läufe (siehe
 `docs/self-hosted-runner.md`) — ist der aus, wartet der Job in der
 Warteschlange, statt zu scheitern. Xcode braucht er nicht, nur Node.
 
-Das Artefakt `Nori-webOS` ist seit 2.2.1 das **installierbare Paket mit
-Google-Abgleich**. Der Fernbedienungslauf läuft gegen einen Build mit leeren
+Das abgelegte Paket ist seit 2.2.1 das **installierbare Paket mit
+Google-Abgleich** — im Release als `Nori-webOS-v<VERSION>.ipk`, bei einem
+gewöhnlichen Push als Testpaket mit dem Commit im Namen. Der Fernbedienungslauf läuft gegen einen Build mit leeren
 TV-Variablen; danach schreibt `tools/configure-google-oauth.py --webos` die
 `.env.local` aus `~/.config/nori/secrets/google-webos-oauth.json` auf dem
 Runner, der produktive Build wird gepackt und mit

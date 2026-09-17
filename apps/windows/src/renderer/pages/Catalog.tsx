@@ -12,10 +12,10 @@
 
 import {
   Icon, catalogItemId, tmdb, useCatalogView, useData, useDebounced, useLibrary, usePersistentState,
-  catalogOrderSession, fuzzyScore, performanceProfile, searchScore, titleMeta, yearOf,
+  catalogOrderSession, performanceProfile, titleMeta, yearOf,
 } from "@nori/app";
 import {
-  LIBRARY_SCOPES, SCOPES, isNew, normalizeTitle, stableCatalogOrder,
+  LIBRARY_SCOPES, SCOPES, SEARCH_MIN_LENGTH, isNew, normalizeTitle, rankSearch, stableCatalogOrder,
   type HomeCandidate, type LibraryScope,
 } from "@nori/core";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -123,26 +123,12 @@ export function CatalogPage() {
       list = list.filter((candidate) => inDecade(yearOf(candidate.title, candidate.signals), decade));
     }
 
-    const needle = normalizeTitle(debounced.trim());
-    if (needle.length >= 2) {
-      const scored: { candidate: HomeCandidate; score: number }[] = [];
-      for (const candidate of list) {
-        const score = searchScore(candidate.title, needle);
-        if (score >= 0) scored.push({ candidate, score });
-      }
-      // Tippfehler nur, wenn die strengen Stufen wenig finden — sie kosten ein
-      // Vielfaches und verdünnten sonst gute Treffer mit schlechten.
-      if (scored.length < 12) {
-        const found = new Set(scored.map((entry) => entry.candidate));
-        for (const candidate of list) {
-          if (found.has(candidate)) continue;
-          const score = fuzzyScore(candidate.title, needle);
-          if (score >= 0) scored.push({ candidate, score });
-        }
-      }
-      return scored
-        .sort((a, b) => a.score - b.score || byPopularity(a.candidate, b.candidate))
-        .map((entry) => entry.candidate);
+    // Die Suche liegt im Kern (`rankSearch`) und ist damit dieselbe wie auf
+    // dem Fernseher, dem iPhone und dem Mac: strenge Stufen zuerst, Tippfehler
+    // nur, wenn die wenig finden. Bei gleicher Stufe entscheidet die
+    // Beliebtheit.
+    if (normalizeTitle(debounced.trim()).length >= SEARCH_MIN_LENGTH) {
+      return rankSearch(list, debounced, (candidate) => candidate.title, byPopularity);
     }
 
     const order = chip === "top" || sort === "rating" ? byRating : sort === "az" ? byTitle : byPopularity;

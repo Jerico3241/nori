@@ -252,6 +252,7 @@ function HomeRail({ row, first, onOpenTitle, onPlayEpisode }: {
                 provider, item.slug, item.season, item.episode, item.episodePath,
                 library.state.resumeEnabled ? resumePosition(item) : 0,
               )}
+              onRemove={() => library.removeFromContinueWatching(item.slug, provider)}
             />
           );
         })}

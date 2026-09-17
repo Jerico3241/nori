@@ -330,6 +330,63 @@ try {
   });
   check("Merkliste nimmt den Titel auf", marked > 0, `${marked} gemerkt`);
 
+  // --- Sehstand von Hand --------------------------------------------------
+  //
+  // Geprüft wird an der Ablage, nicht an der Beschriftung: was Windows hier
+  // schreibt, liest morgen ein iPhone oder ein Fernseher aus Drive. Die Regel
+  // dahinter steht einmal im Kern (`WatchMarks` / `watch.ts`).
+  await page.selectOption(".season-row select", { index: 0 });
+  await page.waitForTimeout(2200);
+  await page.click(".grid.episodes .ep-wrap:nth-child(2) .ep-mark", { force: true });
+  await page.waitForTimeout(700);
+  const seen = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const entry = Object.values(bag.progress ?? {}).find((i) => i.slug === "frieren" && i.episode === 2);
+    return { completed: entry?.completed === true, stamp: entry?.updatedAt ?? 0, hash: location.hash };
+  });
+  check("Der Haken an der Folgenzeile hakt ab, statt abzuspielen",
+    seen.completed && !seen.hash.includes("#/player/"), `completed=${seen.completed}, ${seen.hash}`);
+  // Millisekunden, nicht Sekunden — sonst verlöre die Marke jede Zusammenführung.
+  check("Marke trägt Millisekunden", seen.stamp > 1_600_000_000_000, String(seen.stamp));
+
+  await page.click(".grid.episodes .ep-wrap:nth-child(2) .ep-mark", { force: true });
+  await page.waitForTimeout(700);
+  const unseen = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const entry = Object.values(bag.progress ?? {}).find((i) => i.slug === "frieren" && i.episode === 2);
+    return { completed: entry?.completed === true, position: entry?.positionSec ?? -1 };
+  });
+  check("Noch einmal geklickt setzt sie wieder auf ungesehen",
+    !unseen.completed && unseen.position === 0, `completed=${unseen.completed}, pos=${unseen.position}`);
+
+  const seasonButtons = await page.$$eval(".season-actions .btn", (els) => els.map((e) => e.textContent ?? ""));
+  check("Sehstand für Staffel und Serie steht als Knopf da", seasonButtons.length === 4, seasonButtons.join(" · "));
+  await page.click(".season-actions .btn:nth-child(1)");
+  await page.waitForTimeout(900);
+  const wholeSeason = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const all = Object.values(bag.progress ?? {}).filter((i) => i.slug === "frieren" && i.season === "1");
+    return {
+      count: all.length,
+      done: all.filter((i) => i.completed === true).length,
+      label: document.querySelector(".season-row .row-value")?.textContent ?? "",
+    };
+  });
+  check("„Staffel gesehen“ hakt jede Folge ab",
+    wholeSeason.count > 1 && wholeSeason.done === wholeSeason.count, `${wholeSeason.done}/${wholeSeason.count}`);
+  check("Die Staffelzeile nennt den Stand", /\d+ von \d+ gesehen/.test(wholeSeason.label), wholeSeason.label);
+  await shot("04b-detail-sehstand");
+
+  await page.click(".season-actions .btn:nth-child(4)");
+  await page.waitForTimeout(900);
+  const afterReset = await page.evaluate(() => {
+    const bag = JSON.parse(localStorage.getItem("nori.library") ?? "{}");
+    const all = Object.values(bag.progress ?? {}).filter((i) => i.slug === "frieren");
+    return { done: all.filter((i) => i.completed === true).length, kept: all.length };
+  });
+  check("„Fortschritt vergessen“ setzt zurück, ohne zu löschen",
+    afterReset.done === 0 && afterReset.kept > 0, `${afterReset.done} gesehen, ${afterReset.kept} Einträge`);
+
   // --- 5. Player ----------------------------------------------------------
   section("Player");
   await page.click(".grid.episodes .ep");

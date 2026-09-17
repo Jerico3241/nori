@@ -107,8 +107,13 @@ enum NoriRelease {
     static let version = "2.6.0"
 
     static let highlights = [
-        "Nori trägt jetzt auf allen Plattformen dieselbe Versionsnummer. 2.6.0 folgt auf macOS 1.20.1; an der Mac-App selbst ändert sich dabei nichts.",
-        "Neue Stände erscheinen als ein gemeinsamer GitHub Release je Version („Nori v2.6.0“), mit einheitlichen Dateinamen und einer Prüfsumme für jede Datei.",
+        "Nori trägt jetzt auf allen Plattformen dieselbe Versionsnummer: 2.6.0 folgt auf macOS 1.21.0. Neue Stände erscheinen als ein gemeinsamer GitHub Release je Version, mit einer Prüfsumme für jede Datei.",
+        "Folgen, Staffeln und ganze Serien lassen sich von Hand als gesehen oder ungesehen markieren — im Kontextmenü der Folgenzeile und über das neue Menü neben „Abspielen“.",
+        "Eine Serie lässt sich aus „Schau weiter“ nehmen, ohne den Stand zu verlieren: Angefangene Folgen werden zurückgesetzt, abgeschlossene bleiben abgeschlossen.",
+        "Die Suche verzeiht Tippfehler und kennt Zweit- und Originaltitel. „shingeki no kyojin“ findet den Titel, den die Quelle „Attack on Titan“ nennt, „Damonenjager“ den „Dämonenjäger“.",
+        "Die Merkliste zeigt jetzt den Sehstand — „S1 · F7 · 58 %“ statt nur des Titels.",
+        "Bricht ein Stream ab, sucht Nori selbst weiter: höchstens drei Quellen je Folge, und eine, die eben nichts lieferte, wird nicht erneut angeboten.",
+        "Behoben: Die Folgenliste las den Fortschritt unter der Vorgabe der Seitenleiste statt unter der Quelle der geöffneten Serie. Bei einer Serienstream-Serie mit dem Schalter auf Anime gingen beide Stände durcheinander.",
     ]
 }
 

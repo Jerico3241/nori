@@ -311,10 +311,22 @@ function HomeRail({ row, first, onOpenTitle, onPlayEpisode }: {
   const size = row.titles?.length ?? row.episodes?.length ?? row.progress?.length ?? 0;
   const window = useRailWindow(row.id, size);
   const eagerCards = first ? performanceProfile().eagerCards : 0;
+  /**
+   * „Entfernen": OK nimmt die Serie aus der Reihe, statt sie fortzusetzen.
+   *
+   * Derselbe sichtbare Modus wie „Bearbeiten" in der Merkliste. Gelöscht wird
+   * dabei nichts — die angefangenen Folgen werden auf null zurückgesetzt, und
+   * was abgeschlossen ist, bleibt abgeschlossen (`WatchMarks` im Kern).
+   */
+  const [editing, setEditing] = useState(false);
 
   if (row.kind === "progress" && row.progress) {
     return (
-      <Rail id={row.id} title={row.title} note="Zuletzt angesehen">
+      <Rail
+        id={row.id}
+        title={row.title}
+        note={editing ? "OK entfernt einen Titel" : "Zuletzt angesehen"}
+      >
         {row.progress.slice(0, window.count).map((item, index) => {
           const provider = item.provider ?? providerFromPath(item.episodePath);
           const still = tmdb.cachedSeason(item.slug, provider, item.season)?.episodes[item.episode]?.still ?? null;
@@ -333,13 +345,39 @@ function HomeRail({ row, first, onOpenTitle, onPlayEpisode }: {
               focusKey={`${row.id}-${provider}-${item.slug}`}
               eager={index < eagerCards}
               onFocus={() => window.reached(index)}
-              onSelect={() => onPlayEpisode(
-                provider, item.slug, item.season, item.episode, item.episodePath,
-                library.state.resumeEnabled ? resumePosition(item) : 0,
-              )}
+              overlay={editing ? <span className="card-remove"><Icon name="trash" />Entfernen</span> : null}
+              onSelect={() => {
+                if (editing) {
+                  library.removeFromContinueWatching(item.slug, provider);
+                  return;
+                }
+                onPlayEpisode(
+                  provider, item.slug, item.season, item.episode, item.episodePath,
+                  library.state.resumeEnabled ? resumePosition(item) : 0,
+                );
+              }}
             />
           );
         })}
+        {/*
+          Der Knopf steht am **Ende** der Reihe, nicht über ihr.
+          In der Kopfzeile wäre er ein Fokusstopp zwischen Hero und erster
+          Karte: jedes „runter" von „Jetzt ansehen" landete auf einem Knopf
+          statt auf dem, was man weiterschauen will. Am Ende erreicht ihn, wer
+          ohnehin durch die Reihe fährt — und niemand sonst.
+        */}
+        <SpotButton
+          card
+          className={`rail-action${editing ? " active" : ""}`}
+          focusRoute={ROUTE}
+          focusArea={row.id}
+          focusKey={`${row.id}-edit`}
+          aria-pressed={editing}
+          onClick={() => setEditing((value) => !value)}
+        >
+          <Icon name={editing ? "check" : "trash"} />
+          <span className="card-title">{editing ? "Fertig" : "Titel entfernen"}</span>
+        </SpotButton>
       </Rail>
     );
   }

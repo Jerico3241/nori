@@ -6,23 +6,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 Seit 2.6.0 tragen alle Plattformen dieselbe Nummer: Nori **2.6.0** für
 iOS/iPadOS, macOS, Windows und LG webOS, veröffentlicht als ein gemeinsamer
 GitHub Release `Nori v2.6.0`. Die Abschnitte darunter stammen aus der Zeit
-getrennter Stände; zuletzt waren das macOS 1.20.1, iOS/iPadOS 1.25.2,
-Windows 2.0.0 und LG webOS 2.4.1.
+getrennter Stände; zuletzt waren das iOS/iPadOS 1.26.0, macOS 1.21.0,
+Windows 2.1.0 und LG webOS 2.5.0.
 
 ## [Nori 2.6.0] — 2026-09-17
 
 Ab dieser Version tragen alle Nori-Apps **dieselbe Versionsnummer** und
 erscheinen gemeinsam in **einem** GitHub Release: Tag `v2.6.0`, Titel
-„Nori v2.6.0“. An den Apps selbst ändert sich nichts — Funktionen,
-Oberflächen, Bibliotheksschema (v6), Abgleich und Anmeldung sind die der
-vorigen Stände.
+„Nori v2.6.0“. An den Apps selbst ändert sich dabei nichts — Funktionen,
+Oberflächen, Bibliotheksschema (v6), Abgleich und Anmeldung sind die des
+Stands darunter. Dessen Änderungen (iOS 1.26.0 · macOS 1.21.0 · Windows
+2.1.0 · webOS 2.5.0) stecken in diesem Release, denn einen eigenen Release
+hatten sie nie.
 
-**Warum 2.6.0.** Die höchste Nummer auf `main` war webOS 2.4.1, und ein
-offener Pull Request hat für webOS bereits ein Paket 2.5.0 gebaut. Die erste
-gemeinsame Nummer liegt über beiden, damit nie zwei verschiedene Pakete
+**Warum 2.6.0.** Die höchste bisher vergebene Nummer ist webOS 2.5.0. Die
+erste gemeinsame Nummer liegt darüber, damit nie zwei verschiedene Pakete
 dieselbe Nummer tragen. Keine Plattform wird zurückgestuft: iOS/iPadOS geht
-von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
-2.4.1.
+von 1.26.0 auf 2.6.0, macOS von 1.21.0, Windows von 2.1.0 und LG webOS von
+2.5.0.
 
 ### Allgemein
 
@@ -39,7 +40,7 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 - **Prüfsummen.** Jeder Release enthält `checksums-sha256.txt` mit der
   SHA-256-Summe jedes Pakets.
 - **Neue Stände werden als neuer erkannt.** Die Buildnummern steigen mit:
-  iOS/iPadOS 40 (vorher 39), macOS 31 (vorher 30). Ein Release entsteht nur,
+  iOS/iPadOS 41 (vorher 40), macOS 32 (vorher 31). Ein Release entsteht nur,
   wenn seine Version über jeder bisher vergebenen liegt — auch über den alten
   Plattform-Tags — und die Buildnummern über denen jedes früheren Releases.
 
@@ -52,7 +53,7 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 
 ### iOS / iPadOS
 
-- Version 2.6.0 (vorher 1.25.2), Build 40. Keine funktionale Änderung.
+- Version 2.6.0 (vorher 1.26.0), Build 41. Keine funktionale Änderung.
 - Die IPA heißt jetzt `Nori-iOS-v2.6.0.ipa` und ist weiterhin unsigniert.
 - Eine IPA entsteht nicht mehr bei jedem Push auf `main`, sondern im Release
   oder von Hand über „Build iOS“ → „IPA bauen“. Vor dem Packen wird die
@@ -60,7 +61,7 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 
 ### macOS
 
-- Version 2.6.0 (vorher 1.20.1), Build 31. Keine funktionale Änderung.
+- Version 2.6.0 (vorher 1.21.0), Build 32. Keine funktionale Änderung.
 - „Neu in“ im Einstellungsfenster nennt die gemeinsame Version.
 - Das Quellpaket heißt `Nori-macOS-Source-v2.6.0.zip` und wird direkt aus dem
   Commit geschnürt, nicht mehr aus dem Arbeitsverzeichnis. Vorher entsteht ein
@@ -74,7 +75,7 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 
 ### Windows
 
-- Version 2.6.0 (vorher 2.0.0). Keine funktionale Änderung.
+- Version 2.6.0 (vorher 2.1.0). Keine funktionale Änderung.
 - Installer `Nori-Windows-v2.6.0.exe` und die Fassung ohne Installation
   `Nori-Windows-v2.6.0.zip` gehören jetzt zum gemeinsamen Release. Vor der
   Veröffentlichung wird beides geprüft: Produktversion der Programme und
@@ -87,7 +88,7 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 
 ### webOS
 
-- Version 2.6.0 (vorher 2.4.1). Keine funktionale Änderung.
+- Version 2.6.0 (vorher 2.5.0). Keine funktionale Änderung.
 - Im Release heißt das Paket `Nori-webOS-v2.6.0.ipk`;
   `npm run webos:package` legt es weiterhin als
   `tv.nori.app_<Version>_all.ipk` ab.
@@ -156,12 +157,13 @@ Am Runner-Mac (Xcode 27 Beta, Node 26, Python 3.14), 17.09.:
   `apps/webos`: `tsc` und Vite, Paket samt `check-webos-package.py
   --production`.
 - Echte Pakete, gebaut wie in den neuen Jobs und mit `nori-release.py
-  verify` geprüft: IPA 2.6.0 (40) aus einem Release-Build für das Gerät,
-  macOS-Release-Build (x86_64 und arm64) 2.6.0 (31) samt Quellpaket mit 127
-  Dateien und erhaltenen Symlinks, `.ipk` 2.6.0, Windows-Installer und -ZIP
-  mit Produktversion 2.6.0.0 — ohne Wine gepackt. Damit einmal `publish`,
-  `validate` und `cleanup` gegen den GitHub-Nachbau; `shasum -a 256 -c`
-  bestätigt die Prüfsummendatei.
+  verify` geprüft: IPA aus einem Release-Build für das Gerät,
+  macOS-Release-Build (x86_64 und arm64) samt Quellpaket mit 127 Dateien und
+  erhaltenen Symlinks, `.ipk`, Windows-Installer und -ZIP mit Produktversion
+  2.6.0.0 — ohne Wine gepackt. Damit einmal `publish`, `validate` und
+  `cleanup` gegen den GitHub-Nachbau; `shasum -a 256 -c` bestätigt die
+  Prüfsummendatei. Das war vor dem Zusammenführen mit `main`, also mit den
+  Buildnummern 40 und 31.
 - Lesend gegen GitHub: `prepare` für v2.6.0 besteht (Buildnummern der alten
   Tags höchstens 39 bzw. 30). Der Aufräumplan für die echten Läufe ergibt
   913 von 922 löschbar, 9 geschützt, keinen fremden Workflow.
@@ -169,13 +171,148 @@ Am Runner-Mac (Xcode 27 Beta, Node 26, Python 3.14), 17.09.:
   übersprungen), Build macOS (nur Debug), Swift tests, Check Apple sources,
   Check release pipeline und Build Windows grün — Letzterer mit
   Desktop-Prüfung, Rosetta-Prüfung, Installer und ZIP ohne Wine und
-  `verify` beider Pakete, ohne Hochladen. Build webOS: Fernbedienungslauf
-  grün, rot erst beim Referenzvergleich des Pakets — derselbe Fehler wie
-  vorher auf `main` (Kurznamen des Minifiers), behoben in einem eigenen
-  Pull Request.
+  `verify` beider Pakete, ohne Hochladen. Build webOS scheiterte damals am
+  Referenzvergleich des Pakets; dessen Korrektur kam mit dem Stand darunter.
+- Danach `main` hereingeholt (iOS 1.26.0 · macOS 1.21.0 · Windows 2.1.0 ·
+  webOS 2.5.0): Versionen auf 2.6.0 angeglichen, Buildnummern auf 41 und 32,
+  und alle Prüfungen noch einmal — Werkzeuge, Apple-Quellen, `swift test`,
+  Versionsvergleich gegen `main`, Notes.
 - Nicht geprüft: ein echter Release-Lauf in Actions (er soll erst nach dem
   Merge von Hand gestartet werden), Windows mit eingebautem Google-Client
   (Secrets fehlen) und das Windows-Paket auf echtem Windows.
+
+## [iOS 1.26.0] · [macOS 1.21.0] · [Windows 2.1.0] · [webOS 2.5.0] — 2026-09-17
+
+Sehstand, Suche und Fehlerbehandlung des Players gehören ab hier **Nori** und
+nicht einer Plattform. Vier Regeln, die bisher an vier Stellen standen und an
+vier Stellen unterschiedlich ausfielen, liegen jetzt je einmal in
+`native/NoriCore/` und in `shared/nori-core/` und werden von beiden Testreihen
+gegen dieselben Fälle geprüft. Bibliotheksschema unverändert **v6**; Google
+Drive, OAuth, Merge-Regeln und das Ablageformat sind nicht angefasst — ein
+Gerät mit altem Stand liest den neuen und umgekehrt.
+
+### Neu — auf allen vier Plattformen
+
+- **Gesehen und ungesehen von Hand**, je Folge, je Staffel, je Serie.
+  Auf iOS im Kontextmenü der Folgenkarte und im „…"-Menü der Detailseite, auf
+  dem Mac im Kontextmenü der Folgenzeile und in einem eigenen Menü neben
+  „Abspielen", unter Windows als Haken am rechten Rand jeder Folgenzeile und
+  als Knopfreihe in der Staffelzeile, am Fernseher über „Sehstand" in der
+  Staffelzeile (OK setzt dann den Stand, statt abzuspielen) und über die
+  Knöpfe unter „Mehr".
+  „Serie als gesehen" holt die fehlenden Staffeln nach und schreibt **einmal**.
+- **„Aus Weiterschauen entfernen"** auf der Startseite aller vier Plattformen:
+  auf Apple im Kontextmenü der Kachel, unter Windows als Knopf auf der Karte,
+  am Fernseher über „Titel entfernen" am Ende der Reihe. Es löscht nichts —
+  angefangene Folgen werden zurückgesetzt, abgeschlossene bleiben abgeschlossen.
+- **Fortschritt zurücksetzen** je Folge, je Staffel und je Serie.
+- **Fehlertolerante Suche auf iPhone, iPad und Mac.** Die Stufen und die
+  Tippfehlertoleranz gab es bisher nur in den JavaScript-Apps, obwohl an ihnen
+  nichts plattformspezifisch ist. „pokemon" trifft „Pokémon", „shingeki no
+  kyojin" trifft den Eintrag, den die Quelle „Attack on Titan" nennt, und
+  „Damonenjager" den „Dämonenjäger". Bei einer Suche entscheidet jetzt die
+  Trefferstufe die Reihenfolge, die gewählte Sortierung innerhalb einer Stufe.
+- **Automatischer Quellenwechsel nach einem abgebrochenen Stream** — mit
+  Budget: höchstens drei Wechsel je Folge, eine gescheiterte Quelle wird für
+  diese Folge nicht wieder angeboten, danach steht eine Meldung statt einer
+  Schleife. Die Auswahl von Hand bleibt vollständig.
+- **Sehstand in der Merkliste auf dem Mac und unter Windows.** „S1 · F7 · 58 %",
+  „Komplett gesehen", „Noch nicht begonnen" — gerechnet mit demselben
+  `watchSummary` wie iPhone und Fernseher. Auf dem Mac stand dort bisher nur
+  der Titel; unter Windows kam die Zeile aus „steht der Titel gerade in
+  Weiterschauen", weshalb ein durchgesehener Titel sein Genre zeigte.
+
+### Geändert
+
+- **Der Countdown zur nächsten Folge steht überall auf zehn Sekunden.** Er
+  stand auf acht auf iPhone und Mac, auf zehn am Fernseher — und unter Windows
+  gab es gar keinen: die nächste Folge sprang ohne Vorwarnung an. Jetzt kommt
+  die Länge aus dem Kern und aus `config/contract.json`, und Windows zeigt
+  „Als Nächstes" mit „Jetzt abspielen" und „Abbrechen". Am Fernseher bleibt
+  sie einstellbar — mit einer Fernbedienung braucht man länger.
+- **„Weiterschauen" zählt nur noch angefasste Folgen.** Eine Folge, die man nur
+  geöffnet und nicht gesehen hat, legt einen Eintrag mit Position 0 an; der
+  stand bisher in der Reihe. Eine halb gesehene Folge bleibt weiterhin stehen,
+  auch wenn danach eine andere nur geöffnet wurde.
+- Merkliste und Katalog beider JavaScript-Apps rechnen ihren Sehstand mit
+  `watchSummary` aus dem Kern und suchen mit `rankSearch`.
+
+### Behoben
+
+- **„Staffel als gesehen markieren" auf iOS stempelte in Sekunden statt in
+  Millisekunden.** Jeder so gesetzte Eintrag war gegen echte Zeitstempel
+  tausendfach zu alt: der Verlauf sortierte ihn ans Ende, und beim nächsten
+  Abgleich hat ihn die Fassung eines anderen Geräts stillschweigend wieder
+  überschrieben. Die Marke entsteht jetzt an genau einer Stelle im Kern.
+- **„Anderen Hoster versuchen" bot auf iPhone und Mac den gerade gescheiterten
+  erneut an.** Es nahm den ersten der Rangfolge, der nicht der laufende war —
+  bei zwei kaputten Hostern ließ sich das endlos abwechseln.
+- **Die Folgenliste des Mac las den Fortschritt unter der falschen Quelle.**
+  Sie benutzte die Vorgabe der Seitenleiste statt der Quelle der geöffneten
+  Serie; bei einer Serienstream-Serie mit dem Schalter auf Anime gingen beide
+  Stände durcheinander. Der Fortschritt ist nach `provider|episodePath`
+  getrennt, und genau dafür.
+- Ziffern werden in der Suche nicht mehr als Tippfehler behandelt: „1998" ist
+  kein Vertipper von „1999", sondern ein anderes Jahr.
+
+### Vorbereitet, nicht behauptet
+
+- **Übersprungmarken** (`SkipSegment`: Intro, Abspann, Rückblick) gibt es als
+  Modell, Prüfung und Abfrage „liegt gerade eine Marke an" — in beiden Kernen.
+  Eine **Datenquelle gibt es nicht**: weder AniWorld noch Serienstream nennen
+  Zeitmarken, TMDB kennt sie nicht. Feste Zeiten zu erfinden wäre schlechter
+  als nichts, also bietet Nori nichts an. Wer später eine Quelle anbindet,
+  füllt `SkipSegmentSource` und muss an den Oberflächen nichts mehr bauen.
+
+### Kern
+
+Neu und in beiden Sprachen gleich:
+
+| Swift | TypeScript | Inhalt |
+| --- | --- | --- |
+| `WatchMarks.swift` | `watch.ts` | Sehstand setzen, `watchSummary`, Zählstände |
+| `Playback.swift` | `playback.ts` | Countdown, Quellenwechsel, Übersprungmarken |
+| `CatalogSearch.swift` | `search.ts` | Stufen, Tippfehler, Reihenfolge |
+
+`shared/nori-app/src/state/search.ts` ist entfallen — die Suche stand dort
+eine Ebene zu hoch und gilt auch für die Apple-Apps, die diese Ebene nicht
+haben. Sie liegt jetzt in `@nori/core`, und webOS und Windows holen sie von
+dort.
+
+### Contract
+
+`config/contract.json` neu: `rules.continueWatching`, `rules.watchMarks`,
+`rules.search`, `rules.playbackRecovery`, `rules.skipSegments`, das Modell
+`SkipSegment`; `rules.autoplay` nennt zehn Sekunden.
+
+### Tests
+
+- Swift: `WatchMarksTests` (14), `PlaybackTests` (15),
+  `CatalogSearchRankingTests` (10) neu. In dieser Umgebung gibt es keine
+  Swift-Toolchain; geprüft wird auf dem Mac-Runner — `Swift tests`
+  **554 bestanden**, `Build iOS` und `Build macOS` bauen die beiden Targets.
+- TypeScript: `watch.test.ts` (16), `playback.test.ts` (15),
+  `search.test.ts` (11) neu — dieselben Fälle wie in Swift.
+  `npm --prefix shared/nori-core test`: **264 bestanden**.
+- webOS: `npm run test:tv` mit echten LG-Tastencodes, **354 bestanden**,
+  13 davon neu.
+- Windows: `xvfb-run -a npm --prefix apps/windows run test:desktop`,
+  **63 bestanden**, 7 davon neu.
+- Beide neuen Prüfstrecken sehen in die **Ablage**, nicht auf die
+  Beschriftung: was ein Gerät schreibt, liest morgen das nächste aus Drive.
+- `python3 tools/check-apple-sources.py`, `python3 tools/check-webos-package.py`,
+  `npm --prefix services/nori-api test` (13).
+- `tools/check-apple-sources.py` erkennt zusätzlich einzeilige Zeichenketten,
+  die auf ihrer Zeile nicht mehr zugehen. Anlass war
+  `Button("Aus „Schau weiter“ entfernen")`: das deutsche
+  Anführungszeichen unten ist ein gewöhnliches Zeichen, das obere war ein
+  gerades `"` — damit endete das Literal mitten im Satz. In Kommentaren steht
+  `„…"` im ganzen Projekt so und ist harmlos; im Literal ist es ein
+  Syntaxfehler, den bisher erst der Mac-Runner gemeldet hat.
+
+Der Knopf „Titel entfernen" steht am Fernseher bewusst am **Ende** der Reihe
+„Weiterschauen": in der Kopfzeile war er ein Fokusstopp zwischen Hero und
+erster Karte, und der Fernbedienungslauf hat genau das gemeldet.
 
 ## [webOS 2.4.1] — 2026-09-16
 

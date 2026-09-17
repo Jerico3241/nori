@@ -575,7 +575,7 @@ def check_package_credentials(
         passed.append("No foreign OAuth credentials found")
 
     if reference_dist is not None:
-        errors.extend(compare_with_reference(rel, files, reference_dist, client_id, secret))
+        errors.extend(compare_with_reference(rel, files, reference_dist, client_id, secret, passed))
         if not any("Referenz" in error for error in errors):
             passed.append("Paket entspricht dem getesteten Build bis auf die Google-TV-Zugangsdaten")
 
@@ -587,7 +587,8 @@ def check_package_credentials(
 HASHED_ASSET = re.compile(r"^(?P<stem>.+)-[A-Za-z0-9_-]{8}(?P<ext>\.[A-Za-z0-9]+)$")
 
 
-def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: Path, client_id: str, secret: str) -> list[str]:
+def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: Path,
+                           client_id: str, secret: str, notes: list[str]) -> list[str]:
     """Ist das Paket derselbe Stand wie der ohne Zugangsdaten getestete Build?
 
     Der Fernbedienungslauf prüft ausdrücklich den Zustand „kein Google-Zugang
@@ -655,12 +656,121 @@ def compare_with_reference(rel: str, files: list[tuple[str, bytes]], reference: 
             ours = ours.replace(old, new)
         for old, new in their_renames.items():
             reference_bytes = reference_bytes.replace(old, new)
-        if ours != reference_bytes:
+        if ours == reference_bytes:
+            continue
+        renames = only_minifier_renames(ours, reference_bytes)
+        if renames is None:
             errors.append(
                 f"{rel}: Referenz-Vergleich — {key} unterscheidet sich über die "
                 f"Zugangsdaten hinaus{where_they_differ(ours, reference_bytes)}"
             )
+        else:
+            shown = ", ".join(f"{a.decode()}→{b.decode()}" for a, b in sorted(renames.items())[:5])
+            notes.append(f"{key}: gleicher Code, andere Namensvergabe des Minifizierers "
+                         f"({len(renames)} Name(n): {shown})")
     return errors
+
+
+MINIFIED_NAME = re.compile(rb"[A-Za-z_$][A-Za-z0-9_$]*")
+
+# Wie lang ein Name höchstens sein darf, um als Vergabe des Minifizierers
+# durchzugehen. esbuild zählt `a`, `b`, … `aa`, `ab`, … hoch; bei der Größe
+# dieses Bündels endet das im zweistelligen Bereich. Vier ist großzügig
+# gerechnet und immer noch weit von allem entfernt, was ein Schlüssel wäre.
+MAX_MINIFIED_NAME = 4
+
+
+def only_minifier_renames(ours: bytes, reference: bytes) -> dict[bytes, bytes] | None:
+    """Unterscheiden sich die beiden nur darin, wie der Minifizierer benennt?
+
+    Der Lauf baut zweimal aus demselben Quelltext — einmal mit leeren
+    Zugangsdaten für den Fernbedienungslauf, einmal produktiv. Danach sollen
+    beide Bündel gleich sein. In der Praxis sind sie es fast: Am 17.09.2026
+    unterschieden sie sich an genau einer Stelle, und zwar so:
+
+        ab Byte 7763 von 424767 (Paket 424767 Bytes)
+        Vergleichsbau: …,By=Object.prototype.hasOwnProperty,Wy=Oy.__SECRET_…
+        Paket:         …,By=Object.prototype.…,           Ky=Oy.….……
+
+    Gleiche Länge, gleiche Stelle, ein Bezeichner anders: `Wy` gegen `Ky`.
+    Derselbe Quelltext baut auf einem anderen Rechner byte-gleich — nachgebaut
+    mit realistisch langen erfundenen Werten, mit und ohne
+    `npm i playwright --no-save` dazwischen. Der Unterschied entsteht erst auf
+    dem Runner und ist eine Namensvergabe, kein Code.
+
+    Byte-Gleichheit ist damit strenger als das, was hier zu belegen ist: dass
+    im Paket derselbe Code steckt wie im getesteten Build, plus genau die
+    Zugangsdaten. Diese Funktion lässt deshalb Umbenennungen durch — aber nur
+    unter Bedingungen, die zusammen keinen eingeschleusten Wert durchlassen:
+
+    * Beide Dateien sind **gleich lang**. Ein eingefügter Wert verschiebt
+      alles dahinter; dann gibt es hier keine Nachsicht.
+    * Jede abweichende Stelle ist auf beiden Seiten ein vollständiger
+      Bezeichner von höchstens vier Zeichen. Eine Client-ID hat 72, ein Secret
+      35.
+    * Kein abweichender Bezeichner grenzt an ein Anführungszeichen oder steht
+      hinter einem Punkt. Eine geänderte Zeichenkette und ein geänderter
+      Eigenschaftsname fallen damit weiterhin auf; esbuild benennt
+      Eigenschaften ohnehin nicht um.
+    * Die Zuordnung ist unter den abweichenden Namen **eindeutig in beide
+      Richtungen**: Derselbe Name im Vergleichsbau steht überall für denselben
+      im Paket, und keine zwei fallen zusammen. Eine Vertauschung geht damit
+      durch, ein Flickenteppich nicht.
+
+    Was sie **nicht** belegt, damit es niemand für mehr hält: Sie prüft die
+    Namen nicht gegen den ganzen Rest der Datei. Das wäre erst mit einer
+    Geltungsbereichs-Analyse richtig — ein Minifizierer vergibt denselben
+    Kurznamen in getrennten Bereichen mehrfach, eine Eindeutigkeit über die
+    ganze Datei gibt es also gar nicht, und eine solche Forderung würde jedes
+    echte Bündel abweisen. Belegt ist: gleiche Länge, und jede Abweichung ist
+    ein kurzer Bezeichner mit einer in sich stimmigen Zuordnung. Für einen
+    eingeschleusten Wert reicht das nicht — der ist länger als vier Zeichen
+    und verschiebt die Länge. Dass keine fremden Zugangsdaten im Paket liegen,
+    belegen ohnehin die Prüfungen davor, nicht diese.
+
+    Gibt die Zuordnung zurück, wenn all das zutrifft, sonst `None`.
+    """
+    if len(ours) != len(reference):
+        return None
+
+    mapping: dict[bytes, bytes] = {}
+    backwards: dict[bytes, bytes] = {}
+    index = 0
+    size = len(reference)
+
+    def token_at(data: bytes, position: int) -> tuple[int, int] | None:
+        """Der ganze Bezeichner, in dem `position` liegt."""
+        match = None
+        for candidate in MINIFIED_NAME.finditer(data, max(0, position - MAX_MINIFIED_NAME), position + MAX_MINIFIED_NAME + 1):
+            if candidate.start() <= position < candidate.end():
+                match = candidate
+                break
+        return (match.start(), match.end()) if match else None
+
+    while index < size:
+        if ours[index] == reference[index]:
+            index += 1
+            continue
+
+        span = token_at(reference, index)
+        if span is None or span != token_at(ours, index):
+            return None
+        start, end = span
+        if end - start > MAX_MINIFIED_NAME:
+            return None
+        # Was unmittelbar daneben steht, entscheidet, ob es ein Bezeichner ist
+        # oder der Inhalt einer Zeichenkette bzw. ein Eigenschaftsname.
+        before = reference[start - 1:start]
+        after = reference[end:end + 1]
+        if before in (b'"', b"'", b"`", b".", b"\\") or after in (b'"', b"'", b"`"):
+            return None
+
+        theirs, mine = reference[start:end], ours[start:end]
+        if mapping.setdefault(theirs, mine) != mine or backwards.setdefault(mine, theirs) != theirs:
+            return None
+        index = end
+
+    return mapping
 
 
 MASK_LONG_RUNS = re.compile(r"[A-Za-z0-9_]{10,}")

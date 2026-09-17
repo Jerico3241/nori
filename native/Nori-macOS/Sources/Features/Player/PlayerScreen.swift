@@ -27,6 +27,11 @@ struct PlayerScreen: View {
     @State private var autoplaySeconds: Int?
     @State private var autoplayTask: Task<Void, Never>?
     @State private var playbackGeneration = UUID()
+    /// Welche Quellen für die laufende Folge schon gescheitert sind und wie oft
+    /// gewechselt wurde. Die Regeln stehen im Kern (`PlaybackRecovery`);
+    /// vorher nahm „Anderen Hoster" schlicht den nächsten der Rangfolge — auch
+    /// den, der gerade nicht ging.
+    @State private var recovery = PlaybackRecovery()
     @State private var isSwitching = false
     @State private var sleepActivity: NSObjectProtocol?
     @State private var failureObserver: NSObjectProtocol?
@@ -250,6 +255,9 @@ struct PlayerScreen: View {
                 ? guessEpisodePath(slug: series.slug, season: season, episode: currentEpisode.number, provider: provider)
                 : currentEpisode.path
             currentPath = normalizeEpisodePath(path)
+            // Der Stand der Wiederherstellung gehört zu **einer** Folge: dass
+            // VOE bei Folge 3 nichts lieferte, sagt über Folge 4 nichts.
+            recovery.begin(episode: "\(provider.rawValue)|\(currentPath)")
 
             let info = try await AniworldClient.shared.getWatch(provider: provider, path: path)
             guard generation == playbackGeneration, !Task.isCancelled else { return }
@@ -355,7 +363,10 @@ struct PlayerScreen: View {
                         reportPlaybackFailure(item.error?.localizedDescription ?? "Stream nicht abspielbar")
                         return
                     }
-                    if item.status == .readyToPlay { return }
+                    if item.status == .readyToPlay {
+                        recovery.noteSuccess()
+                        return
+                    }
                     try? await Task.sleep(for: .milliseconds(500))
                 }
             }
@@ -372,12 +383,47 @@ struct PlayerScreen: View {
         return "\(scheme)://\(host)"
     }
 
+    /// Die laufende Quelle, so wie die Wiederherstellung sie kennt.
+    private var currentSource: SourceRef? {
+        guard let source else { return nil }
+        return SourceRef(hoster: source.hoster, lang: source.lang)
+    }
+
+    /// Die Quellen, die für diese Folge noch übrig sind.
+    private var remainingHosters: [HosterOption] {
+        guard let info = watchInfo else { return [] }
+        return recovery.remaining(info.hosters, lang: source?.lang ?? library.langPref, preferred: nil)
+    }
+
     @MainActor
     private func reportPlaybackFailure(_ reason: String) {
         guard error == nil else { return }
         let hoster = source?.hoster ?? "Hoster"
+        recovery.noteFailure(currentSource)
         clearPlayer(saveCurrent: true)
         error = "\(hoster) lieferte eine Adresse, die sich nicht abspielen lässt.\n\(reason)"
+
+        // Selbst weitersuchen, statt den Fehler stehen zu lassen: eine
+        // Schutzseite oder eine abgelaufene Adresse ist beim nächsten Hoster
+        // regelmäßig nicht da. Wie weit das gehen darf, entscheidet der Kern —
+        // mit Budget, damit es nicht in eine Schleife läuft.
+        Task { await recoverAutomatically() }
+    }
+
+    /// Ein Schritt der Wiederherstellung, nach den Regeln aus `PlaybackRecovery`.
+    @MainActor
+    private func recoverAutomatically() async {
+        guard let info = watchInfo else { return }
+        switch recovery.plan(options: info.hosters, current: currentSource) {
+        case .retry:
+            await retry()
+        case let .switchTo(option):
+            recovery.noteSwitch()
+            status = "\(option.name) wird versucht…"
+            await switchHoster(to: option.name)
+        case let .giveUp(reason):
+            error = [error, reason].compactMap { $0 }.joined(separator: "\n")
+        }
     }
 
     @MainActor
@@ -388,19 +434,16 @@ struct PlayerScreen: View {
 
     @MainActor
     func tryAlternativeHoster() async {
-        guard let info = watchInfo else {
+        guard watchInfo != nil else {
             await retry()
             return
         }
         let current = source?.hoster.lowercased()
-        let options = HosterResolver.ordered(
-            HosterResolver.pickLang(info.hosters, pref: source?.lang ?? library.langPref),
-            preferred: nil
-        )
-        guard let alternative = options.first(where: { $0.name.lowercased() != current }) else {
+        guard let alternative = remainingHosters.first(where: { $0.name.lowercased() != current }) else {
             error = "Kein weiterer Hoster verfügbar."
             return
         }
+        recovery.noteSwitch()
         await switchHoster(to: alternative.name)
     }
 
@@ -436,9 +479,12 @@ struct PlayerScreen: View {
         else { return }
 
         autoplayTask?.cancel()
-        autoplaySeconds = 8
+        // Die Länge steht im Kern (`Playback.autoplayCountdownSec`) und damit
+        // in `config/contract.json`. Vorher standen hier acht Sekunden und am
+        // Fernseher zehn — dieselbe Funktion, zwei Zahlen.
+        autoplaySeconds = Playback.autoplayCountdownSec
         autoplayTask = Task {
-            for remaining in stride(from: 8, through: 1, by: -1) {
+            for remaining in stride(from: Playback.autoplayCountdownSec, through: 1, by: -1) {
                 guard !Task.isCancelled else { return }
                 await MainActor.run { autoplaySeconds = remaining }
                 try? await Task.sleep(for: .seconds(1))

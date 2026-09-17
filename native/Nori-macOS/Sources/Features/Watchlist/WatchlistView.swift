@@ -23,6 +23,10 @@ struct WatchlistView: View {
     struct WatchlistEntry: Identifiable, Hashable {
         let slug: String
         let title: String
+        /// Wie weit der Titel ist — dieselbe Rechnung wie auf iPhone und
+        /// Fernseher (`watchSummary` im Kern). Bis hierher stand auf dem Mac
+        /// gar kein Sehstand in der Merkliste.
+        let watch: WatchSummary
         var id: String { slug }
     }
 
@@ -51,7 +55,10 @@ struct WatchlistView: View {
         }
         // An Revisionen, nicht an Anzahlen: ein entfernter und ein neu
         // gemerkter Titel ändern die Zahl nicht, wohl aber die Liste.
-        .task(id: "\(library.favoritesRevision)|\(catalogRevision)") { rebuild() }
+        // `watchRevision` kommt dazu, seit die Zeile den Sehstand zeigt: ohne
+        // ihn stünde nach einer Wiedergabe im Nachbarfenster noch der alte
+        // Stand. Ein Fünf-Sekunden-Takt zählt dafür bewusst nicht mit.
+        .task(id: "\(library.favoritesRevision)|\(catalogRevision)|\(library.watchRevision)") { rebuild() }
     }
 
     private func rebuild() {
@@ -64,8 +71,13 @@ struct WatchlistView: View {
         var nextAnime: [WatchlistEntry] = []
         var nextSerien: [WatchlistEntry] = []
         for slug in library.favorites {
-            let entry = WatchlistEntry(slug: slug, title: library.titles[slug] ?? known[slug] ?? slug)
-            if library.source(of: slug) == .aniworld {
+            let source = library.source(of: slug)
+            let entry = WatchlistEntry(
+                slug: slug,
+                title: library.titles[slug] ?? known[slug] ?? slug,
+                watch: library.seriesWatchSummary(slug: slug, provider: source)
+            )
+            if source == .aniworld {
                 nextAnime.append(entry)
             } else {
                 nextSerien.append(entry)
@@ -112,14 +124,25 @@ struct WatchlistView: View {
                     // ganzen Bibliothek um — eine Einstellung mit frischem
                     // Zeitstempel, die beim nächsten Abgleich auf alle Geräte
                     // wanderte.
-                    NoriPosterCell(
-                        title: item.title,
-                        slug: item.slug,
-                        kind: source
-                    )
+                    VStack(alignment: .leading, spacing: 5) {
+                        NoriPosterCell(
+                            title: item.title,
+                            slug: item.slug,
+                            kind: source
+                        )
+                        Text(item.watch.stateText)
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                            .lineLimit(1)
+                    }
                     .contextMenu {
                         Button("Aus Merkliste entfernen") {
                             library.toggleFavorite(item.slug)
+                        }
+                        if item.watch.state != .unseen {
+                            Button("Fortschritt vergessen") {
+                                library.resetSeriesProgress(slug: item.slug, provider: source)
+                            }
                         }
                     }
                 }
@@ -137,8 +160,14 @@ struct WatchlistView: View {
                 HStack(spacing: 10) {
                     PosterTile(title: item.title, slug: item.slug, compact: true, kind: src)
                         .frame(width: 32)
-                    Text(item.title)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.title)
+                            .lineLimit(1)
+                        Text(item.watch.stateText)
+                            .font(.caption)
+                            .foregroundStyle(NoriTheme.muted)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 8)
                 }
             }

@@ -277,6 +277,22 @@ class SetTests(VersionTestCase):
                     self.tool.set_version(version)
         self.assertEqual(self.tool.check().version, "2.6.0")
 
+    def test_set_aligns_a_mixed_tree_to_a_number_it_already_carries(self) -> None:
+        # Der Fall nach einem Merge: einzelne Stellen tragen die neue Nummer schon,
+        # die übrigen kommen vom anderen Zweig.
+        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.5.0"}, indent=2) + "\n",
+                    "apps/windows/package.json": json.dumps({"name": "@nori/windows", "version": "2.1.0"}, indent=2) + "\n"})
+        self.assertEqual(self.tool.set_version("2.6.0"), {"ios": "41", "macos": "32"})
+        self.assertEqual(self.tool.check(documents=False).version, "2.6.0")
+        # Ein einheitlicher Baum lässt sich danach nicht noch einmal darauf setzen.
+        with self.assertRaisesRegex(self.tool.VersionError, "nicht größer"):
+            self.tool.set_version("2.6.0")
+
+    def test_set_never_lowers_a_mixed_tree(self) -> None:
+        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.8.0"}, indent=2) + "\n"})
+        with self.assertRaisesRegex(self.tool.VersionError, "nicht größer"):
+            self.tool.set_version("2.6.0")
+
     def test_set_from_mixed_state_uses_the_highest(self) -> None:
         self.write({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("1.25.2", "39", "to.nori.ios"),
                     "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.6.3"}, indent=2) + "\n"})

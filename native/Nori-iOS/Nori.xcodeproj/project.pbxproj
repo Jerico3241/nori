@@ -68,6 +68,8 @@
 		AB85 /* WatchlistFilterSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC85 /* WatchlistFilterSheet.swift */; };
 		AB86 /* NoriBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC86 /* NoriBackdrop.swift */; };
 		AB87 /* CalendarRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC87 /* CalendarRules.swift */; };
+		AB121 /* WatchMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC121 /* WatchMarks.swift */; };
+		AB122 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC122 /* Playback.swift */; };
 		AB88 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC88 /* CalendarService.swift */; };
 		AB89 /* CalendarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC89 /* CalendarChrome.swift */; };
 		AB101 /* CalendarReleaseRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC101 /* CalendarReleaseRow.swift */; };
@@ -155,6 +157,8 @@
 		AC85 /* WatchlistFilterSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFilterSheet.swift; sourceTree = "<group>"; };
 		AC86 /* NoriBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoriBackdrop.swift; sourceTree = "<group>"; };
 		AC87 /* CalendarRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRules.swift; sourceTree = "<group>"; };
+		AC121 /* WatchMarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarks.swift; sourceTree = "<group>"; };
+		AC122 /* Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playback.swift; sourceTree = "<group>"; };
 		AC88 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
 		AC89 /* CalendarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarChrome.swift; sourceTree = "<group>"; };
 		AC101 /* CalendarReleaseRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarReleaseRow.swift; sourceTree = "<group>"; };
@@ -269,6 +273,8 @@
 				AC79 /* HomeSections.swift */,
 				AC86 /* NoriBackdrop.swift */,
 				AC87 /* CalendarRules.swift */,
+				AC121 /* WatchMarks.swift */,
+				AC122 /* Playback.swift */,
 				AC88 /* CalendarService.swift */,
 				AC89 /* CalendarChrome.swift */,
 				AC101 /* CalendarReleaseRow.swift */,
@@ -439,6 +445,8 @@
 				AB85 /* WatchlistFilterSheet.swift in Sources */,
 				AB86 /* NoriBackdrop.swift in Sources */,
 				AB87 /* CalendarRules.swift in Sources */,
+				AB121 /* WatchMarks.swift in Sources */,
+				AB122 /* Playback.swift in Sources */,
 				AB88 /* CalendarService.swift in Sources */,
 				AB89 /* CalendarChrome.swift in Sources */,
 				AB101 /* CalendarReleaseRow.swift in Sources */,
@@ -465,7 +473,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -495,7 +503,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;

@@ -421,11 +421,18 @@ def write_build(text: str, build: int) -> str:
 
 
 def set_version(version: str, builds: dict[str, int] | None = None) -> dict[str, str]:
-    """Setzt die gemeinsame Nummer überall und erhöht die Buildnummern."""
+    """Setzt die gemeinsame Nummer überall und erhöht die Buildnummern.
+
+    Die Nummer muss über dem höchsten vorhandenen Stand liegen — außer beim
+    Angleichen: Steht sie nach einem Merge schon an einzelnen Stellen, während
+    andere niedriger sind, wird der Baum auf sie gezogen. Ein **einheitlicher**
+    Baum lässt sich damit nicht ein zweites Mal auf dieselbe Nummer setzen.
+    """
     version = normalize_version(version)
     state = read_state()
     highest = state.highest
-    if highest is not None and version_key(version) <= version_key(highest):
+    aligning = highest is not None and version == highest and len(state.versions) > 1
+    if highest is not None and version_key(version) <= version_key(highest) and not aligning:
         raise VersionError(
             f"{version} ist nicht größer als der höchste vorhandene Stand {highest} – "
             "keine Plattform wird zurückgestuft, und keine Nummer wird zweimal vergeben"

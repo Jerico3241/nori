@@ -8,7 +8,7 @@ import {
   Icon, dayKeyOf, longDayLabel, monthLabel, performanceProfile, tmdb, useData, useLibrary, weekOf,
 } from "@nori/app";
 import {
-  PROVIDERS, formatClock, progressPercent, providerFromPath, resumePosition,
+  PROVIDERS, formatClock, progressPercent, providerFromPath, resumePosition, watchStateText,
   type AiringEntry, type CatalogProvider,
 } from "@nori/core";
 import { useEffect, useMemo, useState } from "react";
@@ -30,14 +30,18 @@ export function WatchlistPage() {
     const provider = library.favoriteProvider(slug);
     const item = catalog.items.find((entry) =>
       entry.slug === slug && (entry.provider ?? "aniworld") === provider);
-    const progress = library.continueWatching().find((p) => p.slug === slug) ?? null;
+    // Der Sehstand aus dem Kern statt „steht der Titel gerade in
+    // Weiterschauen": ein durchgesehener Titel fiel dort heraus und bekam
+    // stattdessen sein Genre als Unterzeile. Dieselbe Rechnung wie auf dem
+    // Fernseher, dem iPhone und dem Mac.
+    const watch = library.seriesWatchSummary(slug, provider);
     return {
       slug,
       provider,
       title: item?.title ?? library.state.titles[slug] ?? slug,
       alts: item?.alts ?? [],
       genres: item?.genres ?? [],
-      progress,
+      watch,
     };
   }), [library, catalog.items]);
 
@@ -80,10 +84,10 @@ export function WatchlistPage() {
               provider={entry.provider}
               title={entry.title}
               alts={entry.alts}
-              subtitle={entry.progress
-                ? `S${entry.progress.season} · F${entry.progress.episode} · ${progressPercent(entry.progress)} %`
-                : entry.genres[0] ?? null}
-              percent={entry.progress ? progressPercent(entry.progress) : 0}
+              subtitle={entry.watch.state === "unseen"
+                ? entry.genres[0] ?? watchStateText(entry.watch)
+                : watchStateText(entry.watch)}
+              percent={Math.round(entry.watch.ratio * 100)}
               eager={index < eagerCards}
               onSelect={() => {
                 if (editing) library.toggleFavorite(entry.slug, entry.title, entry.provider);

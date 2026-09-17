@@ -47,6 +47,9 @@ struct SeriesView: View {
     /// Schlüssel des Fortschritts, die Quelle im Player — weiter gegen die
     /// Seite, die gar nicht geantwortet hat.
     @State private var resolvedProvider: CatalogProvider?
+    /// „Serie als gesehen markieren" holt die übrigen Staffeln nach. Solange
+    /// das läuft, bleibt der Eintrag im Menü gesperrt.
+    @State private var markingSeries = false
 
     /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
     /// beim ersten Aufbau steht die Staffel schon auf „1“, `detail` aber noch
@@ -173,17 +176,42 @@ struct SeriesView: View {
                 .disabled(detail.episodes.isEmpty)
 
                 Button {
-                    markSeasonWatched(detail)
+                    library.setSeasonWatched(
+                        true, slug: slug, title: detail.title, season: season,
+                        episodes: detail.episodes, provider: source
+                    )
                 } label: {
                     Label("Staffel als gesehen markieren", systemImage: "checkmark.circle")
                 }
                 .disabled(detail.episodes.isEmpty)
 
-                if library.hasProgress(slug: slug, season: season, source: source) {
+                Button {
+                    library.setSeasonWatched(
+                        false, slug: slug, title: detail.title, season: season,
+                        episodes: detail.episodes, provider: source
+                    )
+                } label: {
+                    Label("Staffel als ungesehen markieren", systemImage: "circle")
+                }
+                .disabled(detail.episodes.isEmpty)
+            }
+
+            Section("Ganze Serie") {
+                Button {
+                    Task { await markSeriesWatched(detail) }
+                } label: {
+                    Label(
+                        markingSeries ? "Wird markiert…" : "Serie als gesehen markieren",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                }
+                .disabled(markingSeries || detail.episodes.isEmpty)
+
+                if watchState != .unseen {
                     Button(role: .destructive) {
-                        forgetSeason(detail)
+                        library.resetSeriesProgress(slug: slug, provider: source)
                     } label: {
-                        Label("Fortschritt der Staffel vergessen", systemImage: "arrow.counterclockwise")
+                        Label("Fortschritt der Serie vergessen", systemImage: "arrow.counterclockwise")
                     }
                 }
             }
@@ -218,6 +246,11 @@ struct SeriesView: View {
         SeriesArtwork.resolve(details: art, sourceCover: sourceCover, provider: source)
     }
 
+    /// Der Sehstand der ganzen Serie — dieselbe Regel wie in der Merkliste.
+    private var watchState: WatchState {
+        library.seriesWatchSummary(slug: slug, provider: source).state
+    }
+
     private func first(_ detail: SeriesDetail) -> Episode? {
         detail.episodes.min(by: { $0.number < $1.number })
     }
@@ -239,37 +272,30 @@ struct SeriesView: View {
         Task { await load(season: next) }
     }
 
-    /// Eine ganze Staffel auf einmal — ein Schreibvorgang, nicht einer je Folge.
-    private func markSeasonWatched(_ detail: SeriesDetail) {
-        let now = Date().timeIntervalSince1970
-        let items = detail.episodes.map { episode in
-            // Die Laufzeit, sofern schon eine bekannt ist: sie stehen zu
-            // lassen ist richtiger, als sie beim Abhaken auf null zu setzen.
-            let known = library.progress(
-                slug: slug, season: season, episode: episode.number, path: episode.path, provider: source
-            )
-            return WatchProgress(
-                slug: slug, title: detail.title, season: season, episode: episode.number,
-                episodePath: episode.path, germanTitle: episode.germanTitle,
-                englishTitle: episode.englishTitle,
-                positionSec: known?.durationSec ?? 0, durationSec: known?.durationSec ?? 0,
-                updatedAt: now, lang: known?.lang, completed: true, provider: source
-            )
-        }
-        library.upsert(contentsOf: items)
-    }
+    /// Die ganze Serie abhaken.
+    ///
+    /// Die einzige Stelle, die dafür Netz braucht: die Folgenliste jeder
+    /// Staffel steht nur auf der Seite der Quelle, und ohne sie ließe sich
+    /// „gesehen" nur für das behaupten, was Nori zufällig schon kennt. Die
+    /// bereits geladene Staffel wird nicht noch einmal geholt.
+    ///
+    /// Geschrieben wird danach **einmal** — `upsert(contentsOf:)` für alle
+    /// Staffeln zusammen statt eines Schreibvorgangs je Folge.
+    @MainActor
+    private func markSeriesWatched(_ detail: SeriesDetail) async {
+        guard !markingSeries else { return }
+        markingSeries = true
+        defer { markingSeries = false }
 
-    private func forgetSeason(_ detail: SeriesDetail) {
-        let now = Date().timeIntervalSince1970
-        let items = detail.episodes.map { episode in
-            WatchProgress(
-                slug: slug, title: detail.title, season: season, episode: episode.number,
-                episodePath: episode.path, germanTitle: episode.germanTitle,
-                englishTitle: episode.englishTitle, positionSec: 0, durationSec: 0,
-                updatedAt: now, provider: source
-            )
+        var seasons: [SeasonEpisodes] = [SeasonEpisodes(season: season, episodes: detail.episodes)]
+        for ref in detail.seasons where ref.id != season {
+            guard let loaded = try? await AniworldClient.shared.getSeries(
+                provider: source, slug: slug, season: ref.id
+            ) else { continue }
+            guard !loaded.episodes.isEmpty else { continue }
+            seasons.append(SeasonEpisodes(season: ref.id, episodes: loaded.episodes))
         }
-        library.upsert(contentsOf: items)
+        library.setSeriesWatched(slug: slug, title: detail.title, seasons: seasons, provider: source)
     }
 
     private func loadArt() async {
