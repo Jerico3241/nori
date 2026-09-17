@@ -12,7 +12,13 @@ final class CatalogSearchRankingTests: XCTestCase {
         CatalogSearch.Prepared(rawTitle: title, alternates: alternates)
     }
 
-    private func score(_ title: String, _ alternates: [String] = [], _ query: String) -> Int {
+    /// Die Stufe eines Titels für eine Eingabe.
+    ///
+    /// `alternates` steht **hinten** und trägt eine Beschriftung: ein
+    /// Standardwert in der Mitte lässt sich bei lauter unbeschrifteten
+    /// Argumenten nicht überspringen. Swift sagt dazu „missing argument for
+    /// parameter #3".
+    private func score(_ title: String, _ query: String, alternates: [String] = []) -> Int {
         CatalogSearch.score(prepared(title, alternates), needle: CatalogSearch.needle(query))
     }
 
@@ -28,7 +34,7 @@ final class CatalogSearchRankingTests: XCTestCase {
     func testPrefixBeatsContainsBeatsAlternate() {
         XCTAssertEqual(score("Attack on Titan", "attack"), 1)
         XCTAssertEqual(score("Attack on Titan", "titan"), 2)
-        XCTAssertEqual(score("Dämonenjäger", ["Demon Slayer"], "demon slayer"), 3)
+        XCTAssertEqual(score("Dämonenjäger", "demon slayer", alternates: ["Demon Slayer"]), 3)
     }
 
     /// Der Fall aus der Aufgabe: die japanische Umschrift steht bei den Quellen
@@ -46,7 +52,7 @@ final class CatalogSearchRankingTests: XCTestCase {
     func testEveryWordMustAppear() {
         // Nicht nebeneinander: „kyojin attack" steht so in keinem Titel, aber
         // beide Wörter stehen im Eintrag.
-        XCTAssertEqual(score("Attack on Titan", ["Shingeki no Kyojin"], "kyojin attack"), 4)
+        XCTAssertEqual(score("Attack on Titan", "kyojin attack", alternates: ["Shingeki no Kyojin"]), 4)
         XCTAssertEqual(score("Attack on Titan", "titan drama"), -1)
     }
 
