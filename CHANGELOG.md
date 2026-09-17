@@ -114,9 +114,9 @@ dort.
 ### Tests
 
 - Swift: `WatchMarksTests` (14), `PlaybackTests` (15),
-  `CatalogSearchRankingTests` (10) neu. Nicht ausgeführt — in dieser Umgebung
-  gibt es keine Swift-Toolchain; der Nachweis läuft über `Swift tests`,
-  `Build iOS` und `Build macOS` auf dem Mac-Runner.
+  `CatalogSearchRankingTests` (10) neu. In dieser Umgebung gibt es keine
+  Swift-Toolchain; geprüft wird auf dem Mac-Runner — `Swift tests`
+  **554 bestanden**, `Build iOS` und `Build macOS` bauen die beiden Targets.
 - TypeScript: `watch.test.ts` (16), `playback.test.ts` (15),
   `search.test.ts` (11) neu — dieselben Fälle wie in Swift.
   `npm --prefix shared/nori-core test`: **264 bestanden**.
@@ -128,6 +128,13 @@ dort.
   Beschriftung: was ein Gerät schreibt, liest morgen das nächste aus Drive.
 - `python3 tools/check-apple-sources.py`, `python3 tools/check-webos-package.py`,
   `npm --prefix services/nori-api test` (13).
+- `tools/check-apple-sources.py` erkennt zusätzlich einzeilige Zeichenketten,
+  die auf ihrer Zeile nicht mehr zugehen. Anlass war
+  `Button("Aus „Schau weiter“ entfernen")`: das deutsche
+  Anführungszeichen unten ist ein gewöhnliches Zeichen, das obere war ein
+  gerades `"` — damit endete das Literal mitten im Satz. In Kommentaren steht
+  `„…"` im ganzen Projekt so und ist harmlos; im Literal ist es ein
+  Syntaxfehler, den bisher erst der Mac-Runner gemeldet hat.
 
 Der Knopf „Titel entfernen" steht am Fernseher bewusst am **Ende** der Reihe
 „Weiterschauen": in der Kopfzeile war er ein Fokusstopp zwischen Hero und

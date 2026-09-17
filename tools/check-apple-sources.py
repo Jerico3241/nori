@@ -155,6 +155,87 @@ def strip_comments_and_strings(src: str) -> str:
     return src
 
 
+def check_string_literals(folder: Path, label: str) -> None:
+    """Einzeilige Zeichenketten, die auf ihrer Zeile nicht mehr zugehen.
+
+    Der Anlass: `Button("Aus „Schau weiter" entfernen")`. Das deutsche
+    Anführungszeichen unten (U+201E) ist ein gewöhnliches Zeichen, das obere
+    aber war ein gerades `"` — damit endete das Literal mitten im Satz, und
+    `Build macOS` meldete „Unterminated string literal". In Kommentaren ist
+    `„…"` im ganzen Projekt so geschrieben und völlig harmlos; erst im Literal
+    wird daraus ein Syntaxfehler. Wer den Satz braucht, schreibt oben `“`
+    (U+201C) oder maskiert das gerade Zeichen als `\\"`.
+
+    Geprüft wird mit einem kleinen Zustandsautomaten statt mit einem
+    Suchmuster: Swift kennt Zeilen- und geschachtelte Blockkommentare,
+    dreifach begrenzte Blöcke und rohe Literale (`#"…"#`), in denen `\\` nichts
+    maskiert. Ein Suchmuster stolpert über jede dieser Formen — allein in
+    `HosterResolver.swift` stehen neun rohe Literale voller Anführungszeichen.
+    """
+    for path in swift_files(folder):
+        src = path.read_text(encoding="utf-8")
+        where = f"{label}/{path.name}"
+        i, line, n = 0, 1, len(src)
+        block = 0                                  # Tiefe der /* */-Schachtelung
+        while i < n:
+            if src[i] == "\n":
+                line += 1
+                i += 1
+                continue
+            if block:
+                if src.startswith("*/", i):
+                    block, i = block - 1, i + 2
+                elif src.startswith("/*", i):
+                    block, i = block + 1, i + 2
+                else:
+                    i += 1
+                continue
+            if src.startswith("//", i):
+                nl = src.find("\n", i)
+                i = n if nl < 0 else nl
+                continue
+            if src.startswith("/*", i):
+                block, i = 1, i + 2
+                continue
+
+            hashes = 0
+            while src[i + hashes : i + hashes + 1] == "#":
+                hashes += 1
+            start = i + hashes
+            if src[start : start + 1] != '"':
+                i += 1
+                continue
+
+            # Ab hier läuft ein Literal. Ein roher Block braucht seine Rauten
+            # auch zum Schließen, ein dreifach begrenzter darf Zeilen umfassen.
+            quotes = 3 if src.startswith('"""', start) else 1
+            closer = '"' * quotes + "#" * hashes
+            multi = quotes == 3
+            j, opened = start + quotes, line
+            while j < n:
+                if src[j] == "\\" and src[j + 1 : j + 1 + hashes] == "#" * hashes:
+                    if src[j + 1 + hashes : j + 2 + hashes] == "\n":
+                        line += 1                  # maskierter Zeilenumbruch
+                    j += 2 + hashes
+                    continue
+                if src[j] == "\n":
+                    if not multi:
+                        add(
+                            "ERROR",
+                            where,
+                            f"Zeile {opened}: die Zeichenkette geht auf ihrer Zeile nicht mehr zu. "
+                            "Häufigste Ursache ist ein deutsches „ ohne passendes “ — das gerade "
+                            '" dahinter beendet das Literal vorzeitig.',
+                        )
+                        break
+                    line += 1
+                elif src.startswith(closer, j):
+                    j += len(closer)
+                    break
+                j += 1
+            i = max(j, i + 1)
+
+
 def check_shared_files() -> None:
     for name in SHARED_IDENTICAL:
         a, b = IOS / name, MAC / name
@@ -796,6 +877,8 @@ def main() -> int:
     check_shared_files()
     check_target(IOS, is_mac=False)
     check_target(MAC, is_mac=True)
+    check_string_literals(IOS, "iOS")
+    check_string_literals(MAC, "macOS")
     check_section_initializers(IOS, "iOS")
     check_section_initializers(MAC, "macOS")
     check_main_actor_calls(IOS, "iOS")

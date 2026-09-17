@@ -810,7 +810,7 @@ struct ContinueCard: View {
             // abgeschlossen — wer eine Serie aus der Reihe nimmt, will sie
             // loswerden und nicht seinen Stand. Die Regel steht im Kern
             // (`WatchMarks`) und gilt genauso auf iPhone und Fernseher.
-            Button("Aus „Schau weiter" entfernen") {
+            Button("Aus „Schau weiter“ entfernen") {
                 library.removeFromContinueWatching(slug: item.slug, provider: kind)
             }
             Button("Fortschritt dieser Serie vergessen") {
