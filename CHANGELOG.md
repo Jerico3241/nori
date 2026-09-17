@@ -5,54 +5,63 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.21.0**, iOS/iPadOS **1.26.0**,
-Windows **1.8.0**, LG webOS **2.3.0**.
+Windows **2.1.0**, LG webOS **2.5.0**.
 
-## [iOS 1.26.0] · [macOS 1.21.0] · [webOS 2.3.0] — 2026-09-17
+## [iOS 1.26.0] · [macOS 1.21.0] · [Windows 2.1.0] · [webOS 2.5.0] — 2026-09-17
 
 Sehstand, Suche und Fehlerbehandlung des Players gehören ab hier **Nori** und
-nicht einer Plattform. Vier Regeln, die bisher an drei Stellen standen und an
-drei Stellen unterschiedlich ausfielen, liegen jetzt je einmal in
+nicht einer Plattform. Vier Regeln, die bisher an vier Stellen standen und an
+vier Stellen unterschiedlich ausfielen, liegen jetzt je einmal in
 `native/NoriCore/` und in `shared/nori-core/` und werden von beiden Testreihen
 gegen dieselben Fälle geprüft. Bibliotheksschema unverändert **v6**; Google
 Drive, OAuth, Merge-Regeln und das Ablageformat sind nicht angefasst — ein
 Gerät mit altem Stand liest den neuen und umgekehrt.
 
-### Neu — auf allen Plattformen
+### Neu — auf allen vier Plattformen
 
 - **Gesehen und ungesehen von Hand**, je Folge, je Staffel, je Serie.
   Auf iOS im Kontextmenü der Folgenkarte und im „…"-Menü der Detailseite, auf
   dem Mac im Kontextmenü der Folgenzeile und in einem eigenen Menü neben
-  „Abspielen", am Fernseher über „Sehstand" in der Staffelzeile (OK setzt dann
-  den Stand, statt abzuspielen) und über die Knöpfe unter „Mehr".
+  „Abspielen", unter Windows als Haken am rechten Rand jeder Folgenzeile und
+  als Knopfreihe in der Staffelzeile, am Fernseher über „Sehstand" in der
+  Staffelzeile (OK setzt dann den Stand, statt abzuspielen) und über die
+  Knöpfe unter „Mehr".
   „Serie als gesehen" holt die fehlenden Staffeln nach und schreibt **einmal**.
-- **„Aus Weiterschauen entfernen"** auf der Startseite aller drei Plattformen:
-  auf Apple im Kontextmenü der Kachel, am Fernseher über „Titel entfernen" am
-  Ende der Reihe. Es löscht nichts — angefangene Folgen werden zurückgesetzt,
-  abgeschlossene bleiben abgeschlossen.
+- **„Aus Weiterschauen entfernen"** auf der Startseite aller vier Plattformen:
+  auf Apple im Kontextmenü der Kachel, unter Windows als Knopf auf der Karte,
+  am Fernseher über „Titel entfernen" am Ende der Reihe. Es löscht nichts —
+  angefangene Folgen werden zurückgesetzt, abgeschlossene bleiben abgeschlossen.
 - **Fortschritt zurücksetzen** je Folge, je Staffel und je Serie.
 - **Fehlertolerante Suche auf iPhone, iPad und Mac.** Die Stufen und die
-  Tippfehlertoleranz gab es bisher nur am Fernseher, obwohl an ihnen nichts
-  TV-spezifisch ist. „pokemon" trifft „Pokémon", „shingeki no kyojin" trifft
-  den Eintrag, den die Quelle „Attack on Titan" nennt, und „Damonenjager" den
-  „Dämonenjäger". Bei einer Suche entscheidet jetzt die Trefferstufe die
-  Reihenfolge, die gewählte Sortierung innerhalb einer Stufe.
+  Tippfehlertoleranz gab es bisher nur in den JavaScript-Apps, obwohl an ihnen
+  nichts plattformspezifisch ist. „pokemon" trifft „Pokémon", „shingeki no
+  kyojin" trifft den Eintrag, den die Quelle „Attack on Titan" nennt, und
+  „Damonenjager" den „Dämonenjäger". Bei einer Suche entscheidet jetzt die
+  Trefferstufe die Reihenfolge, die gewählte Sortierung innerhalb einer Stufe.
 - **Automatischer Quellenwechsel nach einem abgebrochenen Stream** — mit
   Budget: höchstens drei Wechsel je Folge, eine gescheiterte Quelle wird für
   diese Folge nicht wieder angeboten, danach steht eine Meldung statt einer
   Schleife. Die Auswahl von Hand bleibt vollständig.
+- **Sehstand in der Merkliste auf dem Mac und unter Windows.** „S1 · F7 · 58 %",
+  „Komplett gesehen", „Noch nicht begonnen" — gerechnet mit demselben
+  `watchSummary` wie iPhone und Fernseher. Auf dem Mac stand dort bisher nur
+  der Titel; unter Windows kam die Zeile aus „steht der Titel gerade in
+  Weiterschauen", weshalb ein durchgesehener Titel sein Genre zeigte.
 
 ### Geändert
 
 - **Der Countdown zur nächsten Folge steht überall auf zehn Sekunden.** Er
-  stand auf acht auf iPhone und Mac und auf zehn am Fernseher; beides war
-  hartcodiert. Jetzt kommt er aus dem Kern und aus `config/contract.json`. Am
-  Fernseher bleibt er einstellbar — mit einer Fernbedienung braucht man länger.
+  stand auf acht auf iPhone und Mac, auf zehn am Fernseher — und unter Windows
+  gab es gar keinen: die nächste Folge sprang ohne Vorwarnung an. Jetzt kommt
+  die Länge aus dem Kern und aus `config/contract.json`, und Windows zeigt
+  „Als Nächstes" mit „Jetzt abspielen" und „Abbrechen". Am Fernseher bleibt
+  sie einstellbar — mit einer Fernbedienung braucht man länger.
 - **„Weiterschauen" zählt nur noch angefasste Folgen.** Eine Folge, die man nur
   geöffnet und nicht gesehen hat, legt einen Eintrag mit Position 0 an; der
   stand bisher in der Reihe. Eine halb gesehene Folge bleibt weiterhin stehen,
   auch wenn danach eine andere nur geöffnet wurde.
-- Die Merkliste am Fernseher rechnet ihren Sehstand jetzt mit `watchSummary`
-  aus dem Kern statt mit einer eigenen Fassung und sucht mit `rankSearch`.
+- Merkliste und Katalog beider JavaScript-Apps rechnen ihren Sehstand mit
+  `watchSummary` aus dem Kern und suchen mit `rankSearch`.
 
 ### Behoben
 
@@ -81,13 +90,6 @@ Gerät mit altem Stand liest den neuen und umgekehrt.
   als nichts, also bietet Nori nichts an. Wer später eine Quelle anbindet,
   füllt `SkipSegmentSource` und muss an den Oberflächen nichts mehr bauen.
 
-### Merkliste auf dem Mac
-
-Sie zeigt jetzt einen Sehstand — „S1 · F7 · 58 %", „Komplett gesehen", „Noch
-nicht begonnen" —, gerechnet mit demselben `watchSummary` wie iPhone und
-Fernseher. Bis hierher stand dort nur der Titel. Im Kontextmenü liegt
-zusätzlich „Fortschritt vergessen".
-
 ### Kern
 
 Neu und in beiden Sprachen gleich:
@@ -98,7 +100,10 @@ Neu und in beiden Sprachen gleich:
 | `Playback.swift` | `playback.ts` | Countdown, Quellenwechsel, Übersprungmarken |
 | `CatalogSearch.swift` | `search.ts` | Stufen, Tippfehler, Reihenfolge |
 
-`apps/webos/src/state/search.ts` ist entfallen — der Inhalt steht jetzt im Kern.
+`shared/nori-app/src/state/search.ts` ist entfallen — die Suche stand dort
+eine Ebene zu hoch und gilt auch für die Apple-Apps, die diese Ebene nicht
+haben. Sie liegt jetzt in `@nori/core`, und webOS und Windows holen sie von
+dort.
 
 ### Contract
 
@@ -115,15 +120,400 @@ Neu und in beiden Sprachen gleich:
 - TypeScript: `watch.test.ts` (16), `playback.test.ts` (15),
   `search.test.ts` (11) neu — dieselben Fälle wie in Swift.
   `npm --prefix shared/nori-core test`: **264 bestanden**.
-- webOS: `npm run test:tv` mit echten LG-Tastencodes, **323 bestanden** — 13
-  davon neu für Sehstand und „Titel entfernen", und sie prüfen die Ablage, nicht
-  die Beschriftung: was der Fernseher schreibt, liest morgen ein iPhone aus
-  Drive.
-  Der Knopf „Titel entfernen" steht bewusst am **Ende** der Reihe
-  „Weiterschauen": in der Kopfzeile war er ein Fokusstopp zwischen Hero und
-  erster Karte, und der Lauf hat genau das gemeldet.
-- `python3 tools/check-apple-sources.py`, `npm --prefix apps/webos run build`,
-  `python3 tools/check-webos-package.py`.
+- webOS: `npm run test:tv` mit echten LG-Tastencodes, **354 bestanden**,
+  13 davon neu.
+- Windows: `xvfb-run -a npm --prefix apps/windows run test:desktop`,
+  **63 bestanden**, 7 davon neu.
+- Beide neuen Prüfstrecken sehen in die **Ablage**, nicht auf die
+  Beschriftung: was ein Gerät schreibt, liest morgen das nächste aus Drive.
+- `python3 tools/check-apple-sources.py`, `python3 tools/check-webos-package.py`,
+  `npm --prefix services/nori-api test` (13).
+
+Der Knopf „Titel entfernen" steht am Fernseher bewusst am **Ende** der Reihe
+„Weiterschauen": in der Kopfzeile war er ein Fokusstopp zwischen Hero und
+erster Karte, und der Fernbedienungslauf hat genau das gemeldet.
+
+## [webOS 2.4.1] — 2026-09-16
+
+Nur Werkzeug — an der App selbst ändert sich nichts. Funktionen, Oberfläche
+und Leistungswerte sind die von 2.4.0.
+
+### Die gemeinsame Schicht hat kein eigenes `node_modules` mehr
+
+Der CI-Lauf `Build webOS` scheiterte mit 179 Typfehlern — „Cannot find module
+'@nori/core'", „Cannot find module 'react'" —, sobald der Mac-Runner wieder
+lief. Lokal war nichts davon zu sehen: Hier lag zufällig ein
+`shared/nori-app/node_modules`, in einer frischen Arbeitskopie nicht.
+
+Die Ursache ist eine Eigenheit der Auflösung: Wird geteilter Quelltext in
+einer App übersetzt, sucht TypeScript seine Importe **neben der Quelldatei** —
+also unter `shared/nori-app/node_modules` und nicht unter dem der App. Vite
+macht es genauso.
+
+Beide wissen es jetzt besser:
+
+- Vite: `resolve.dedupe: ["react", "react-dom", "@nori/core", "hls.js"]`
+- TypeScript: `paths` je App auf das eigene `node_modules`, und dabei auf die
+  **Typen** (`@types/react`) — eine ausdrückliche Zuordnung schaltet
+  TypeScripts Rückfall auf `@types/...` ab.
+
+Damit ist die Schicht das, was sie sein soll: Quelltext. `@nori/core`, `react`
+und `hls.js` stehen als `peerDependencies`, jede App liefert sie, und die
+eigene `tsconfig.json`, das `package-lock.json` und die devDependencies sind
+weg — geprüft wird die Schicht durch die Typprüfung der Apps.
+
+## [Windows 2.0.0] · [webOS 2.4.0] — 2026-09-16
+
+Nori für Windows ist neu gebaut. Der Fernseher war zuletzt die technisch und
+funktional vollständigste Fassung; die Windows-Version bestand aus einem
+gebauten Web-Bündel, dessen Quelltext nie im Repository lag. Sie ist damit
+nicht kopiert, sondern **abgelöst**: dieselbe Kernlogik, dieselbe
+Anwendungsschicht, eine eigene Oberfläche für Zeiger, Tastatur und ein Fenster,
+dessen Größe sich ändert.
+
+webOS steigt mit, weil ein Teil seines Quelltextes jetzt geteilt wird. Gleiche
+Funktionen, gleiche Oberfläche, gleiche Leistungswerte wie 2.3.0 — geprüft mit
+demselben Fernbedienungslauf. iOS und macOS sind unverändert;
+Bibliotheksschema weiterhin v6, Merge-Regeln, Sync-Format, OAuth-Fluss und
+Contract unverändert.
+
+### Eine Anwendungsschicht statt zweier Apps
+
+`shared/nori-app/` ist neu und liegt zwischen `shared/nori-core/` und den
+Oberflächen: Zustand (Bibliothek, Einstellungen, Katalog, Startseite,
+Abgleich), Dienste (TMDB, Bilder, Bildwarteschlange, Zugang, Protokoll,
+Leistungsmodus), Hooks, die Wiedergabeanbindung und die Bausteine, die überall
+gleich aussehen (`Artwork`, `Icon`). Herausgelöst aus der webOS-App, nicht neu
+geschrieben.
+
+Sie enthält keine Annahme über das Gerät. Was sie darüber wissen muss, fragt
+sie über `NoriPlatform` — Breite der Zeichenfläche, ob die Eingabe gerade
+arbeitet, wie eine fremde Adresse geöffnet und wie die App beendet wird. Auf
+dem Fernseher heißt „die Eingabe arbeitet": der Fokus bewegt sich; auf dem
+Schreibtisch: es wird gescrollt oder gezogen. Die Hintergrundarbeit weicht in
+beiden Fällen zurück, ohne dass die Schicht wüsste, worum es geht.
+
+Beide Apps binden sie als Quelltext ein. Die Oberflächen bleiben getrennt und
+sollen es bleiben.
+
+### Windows: kein Server mehr
+
+Die alte Fassung startete einen Nitro-Server als eigenen Prozess und zeigte in
+einem Fenster `http://127.0.0.1:17321`. Das hieß: ein zweiter Node-Prozess,
+ein belegter Port, eine Wartezeit beim Start und ein Fehlerbild („Server
+antwortet nicht"), das niemand auflösen konnte.
+
+Jetzt läuft die Quellenschicht im **Hauptprozess** — dieselbe `DirectGateway`
+aus `@nori/core`, die auch `services/nori-api` benutzt, mit `linkedom` als
+Parser. Ein Fenster könnte das nicht: von `file://` aus ist jeder Abruf fremder
+Herkunft, `Referer` lässt sich nicht setzen, und das Ziel einer Weiterleitung
+nicht auslesen. Ein Programm darf all das.
+
+Wer lieber einen Nori-Server benutzt — etwa den, der schon für den Fernseher
+läuft —, stellt das um; auch dieser Weg läuft im Hauptprozess. Der Server
+liefert dann Listen, Details und aufgelöste Adressen, **Bild und Ton holt Nori
+selbst** und setzt dafür den `Referer`. Auf dem Fernseher ist das andersherum,
+und das hat einen Grund: dort kann niemand einen `Referer` setzen, also muss
+der Server den Stream weiterreichen.
+
+### Windows: Sicherheit
+
+- `contextIsolation`, `sandbox`, kein `nodeIntegration`, kein `remote`. Das
+  Fenster sieht ausschließlich die Liste aus `src/main/preload.ts`.
+- Inhaltsrichtlinie im Dokument: `script-src 'self'`, `object-src 'none'`,
+  `base-uri 'none'`, `frame-src 'none'`. Eine eingeschleuste Zeichenkette aus
+  einer Hoster-Seite wird nicht ausgeführt, und nichts im Fenster telefoniert
+  über `http:` ins lokale Netz.
+- Fremde Adressen gehen in den Systembrowser, nie in ein Nori-Fenster
+  (`setWindowOpenHandler`, `will-navigate`).
+- Google-Anmeldung als Authorization Code mit PKCE über den Systembrowser und
+  eine Rückgabeadresse auf `127.0.0.1` (RFC 8252). Keine eingebettete
+  Anmeldeseite, kein eigener Auth-Server, kein Proxy.
+- Tokens liegen verschlüsselt über `safeStorage` unter `%APPDATA%\Nori`
+  (Dateirechte 0600). Das Fenster bekommt nur ein Zugriffstoken, das eine
+  Stunde gilt; das Refresh-Token verlässt den Hauptprozess nie.
+- Der eine Kanal, über den das Fenster einen Abruf anstoßen kann
+  (`nori:http`, für TMDB), lässt genau zwei Ziele zu: TMDB und den
+  eingetragenen Nori-Server.
+
+### Windows: Oberfläche
+
+- Seitenleiste links, Kopfzeile mit Suchfeld, Startseite mit Kopfbereich und
+  Reihen, Katalog als Raster, das die Fensterbreite füllt, Detailseite,
+  Merkliste, Verlauf, Kalender, Einstellungen.
+- Reihen lassen sich mit dem Rad schieben, mit der Maus ziehen oder über zwei
+  Knöpfe, die beim Überfahren erscheinen.
+- Player mit Leertaste/K, Pfeilen, ↑↓ für die Lautstärke, F für Vollbild, M
+  für stumm, N für die nächste Folge, Escape zurück. Hosterwechsel,
+  Sprachwahl und Autoplay wie auf dem Fernseher.
+- Fenstergröße und Vollbildzustand bleiben erhalten. Unter 1100 px wird die
+  Seitenleiste kompakt.
+- Dieselbe Farbwelt: fastschwarzer Grund, Eisblau als Akzent, große Poster.
+  Keine orange Akzentfarbe, keine Tabs, keine Download-Knöpfe, kein
+  Crunchyroll.
+
+### Behoben
+
+- **Der Kopfbereich stand zweimal `--gutter` zu breit.** `.hero` ist ein
+  direktes Kind von `.main` und brauchte den negativen Außenabstand nie; links
+  saß er vor dem Fensterrand, rechts schnitt `.main` ihn ab, und das Artwork
+  saß sichtbar schief.
+- **Das Suchfeld filterte nicht.** `usePersistentState` hielt seinen Wert je
+  Komponente. Auf dem Fernseher fiel das nie auf — dort steht das Suchfeld in
+  der Katalogseite. Auf dem Schreibtisch steht es in der Kopfzeile: getippt
+  wurde, gefiltert nicht. Ein Schlüssel hat jetzt einen Wert, und wer daran
+  hängt, erfährt jede Änderung. (Betrifft beide Apps.)
+
+### Geprüft
+
+- `apps/windows/test/desktop.test.mjs` — **55 Prüfungen**, Playwright startet
+  die gebaute App über `_electron.launch`: Start, Brücke, Bilder, Navigation,
+  Suche, Detailseite, Player samt echter Wiedergabe, Fenstergröße, Vollbild,
+  Überlappungen, Schriftgrößen, Google-Zustand, Fehlerzustände.
+- Dieselben 55 Prüfungen laufen mit `NORI_PACKAGED=<Pfad>` gegen das
+  **gepackte** Ergebnis — dasselbe `app.asar`, das im Installer landet.
+- Der Nachbau des Nori-Servers läuft dafür über `https:` mit einem
+  Wegwerf-Zertifikat (`NORI_MOCK_TLS=1`). Über `http:` wäre er nach der
+  Inhaltsrichtlinie der App gesperrt — und eine Prüfung, die dafür die
+  Richtlinie lockert, prüft nicht mehr die App, die ausgeliefert wird.
+- `apps/webos/test/remote-control.test.mjs` — 339 Prüfungen, unverändert grün.
+- `shared/nori-core` — 221 Tests. `services/nori-api` — 13 Tests.
+
+### Das Paket
+
+    app.asar     47,6 MB → 1,16 MB
+    entpackt     370 MB  → 283 MB
+    Installer    102 MB  → 86 MB
+    ZIP          143 MB  → 122 MB
+
+`electron-builder` nahm die Produktionsabhängigkeiten aus `package.json`
+ungefragt mit, obwohl sie längst in den zwei Bündeln stecken; dazu 55
+Sprachdateien von Chromium, von denen zwei gebraucht werden.
+
+### Entfallen
+
+`desktop/` und `server/` sind weg. `server/` bestand aus generierten
+`.mjs`-Dateien mit Hash-Namen, deren Quelltext nie im Repository lag; pflegen
+ließ sich das nicht. `apps/windows/` ersetzt beides und besteht aus Quelltext.
+
+## [webOS 2.3.0] — 2026-09-16
+
+Leistungsüberarbeitung für schwächere LG-Fernseher. Als Low-/Mid-End-Referenz
+gilt ab jetzt der **LG 55UA75006LA**: 4K-Panel, schwache CPU, webOS mit
+1080p-Zeichenfläche. Er ist Maßstab, nicht Sonderfall — seine Modellnummer
+steht nirgends im Quelltext, und alles hier gilt für jedes Gerät, das sich
+genauso misst.
+
+Gleiche Funktionen, gleiche Oberfläche, deutlich weniger Arbeit je
+Tastendruck. Kein Wechsel auf 720p, keine entfernte Funktion, kein neues
+Design. iOS, macOS und Windows unverändert; Bibliotheksschema weiterhin v6,
+Merge-Regeln, Sync-Format, OAuth-Fluss und Contract unverändert.
+
+### Gemessen
+
+Mit `apps/webos/test/perf-bench.mjs` — CPU sechsfach gedrosselt, kaltes
+Bild-Cache, 400 Titel je Quelle, sieben Startseiten-Reihen, je drei Läufe.
+Angegeben ist der Median der Läufe.
+
+| Messwert | vorher | nachher | |
+| --- | ---: | ---: | --- |
+| Layoutabfragen je Tastendruck (Start) | 299 | 18 | 16,6× weniger |
+| `getComputedStyle` je Tastendruck | 86 | 6 | 14,3× weniger |
+| Layoutabfragen je Tastendruck (Katalog) | 184 | 15 | 12,3× weniger |
+| Zielsuche der Navigation (Median) | — | 0,9 ms | neu messbar |
+| Tastenhandler gesamt (Median) | 15,9 ms | 11,4 ms | −28 % |
+| Tastenhandler gesamt (95. Perzentil) | 25,1 ms | 19,7 ms | −22 % |
+| Aufgaben über 100 ms | 23 | 9 | 2,6× weniger |
+| Summe dieser Aufgaben | 14 497 ms | 1 411 ms | 10,3× weniger |
+| DOM-Knoten der Startseite | 631 | 370 | 1,7× weniger |
+| Fokussierbare Elemente | 85 | 45 | 1,9× weniger |
+| Bildabrufe beim Aufbau | 102 | 85 | −17 % |
+| Größtes geladenes Artwork | 2000 px | 1280 px | −36 % |
+| Geladene Bildfläche gesamt | 16,1 MPx | 10,0 MPx | −38 % |
+
+Kaltstart bis zur ersten Reihe bleibt im Rahmen der Streuung (863–1058 ms
+vorher, 958–1173 ms nachher). Der JS-Heap am Ende des Laufs ebenso
+(11,8 MB → 11,5 MB); der Gewinn liegt bei den **dekodierten** Bildern, und die
+zählt der Lauf nicht mit — messbar ist dort nur, dass ein Viertel weniger
+Bilder in einer um mehr als ein Drittel kleineren Fläche geholt werden.
+
+### Fernbedienung
+
+- **Ein Tastendruck vermisst nicht mehr die ganze Seite.** Vorher wurde bei
+  jedem Pfeildruck jedes `.spottable` der Seite gesucht, auf Erreichbarkeit
+  geprüft (`getComputedStyle`) und geometrisch vermessen
+  (`getBoundingClientRect`, `offsetWidth`, `offsetHeight`). Jetzt in drei
+  Stufen: die Zeile entlang (`data-nav-row`), dann die Nachbarreihen, und erst
+  als Rückfall die ganze Seite. Das Ergebnis ist dasselbe — gemessen wird ein
+  Bruchteil.
+- **Geometriespeicher.** Boxen bleiben zwischen Tastendrücken gültig.
+  Gespeichert wird die Position im Inhalt statt auf dem Bildschirm; gegen den
+  Scrollstand zurückgerechnet wird gegen das **Ziel** laufender Bewegungen.
+  Verworfen wird bei jeder DOM-Änderung, die etwas verschieben kann — das
+  kostet eine Addition, gemessen wird erst auf Nachfrage.
+- **Ein geladenes Poster löst keine Neuvermessung mehr aus.** Die
+  DOM-Beobachtung nimmt alles unterhalb von `data-nav-quiet` aus: die
+  Bildflächen haben ihre Größe aus dem Stylesheet, ein eintreffendes Bild
+  verschiebt dort nichts. Eine Unterzeile, die nach einem TMDB-Treffer unter
+  einer Kachel erscheint, ist ausdrücklich **nicht** ausgenommen — die ändert
+  die Kartenhöhe.
+- **Der Scrollstand wird gemerkt.** `scrollTop`/`scrollLeft` sind
+  Layoutabfragen, und geschrieben wird bei jedem Tastendruck; gelesen werden
+  sie jetzt nur noch beim ersten Mal und im `scroll`-Ereignis.
+- **Wiederholrate nach gemessener Dauer** statt fester Zahl (70–180 ms). Mehr
+  Wiederholungen, als das Panel zeichnen kann, sind keine schnellere Bedienung.
+- Die Maße des Fokus (`--focus-scale-card`, `--focus-scale-control`,
+  `--focus-ring-rem`) stehen jetzt nur noch in `theme.css`; die Scrollrechnung
+  liest sie zur Laufzeit von dort statt sie zu wiederholen.
+- Der rechte Bereich im Player (`.player-panel`) ist als Scrollbereich
+  angeschrieben und lässt sich damit auch mit dem Steuerkreuz durchlaufen.
+
+### Bilder
+
+- **Auflösung an der Zeichenfläche statt am Panel.** Ein webOS-Paket mit
+  `"resolution": "1920x1080"` zeichnet in 1920 × 1080 Bildpunkten; viele
+  4K-Geräte melden trotzdem `devicePixelRatio === 2`. Auf einem solchen Gerät
+  kamen Poster als `w780` statt `w342` (5,2× so viele Bildpunkte), Kopfbilder
+  als `original` — bei TMDB regelmäßig 3840 × 2160 — und der Schriftzug
+  ebenfalls als `original`, ein PNG mit Alphakanal in voller Größe. Die Größe
+  ist jetzt durch die Zeichenfläche aus `appinfo.json` begrenzt
+  (`__NORI_WEBOS_RESOLUTION__`, eine Quelle). Auf einer echten 4K-Fläche bleibt
+  es bei `w780` und `original`.
+- Die Leiter für den Schriftzug bekommt eine Stufe `w300`; bei 1080p ist er
+  jetzt `w500` statt `original`.
+- `getComputedStyle` für die Umrechnung lief bei **jedem Zeichnen jeder
+  Kachel**. Jetzt einmal, neu gemessen bei Größenänderung.
+- **Höchstens drei bis vier Bildabrufe gleichzeitig**
+  (`services/artworkQueue.ts`), nach Rangfolge: Kopfbereich und fokussierte
+  Kachel, dann die erste Reihe, dann alles Sichtbare in der Reihenfolge, in der
+  es ins Bild kommt. Eine Frist von acht Sekunden gibt den Platz zurück, wenn
+  ein Bild nie antwortet.
+- **Offscreen-Kacheln laden kein Bild mehr.** `loading="lazy"` half nicht:
+  Chromium setzt den Vorlauf nach der gemessenen Verbindung, und auf einem
+  Fernseher ist nicht die Verbindung der Engpass. `Artwork` trennt jetzt
+  nachfragen (in Sichtweite) von laden (wenn ein Platz frei ist).
+- Vorgeladen werden nur noch die ersten fünf Karten der **ersten** Reihe statt
+  sieben Karten **jeder** Reihe; im Katalog eine Rasterzeile statt zehn Karten.
+- Welche Titel bei TMDB nachgeschlagen werden, entscheidet jetzt
+  `state/home.ts` (die ersten zwölf je Reihe, in Leerlaufpausen, höchstens
+  einmal je Titel und Sitzung). Vorher war das ein Nebeneffekt des Bildladens —
+  und damit hing die Rangfolge der Startseite daran, welche Bilder geladen
+  wurden.
+- Kacheln hören nur noch auf **ihren eigenen** Titel (`covers.subscribe(slug)`).
+  Vorher meldete sich jede Kachel für jede Bildänderung an und verglich selbst:
+  achtzig Aufrufe je eingetroffenem Poster.
+
+### Zeichnen
+
+- Reihen der Startseite werden in Schritten eingehängt, der Rest in
+  Leerlaufpausen; während die Fernbedienung arbeitet, ruht das Nachziehen.
+- Eine Reihe zeichnet zunächst zehn Karten (acht im sparsamen Modus) und
+  verbreitert sich, wenn der Fokus die letzten drei erreicht — im nächsten
+  Bild, nicht im Tastendruck. Die erreichte Breite bleibt je Reihe gemerkt,
+  damit das Fokusgedächtnis beim Zurückkehren dieselbe Karte findet.
+- Jede Reihe trägt `contain: layout style`: der Browser rechnet beim
+  erzwungenen Layout nach einem Tastendruck nur die Reihe durch statt der
+  ganzen Seite. Ohne `paint`, weil die fokussierte Karte über ihre Reihe
+  hinauswächst.
+- `content-visibility: auto` steht bewusst **nicht** im Stylesheet:
+  übersprungene Teilbäume liefern keine Geometrie mehr, und die
+  Fernbedienungsnavigation lebt von Geometrie.
+- `will-change: transform` nur am **fokussierten** Element. An allen Kacheln
+  wäre es der naheliegende und der falsche Weg: achtzig eigene Texturen im
+  Grafikspeicher.
+- `Artwork` vergleicht seine Angaben und zeichnet sich nicht neu, wenn sich an
+  ihnen nichts geändert hat.
+
+### Hintergrundarbeit
+
+- **`normalizeTitle` war der größte Einzelposten des Seitenaufbaus** — im
+  CPU-Profil eines gedrosselten Laufs mehr als die Hälfte der Rechenzeit. Die
+  Funktion lief über jedes Zeichen mit zwei Ausdrücken **in** der Schleife, und
+  ein Ausdruck in einer Schleife ist bei jedem Durchlauf ein neues Objekt.
+  Jetzt drei Durchläufe mit drei festen Ausdrücken. Das Ergebnis ist
+  unverändert; die Fixtures des Kerns belegen das.
+- `stripVariants` baut seine fünf Ausdrücke nicht mehr bei jedem Aufruf neu.
+- `HomeCatalogIndex` merkt sich, welche TMDB-Zeile zu welchem Titel gehört. Ein
+  Index ist unveränderlich, dieselben Zeilen kommen bei jeder Neuberechnung der
+  Startseite wieder, und jede Zuordnung normalisierte bis zu sechs
+  Schreibweisen.
+- Der Katalog baut Titel und Suchindex nicht mehr bei jedem gebündelten
+  TMDB-Treffer neu — sie hängen am Katalog, nicht an TMDB. Bei zehntausend
+  Titeln waren das zehntausend neue Objekte alle zwei Sekunden für eine
+  Zuordnung, die sich nicht geändert hat.
+- Gebündelte TMDB-Runden weichen der Navigation aus (`services/scheduler.ts`),
+  aber höchstens dreimal: wer die Pfeiltaste festhält, soll die Arbeit
+  aufschieben können, nicht verhindern.
+
+### Leistungsmodus
+
+- Neu unter *Mehr → Darstellung → Leistung*: **Automatisch**, **Normal**,
+  **Optimiert**. Getrennt von „Animationen reduzieren" — das eine ist eine
+  Frage der Hardware, das andere eine des Geschmacks.
+- „Automatisch" entscheidet an drei Signalen und an keiner Modellnummer: einem
+  kurzen Rechenlauf (einmal je Gerät, **nach** dem ersten Bild, Ergebnis im
+  `localStorage`), an `hardwareConcurrency`/`deviceMemory` als Hinweis, und an
+  der tatsächlich gemessenen Fokuslatenz — bleibt die Bedienung zäh, wechselt
+  der Modus auch bei unauffälligem Rechenlauf.
+- „Optimiert" nimmt zurück: die dritte, weiche Schattenebene des Fokusrings,
+  ein Hauch Wachstum (1,05 statt 1,07), den wandernden Schimmer der
+  Ladeflächen, den zweiten Farbverlauf des Hintergrunds; dazu zwei statt vier
+  gleichzeitige Bildabrufe, kleinerer Vorlauf, kleinere Aufbauschritte. Farben,
+  Abstände, Schriftgrößen, Postergrößen, Kopfbereich und die Art, wie der Fokus
+  aussieht, bleiben unverändert.
+
+### Messbar gemacht
+
+- `window.__noriNav` zählt Tastendrücke, Messungen, Treffer im
+  Zwischenspeicher, vollständige Durchläufe, Verwürfe und die Zeiten. Drei
+  Additionen je Tastendruck; ausgegeben wird nur mit Entwicklerschalter.
+- *Mehr → Diagnose* zeigt einen Abschnitt **Leistung**: Modus und Begründung,
+  mittlere und schlechteste Fokuslatenz, Messungen gegenüber
+  Zwischenspeicher-Treffern, die gewählten TMDB-Stufen und den Stand der
+  Bildwarteschlange.
+- Neu: `apps/webos/test/perf-bench.mjs`. Gedrosselte CPU, kaltes Bild-Cache,
+  großer Katalog; zählt im Browser selbst, indem es `getBoundingClientRect`,
+  `getComputedStyle`, `offsetWidth`/`offsetHeight` und
+  `scrollWidth`/`scrollHeight` vor jedem Skript der Seite ersetzt.
+  `--compare` stellt zwei Läufe gegenüber.
+- `test/mock-server.mjs` kennt `NORI_MOCK_TITLES` (großer Katalog),
+  `test/mock-tmdb.mjs` kennt `NORI_MOCK_SYNTH_TMDB=1` (TMDB-Antwort zu jedem
+  Titel). Beides aus, wenn nichts gesetzt ist — der Fernbedienungslauf prüft
+  ausdrücklich den Fall „Titel ohne TMDB-Eintrag".
+
+### Tests
+
+- `npm run test:tv`: **339 Prüfungen** (vorher 310), alle bestanden. Neu ein
+  Abschnitt **Leistung**:
+  - Navigation bleibt in der Reihe: höchstens vier Messungen je Tastendruck,
+    kein vollständiger Seitendurchlauf, Zielsuche unter 5 ms.
+  - Runter führt in die **nächste** Reihe, Hoch zurück in die vorherige.
+  - Zwölf Tastendrücke im 20-ms-Takt: der Fokus steht auf einer Karte und ist
+    vollständig sichtbar.
+  - Katalog: weniger geladene Bilder als Bildflächen; weit entfernte Kacheln
+    laden keins.
+  - Höchstens vier Bildabrufe gleichzeitig.
+  - Der Fokus bleibt, während Daten nachlaufen.
+  - Auf einem simulierten LG mit `devicePixelRatio 2` und 1080p-Fläche: Poster
+    `w342`, Kopfbild `w1280`, kein einziges Bild in `original`.
+  - Sparsamer Modus: gesetzt, Eisblau und Kachelbreite unverändert, Hero und
+    Reihen da, Karten wachsen weiterhin, Fokusring ohne weichen Schlagschatten,
+    Posterauflösung unverändert — dazu Navigationslauf und Layoutprüfung.
+- `npm --prefix shared/nori-core test`: 221 Prüfungen, unverändert bestanden —
+  der Gegenbeweis, dass `normalizeTitle`, `stripVariants` und die Zuordnung
+  dasselbe liefern wie vorher.
+- `npm --prefix services/nori-api test` und `python3 tools/check-webos-package.py`
+  unverändert bestanden.
+- Kein physischer Fernseher im automatisierten Lauf: gemessen wurde in
+  Chromium mit sechsfacher CPU-Drosselung, echten LG-Tastencodes, bei
+  1920 × 1080 und 3840 × 2160 sowie simuliertem webOS-Gerät.
+
+### Dokumentation
+
+- `docs/webos.md`: neue Abschnitte zu den drei Suchstufen der Navigation, zum
+  Geometriespeicher, zur Artwork-Auflösung, zur Warteschlange der Bildabrufe,
+  zum schrittweisen Aufbau, zum Leistungsmodus und zum Referenzfernseher; dazu
+  eine Anleitung für `perf-bench.mjs`.
 
 ## [webOS 2.2.1] — 2026-09-13
 

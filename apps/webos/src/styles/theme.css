@@ -59,10 +59,14 @@
   --sidebar-w: 15.5rem;
   --content-gap: 2.625rem;
 
-  /* Fokus. Die Werte stehen auch in `navigation/engine.ts` — die Scrollrechnung
-     muss wissen, wie weit ein fokussiertes Element über seine Box ragt. */
+  /* Fokus.
+     Diese vier Werte liest `navigation/geometry.ts` zur Laufzeit aus dem
+     Stylesheet: die Scrollrechnung muss wissen, wie weit ein fokussiertes
+     Element über seine Box ragt. Deshalb stehen sie nur hier — auch der
+     sparsame Modus weiter unten ändert sie hier und nirgends sonst. */
   --focus-scale-card: 1.07;
   --focus-scale-control: 1.045;
+  --focus-ring-rem: 0.75;
   --focus-ring:
     0 0 0 0.3125rem rgba(238, 248, 255, 0.92),
     0 0 0 0.625rem rgba(121, 199, 255, 0.28),
@@ -136,6 +140,15 @@ p {
 
 .spottable:focus {
   outline: none;
+  /*
+   * Eine eigene Ebene — aber nur für das eine Element, das gerade wächst.
+   *
+   * `will-change: transform` an allen Kacheln wäre der naheliegende Weg und der
+   * falsche: jede Kachel bekäme eine eigene Textur im Grafikspeicher, und auf
+   * einem Fernseher mit achtzig Kacheln ist genau das der Grund, warum nichts
+   * mehr flüssig läuft. Fokussiert ist immer genau eines.
+   */
+  will-change: transform;
 }
 
 .icon {
@@ -162,6 +175,42 @@ p {
 :root[data-effects="reduced"] .dialog-shade,
 :root[data-effects="reduced"] .glassbtn {
   backdrop-filter: none !important;
+}
+
+/*
+ * Der sparsame Modus.
+ *
+ * Gesetzt von `services/performance.ts` als `data-perf="lean"` — entweder weil
+ * das Gerät gemessen langsam ist oder weil jemand es so eingestellt hat.
+ *
+ * Was hier steht, ist bewusst wenig. Farben, Abstände, Schriftgrößen,
+ * Postergrößen, Kopfbereich und die Art, wie der Fokus aussieht, bleiben
+ * unverändert — Nori muss Nori bleiben. Zurückgenommen wird nur, was den
+ * Fernseher Bilder pro Sekunde kostet und beim Hinsehen kaum fehlt:
+ *
+ * - Die dritte Schattenebene des Fokusrings. Sie ist ein weicher Schlagschatten
+ *   über 3,4 rem; die beiden harten Ringe darüber machen den Fokus aus.
+ * - Ein Hauch weniger Wachstum und ein kürzerer Übergang.
+ * - Der wandernde Schimmer der Ladeflächen. Er zeichnet jedes Bild neu, auch
+ *   wenn sonst nichts passiert; ein ruhiger Verlauf sagt dasselbe.
+ * - Der Farbverlauf über dem Hintergrund der Hülle.
+ */
+:root[data-perf="lean"] {
+  --focus-scale-card: 1.05;
+  --focus-scale-control: 1.03;
+  --focus-ring-rem: 0.625;
+  --focus-ring:
+    0 0 0 0.3125rem rgba(238, 248, 255, 0.92),
+    0 0 0 0.5625rem rgba(121, 199, 255, 0.3);
+  --focus-ms: 90ms;
+}
+
+:root[data-perf="lean"] .skeleton .card-art,
+:root[data-perf="lean"] .skeleton-line,
+:root[data-perf="lean"] .hero-skeleton,
+:root[data-perf="lean"] .release.skeleton {
+  animation: none;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 @media (prefers-reduced-motion: reduce) {

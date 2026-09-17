@@ -19,8 +19,9 @@ Daraus entstehen:
   Asset-Catalog verlangen ein deckendes Bild; ein transparentes wird beim Bauen
   stillschweigend verworfen und der Build meldet dann nur noch
   „app icon set named 'AppIcon' did not have any applicable content".
-- Windows: `desktop/icon.png` für das Electron-Fenster und `desktop/icon.ico`
-  mit allen Größen, die der Explorer und die Taskleiste abfragen.
+- Windows: `apps/windows/build/icon.png` für Fenster und Oberfläche sowie
+  `apps/windows/build/icon.ico` mit allen Größen, die der Explorer, die
+  Taskleiste und der Installer abfragen.
 - webOS: `icon-80/130/400.png` für die Kachelübersicht und das Startbild
   `splash-1920x1080.png`. Vorher erzeugte `apps/webos/tools/make-assets.mjs`
   dort ein eigenes „N"; seit das offizielle Icon als Bilddatei vorliegt, gibt
@@ -52,7 +53,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MAC_SET = ROOT / "native/Nori-macOS/Nori/Assets.xcassets/AppIcon.appiconset"
 IOS_SET = ROOT / "native/Nori-iOS/Nori/Assets.xcassets/AppIcon.appiconset"
-DESKTOP = ROOT / "desktop"
+WINDOWS = ROOT / "apps/windows/build"
 WEBOS = ROOT / "apps/webos/public"
 MASTER = ROOT / "assets/branding/nori-app-icon.png"
 
@@ -151,16 +152,24 @@ def main() -> int:
         )
         splash.save(splash_target)
 
-    desktop_png = DESKTOP / "icon.png"
-    plan.append((desktop_png, "Windows 256×256 RGBA"))
+    windows_png = WINDOWS / "icon.png"
+    plan.append((windows_png, "Windows 256×256 RGBA"))
     if args.write:
-        master.resize((256, 256), Image.Resampling.LANCZOS).save(desktop_png)
+        master.resize((256, 256), Image.Resampling.LANCZOS).save(windows_png)
 
-    desktop_ico = DESKTOP / "icon.ico"
-    plan.append((desktop_ico, "Windows .ico " + ", ".join(str(s) for s in ICO_SIZES)))
+    # Der Installer verlangt mindestens 256×256; electron-builder lehnt ein
+    # kleineres `icon.png` mit einer eindeutigen Meldung ab. 512 liegt daneben,
+    # damit die Oberfläche ein scharfes Startbild hat.
+    windows_512 = WINDOWS / "icon-512.png"
+    plan.append((windows_512, "Windows 512×512 RGBA"))
+    if args.write:
+        master.resize((512, 512), Image.Resampling.LANCZOS).save(windows_512)
+
+    windows_ico = WINDOWS / "icon.ico"
+    plan.append((windows_ico, "Windows .ico " + ", ".join(str(s) for s in ICO_SIZES)))
     if args.write:
         master.resize((256, 256), Image.Resampling.LANCZOS).save(
-            desktop_ico, sizes=[(s, s) for s in ICO_SIZES]
+            windows_ico, sizes=[(s, s) for s in ICO_SIZES]
         )
 
     background = edge_color(master)

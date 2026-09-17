@@ -19,12 +19,21 @@ import { useCallback, useEffect, useState } from "react";
 import { Screen } from "../../components/Screen";
 import { restoreFocusSoon } from "../../navigation/focusMemory";
 import { SpotButton } from "../../navigation/Spot";
-import { normalizeServerUrl, pingServer } from "../../services/gateway";
-import { tmdb } from "../../services/tmdb";
-import { tmdbState } from "../../services/tmdbStatus";
-import { useData } from "../../state/data";
-import { useLibrary } from "../../state/library";
-import { useSettings } from "../../state/settings";
+import { navMetrics } from "../../navigation/metrics";
+import {
+  artworkPixelRatio,
+  artworkQueueState,
+  normalizeServerUrl,
+  performanceMode,
+  performanceReason,
+  pingServer,
+  tmdb,
+  tmdbSegmentFor,
+  tmdbState,
+  useData,
+  useLibrary,
+  useSettings,
+} from "@nori/app";
 import { syncStatusLabel, useSync } from "../../state/sync";
 import { Info } from "../More";
 
@@ -153,6 +162,8 @@ export function DiagnosticsPage() {
   useEffect(() => restoreFocusSoon(ROUTE, ["diagnose"], { initial: '[data-focus-key="diagnose-run"]', ready: true }), []);
 
   const order = ["aniworld", "serienstream", "server", "tmdb", "player", "storage"];
+  const nav = navMetrics();
+  const queue = artworkQueueState();
   const driveTone: Tone = sync.status === "idle" ? "ok" : sync.status === "error" ? "error" : "idle";
 
   return (
@@ -168,7 +179,7 @@ export function DiagnosticsPage() {
       )}
     >
       <div className="settings-grid single">
-        <section className="setting-card" aria-label="Prüfungen">
+        <section className="setting-card" data-nav-row="" aria-label="Prüfungen">
           <h3>Zustand</h3>
           {order.map((id) => checks[id]).filter((check): check is Check => Boolean(check)).map((check) => (
             <Info key={check.id} label={check.label} hint={check.detail} value={check.value} tone={check.tone} />
@@ -189,6 +200,49 @@ export function DiagnosticsPage() {
             tone="idle"
           />
           <Info label="Bildschirm" hint={`Pixelverhältnis ${window.devicePixelRatio || 1}`} value={`${window.innerWidth} × ${window.innerHeight}`} tone="idle" />
+        </section>
+
+        {/*
+          * Leistung — Messwerte, keine Schalter.
+          *
+          * Was hier steht, ist genau das, womit sich „die Navigation ruckelt"
+          * überprüfen lässt, ohne einen Rechner an den Fernseher zu hängen:
+          * wie lange ein Tastendruck braucht, wie viel dafür vermessen wurde
+          * und in welcher Auflösung Bilder geholt werden. Eingestellt wird
+          * nichts davon hier, sondern unter Mehr → Darstellung → Leistung.
+          */}
+        <section className="setting-card" data-nav-row="" aria-label="Leistung">
+          <h3>Leistung</h3>
+          <Info
+            label="Modus"
+            hint={performanceReason()}
+            value={performanceMode() === "lean" ? "Optimiert" : "Normal"}
+            tone="idle"
+          />
+          <Info
+            label="Fokuslatenz"
+            hint={`${nav.moves} Tastendrücke · davon Zielsuche zuletzt ${nav.searchMs.toFixed(1)} ms · schlechtester ${nav.worstMs.toFixed(0)} ms`}
+            value={nav.moves > 0 ? `${nav.averageMs.toFixed(1)} ms im Mittel` : "noch nicht gemessen"}
+            tone={nav.moves === 0 ? "idle" : nav.averageMs < 50 ? "ok" : nav.averageMs < 100 ? "warn" : "error"}
+          />
+          <Info
+            label="Vermessene Elemente"
+            hint={`${nav.cached} aus dem Zwischenspeicher · ${nav.fullScans} vollständige Durchläufe · ${nav.invalidations} Verwürfe`}
+            value={`${nav.measured} Messungen`}
+            tone="idle"
+          />
+          <Info
+            label="Artwork"
+            hint={`Poster ${tmdbSegmentFor("poster")} · Kopfbild ${tmdbSegmentFor("backdropHero")} · Schriftzug ${tmdbSegmentFor("logo")}`}
+            value={`Faktor ${artworkPixelRatio().toFixed(2)}`}
+            tone="idle"
+          />
+          <Info
+            label="Bildabrufe"
+            hint={`höchstens ${queue.limit} gleichzeitig`}
+            value={`${queue.running} laufen · ${queue.waiting} warten`}
+            tone="idle"
+          />
         </section>
       </div>
     </Screen>

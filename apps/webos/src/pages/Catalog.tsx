@@ -42,22 +42,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigationType, useSearchParams } from "react-router-dom";
 
 import { ChipRow } from "../components/Chips";
-import { Icon } from "../components/Icon";
-import { titleMeta, yearOf } from "../components/meta";
+import {
+  catalogItemId,
+  catalogOrderSession,
+  Icon,
+  performanceProfile,
+  titleMeta,
+  tmdb,
+  useCatalogView,
+  useData,
+  useDebounced,
+  useLibrary,
+  usePersistentState,
+  yearOf,
+} from "@nori/app";
 import { Dialog } from "../components/Overlay";
 import { PosterCard } from "../components/PosterCard";
 import { Screen } from "../components/Screen";
 import { EmptyState, ErrorState, GridSkeleton } from "../components/States";
-import { useDebounced } from "../hooks/useDebounced";
-import { usePersistentState } from "../hooks/usePersistentState";
 import { focusElement } from "../navigation/engine";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { tmdb } from "../services/tmdb";
-import { catalogItemId, useCatalogView } from "../state/catalog";
-import { catalogOrderSession } from "../state/catalogOrder";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
 
 const ROUTE = "catalog";
 const PAGE = 30;
@@ -211,6 +216,8 @@ export function CatalogPage() {
   }, [wantsSearch]);
 
   const visible = shown.slice(0, Math.max(PAGE, limit));
+  // Eine Rasterzeile sofort, der Rest über den Sichtbarkeitsbeobachter.
+  const eagerCards = performanceProfile().eagerCards;
   const activeFilters = (library.state.scope !== "all" ? 1 : 0) + (decade !== "all" ? 1 : 0) + (sort !== "popular" ? 1 : 0);
   const needsTmdb = chip === "new" || chip === "popular" || chip === "top" || decade !== "all";
   const headline = debounced.trim().length >= 2
@@ -313,7 +320,7 @@ export function CatalogPage() {
           )}
         />
       ) : (
-        <div className="catalog-grid">
+        <div className="catalog-grid" data-nav-row="">
           {visible.map((candidate, index) => (
             <PosterCard
               key={`${candidate.title.provider}|${candidate.title.slug}`}
@@ -325,7 +332,7 @@ export function CatalogPage() {
               focusRoute={ROUTE}
               focusArea="grid"
               focusKey={`grid-${candidate.title.provider}-${candidate.title.slug}`}
-              eager={index < 10}
+              eager={index < eagerCards}
               onFocus={() => {
                 if (index >= visible.length - 10 && visible.length < shown.length) {
                   setLimit((current) => Math.max(current, visible.length) + PAGE);

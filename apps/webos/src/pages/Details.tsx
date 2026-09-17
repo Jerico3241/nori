@@ -22,23 +22,27 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { EpisodeCard } from "../components/EpisodeCard";
 import { Hero } from "../components/Hero";
-import { Icon } from "../components/Icon";
-import { titleMeta } from "../components/meta";
+import {
+  covers,
+  Icon,
+  log,
+  performanceProfile,
+  titleMeta,
+  tmdb,
+  useAsync,
+  useData,
+  useLibrary,
+  usePersistentState,
+  type SeasonArt,
+} from "@nori/app";
 import { Dialog, Menu } from "../components/Overlay";
 import { PosterCard } from "../components/PosterCard";
 import { Rail } from "../components/Rail";
 import { ratingText } from "../components/Rating";
 import { Screen } from "../components/Screen";
 import { ErrorState } from "../components/States";
-import { useAsync } from "../hooks/useAsync";
-import { usePersistentState } from "../hooks/usePersistentState";
 import { recallFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { covers } from "../services/covers";
-import { log } from "../services/log";
-import { tmdb, type SeasonArt } from "../services/tmdb";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
 
 const EPISODE_PAGE = 30;
 
@@ -351,7 +355,7 @@ export function DetailsPage() {
       />
 
       <section className="season-section" data-reveal="" aria-label="Folgen">
-        <div className="season-row">
+        <div className="season-row" data-nav-row="">
           {seasons.length > 1 ? (
             <SpotButton
               className="chip active season-trigger"
@@ -408,7 +412,7 @@ export function DetailsPage() {
         ) : episodes.length === 0 ? (
           <p className="muted-note">Für diese Staffel sind keine Folgen eingetragen.</p>
         ) : (
-          <div className="episode-grid">
+          <div className="episode-grid" data-nav-row="">
             {visibleEpisodes.map((episode, index) => (
               <div
                 key={episode.path || episode.number}
@@ -458,7 +462,7 @@ export function DetailsPage() {
               focusRoute={route}
               focusArea="similar"
               focusKey={`similar-${candidate.title.provider}-${candidate.title.slug}`}
-              eager={index < 6}
+              eager={index < performanceProfile().eagerCards}
             />
           ))}
         </Rail>

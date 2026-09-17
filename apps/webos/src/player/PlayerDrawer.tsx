@@ -5,9 +5,9 @@
 // die Bedienung, die man dann nicht sieht.
 
 import type { Episode, HosterOption, SeasonRef } from "@nori/core";
+import { Icon } from "@nori/app";
 import { availableLanguages, hosterRank } from "@nori/core";
 import { useMemo } from "react";
-import { Icon } from "../components/Icon";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
 
 export interface DrawerProps {
@@ -52,6 +52,7 @@ export function PlayerDrawer(props: DrawerProps) {
       <div className="player-panel-shade" aria-hidden="true" />
       <SpotArea
         className="player-panel"
+        data-scroll-y=""
         spotlightId="player-drawer"
         restrict="self-only"
         role="dialog"

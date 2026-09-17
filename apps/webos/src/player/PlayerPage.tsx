@@ -34,18 +34,22 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { Icon } from "../components/Icon";
 import { useBackHandler } from "../navigation/back";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
 import { arrowDirection, isBack, isEnter, isPause, isPlay, isPlayPause, isStop, seekDirection } from "../navigation/keys";
-import { log, warn } from "../services/log";
+import {
+  attachPlayback,
+  Icon,
+  log,
+  useData,
+  useLibrary,
+  useSettings,
+  warn,
+  type Playback,
+} from "@nori/app";
 import { keepAwake } from "../services/webos";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
-import { useSettings } from "../state/settings";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerDrawer } from "./PlayerDrawer";
-import { attachPlayback, type Playback } from "./hlsPlayback";
 
 type Phase = "resolving" | "playing" | "error";
 type Overlay = "none" | "resume" | "next";

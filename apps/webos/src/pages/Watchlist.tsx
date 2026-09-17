@@ -31,15 +31,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ChipRow } from "../components/Chips";
-import { Icon } from "../components/Icon";
 import { PosterCard } from "../components/PosterCard";
 import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
-import { useDebounced } from "../hooks/useDebounced";
-import { usePersistentState } from "../hooks/usePersistentState";
+import {
+  Icon,
+  performanceProfile,
+  useDebounced,
+  useLibrary,
+  usePersistentState,
+} from "@nori/app";
 import { rememberFocus, restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { useLibrary } from "../state/library";
 
 const ROUTE = "watchlist";
 type Filter = "all" | WatchState;
@@ -187,7 +190,7 @@ export function WatchlistPage() {
               )}
             />
           ) : (
-            <div className={`catalog-grid${editing ? " editing" : ""}`}>
+            <div className={`catalog-grid${editing ? " editing" : ""}`} data-nav-row="">
               {visible.map((entry, index) => (
                 <PosterCard
                   key={entry.slug}
@@ -199,7 +202,7 @@ export function WatchlistPage() {
                   focusRoute={ROUTE}
                   focusArea="grid"
                   focusKey={`fav-${entry.slug}`}
-                  eager={index < 10}
+                  eager={index < performanceProfile().eagerCards}
                   overlay={editing ? <span className="card-remove"><Icon name="trash" />Entfernen</span> : null}
                   onSelect={editing
                     ? () => library.toggleFavorite(entry.slug, entry.title, entry.provider)

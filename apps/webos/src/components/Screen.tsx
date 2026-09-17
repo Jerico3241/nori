@@ -37,7 +37,7 @@ export function Screen({ route, eyebrow, title, actions, className, children }: 
             {eyebrow ? <div className="eyebrow">{eyebrow}</div> : null}
             {title ? <h1>{title}</h1> : null}
           </div>
-          {actions ? <div className="top-actions">{actions}</div> : null}
+          {actions ? <div className="top-actions" data-nav-row="">{actions}</div> : null}
         </header>
       ) : null}
       {children}

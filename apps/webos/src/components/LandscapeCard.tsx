@@ -9,8 +9,7 @@ import type { CatalogProvider } from "@nori/core";
 import type { ReactNode } from "react";
 
 import { SpotButton } from "../navigation/Spot";
-import { Artwork } from "./Artwork";
-import { Icon } from "./Icon";
+import { Artwork, Icon } from "@nori/app";
 
 export interface LandscapeCardProps {
   slug: string;
@@ -26,6 +25,8 @@ export interface LandscapeCardProps {
   eager?: boolean;
   /** Ein Schild über dem Bild — sagt, was OK gerade tut. */
   overlay?: ReactNode;
+  /** Für Reihen, die beim Erreichen ihres Endes nachlegen. */
+  onFocus?: () => void;
   onSelect(): void;
 }
 
@@ -39,9 +40,10 @@ export function LandscapeCard(props: LandscapeCardProps) {
       focusArea={props.focusArea}
       focusKey={props.focusKey}
       aria-label={`${props.title}${props.subtitle ? `, ${props.subtitle}` : ""}`}
+      onFocus={props.onFocus}
       onClick={props.onSelect}
     >
-      <span className="card-art land-art">
+      <span className="card-art land-art" data-nav-quiet="">
         <Artwork
           kind={props.still ? "still" : "backdrop"}
           src={props.still}

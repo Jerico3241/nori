@@ -17,6 +17,7 @@ on:
     branches: ['**']
     paths:
       - 'apps/webos/**'
+      - 'shared/nori-app/**'
       - 'shared/nori-core/**'
       - 'services/nori-api/**'
       - 'tools/check-webos-package.py'
@@ -146,8 +147,26 @@ jobs:
       # schreibt daraus die nicht eingecheckte apps/webos/.env.local (0600) und
       # meldet nur „configured" — nie einen Wert. Fehlt die Datei oder ist sie
       # ungültig, bricht der Lauf hier ab, bevor ein Paket entsteht.
+      # `configure-google-oauth.py` **behält** vorhandene Zeilen in
+      # `.env.local` — am Entwicklerrechner richtig, hier nicht: Der Runner ist
+      # self-hosted, sein Arbeitsverzeichnis überlebt den Lauf, und ein
+      # abgebrochener Lauf kommt nicht mehr bis zum Aufräumen am Ende. Was dann
+      # liegenbleibt, landet im produktiven Build — aber nicht im
+      # Vergleichsbuild, der die Datei vorher löscht. Der Referenzvergleich
+      # meldet das als „unterscheidet sich über die Zugangsdaten hinaus", ohne
+      # sagen zu können, woran es liegt.
+      #
+      # Deshalb: erst weg, dann schreiben. Und die vorhandenen Schlüssel
+      # nennen, damit ein nächster Fall nicht wieder geraten werden muss —
+      # Namen, nie Werte.
       - name: Google-TV-OAuth bereitstellen
-        run: python3 tools/configure-google-oauth.py --webos
+        run: |
+          if [ -f apps/webos/.env.local ]; then
+            echo "Übrig gebliebene .env.local, Schlüssel:"
+            sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/  \1/p' apps/webos/.env.local
+            rm -f apps/webos/.env.local
+          fi
+          python3 tools/configure-google-oauth.py --webos
 
       - name: webOS-App produktiv bauen
         working-directory: apps/webos

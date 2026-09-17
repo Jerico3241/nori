@@ -9,7 +9,7 @@
 // Schlüssel (`data-focus-key`) des zuletzt fokussierten Elements und den
 // Scrollstand von Seite und Reihen.
 
-import { log } from "../services/log";
+import { log } from "@nori/app";
 import {
   FOCUSABLE, applyScrollSnapshot, focusElement, focusables, isUsable, recoverFocus,
   takeScrollSnapshot, type ScrollSnapshot,

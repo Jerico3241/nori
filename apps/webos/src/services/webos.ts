@@ -2,6 +2,14 @@
 //
 // Bewusst über Merkmalsprüfungen: dieselbe App muss sich im Browser bauen und
 // bedienen lassen, sonst wäre jede Änderung nur auf einem Fernseher zu prüfen.
+//
+// Am Ende der Datei steht die Plattform, die die gemeinsame
+// Anwendungsschicht (`@nori/app`) beim Start bekommt. Sie ist der einzige Weg,
+// auf dem geteilter Code etwas über diesen Fernseher erfährt.
+
+import type { DeviceSettings, NoriPlatform } from "@nori/app";
+
+import { navigating } from "../navigation/engine";
 
 interface WebOSSystem {
   close?: () => void;
@@ -109,4 +117,54 @@ export function markFlexGapSupport(): boolean {
   }
   document.documentElement.dataset.flexGap = supported ? "yes" : "no";
   return supported;
+}
+
+/**
+ * Die Zeichenfläche dieses Geräts in Bildpunkten.
+ *
+ * Auf webOS die Auflösung aus `appinfo.json` — ein Paket mit
+ * `"resolution": "1920x1080"` zeichnet in 1920 × 1080, auch wenn das Panel 4K
+ * meldet und `devicePixelRatio` 2 sagt. Nur im Browser, wo es kein
+ * `appinfo.json` gibt, entscheidet das echte Pixelverhältnis; dort ist es die
+ * Wahrheit.
+ */
+function surfaceWidth(): number {
+  if (isWebOS()) {
+    const match = /^(\d+)\s*x\s*(\d+)$/i.exec(__NORI_WEBOS_RESOLUTION__ ?? "");
+    const width = match ? Number(match[1]) : NaN;
+    if (Number.isFinite(width) && width > 0) return width;
+  }
+  return (window.innerWidth || 1920) * (window.devicePixelRatio || 1);
+}
+
+/**
+ * Womit dieser Fernseher startet, wenn noch nichts eingestellt ist.
+ *
+ * Der Weg über den Nori-Server ist auf einem Fernseher die Voreinstellung und
+ * nicht nur eine Möglichkeit: ein Fernseher darf `Referer` nicht setzen, und
+ * viele Hoster liefern ohne diese Kopfzeile nichts aus. Der Desktop macht es
+ * andersherum — dort läuft die Quellenschicht im Hauptprozess und darf alles,
+ * was ein Programm darf.
+ */
+export const WEBOS_DEFAULTS: Partial<DeviceSettings> = { transport: "server", tmdbMode: "server" };
+
+/** Was der geteilte Unterbau über diesen Fernseher wissen darf. */
+export const webOSPlatform: NoriPlatform = {
+  kind: "webos",
+  surfaceWidth,
+  // Auf dem Fernseher heißt „die Eingabe arbeitet": der Fokus bewegt sich
+  // gerade. Hintergrundarbeit hat dann zu warten.
+  isInputBusy: navigating,
+  openExternal(url) {
+    // Ein Fernseher hat keinen zweiten Browser, in den sich etwas öffnen
+    // ließe. Nori zeigt Adressen deshalb als QR-Code; hierher kommt nichts.
+    warnUnsupported(url);
+  },
+  exit: exitApp,
+};
+
+function warnUnsupported(url: string): void {
+  // Absichtlich ohne die Adresse im Protokoll: sie kann einen Gerätecode
+  // tragen, und der gehört in kein Protokoll.
+  console.warn("[Nori:webOS][app] Adresse extern öffnen wird auf dem Fernseher nicht unterstützt", url.split("?")[0]);
 }

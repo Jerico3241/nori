@@ -13,9 +13,9 @@
 // und wer sie über „links" betritt, landet auf dem aktiven Eintrag.
 
 import { useLocation, useNavigate } from "react-router-dom";
+import { Icon, type IconName } from "@nori/app";
 
 import { SpotButton } from "../navigation/Spot";
-import { Icon, type IconName } from "./Icon";
 
 interface Entry {
   to: string;
@@ -54,7 +54,7 @@ export function Sidebar() {
       data-focus-exit-right="content"
     >
       <div className="brand" aria-label="Nori">Nori</div>
-      <nav className="nav-list" aria-label="Hauptnavigation">
+      <nav className="nav-list" data-nav-row="" aria-label="Hauptnavigation">
         {ENTRIES.map((entry) => {
           const active = isActive(entry.to, location.pathname);
           return (

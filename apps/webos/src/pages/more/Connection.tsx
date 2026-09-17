@@ -16,13 +16,17 @@ import { Info } from "../More";
 import { Screen } from "../../components/Screen";
 import { rememberFocus, restoreFocusSoon } from "../../navigation/focusMemory";
 import { SpotButton } from "../../navigation/Spot";
-import { covers } from "../../services/covers";
-import { pingServer, type TransportMode } from "../../services/gateway";
-import { tmdb, type TmdbMode } from "../../services/tmdb";
-import { tmdbState } from "../../services/tmdbStatus";
-import { useData } from "../../state/data";
-import { useLibrary } from "../../state/library";
-import { useSettings } from "../../state/settings";
+import {
+  covers,
+  pingServer,
+  tmdb,
+  tmdbState,
+  useData,
+  useLibrary,
+  useSettings,
+  type TmdbMode,
+  type TransportMode,
+} from "@nori/app";
 
 const ROUTE = "more-connection";
 
@@ -63,7 +67,7 @@ export function ConnectionPage() {
   return (
     <Screen route={ROUTE} eyebrow="Mehr" title="Verbindung & TMDB" className="more-sub">
       <div className="settings-grid">
-        <section className="setting-card" aria-label="Verbindung">
+        <section className="setting-card" data-nav-row="" aria-label="Verbindung">
           <h3>Verbindung</h3>
           <p className="card-note">
             Der Nori-Server ist der zuverlässige Weg: nur er darf die Kopfzeile setzen, ohne die
@@ -116,7 +120,7 @@ export function ConnectionPage() {
           />
         </section>
 
-        <section className="setting-card" aria-label="TMDB">
+        <section className="setting-card" data-nav-row="" aria-label="TMDB">
           <h3>TMDB</h3>
           <Info label="Zustand" hint={state.detail} value={state.label} tone={state.tone} />
           <p className="card-note">

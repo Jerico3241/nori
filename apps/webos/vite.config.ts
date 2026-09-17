@@ -95,13 +95,47 @@ function vendorHls() {
   };
 }
 
-/** Die Version aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
-const appVersion = (JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as { version: string }).version;
+/** Version und Zeichenfläche aus `appinfo.json` — eine Quelle, keine zweite Zahl im Quelltext. */
+const appInfo = JSON.parse(readFileSync(resolve(__dirname, "appinfo.json"), "utf8")) as {
+  version: string;
+  resolution: string;
+};
 
 export default defineConfig(({ command }) => ({
   base: "./",
+  /*
+   * Die gemeinsame Anwendungsschicht kommt als Quelltext, nicht als gebautes
+   * Paket.
+   *
+   * Der Grund ist React: `shared/nori-app` bringt Kontexte und Haken mit, und
+   * die funktionieren nur mit **einer** React-Instanz. Ein über `file:`
+   * verknüpftes Paket löst `react` von seinem eigenen Ort aus auf und zöge
+   * eine zweite herein — der Fehler, der sich als „Invalid hook call" meldet
+   * und stundenlang nach etwas ganz anderem aussieht. Als Quelltext
+   * eingebunden gibt es die Frage nicht, und ein Bauschritt weniger gibt es
+   * obendrein.
+   */
+  resolve: {
+    alias: {
+      "@nori/app": resolve(__dirname, "../../shared/nori-app/src/index.ts"),
+    },
+    /*
+     * Genau eine Instanz — und zwar die dieser App.
+     *
+     * `shared/nori-app` wird als **Quelltext** eingebunden und bringt selbst
+     * kein `node_modules` mit. Ohne diese Liste suchte Vite `@nori/core`,
+     * `react` und `hls.js` neben der Quelldatei, also unter
+     * `shared/nori-app/node_modules` — das es in einer frischen Arbeitskopie
+     * nicht gibt. In der CI scheiterte genau daran der Lauf `Build webOS`.
+     *
+     * Bei React ist es zusätzlich eine Frage der Richtigkeit: zwei Instanzen
+     * melden sich als „Invalid hook call" an ganz anderer Stelle.
+     */
+    dedupe: ["react", "react-dom", "@nori/core", "hls.js"],
+  },
   define: {
-    __NORI_WEBOS_VERSION__: JSON.stringify(appVersion),
+    __NORI_WEBOS_VERSION__: JSON.stringify(appInfo.version),
+    __NORI_WEBOS_RESOLUTION__: JSON.stringify(appInfo.resolution ?? "1920x1080"),
   },
   plugins: [react(), classicScriptTags(), copyAppInfo(), vendorHls()],
   build: {

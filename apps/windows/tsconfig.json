@@ -1,0 +1,56 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "paths": {
+      "@nori/app": [
+        "../../shared/nori-app/src/index.ts"
+      ],
+      "@nori/core": [
+        "./node_modules/@nori/core"
+      ],
+      "react": [
+        "./node_modules/@types/react"
+      ],
+      "hls.js": [
+        "./node_modules/hls.js"
+      ],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime"
+      ],
+      "react/jsx-dev-runtime": [
+        "./node_modules/@types/react/jsx-dev-runtime"
+      ],
+      "react-dom/client": [
+        "./node_modules/@types/react-dom/client"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "tools",
+    "../../shared/nori-app/src"
+  ]
+}

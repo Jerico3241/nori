@@ -18,23 +18,31 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Artwork } from "../components/Artwork";
 import { ChipRow } from "../components/Chips";
-import { Icon } from "../components/Icon";
 import { Menu } from "../components/Overlay";
 import { Screen } from "../components/Screen";
 import { EmptyState, ErrorState } from "../components/States";
-import { useAsync } from "../hooks/useAsync";
-import { usePersistentState } from "../hooks/usePersistentState";
+import {
+  addMonths,
+  Artwork,
+  dayKeyOf,
+  dayNumber,
+  Icon,
+  longDayLabel,
+  monthGrid,
+  monthLabel,
+  sameMonth,
+  tmdb,
+  useAsync,
+  useData,
+  useLibrary,
+  usePersistentState,
+  WEEKDAY_SHORT,
+  weekOf,
+} from "@nori/app";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
 import { focusElement } from "../navigation/engine";
-import { tmdb } from "../services/tmdb";
-import {
-  WEEKDAY_SHORT, addMonths, dayKeyOf, dayNumber, longDayLabel, monthGrid, monthLabel, sameMonth, weekOf,
-} from "../state/calendarDates";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
 
 const ROUTE = "calendar";
 type Mode = "today" | "week" | "month";
@@ -133,7 +141,7 @@ export function CalendarPage() {
   };
 
   const releaseList = (entries: AiringEntry[]) => (
-    <div className="release-list">
+    <div className="release-list" data-nav-row="">
       {entries.map((entry) => (
         <ReleaseRow
           key={`${entry.provider}|${entry.slug}|${entry.season}|${entry.episode}|${entry.languages.join()}`}
@@ -219,7 +227,7 @@ export function CalendarPage() {
 
       {mode === "month" ? (
         <section className="month" data-reveal="">
-          <div className="month-head">
+          <div className="month-head" data-nav-row="">
             <SpotButton className="glassbtn" focusRoute={ROUTE} focusArea="days" focusKey="month-prev" onClick={() => setSelected(addMonths(selected, -1))}>
               <Icon name="back" />
               Vormonat
@@ -230,13 +238,13 @@ export function CalendarPage() {
               <Icon name="chevronRight" />
             </SpotButton>
           </div>
-          <div className="month-grid">
+          <div className="month-grid" data-nav-row="">
             {WEEKDAY_SHORT.map((label) => <div className="month-weekday" key={label}>{label}</div>)}
             {monthGrid(selected).map((key) => dayButton(key, "mday", !sameMonth(key, selected)))}
           </div>
         </section>
       ) : (
-        <div className="weekstrip">{week.map((key) => dayButton(key, "day"))}</div>
+        <div className="weekstrip" data-nav-row="">{week.map((key) => dayButton(key, "day"))}</div>
       )}
 
       {body}

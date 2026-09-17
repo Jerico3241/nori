@@ -8,7 +8,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from "react";
 import { isBack } from "./keys";
-import { log } from "../services/log";
+import { log } from "@nori/app";
 
 /** Gibt `true` zurück, wenn der Griff die Taste verbraucht hat. */
 export type BackHandler = () => boolean;

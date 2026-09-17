@@ -21,22 +21,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Hero } from "../components/Hero";
-import { Icon } from "../components/Icon";
 import { LandscapeCard } from "../components/LandscapeCard";
-import { titleMeta } from "../components/meta";
+import {
+  covers,
+  Icon,
+  log,
+  performanceProfile,
+  titleMeta,
+  tmdb,
+  useData,
+  useHomeFeed,
+  useLibrary,
+  type HomeRowView,
+} from "@nori/app";
 import { PosterCard } from "../components/PosterCard";
 import { Rail } from "../components/Rail";
 import { ratingText } from "../components/Rating";
 import { Screen } from "../components/Screen";
 import { EmptyState, ErrorState, RailSkeleton } from "../components/States";
+import { useProgressiveRows, useRailWindow } from "../hooks/useProgressive";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { covers } from "../services/covers";
-import { log } from "../services/log";
-import { tmdb } from "../services/tmdb";
-import { useData } from "../state/data";
-import { useHomeFeed, type HomeRowView } from "../state/home";
-import { useLibrary } from "../state/library";
 
 const ROUTE = "home";
 
@@ -255,9 +260,7 @@ export function HomePage() {
         </section>
       ) : null}
 
-      {feed.rows.map((row) => (
-        <HomeRail key={row.id} row={row} onOpenTitle={openTitle} onPlayEpisode={playEpisode} />
-      ))}
+      <HomeRails rows={feed.rows} onOpenTitle={openTitle} onPlayEpisode={playEpisode} />
 
       {catalog.status === "ready" && catalog.items.length === 0 ? (
         <EmptyState
@@ -269,12 +272,45 @@ export function HomePage() {
   );
 }
 
-function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
+/**
+ * Die Reihen — in Schritten eingehängt, nicht alle im ersten Durchgang.
+ *
+ * Sichtbar ist bei 1080p der Kopfbereich und eine Reihe. Die übrigen kommen in
+ * Leerlaufpausen dazu (`useProgressiveRows`), und solange die Fernbedienung
+ * arbeitet, ruht das Nachziehen.
+ */
+function HomeRails({ rows, onOpenTitle, onPlayEpisode }: {
+  rows: HomeRowView[];
+  onOpenTitle(provider: CatalogProvider, slug: string): void;
+  onPlayEpisode(provider: CatalogProvider, slug: string, season: string, episode: number, path: string, at?: number): void;
+}) {
+  const mounted = useProgressiveRows(rows.length);
+  return (
+    <>
+      {rows.slice(0, mounted).map((row, index) => (
+        <HomeRail
+          key={row.id}
+          row={row}
+          first={index === 0}
+          onOpenTitle={onOpenTitle}
+          onPlayEpisode={onPlayEpisode}
+        />
+      ))}
+    </>
+  );
+}
+
+function HomeRail({ row, first, onOpenTitle, onPlayEpisode }: {
   row: HomeRowView;
+  /** Nur die oberste Reihe lädt ihre ersten Bilder ohne Umweg. */
+  first: boolean;
   onOpenTitle(provider: CatalogProvider, slug: string): void;
   onPlayEpisode(provider: CatalogProvider, slug: string, season: string, episode: number, path: string, at?: number): void;
 }) {
   const library = useLibrary();
+  const size = row.titles?.length ?? row.episodes?.length ?? row.progress?.length ?? 0;
+  const window = useRailWindow(row.id, size);
+  const eagerCards = first ? performanceProfile().eagerCards : 0;
   /**
    * „Entfernen": OK nimmt die Serie aus der Reihe, statt sie fortzusetzen.
    *
@@ -291,7 +327,7 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
         title={row.title}
         note={editing ? "OK entfernt einen Titel" : "Zuletzt angesehen"}
       >
-        {row.progress.map((item, index) => {
+        {row.progress.slice(0, window.count).map((item, index) => {
           const provider = item.provider ?? providerFromPath(item.episodePath);
           const still = tmdb.cachedSeason(item.slug, provider, item.season)?.episodes[item.episode]?.still ?? null;
           const remaining = Math.max(0, item.durationSec - item.positionSec);
@@ -307,7 +343,8 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
               focusRoute={ROUTE}
               focusArea={row.id}
               focusKey={`${row.id}-${provider}-${item.slug}`}
-              eager={index < 4}
+              eager={index < eagerCards}
+              onFocus={() => window.reached(index)}
               overlay={editing ? <span className="card-remove"><Icon name="trash" />Entfernen</span> : null}
               onSelect={() => {
                 if (editing) {
@@ -348,8 +385,15 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
   if (row.kind === "episodes" && row.episodes) {
     return (
       <Rail id={row.id} title={row.title} note="Aus dem Kalender der Quellen">
-        {row.episodes.map((entry, index) => (
-          <EpisodeRailCard key={entryKey(entry)} entry={entry} index={index} onOpenTitle={onOpenTitle} />
+        {row.episodes.slice(0, window.count).map((entry, index) => (
+          <EpisodeRailCard
+            key={entryKey(entry)}
+            entry={entry}
+            index={index}
+            eager={index < eagerCards}
+            onReached={window.reached}
+            onOpenTitle={onOpenTitle}
+          />
         ))}
       </Rail>
     );
@@ -358,16 +402,25 @@ function HomeRail({ row, onOpenTitle, onPlayEpisode }: {
   if (!row.titles || row.titles.length === 0) return null;
   return (
     <Rail id={row.id} title={row.title} note={row.note ?? (row.id === "popular" ? "Aktuell in Nori" : undefined)}>
-      {row.titles.map((candidate, index) => (
-        <TitleRailCard key={candidateKey(candidate)} candidate={candidate} area={row.id} index={index} />
+      {row.titles.slice(0, window.count).map((candidate, index) => (
+        <TitleRailCard
+          key={candidateKey(candidate)}
+          candidate={candidate}
+          area={row.id}
+          index={index}
+          eager={index < eagerCards}
+          onReached={window.reached}
+        />
       ))}
     </Rail>
   );
 }
 
-function EpisodeRailCard({ entry, index, onOpenTitle }: {
+function EpisodeRailCard({ entry, index, eager, onReached, onOpenTitle }: {
   entry: AiringEntry;
   index: number;
+  eager: boolean;
+  onReached(index: number): void;
   onOpenTitle(provider: CatalogProvider, slug: string): void;
 }) {
   const provider = entry.provider ?? "aniworld";
@@ -382,13 +435,20 @@ function EpisodeRailCard({ entry, index, onOpenTitle }: {
       focusRoute={ROUTE}
       focusArea="episodes"
       focusKey={`episodes-${provider}-${entry.slug}-${entry.season}-${entry.episode}`}
-      eager={index < 4}
+      eager={eager}
+      onFocus={() => onReached(index)}
       onSelect={() => onOpenTitle(provider, entry.slug)}
     />
   );
 }
 
-function TitleRailCard({ candidate, area, index }: { candidate: HomeCandidate; area: string; index: number }) {
+function TitleRailCard({ candidate, area, index, eager, onReached }: {
+  candidate: HomeCandidate;
+  area: string;
+  index: number;
+  eager: boolean;
+  onReached(index: number): void;
+}) {
   const { title } = candidate;
   return (
     <PosterCard
@@ -400,7 +460,8 @@ function TitleRailCard({ candidate, area, index }: { candidate: HomeCandidate; a
       focusRoute={ROUTE}
       focusArea={area}
       focusKey={`${area}-${title.provider}-${title.slug}`}
-      eager={index < 7}
+      eager={eager}
+      onFocus={() => onReached(index)}
     />
   );
 }

@@ -17,8 +17,7 @@ import type { CatalogProvider, Episode, WatchProgress } from "@nori/core";
 import { formatClock, isEpisodeComplete, progressPercent, resumePosition } from "@nori/core";
 
 import { SpotButton } from "../navigation/Spot";
-import { Artwork } from "./Artwork";
-import { Icon } from "./Icon";
+import { Artwork, Icon } from "@nori/app";
 
 export interface EpisodeExtras {
   title?: string | null;
@@ -79,7 +78,7 @@ export function EpisodeCard({
       aria-pressed={marking ? done : undefined}
       onClick={onSelect}
     >
-      <span className="card-art ep-thumb">
+      <span className="card-art ep-thumb" data-nav-quiet="">
         <Artwork
           kind="still"
           src={extras?.still}

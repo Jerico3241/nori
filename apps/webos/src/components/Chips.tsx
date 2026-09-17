@@ -31,7 +31,7 @@ export function ChipRow<T extends string>({
       data-scroll-x=""
       data-scroll-key={`chips-${area}`}
     >
-      <div className="chips-inner">
+      <div className="chips-inner" data-nav-row="">
         {options.map((option) => (
           <SpotButton
             key={option.value}

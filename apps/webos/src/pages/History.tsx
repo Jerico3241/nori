@@ -8,15 +8,12 @@ import { formatClock, progressPercent, providerFromPath, resumePosition, type Ca
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Artwork } from "../components/Artwork";
-import { Icon } from "../components/Icon";
 import { Dialog } from "../components/Overlay";
 import { Screen } from "../components/Screen";
 import { EmptyState } from "../components/States";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { tmdb } from "../services/tmdb";
-import { useLibrary } from "../state/library";
+import { Artwork, Icon, tmdb, useLibrary } from "@nori/app";
 
 const ROUTE = "history";
 
@@ -48,7 +45,7 @@ export function HistoryPage() {
       {entries.length === 0 ? (
         <EmptyState title="Noch nichts angesehen" message="Sobald eine Folge läuft, steht sie hier mit ihrem Fortschritt." />
       ) : (
-        <div className="release-list">
+        <div className="release-list" data-nav-row="">
           {entries.map((item) => {
             const provider = item.provider ?? providerFromPath(item.episodePath);
             const percent = progressPercent(item);

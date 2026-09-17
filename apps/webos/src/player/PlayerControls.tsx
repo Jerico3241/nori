@@ -5,7 +5,7 @@
 // verschwindet nach der eingestellten Zeit wieder von selbst.
 
 import type { Episode } from "@nori/core";
-import { Icon } from "../components/Icon";
+import { Icon } from "@nori/app";
 import { SpotArea, SpotButton } from "../navigation/Spot";
 import { Seekbar } from "./Seekbar";
 
