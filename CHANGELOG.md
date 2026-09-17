@@ -142,6 +142,35 @@ von 1.25.2 auf 2.6.0, macOS von 1.20.1, Windows von 2.0.0 und LG webOS von
 - **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
   werden.
 
+### Tests
+
+Am Runner-Mac (Xcode 27 Beta, Node 26, Python 3.14), 17.09.:
+
+- `tools/test_nori_release.py`: 82 Tests, darunter die Struktur aller
+  Workflows (Auslöser, `needs`, `if`, Rechte, Aufbewahrung, Reihenfolge von
+  Prüfung und Hochladen). `tools/test_nori_version.py`: 31 Tests.
+  `test_check_webos_package.py` 22, `test_configure_google_oauth.py` 26.
+- `swift test`: 515 Tests. `check-apple-sources.py`: keine Auffälligkeiten —
+  und die Gegenprobe mit verschobener IPA-Prüfung schlägt an.
+- `shared/nori-core`: 221 Tests, `services/nori-api`: 13 Tests,
+  `apps/webos`: `tsc` und Vite, Paket samt `check-webos-package.py
+  --production`.
+- Echte Pakete, gebaut wie in den neuen Jobs und mit `nori-release.py
+  verify` geprüft: IPA 2.6.0 (40) aus einem Release-Build für das Gerät,
+  macOS-Release-Build (x86_64 und arm64) 2.6.0 (31) samt Quellpaket mit 127
+  Dateien und erhaltenen Symlinks, `.ipk` 2.6.0, Windows-Installer und -ZIP
+  mit Produktversion 2.6.0.0 — ohne Wine gepackt. Damit einmal `publish`,
+  `validate` und `cleanup` gegen den GitHub-Nachbau; `shasum -a 256 -c`
+  bestätigt die Prüfsummendatei.
+- Lesend gegen GitHub: `prepare` für v2.6.0 besteht (Buildnummern der alten
+  Tags höchstens 39 bzw. 30). Der Aufräumplan für die echten Läufe ergibt
+  913 von 922 löschbar, 9 geschützt, keinen fremden Workflow.
+- Nicht geprüft: ein echter Release-Lauf in Actions (er soll erst nach dem
+  Merge von Hand gestartet werden), der Fernbedienungs- und der Desktoplauf
+  mit dieser Nummer (laufen in der CI des Branches), Windows mit
+  eingebautem Google-Client (Secrets fehlen) und das Windows-Paket auf echtem
+  Windows.
+
 ## [webOS 2.4.1] — 2026-09-16
 
 Nur Werkzeug — an der App selbst ändert sich nichts. Funktionen, Oberfläche
