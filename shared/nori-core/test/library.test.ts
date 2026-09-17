@@ -4,9 +4,11 @@ import { test } from "node:test";
 import type { Episode, WatchProgress } from "../src/models.js";
 import {
   backfillAddedAt, continueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
-  findProgress, LIBRARY_SCHEMA_VERSION, migrateProgress, nextEpisode, nextPlay,
+  findProgress, LIBRARY_SCHEMA_VERSION, markEpisode, markSeason,
+  markSeries, migrateProgress, nextEpisode, nextPlay,
   previousEpisode, rememberRecent, seasonStats, upsertProgress,
 } from "../src/library.js";
+import { isEpisodeComplete } from "../src/rules.js";
 
 function item(overrides: Partial<WatchProgress> = {}): WatchProgress {
   return {
@@ -194,4 +196,106 @@ test("Ein abgeleiteter Merkzeitpunkt überholt keinen echten", () => {
 test("Merkzeitpunkte entfernter Titel werden nicht mitgeschleppt", () => {
   const out = backfillAddedAt({ weg: 5, bleibt: 9 }, ["bleibt"]);
   assert.deepEqual(Object.keys(out), ["bleibt"]);
+});
+
+// --- Manuelle Markierung gesehen / ungesehen ---------------------------------
+
+test("markEpisode legt einen completed-Eintrag ohne echte Position an", () => {
+  let progress: Record<string, WatchProgress> = {};
+  progress = markEpisode(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, episodes(12)[3], true, 1000);
+  const entry = Object.values(progress)[0];
+  assert.equal(entry.episode, 4);
+  assert.equal(entry.completed, true);
+  // completed allein reicht, ohne dass durationSec die Schwelle erfüllen muss.
+  assert.equal(isEpisodeComplete(entry), true);
+});
+
+test("markEpisode entfernt einen bestehenden Eintrag beim Aufheben", () => {
+  let progress: Record<string, WatchProgress> = {};
+  const ep = episodes(12)[0];
+  progress = markEpisode(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, ep, true);
+  assert.equal(Object.keys(progress).length, 1);
+  progress = markEpisode(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, ep, false);
+  assert.equal(Object.keys(progress).length, 0);
+});
+
+test("markEpisode behält eine echte Position beim Markieren", () => {
+  let progress: Record<string, WatchProgress> = {
+    "aniworld|/anime/stream/one-piece/staffel-1/episode-1": item({ positionSec: 400, durationSec: 1400, episode: 1 }),
+  };
+  const ep = episodes(12)[0];
+  progress = markEpisode(progress, { slug: "one-piece", title: "One Piece", season: "1", provider: "aniworld" }, ep, true, 5000);
+  const entry = progress["aniworld|/anime/stream/one-piece/staffel-1/episode-1"];
+  assert.equal(entry.positionSec, 400);
+  assert.equal(entry.completed, true);
+  assert.equal(entry.updatedAt, 5000);
+});
+
+test("markSeason markiert alle Folgen einer Staffel", () => {
+  let progress: Record<string, WatchProgress> = {};
+  const eps = episodes(12);
+  progress = markSeason(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, eps, true);
+  assert.equal(Object.keys(progress).length, 12);
+  for (const entry of Object.values(progress)) assert.equal(entry.completed, true);
+  // Statistik sieht die Staffel als vollständig gesehen.
+  assert.equal(seasonStats(progress, "a", "1", eps, "aniworld").watched, 12);
+  // Aufheben entfernt alle wieder.
+  progress = markSeason(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, eps, false);
+  assert.equal(Object.keys(progress).length, 0);
+});
+
+test("markSeries markiert bekannte Folgen über alle Staffeln", () => {
+  let progress: Record<string, WatchProgress> = {};
+  progress = markSeries(progress, { slug: "a", title: "A", provider: "aniworld" }, [
+    { season: "1", episodes: episodes(6) },
+    { season: "2", episodes: episodes(4).map((ep) => ({ ...ep, path: `/anime/stream/a/staffel-2/episode-${ep.number}` })) },
+  ], true);
+  assert.equal(Object.keys(progress).length, 10);
+  assert.equal(seasonStats(progress, "a", "1", episodes(6), "aniworld").watched, 6);
+  assert.equal(seasonStats(progress, "a", "2", episodes(4).map((ep) => ({ ...ep, path: `/anime/stream/a/staffel-2/episode-${ep.number}` })), "aniworld").watched, 4);
+});
+
+test("Markierte Folgen verschwinden aus Weiterschauen", () => {
+  let progress: Record<string, WatchProgress> = {};
+  // Eine angefangene Folge landet in Weiterschauen.
+  progress = upsertProgress(progress, item({ slug: "a", episode: 1, episodePath: "/anime/stream/a/staffel-1/episode-1", positionSec: 200, durationSec: 1400, updatedAt: 100 }));
+  assert.equal(continueWatching(progress).length, 1);
+  // Manuell als gesehen markiert -> raus aus Weiterschauen.
+  progress = markEpisode(progress, { slug: "a", title: "A", season: "1", provider: "aniworld" }, { number: 1, germanTitle: "", englishTitle: "", path: "/anime/stream/a/staffel-1/episode-1", hosters: [], languages: [] }, true);
+  assert.equal(continueWatching(progress).length, 0);
+});
+
+test("Untertitel-Einstellungen werden dekodiert und synchronisiert", () => {
+  const state = decodeLibrary({
+    version: 6, favorites: [], recents: [], titles: {}, progress: {},
+    subtitlePref: "DE", subtitlesEnabled: true,
+  });
+  assert.equal(state.subtitlePref, "DE");
+  assert.equal(state.subtitlesEnabled, true);
+  // Ein Stand ohne die Felder bekommt die Voreinstellung „aus“.
+  const legacy = decodeLibrary({ version: 5, favorites: [], recents: [], titles: {}, progress: {} });
+  assert.equal(legacy.subtitlePref, "off");
+  assert.equal(legacy.subtitlesEnabled, false);
+  // Kodieren rundet sauber.
+  const bag = encodeLibrary(state);
+  assert.equal(bag.subtitlePref, "DE");
+  assert.equal(bag.subtitlesEnabled, true);
+});
+
+test("Eigene Listen werden dekodiert und behalten ihre Eintraege", () => {
+  const state = decodeLibrary({
+    version: 6, favorites: [], recents: [], titles: {}, progress: {},
+    lists: {
+      isekai: { id: "isekai", name: "Isekai", items: ["aniworld|shield-hero"], updatedAt: 100 },
+    },
+  });
+  assert.equal(Object.keys(state.lists).length, 1);
+  assert.deepEqual(state.lists.isekai.items, ["aniworld|shield-hero"]);
+  const bag = encodeLibrary(state);
+  assert.deepEqual(bag.lists?.isekai.items, ["aniworld|shield-hero"]);
+});
+
+test("Eine Liste ohne Listen-Feld dekodiert leer", () => {
+  const state = decodeLibrary({ version: 5, favorites: [], recents: [], titles: {}, progress: {} });
+  assert.deepEqual(state.lists, {});
 });

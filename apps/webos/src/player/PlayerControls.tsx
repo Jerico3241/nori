@@ -4,7 +4,7 @@
 // bei jedem Tastendruck, beim Öffnen, bei Pause und beim Spulen — und
 // verschwindet nach der eingestellten Zeit wieder von selbst.
 
-import type { Episode } from "@nori/core";
+import type { Episode, SkipSegment } from "@nori/core";
 import { Icon } from "../components/Icon";
 import { SpotArea, SpotButton } from "../navigation/Spot";
 import { Seekbar } from "./Seekbar";
@@ -21,6 +21,8 @@ export interface ControlsProps {
   seekTarget: number;
   seekStep: number;
   hosterLabel: string;
+  /** Überspringbarer Abschnitt an der aktuellen Position, sonst null. */
+  skipSegment: SkipSegment | null;
   previous: Episode | null;
   next: Episode | null;
   onTogglePlay(): void;
@@ -28,6 +30,7 @@ export interface ControlsProps {
   onPrevious(): void;
   onNext(): void;
   onOpenDrawer(): void;
+  onSkip(): void;
   onExit(): void;
 }
 
@@ -111,6 +114,28 @@ export function PlayerControls(props: ControlsProps) {
           </SpotButton>
         </div>
         <div className="player-actions">
+          {props.skipSegment ? (
+            <SpotButton
+              className="skip-button"
+              focusKey="skip"
+              spotlightDisabled={!props.visible}
+              aria-label={
+                props.skipSegment.type === "outro"
+                  ? "Outro überspringen"
+                  : props.skipSegment.type === "recap"
+                    ? "Zusammenfassung überspringen"
+                    : "Intro überspringen"
+              }
+              onClick={props.onSkip}
+            >
+              <Icon name="forward" />
+              {props.skipSegment.type === "outro"
+                ? "Outro überspringen"
+                : props.skipSegment.type === "recap"
+                  ? "Skip"
+                  : "Intro überspringen"}
+            </SpotButton>
+          ) : null}
           <SpotButton
             focusKey="drawer"
             spotlightDisabled={!props.visible}

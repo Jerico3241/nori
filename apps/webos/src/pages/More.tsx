@@ -38,9 +38,15 @@ export const LANGUAGES: MenuOption<string>[] = [
   { value: "EN", label: "Englisch" },
 ];
 
+export const SUBTITLE_LANGUAGES: MenuOption<string>[] = [
+  { value: "off", label: "Aus" },
+  { value: "DE", label: "Deutsch" },
+  { value: "EN", label: "Englisch" },
+];
+
 export const HOSTERS = ["VOE", "Vidmoly", "Vidoza", "Lulustream", "Speedfiles", "Filemoon", "Doodstream"];
 
-type MenuId = "lang" | "hoster" | "speed" | "seek" | "chrome" | "scope" | null;
+type MenuId = "lang" | "hoster" | "speed" | "seek" | "chrome" | "scope" | "subtitle" | null;
 
 export function MorePage() {
   const navigate = useNavigate();
@@ -71,6 +77,10 @@ export function MorePage() {
           <Row area="playback" id="set-lang" label="Bevorzugte Sprache" hint="Wird gewählt, wenn die Folge sie anbietet" value={lang} onClick={() => setMenu("lang")} />
           <Row area="playback" id="set-hoster" label="Bevorzugter Hoster" hint="Zuerst probiert, danach die Rangfolge" value={library.state.hosterPref || "Automatisch"} onClick={() => setMenu("hoster")} />
           <Row area="playback" id="set-speed" label="Geschwindigkeit" value={`${library.state.playbackSpeed.toLocaleString("de-DE")}×`} onClick={() => setMenu("speed")} />
+          <Toggle area="playback" id="set-subtitles" label="Untertitel" hint="Nur, wenn der Stream sie anbietet" value={library.state.subtitlesEnabled} onChange={(value) => library.setPreference({ subtitlesEnabled: value, subtitlePref: value ? (library.state.subtitlePref === "off" ? "DE" : library.state.subtitlePref) : "off" })} />
+          {library.state.subtitlesEnabled ? (
+            <Row area="playback" id="set-subtitle-lang" label="Untertitelsprache" hint="Bevorzugte Untertitel-Sprache" value={SUBTITLE_LANGUAGES.find((entry) => entry.value === library.state.subtitlePref)?.label ?? "Aus"} onClick={() => setMenu("subtitle")} />
+          ) : null}
           <Row area="playback" id="set-seek" label="Sprung mit ← →" value={`${settings.seekStep} s`} onClick={() => setMenu("seek")} />
           <Row area="playback" id="set-chrome" label="Bedienung ausblenden nach" value={`${settings.controlsTimeout} s`} onClick={() => setMenu("chrome")} />
         </section>
@@ -112,6 +122,7 @@ export function MorePage() {
       <Menu open={menu === "lang"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bevorzugte Sprache" id="menu-lang" value={library.state.langPref} options={LANGUAGES} onPick={(value) => library.setPreference({ langPref: value })} />
       <Menu open={menu === "hoster"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bevorzugter Hoster" id="menu-hoster" value={HOSTERS.find((name) => name.toLowerCase() === library.state.hosterPref.toLowerCase()) ?? null} options={HOSTERS.map((name) => ({ value: name, label: name }))} onPick={(value) => library.setPreference({ hosterPref: value })} />
       <Menu open={menu === "speed"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Geschwindigkeit" id="menu-speed" value={String(library.state.playbackSpeed)} options={PLAYBACK_SPEEDS.map((speed) => ({ value: String(speed), label: `${speed.toLocaleString("de-DE")}×` }))} onPick={(value) => library.setPreference({ playbackSpeed: Number(value) })} />
+      <Menu open={menu === "subtitle"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Untertitelsprache" id="menu-subtitle" value={library.state.subtitlePref} options={SUBTITLE_LANGUAGES} onPick={(value) => library.setPreference({ subtitlePref: value })} />
       <Menu open={menu === "seek"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Sprung mit ← →" id="menu-seek" value={String(settings.seekStep)} options={[5, 10, 15, 30].map((step) => ({ value: String(step), label: `${step} Sekunden` }))} onPick={(value) => update({ seekStep: Number(value) })} />
       <Menu open={menu === "chrome"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bedienung ausblenden nach" id="menu-chrome" value={String(settings.controlsTimeout)} options={[3, 4, 5, 8].map((seconds) => ({ value: String(seconds), label: `${seconds} Sekunden` }))} onPick={(value) => update({ controlsTimeout: Number(value) })} />
       <Menu open={menu === "scope"} onClose={() => setMenu(null)} eyebrow="Darstellung" title="Bereich" id="menu-scope" value={library.state.scope} options={LIBRARY_SCOPES.map((scope) => ({ value: scope, label: SCOPES[scope].label, detail: SCOPES[scope].headline }))} onPick={(value) => library.setScope(value)} />

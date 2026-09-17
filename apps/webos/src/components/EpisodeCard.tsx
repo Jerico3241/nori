@@ -15,6 +15,7 @@
 
 import type { CatalogProvider, Episode, WatchProgress } from "@nori/core";
 import { formatClock, isEpisodeComplete, progressPercent, resumePosition } from "@nori/core";
+import type { ReactNode } from "react";
 
 import { SpotButton } from "../navigation/Spot";
 import { Artwork } from "./Artwork";
@@ -26,7 +27,7 @@ export interface EpisodeExtras {
   runtime?: number | null;
 }
 
-export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, focusRoute, extras, onSelect }: {
+export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, focusRoute, extras, overlay, onSelect }: {
   episode: Episode;
   slug: string;
   provider: CatalogProvider;
@@ -34,6 +35,7 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
   progress: WatchProgress | null;
   focusRoute: string;
   extras?: EpisodeExtras | null;
+  overlay?: ReactNode;
   onSelect(): void;
 }) {
   const percent = progressPercent(progress);
@@ -75,6 +77,7 @@ export function EpisodeCard({ episode, slug, provider, seriesTitle, progress, fo
           passive
         />
         <span className="ep-number" aria-hidden="true">{episode.number}</span>
+        {overlay ? <span className="card-overlay" aria-hidden="true">{overlay}</span> : null}
         {done ? <span className="ep-done"><Icon name="check" />Gesehen</span> : null}
         {percent > 0 && !done ? (
           <span className="card-progress" aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>

@@ -868,6 +868,27 @@ h1 {
   color: #8c9bad;
   font-size: 1.0625rem;
 }
+.season-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  gap: 0.75rem;
+}
+.season-actions > * { margin: 0; }
+.card-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem;
+  background: rgba(4, 8, 14, 0.86);
+  color: #c9d4e3;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
 
 .episode-grid {
   display: grid;

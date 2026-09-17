@@ -45,11 +45,19 @@ export function progressId(item: WatchProgress): string {
   return progressKey(item.episodePath, item.provider ?? providerFromPath(item.episodePath));
 }
 
-/** `completed == true` ODER (Dauer ≥ 20 s UND Position ≥ 90 % der Dauer). */
+/**
+ * Zentrale Abschluss-Schwelle. Eine Folge gilt als gesehen, wenn der
+ * Wiedergabefortschritt mindestens diesen Anteil der Dauer erreicht —
+ * konfiguriert im Contract (`rules.complete`), gehalten als *eine* Konstante,
+ * nicht mehrfach im Code. Der Wert liegt im geforderten Bereich 90–95 %.
+ */
+export const COMPLETION_THRESHOLD = 0.9;
+
+/** `completed == true` ODER (Dauer ≥ 20 s UND Position ≥ Schwelle der Dauer). */
 export function isEpisodeComplete(item?: WatchProgress | null): boolean {
   if (!item) return false;
   if (item.completed === true) return true;
-  return item.durationSec >= 20 && item.positionSec >= item.durationSec * 0.9;
+  return item.durationSec >= 20 && item.positionSec >= item.durationSec * COMPLETION_THRESHOLD;
 }
 
 export function watchRatio(item?: WatchProgress | null): number {

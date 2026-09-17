@@ -13,7 +13,7 @@
 // Keine Download-Knöpfe: Nori lädt nichts herunter.
 
 import {
-  HomeCatalogIndex, PROVIDERS, homeTitleFrom, progressPercent, resumePosition,
+  HomeCatalogIndex, PROVIDERS, homeTitleFrom, isEpisodeComplete, progressPercent, resumePosition,
   type CatalogProvider, type HomeCandidate, type SeriesDetail,
 } from "@nori/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -65,6 +65,8 @@ export function DetailsPage() {
   const [similar, setSimilar] = useState<HomeCandidate[]>([]);
   const [seasonMenu, setSeasonMenu] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [editEpisodes, setEditEpisodes] = useState(false);
+  const [seriesMarkMenu, setSeriesMarkMenu] = useState(false);
   const [limit, setLimit] = useState(() => {
     const remembered = recallFocus(route, "episodes");
     const number = remembered ? Number(remembered.replace("episode-", "")) : 0;
@@ -328,7 +330,39 @@ export function DetailsPage() {
               : `${episodes.length} ${episodes.length === 1 ? "Folge" : "Folgen"}`
                 + (stats.total > 0 && stats.watched > 0 ? ` · ${stats.watched} von ${stats.total} gesehen` : "")}
           </span>
+          {episodes.length > 0 ? (
+            <div className="season-actions">
+              <SpotButton
+                className={`chip${editEpisodes ? " on" : ""}`}
+                focusRoute={route}
+                focusArea="seasons"
+                focusKey="episodes-edit"
+                aria-pressed={editEpisodes}
+                onClick={() => setEditEpisodes((value) => !value)}
+              >
+                <Icon name={editEpisodes ? "check" : "mark"} />
+                {editEpisodes ? "Fertig" : "Markieren"}
+              </SpotButton>
+              <SpotButton
+                className="chip"
+                focusRoute={route}
+                focusArea="seasons"
+                focusKey="season-mark"
+                aria-haspopup="dialog"
+                onClick={() => setSeriesMarkMenu(true)}
+              >
+                <Icon name="mark" />
+                Staffel
+              </SpotButton>
+            </div>
+          ) : null}
         </div>
+        {editEpisodes && episodes.length > 0 ? (
+          <p className="edit-hint">
+            <Icon name="info" />
+            OK markiert die fokussierte Folge als gesehen oder ungesehen. „Fertig“ beendet das Markieren.
+          </p>
+        ) : null}
 
         {wantsOther && seasonData.status === "error" ? (
           <ErrorState title="Staffel nicht ladbar" message={seasonData.error ?? "Unbekannter Fehler"} onRetry={() => seasonData.reload()} />
@@ -364,9 +398,15 @@ export function DetailsPage() {
                   progress={library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider)}
                   focusRoute={route}
                   onSelect={() => {
+                    if (editEpisodes) {
+                      const item = library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider);
+                      library.markEpisode(slug, title, activeSeason, episode, provider, !isEpisodeComplete(item));
+                      return;
+                    }
                     const item = library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider);
                     openEpisode(episode.number, library.state.resumeEnabled ? resumePosition(item) : 0);
                   }}
+                  overlay={editEpisodes ? <span className="card-remove"><Icon name="mark" />Umschalten</span> : null}
                 />
               </div>
             ))}
@@ -407,6 +447,54 @@ export function DetailsPage() {
         }}
       />
 
+      <Menu
+        open={seriesMarkMenu}
+        onClose={() => setSeriesMarkMenu(false)}
+        eyebrow={title}
+        title="Als gesehen markieren"
+        id="series-mark"
+        value={null}
+        options={[
+          { value: "season-watched", label: `${seasonLabel} als gesehen`, detail: `${episodes.length} Folgen` },
+          { value: "season-unwatched", label: `${seasonLabel} als ungesehen`, detail: "Fortschritt entfernen" },
+          { value: "series-watched", label: `Komplette Serie als gesehen`, detail: `${seasonCount > 0 ? `${seasonCount} Staffeln` : "Alle Folgen"}` },
+          { value: "series-unwatched", label: `Komplette Serie als ungesehen`, detail: "Alle Staffeln zurücksetzen" },
+        ]}
+        onPick={(choice) => {
+          const seriesTitle = base.data?.title ?? title;
+          if (choice === "season-watched") {
+            library.markSeason(slug, seriesTitle, activeSeason, episodes, provider, true);
+          } else if (choice === "season-unwatched") {
+            library.markSeason(slug, seriesTitle, activeSeason, episodes, provider, false);
+          } else if (choice === "series-watched") {
+            // Nur die Staffeln markieren, die Nori bereits geladen hat; unbekannte
+            // bleiben unangetastet, statt fu00fcr sie Eintru00e4ge aus nichts zu erfinden.
+            const loaded = base.data?.seasons ?? [];
+            library.markSeries(
+              slug,
+              seriesTitle,
+              provider,
+              loaded.map((entry) => ({
+                season: entry.id,
+                episodes: entry.id === activeSeason ? episodes : [],
+              })),
+              true,
+            );
+          } else if (choice === "series-unwatched") {
+            const loaded = base.data?.seasons ?? [];
+            library.markSeries(
+              slug,
+              seriesTitle,
+              provider,
+              loaded.map((entry) => ({
+                season: entry.id,
+                episodes: entry.id === activeSeason ? episodes : [],
+              })),
+              false,
+            );
+          }
+        }}
+      />
       <Dialog open={infoOpen} onClose={() => setInfoOpen(false)} eyebrow="Mehr zu" title={title} id="details-info">
         <dl className="info-list">
           {alts.length > 0 ? (<><dt>Auch bekannt als</dt><dd>{alts.slice(0, 4).join(" · ")}</dd></>) : null}

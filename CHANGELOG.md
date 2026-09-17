@@ -5,7 +5,48 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 Die Plattformen laufen auf eigenen Versionsständen, weil sie sich
 unterschiedlich schnell bewegen: macOS **1.20.1**, iOS/iPadOS **1.25.2**,
-Windows **1.8.0**, LG webOS **2.2.1**.
+Windows **1.8.0**, LG webOS **2.3.0**.
+
+## [webOS 2.3.0] — Zusammenhängendes Wiedergabe-Erlebnis
+
+Resume, Markierungen, Untertitel, Skip-Schnittstelle und eigene Listen —
+keine neuen Hauptbereiche, sondern das bestehende Streaming-Erlebnis, das
+seine Teile besser miteinander verbindet. iOS, macOS und Windows
+unverändert; die Änderungen liegen im gemeinsamen TypeScript-Kern und der
+webOS-Oberfläche.
+
+### Hinzugefügt
+- **Manuelle Markierung „als gesehen / als ungesehen“** für einzelne Folge,
+  komplette Staffel und komplette Serie — auf der Detailseite über
+  „Markieren“ (Folgen-Modus) und das Staffel-/Serien-Menü. Nutzt denselben
+  Fortschritts-Speicher wie das automatische Sichern, deshalb liest der
+  Geräteabgleich denselben Stand. Markierte Folgen verschwinden aus
+  „Weiterschauen“.
+- **Untertitel-Einstellungen** (Bevorzugte Sprache + ein/aus), synchronisiert
+  über Google Drive. Greifen nur, wenn der Stream Untertitelspuren
+  mitbringt — die AniWorld-/Serienstream-Quellen liefern heute keine, dann
+  bleibt die Einstellung ein Wunsch, der greift, sobald eine Spur erscheint.
+- **Schnittstelle für Intro-/Outro-Skip** (`SkipSegment`-Modell im Kern,
+  „Intro überspringen“-Knopf im Player). Da die Quellen keine
+  verlässlichen Zeitmarken liefern, ist die Liste im aktuellen Stand leer
+  und der Knopf erscheint nicht — kein geratener 90-Sekunden-Wert. Ein
+  Provider kann später Marken ergänzen, ohne den Player zu ändern.
+- **Architektur für eigene Listen** (`CustomList`-Modell, Speicherung und
+  Sync-Merge). Die bestehende Merkliste bleibt unangetastet; zusätzliche
+  Listen sind optional und rückwärtskompatibel. Keine neue
+  Hauptnavigation — „Home · Entdecken · Kalender · Merkliste ·
+  Profil“ bleibt.
+- **Zentrale Abschluss-Schwelle** (`COMPLETION_THRESHOLD = 0.9`) statt
+  mehrfach hartkodiertem 0,9-Wert.
+
+### Geändert
+- `config/contract.json` erweitert: `subtitlePref`, `subtitlesEnabled`,
+  `lists`, `SkipSegment`- und `CustomList`-Modelle, `completionThreshold`,
+  Markierungs- und Skip-Regeln.
+- `LibraryBag`/`LibraryState` um optionale Felder erweitert; alte Stände
+  ohne sie dekodieren mit Voreinstellungen weiter.
+- Sync-Engine führt eigene Listen zusammen (juengster `updatedAt` je
+  Liste, gleiche Determinismus-Regel wie Favoriten und Fortschritt).
 
 ## [webOS 2.2.1] — 2026-09-13
 

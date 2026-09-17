@@ -245,6 +245,15 @@
 .player-actions button:focus small {
   color: #3b4a5b;
 }
+.skip-button {
+  background: var(--accent) !important;
+  border-color: transparent !important;
+  color: #05060a !important;
+}
+.skip-button .icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
 
 /* ---- Rechter Bereich --------------------------------------------------- */
 

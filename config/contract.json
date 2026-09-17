@@ -43,13 +43,15 @@
     "WatchProgress": ["slug", "title", "season", "episode", "episodePath", "germanTitle", "englishTitle", "positionSec", "durationSec", "updatedAt", "lang", "completed", "provider"],
     "RecentItem": ["slug", "title", "viewedAt", "provider"],
     "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel", "coverPath", "hasTime", "provider"],
-    "CalendarPayload": ["upcoming", "recent", "fetchedAt"]
+    "CalendarPayload": ["upcoming", "recent", "fetchedAt"],
+    "SkipSegment": ["type", "start", "end"],
+    "CustomList": ["id", "name", "items", "updatedAt"]
   },
   "library": {
     "schemaVersion": 6,
     "progressIdentity": "provider + normalized episodePath",
     "scope": "all|aniworld|serienstream|kdrama",
-    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope", "favoriteSource", "favoriteAddedAt", "modifiedAt", "sync"],
+    "fields": ["favorites", "recents", "titles", "progress", "langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "subtitlePref", "subtitlesEnabled", "provider", "scope", "favoriteSource", "favoriteAddedAt", "lists", "modifiedAt", "sync"],
     "migration": "Ältere Datensätze werden beim Laden normalisiert; Provider und Pfade werden ergänzt und doppelte Fortschrittseinträge anhand updatedAt zusammengeführt. Ab v5 trägt die Merkliste mit favoriteAddedAt einen Merkzeitpunkt je Slug (Millisekunden seit 1970); fehlt er, wird er beim Laden aus der Reihenfolge von favorites abgeleitet — der erste Eintrag gilt als der jüngste, und abgeleitete Werte liegen unterhalb aller bekannten. Ab v6 trägt jede Datei einen sync-Block mit Gerätekennung und Änderungsmarken; fehlt er, wird er beim Laden ergänzt — die Merkliste aus favoriteAddedAt, die Einstellungen mit dem modifiedAt der Datei als festgeschriebenem Zeitstempel."
   },
   "sync": {
@@ -139,7 +141,7 @@
       }
     },
     "meta": ["formatVersion", "deviceId", "platform", "appVersion", "generatedAt", "historyClearedAt", "progressClearedAt", "preferences", "favorites", "recentsRemoved"],
-    "syncedPreferences": ["langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "provider", "scope"],
+    "syncedPreferences": ["langPref", "hosterPref", "resumeEnabled", "preferredQuality", "autoplayNext", "playbackSpeed", "subtitlePref", "subtitlesEnabled", "provider", "scope"],
     "keys": {
       "favorite": "provider|slug",
       "recent": "provider|slug",
@@ -200,6 +202,10 @@
     "nativePlay": "AVPlayer plays the resolved HTTPS media URL directly with the source referer when required.",
     "provider": "CatalogProvider is persisted explicitly on new catalog, calendar, recent and progress records where applicable.",
     "calendarTime": "AiringEntry.airingAt always carries a full timestamp so entries can be sorted and bucketed by day. hasTime records whether the source actually named a clock time; when it is false or missing, no time may be shown.",
-    "watchState": "unseen = no progress entry with positionSec > 0 or completed; started = at least one entry touched and at least one not complete; seen = every known entry complete. The watchlist progress bar shows the position within the last watched episode, not the share of finished episodes — the total episode count is not available offline."
+    "watchState": "unseen = no progress entry with positionSec > 0 or completed; started = at least one entry touched and at least one not complete; seen = every known entry complete. The watchlist progress bar shows the position within the last watched episode, not the share of finished episodes — the total episode count is not available offline.",
+    "subtitle": "subtitlePref is a language code (DE, EN) or 'off'; subtitlesEnabled gates display. Both sync across devices. Subtitles apply only where a stream offers them — the preference is a wish, not a guarantee.",
+    "marking": "markEpisode / markSeason / markSeries set or clear completed manually, independent of playback. They use the same progress entries as automatic saving, so sync reads the same state. Marking a series touches only episodes Nori knows; unknown episodes are left alone rather than invented.",
+    "completionThreshold": 0.9,
+    "skipSegments": "SkipSegment carries start/end in seconds from episode start. Nori shows 'Intro überspringen' / 'Outro überspringen' only when a source provides reliable time marks — never a fixed 90-second guess. Missing marks mean no skip button."
   }
 }

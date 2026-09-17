@@ -10,7 +10,7 @@
 // Hier steht keine Netzwerklogik und kein OAuth. Nur Rechnung: aus mehreren
 // Ständen wird einer.
 
-import type { CatalogProvider, RecentItem, WatchProgress } from "./models.js";
+import type { CatalogProvider, CustomList, RecentItem, WatchProgress } from "./models.js";
 import { normalizeEpisodePath, progressKey, providerFromPath } from "./rules.js";
 import { LIBRARY_SCHEMA_VERSION, type LibraryBag } from "./library.js";
 
@@ -29,6 +29,8 @@ export const LIBRARY_SYNC_LIMITS = {
   maxRecents: 100,
   maxProgress: 20_000,
   maxTitles: 50_000,
+  /** Wie viele eigene Listen ein Gerätestand höchstens mitbringen darf. */
+  maxLists: 200,
   /** Wie weit ein Zeitstempel in der Zukunft liegen darf: 24 Stunden. */
   futureToleranceMs: 24 * 60 * 60 * 1000,
 } as const;
@@ -82,6 +84,8 @@ export const SYNC_PREFERENCES = [
   "preferredQuality",
   "autoplayNext",
   "playbackSpeed",
+  "subtitlePref",
+  "subtitlesEnabled",
   "provider",
   "scope",
 ] as const;
@@ -324,6 +328,28 @@ export function mergeLibrarySnapshots(snapshots: LibraryBag[], now: number): Lib
     out.titles[slug] = ranked.value;
   }
 
+  // --- Eigene Listen -------------------------------------------------------
+  //
+  // Je Liste gewinnt der juengste updatedAt; bei Gleichstand die groessere
+  // deviceId. Die Listeneintraege werden als Ganzes uebernommen — eine Liste
+  // ist eine geordnete Menge, und ein Mischen einzelner Eintraege zweier
+  // Geraete wuerde die Reihenfolge zerstoeren. Wer auf zwei Geraeten dieselbe
+  // Liste pflegt, gewinnt der juengste Stand.
+  const mergedLists = new Map<string, Ranked<CustomList>>();
+  for (const input of inputs) {
+    const deviceId = input.sync?.deviceId ?? "";
+    for (const [id, list] of Object.entries(input.lists ?? {})) {
+      if (!list || typeof list !== "object") continue;
+      const stamp = sanitizedStamp(list.updatedAt ?? 0, now);
+      mergedLists.set(id, prefer(mergedLists.get(id), { value: list, stamp, deviceId }));
+    }
+  }
+  out.lists = {};
+  for (const [id, ranked] of Array.from(mergedLists.entries())
+    .sort((a, b) => b[1].stamp - a[1].stamp)
+    .slice(0, LIBRARY_SYNC_LIMITS.maxLists)) {
+    out.lists[id] = ranked.value;
+  }
   out.modifiedAt = Math.max(0, ...inputs.map((input) => input.modifiedAt ?? 0));
   out.sync = {
     formatVersion: LIBRARY_SYNC_FORMAT_VERSION,
@@ -371,6 +397,8 @@ function applyPreference(preference: SyncPreference, source: LibraryBag, target:
     case "preferredQuality": target.preferredQuality = source.preferredQuality; break;
     case "autoplayNext": target.autoplayNext = source.autoplayNext; break;
     case "playbackSpeed": target.playbackSpeed = source.playbackSpeed; break;
+    case "subtitlePref": target.subtitlePref = source.subtitlePref; break;
+    case "subtitlesEnabled": target.subtitlesEnabled = source.subtitlesEnabled; break;
     case "provider": target.provider = source.provider; break;
     case "scope": target.scope = source.scope; break;
   }

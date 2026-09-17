@@ -8,9 +8,10 @@
 // (docs/google-drive-sync.md). Die Konfliktregeln liegen in `sync.ts`.
 
 import {
-  type CatalogProvider, type Episode, type LibraryScope, type RecentItem, type WatchProgress,
+  type CatalogProvider, type CustomList, type Episode, type LibraryScope, type RecentItem, type WatchProgress,
 } from "./models.js";
 import {
+  COMPLETION_THRESHOLD,
   isEpisodeComplete, normalizeEpisodePath, progressKey, providerFromPath, resumePosition,
 } from "./rules.js";
 import {
@@ -41,9 +42,27 @@ export interface LibraryBag {
   preferredQuality?: string;
   autoplayNext?: boolean;
   playbackSpeed?: number;
+  /**
+   * Bevorzugte Untertitelsprache, z. B. „DE“ oder „EN“. Leer oder „off“ heisst
+   * aus. Neu in Schema v7; äldre Dateien ohne das Feld dekodieren mit „off“.
+   * Nicht jeder Hoster liefert Untertitel — die Einstellung ist ein Wunsch, kein
+   * Anspruch, und greift nur, wo der Stream sie anbietet.
+   */
+  subtitlePref?: string;
+  /**
+   * Ob Untertitel angezeigt werden. Neu in Schema v7; Voreinstellung aus.
+   * `subtitlePref` ohne eingeschaltete Untertitel ist das saubere „aus“.
+   */
+  subtitlesEnabled?: boolean;
   provider?: string;
   scope?: string;
   favoriteSource?: Record<string, string>;
+  /**
+   * Eigene Listen neben der Merkliste. Neu; optional — eine Bibliothek ohne
+   * `lists` ist gültig. Die bestehende Merkliste (favorites) bleibt der
+   * Sonderfall und wird nicht zu einer dieser Listen.
+   */
+  lists?: Record<string, CustomList>;
   /**
    * Wann ein Titel gemerkt wurde, in Millisekunden seit 1970. Neu in v5;
    * ältere Dateien tragen das Feld nicht und bekommen es beim Dekodieren aus
@@ -63,6 +82,10 @@ export interface LibraryState {
   titles: Record<string, string>;
   progress: Record<string, WatchProgress>;
   favoriteSource: Record<string, CatalogProvider>;
+  /**
+   * Eigene Listen. Leeres Objekt heisst „keine eigenen Listen angelegt“.
+   */
+  lists: Record<string, CustomList>;
   favoriteAddedAt: Record<string, number>;
   langPref: string;
   hosterPref: string;
@@ -70,6 +93,8 @@ export interface LibraryState {
   preferredQuality: string;
   autoplayNext: boolean;
   playbackSpeed: number;
+  subtitlePref: string;
+  subtitlesEnabled: boolean;
   provider: CatalogProvider;
   scope: LibraryScope;
   modifiedAt: number;
@@ -94,6 +119,7 @@ export function emptyLibrary(): LibraryState {
     titles: {},
     progress: {},
     favoriteSource: {},
+    lists: {},
     favoriteAddedAt: {},
     langPref: "DE",
     hosterPref: "VOE",
@@ -101,6 +127,8 @@ export function emptyLibrary(): LibraryState {
     preferredQuality: "auto",
     autoplayNext: true,
     playbackSpeed: 1.0,
+    subtitlePref: "off",
+    subtitlesEnabled: false,
     provider: "aniworld",
     scope: "all",
     modifiedAt: 0,
@@ -129,6 +157,10 @@ export function decodeLibrary(raw: unknown): LibraryState {
   state.preferredQuality = bag.preferredQuality ?? "auto";
   state.autoplayNext = bag.autoplayNext ?? true;
   state.playbackSpeed = bag.playbackSpeed ?? 1.0;
+  // Untertitel-Einstellungen sind neu (Schema v7). Fehlen sie, bleibt die
+  // Voreinstellung „aus“ — ein bestehender Stand verändert sich dadurch nicht.
+  state.subtitlePref = bag.subtitlePref ?? "off";
+  state.subtitlesEnabled = bag.subtitlesEnabled ?? false;
   if (bag.provider && (PROVIDER_VALUES as string[]).includes(bag.provider)) {
     state.provider = bag.provider as CatalogProvider;
   }
@@ -145,6 +177,7 @@ export function decodeLibrary(raw: unknown): LibraryState {
       }
     }
   }
+  state.lists = decodeLists(isRecord(bag.lists) ? bag.lists : {});
   state.favoriteAddedAt = backfillAddedAt(
     isRecord(bag.favoriteAddedAt) ? (bag.favoriteAddedAt as Record<string, number>) : {},
     state.favorites,
@@ -251,9 +284,12 @@ export function encodeLibrary(state: LibraryState): LibraryBag {
     preferredQuality: state.preferredQuality,
     autoplayNext: state.autoplayNext,
     playbackSpeed: state.playbackSpeed,
+    subtitlePref: state.subtitlePref,
+    subtitlesEnabled: state.subtitlesEnabled,
     provider: state.provider,
     scope: state.scope,
     favoriteSource: state.favoriteSource,
+    lists: state.lists,
     favoriteAddedAt: state.favoriteAddedAt,
     sync: {
       formatVersion: LIBRARY_SYNC_FORMAT_VERSION,
@@ -301,7 +337,7 @@ export function upsertProgress(
   const path = normalizeEpisodePath(item.episodePath);
   const next: WatchProgress = { ...item, episodePath: path };
   next.provider = next.provider ?? providerFromPath(path);
-  if (next.durationSec >= 20 && next.positionSec >= next.durationSec * 0.9) next.completed = true;
+  if (next.durationSec >= 20 && next.positionSec >= next.durationSec * COMPLETION_THRESHOLD) next.completed = true;
   const out = { ...progress };
   out[progressKey(path, next.provider)] = next;
   // Reste älterer Schlüsselformen desselben Eintrags entfernen.
@@ -463,6 +499,183 @@ export function rememberRecent(
   const next = recents.filter((item) => item.slug !== slug);
   next.unshift({ slug, title, viewedAt: Date.now(), provider });
   return next.slice(0, 100);
+}
+
+// --- Manuelle Markierung „gesehen“ / „ungesehen“ ---------------------------
+//
+// Die automatische Vollendung setzt `completed` nur über den Fortschritt.
+// Diese Funktionen erlauben die bewusste Markierung — einzelne Folge, ganze
+// Staffel oder komplette Serie — ohne dass dafür wirklich abgespielt werden
+// muss. Sie nutzen denselben Speicher (progress-Einträge), damit der
+// Gerätabgleich denselben Stand liest wie das automatische Sichern.
+//
+// Für „gesehen“ wird ein Eintrag mit `completed: true` angelegt, der die
+// Metadaten der Folge trägt — Staffel, Nummer, Titel, Pfad. Damit erscheint
+// die Folge nicht mehr in „Weiterschauen“ und zählt in den Staffel-Statistiken.
+// Für „ungesehen“ wird der Eintrag entfernt; hat er nie bestanden, ändert
+// sich nichts.
+
+interface MarkContext {
+  readonly slug: string;
+  readonly title: string;
+  readonly season: string;
+  readonly provider: CatalogProvider;
+}
+
+function markEntry(
+  progress: Record<string, WatchProgress>,
+  ctx: MarkContext,
+  episode: Episode,
+  now: number,
+  completed: boolean,
+): Record<string, WatchProgress> {
+  const path = normalizeEpisodePath(episode.path);
+  const key = progressKey(path, ctx.provider);
+  if (completed) {
+    const existing = progress[key];
+    const out = { ...progress };
+    out[key] = {
+      ...existing,
+      slug: ctx.slug,
+      title: ctx.title,
+      season: ctx.season,
+      episode: episode.number,
+      episodePath: path,
+      germanTitle: episode.germanTitle,
+      englishTitle: episode.englishTitle,
+      // Eine manuelle Markierung trägt keine echte Position. completed allein
+      // reicht; durationSec 0 verhindert, dass isEpisodeComplete die Schwelle
+      // bemüht — die wäre bei Dauer 0 ohnehin nie erfüllt.
+      positionSec: existing?.positionSec ?? 0,
+      durationSec: existing?.durationSec ?? 0,
+      updatedAt: now,
+      completed: true,
+      provider: ctx.provider,
+    } as WatchProgress;
+    return out;
+  }
+  if (!(key in progress)) return progress;
+  const out = { ...progress };
+  delete out[key];
+  return out;
+}
+
+/** Eine einzelne Folge als gesehen oder ungesehen markieren. */
+export function markEpisode(
+  progress: Record<string, WatchProgress>,
+  ctx: MarkContext,
+  episode: Episode,
+  completed: boolean,
+  now = Date.now(),
+): Record<string, WatchProgress> {
+  return markEntry(progress, ctx, episode, now, completed);
+}
+
+/** Eine komplette Staffel als gesehen oder ungesehen markieren. */
+export function markSeason(
+  progress: Record<string, WatchProgress>,
+  ctx: MarkContext,
+  episodes: Episode[],
+  completed: boolean,
+  now = Date.now(),
+): Record<string, WatchProgress> {
+  let out = progress;
+  for (const episode of episodes) out = markEntry(out, ctx, episode, now, completed);
+  return out;
+}
+
+/**
+ * Eine komplette Serie als gesehen oder ungesehen markieren.
+ *
+ * `seasons` trägt je Staffel ihre Folgen. Nur Folgen, die Nori kennt, werden
+ * markiert — unbekannte bleiben unangetastet, statt für sie Einträge aus
+ * nichts zu erfinden.
+ */
+export function markSeries(
+  progress: Record<string, WatchProgress>,
+  ctx: Omit<MarkContext, "season">,
+  seasons: { season: string; episodes: Episode[] }[],
+  completed: boolean,
+  now = Date.now(),
+): Record<string, WatchProgress> {
+  let out = progress;
+  for (const { season, episodes } of seasons) {
+    out = markSeason(out, { ...ctx, season }, episodes, completed, now);
+  }
+  return out;
+}
+
+// --- Eigene Listen --------------------------------------------------------
+//
+// Neben der Merkliste. Die Architektur erlaubt mehrere Listen; die
+// bestehende Merkliste (favorites) bleibt unangetastet und ist kein
+// Mitglied dieser Sammlung. Die Listen sind optional und rückwärtskompatibel:
+// eine Bibliothek ohne `lists` ist gültig.
+
+/** Eine Roh-Listen-Abbildung auf gültige CustomList-Objekte normalisieren. */
+function decodeLists(raw: Record<string, unknown>): Record<string, CustomList> {
+  const out: Record<string, CustomList> = {};
+  for (const [id, value] of Object.entries(raw)) {
+    if (!isRecord(value)) continue;
+    const items = Array.isArray(value.items)
+      ? value.items.filter((item): item is string => typeof item === "string")
+      : [];
+    out[id] = {
+      id,
+      name: typeof value.name === "string" ? value.name : id,
+      items,
+      updatedAt: typeof value.updatedAt === "number" && Number.isFinite(value.updatedAt) ? value.updatedAt : 0,
+    };
+  }
+  return out;
+}
+
+/** Eine neue leere Liste oder eine bestehende mit gleichem Namen zurückgeben. */
+export function ensureList(
+  lists: Record<string, CustomList>,
+  id: string,
+  name: string,
+  now = Date.now(),
+): Record<string, CustomList> {
+  if (lists[id] && lists[id].name === name) return lists;
+  return { ...lists, [id]: lists[id] ? { ...lists[id], name, updatedAt: now } : { id, name, items: [], updatedAt: now } };
+}
+
+/** Einen Titel (provider|slug) zu einer Liste hinzufügen oder entfernen. */
+export function toggleListItem(
+  lists: Record<string, CustomList>,
+  id: string,
+  item: string,
+  now = Date.now(),
+): Record<string, CustomList> {
+  const list = lists[id];
+  if (!list) return lists;
+  const has = list.items.includes(item);
+  const items = has ? list.items.filter((entry) => entry !== item) : [item, ...list.items];
+  return { ...lists, [id]: { ...list, items, updatedAt: now } };
+}
+
+/** Eine Liste umbenennen. */
+export function renameList(
+  lists: Record<string, CustomList>,
+  id: string,
+  name: string,
+  now = Date.now(),
+): Record<string, CustomList> {
+  const list = lists[id];
+  if (!list || list.name === name) return lists;
+  return { ...lists, [id]: { ...list, name, updatedAt: now } };
+}
+
+/** Eine Liste löschen. */
+export function deleteList(
+  lists: Record<string, CustomList>,
+  id: string,
+): Record<string, CustomList> {
+  if (!(id in lists)) return lists;
+  const out = { ...lists };
+  delete out[id];
+  return out;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

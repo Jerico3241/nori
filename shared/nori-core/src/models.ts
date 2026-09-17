@@ -181,6 +181,72 @@ export interface WatchInfo {
   hosters: HosterOption[];
 }
 
+/**
+ * Eine benutzerdefinierte Liste — „Favoriten“, „Später ansehen“, „Isekai“ usw.
+ *
+ * Neben der Merkliste (favorites) kann ein Nutzer eigene Listen anlegen. Eine
+ * Liste ist eine geordnete Menge von Titeln, getrennt nach Quelle, weil derselbe
+ * Slug bei AniWorld und Serienstream zwei verschiedene Serien meinen kann.
+ *
+ * Die bestehende Merkliste bleibt unangetastet — sie ist keine dieser Listen,
+ * sondern der Sonderfall, den es schon immer gab. Neue Listen sind optional;
+ * eine Bibliothek ohne `lists` ist vollkommen gültig.
+ */
+export interface CustomList {
+  /** Stabile Kennung der Liste, z. B. „favorites“-ähnlich ohne Semantik. */
+  id: string;
+  /** Anzeigename, frei durch den Nutzer. */
+  name: string;
+  /** Geordnete Liste von `provider|slug`, zuletzt hinzugefügt vorn. */
+  items: string[];
+  /** Wann die Liste zuletzt verändert wurde, Millisekunden seit 1970. */
+  updatedAt: number;
+}
+
+/**
+ * Ein überspringbarer Abschnitt einer Folge — Intro, Outro oder Zusammenfassung.
+ *
+ * Die Zeitmarken in Sekunden ab Folgenbeginn. Nori zieht diese Daten nicht aus
+ * einer Vermutung, sondern nur, wenn eine Quelle sie verlässlich liefert. Fehlen
+ * zuverlässige Marken, bleibt das Feld leer und „Intro überspringen“ erscheint
+ * nicht — ein fester 90-Sekunden-Wert wäre geraten und bleibt aus.
+ *
+ * Die Schnittstelle ist so gebaut, dass ein Provider später Marken ergänzen
+ * kann, ohne dass der Player dafür geändert werden muss.
+ */
+export type SkipSegmentType = "intro" | "outro" | "recap";
+
+export interface SkipSegment {
+  type: SkipSegmentType;
+  start: number;
+  end: number;
+}
+
+/**
+ * Prüft, ob eine Position innerhalb eines überspringbaren Abschnitts liegt.
+ *
+ * Gibt das Segment zurück, dessen Bereich die Position umschließt, sonst null.
+ * Sprite nicht versorgt — die Zeitmarken stammen vom Provider und sind in
+ * Sekunden ab Folgenbeginn.
+ */
+export function activeSkipSegment(
+  segments: readonly SkipSegment[],
+  position: number,
+): SkipSegment | null {
+  for (const segment of segments) {
+    if (position >= segment.start && position < segment.end) return segment;
+  }
+  return null;
+}
+
+/** Das erste Segment eines Typs, falls vorhanden. */
+export function firstSkipSegment(
+  segments: readonly SkipSegment[],
+  type: SkipSegmentType,
+): SkipSegment | null {
+  return segments.find((segment) => segment.type === type) ?? null;
+}
+
 export type PlayKind = "hls" | "mp4";
 
 /**

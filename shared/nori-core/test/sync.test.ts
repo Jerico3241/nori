@@ -251,3 +251,30 @@ test("Ein leerer Fremdstand löscht nichts", () => {
     assert.equal(merged.recents.length, 1);
   }
 });
+
+test("Eigene Listen werden zusammengefuehrt, juengster Stand gewinnt", () => {
+  const a: LibraryBag = {
+    version: 6, modifiedAt: 1000, favorites: [], recents: [], titles: {}, progress: {},
+    sync: { deviceId: "deviceA", formatVersion: 1 },
+    lists: { isekai: { id: "isekai", name: "Isekai", items: ["aniworld|a"], updatedAt: 1000 } },
+  };
+  const b: LibraryBag = {
+    version: 6, modifiedAt: 2000, favorites: [], recents: [], titles: {}, progress: {},
+    sync: { deviceId: "deviceB", formatVersion: 1 },
+    lists: { isekai: { id: "isekai", name: "Isekai", items: ["aniworld|b", "aniworld|a"], updatedAt: 2000 } },
+  };
+  for (const reihenfolge of [[a, b], [b, a]]) {
+    const merged = mergeLibrarySnapshots(reihenfolge, 3000);
+    assert.equal(merged.lists?.isekai.items.length, 2);
+    assert.deepEqual(merged.lists?.isekai.items, ["aniworld|b", "aniworld|a"]);
+  }
+});
+
+test("Eigene Listen ohne Eintrag fallen beim Abgleich nicht rein", () => {
+  const a: LibraryBag = {
+    version: 6, modifiedAt: 1000, favorites: [], recents: [], titles: {}, progress: {},
+    sync: { deviceId: "deviceA", formatVersion: 1 },
+  };
+  const merged = mergeLibrarySnapshots([a], 1000);
+  assert.deepEqual(merged.lists, {});
+});

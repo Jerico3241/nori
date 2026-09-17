@@ -31,6 +31,8 @@ import {
 } from "@nori/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { activeSkipSegment } from "@nori/core";
+import { useSkipSegments } from "../hooks/useSkipSegments";
 
 import { Icon } from "../components/Icon";
 import { useBackHandler } from "../navigation/back";
@@ -99,6 +101,7 @@ export function PlayerPage() {
   const [countdown, setCountdown] = useState(settings.autoplayCountdown);
   const [scrubbing, setScrubbing] = useState(false);
   const [seekTarget, setSeekTarget] = useState(0);
+  const segments = useSkipSegments();
 
   const hideTimer = useRef<number | null>(null);
   const scrubTimer = useRef<number | null>(null);
@@ -344,6 +347,8 @@ export function PlayerPage() {
       const { library: current, episodePath: path, provider: source } = latest.current;
       setDuration(Number.isFinite(video.duration) ? video.duration : 0);
       video.playbackRate = current.state.playbackSpeed;
+      // Untertitel anwenden, sofern der Stream sie mitbringt. Die AniWorld-/Serienstream-Quellen liefern heute keine Untertitelspuren; dann gibt es hier keine Textspur und die Einstellung bleibt ein Wunsch. Einmalig: neu eintreffende Spuren werden vom `load`-Ereignis derselben Funktion erfasst.
+      applySubtitles(video, current.state);
       // Resume-Frage nur, wenn nicht schon eine Position mitgegeben wurde.
       if (!resumeAsked.current && startAt.current < 8) {
         resumeAsked.current = true;
@@ -374,12 +379,14 @@ export function PlayerPage() {
         go(-1);
       }
     };
+    const onLoad = () => applySubtitles(video, latest.current.library.state);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("progress", onTime);
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
+    video.textTracks.addEventListener("load", onLoad);
     return () => {
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("progress", onTime);
@@ -387,6 +394,7 @@ export function PlayerPage() {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
+      video.textTracks.removeEventListener("load", onLoad);
     };
   }, [saveNow]);
 
@@ -621,6 +629,18 @@ export function PlayerPage() {
   }, [info, lang, library.state.hosterPref, failedHosters]);
 
   const languages = useMemo(() => (info ? availableLanguages(info.hosters) : []), [info]);
+  // Überspringbarer Abschnitt an der aktuellen Position. Im aktuellen Stand
+  // ist `segments` immer leer — der Knopf erscheint nicht. Steht hier später
+  // ein Intro-Segment, schaltet der Knopf automatisch dazu.
+  const skipSegment = useMemo(
+    () => activeSkipSegment(segments, position),
+    [segments, position],
+  );
+  const skipTo = useCallback((end: number) => {
+    const video = videoRef.current;
+    if (video && Number.isFinite(end)) video.currentTime = end;
+    showChrome();
+  }, [showChrome]);
 
   return (
     <div className="player-page">
@@ -746,6 +766,8 @@ export function PlayerPage() {
         seekTarget={seekTarget}
         seekStep={settings.seekStep}
         hosterLabel={source ? `${source.hoster} · ${source.lang}` : lang}
+        skipSegment={skipSegment}
+        onSkip={() => skipSegment && skipTo(skipSegment.end)}
         previous={prevEp}
         next={nextEp}
         onTogglePlay={togglePlay}
@@ -777,6 +799,25 @@ export function PlayerPage() {
       />
     </div>
   );
+}
+
+/**
+ * Untertitelspuren an die Einstellung anpassen — nur, wenn der Stream
+ * welche mitbringt. Die AniWorld-/Serienstream-Quellen liefern heute keine
+ * Untertitelspuren; dann gibt es hier nichts zu schalten und die
+ * Einstellung bleibt ein Wunsch, der greift, sobald eine Spur erscheint.
+ */
+function applySubtitles(video: HTMLVideoElement, state: { subtitlesEnabled: boolean; subtitlePref: string }): void {
+  const tracks = video.textTracks;
+  const wanted = state.subtitlesEnabled && state.subtitlePref && state.subtitlePref !== "off";
+  for (let i = 0; i < tracks.length; i += 1) {
+    const track = tracks[i];
+    const match = Boolean(wanted) && (
+      track.language?.toLowerCase() === state.subtitlePref.toLowerCase()
+      || track.kind === "subtitles"
+    );
+    track.mode = match && wanted ? "showing" : "disabled";
+  }
 }
 
 function clock(seconds: number): string {

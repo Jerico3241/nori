@@ -9,7 +9,7 @@ export type IconName =
   | "history" | "settings" | "play" | "pause" | "back" | "forward" | "rewind"
   | "next" | "previous" | "layers" | "check" | "close" | "info" | "warning"
   | "more" | "chevronDown" | "chevronRight" | "filter" | "trash" | "refresh" | "cloud"
-  | "pulse" | "database" | "link";
+  | "pulse" | "database" | "link" | "mark";
 
 const PATHS: Record<IconName, string> = {
   home: "M3 11.2 12 4l9 7.2V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -38,6 +38,7 @@ const PATHS: Record<IconName, string> = {
   chevronRight: "M9 6l6 6-6 6",
   filter: "M3 5h18M6 12h12M10 19h4",
   trash: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13",
+  mark: "M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zM8 12.5l2.5 2.5L16 9.5",
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   cloud: "M7 18h10.5a4.5 4.5 0 0 0 .6-9A6 6 0 0 0 6.6 10 4 4 0 0 0 7 18z",
   pulse: "M3 12h4l2.5-6 5 12L17 12h4",

@@ -23,7 +23,8 @@
 
 import {
   continueWatching as coreContinueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
-  favoriteKey, findProgress, findProgressByEpisode, mergeLibrarySnapshots,
+  favoriteKey, findProgress, findProgressByEpisode, markEpisode, markSeason, markSeries,
+  mergeLibrarySnapshots,
   nextPlay as coreNextPlay, recentKey,
   rememberRecent, seasonStats as coreSeasonStats, upsertProgress,
   type CatalogProvider, type Episode, type LibraryBag, type LibraryScope, type LibraryState,
@@ -80,11 +81,27 @@ interface LibraryContextValue {
     episode: number; resumeAt: number; kind: "play" | "resume" | "next";
   };
   setPreference(patch: Partial<Pick<LibraryState,
-    "langPref" | "hosterPref" | "resumeEnabled" | "autoplayNext" | "playbackSpeed" | "provider" | "scope">>): void;
+    "langPref" | "hosterPref" | "resumeEnabled" | "autoplayNext" | "playbackSpeed" | "subtitlePref" | "subtitlesEnabled" | "preferredQuality" | "provider" | "scope">>): void;
   setScope(scope: LibraryScope): void;
   forgetRecent(slug: string): void;
   clearHistory(): void;
   clearProgress(): void;
+  /**
+   * Eine Folge manuell als gesehen oder ungesehen markieren — ohne Wiedergabe.
+   * Trägt denselben Speicher wie das automatische Sichern, damit der
+   * Gerätabgleich denselben Stand liest.
+   */
+  markEpisode(slug: string, title: string, season: string, episode: Episode, provider: CatalogProvider, watched: boolean): void;
+  /** Eine ganze Staffel als gesehen oder ungesehen markieren. */
+  markSeason(slug: string, title: string, season: string, episodes: Episode[], provider: CatalogProvider, watched: boolean): void;
+  /** Eine komplette Serie (alle bekannten Staffeln) als gesehen oder ungesehen markieren. */
+  markSeries(
+    slug: string,
+    title: string,
+    provider: CatalogProvider,
+    seasons: { season: string; episodes: Episode[] }[],
+    watched: boolean,
+  ): void;
   exportJSON(): string;
   /**
    * Einen fremden Stand **dazunehmen**, nicht ersetzen.
@@ -316,6 +333,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     })),
     clearProgress: () => patch((before) => ({
       ...before, progress: {}, progressClearedAt: Date.now(),
+    })),
+    markEpisode: (slug, title, season, episode, provider, watched) => patch((before) => ({
+      ...before,
+      progress: markEpisode(before.progress, { slug, title, season, provider }, episode, watched),
+      titles: title ? { ...before.titles, [slug]: title } : before.titles,
+    })),
+    markSeason: (slug, title, season, episodes, provider, watched) => patch((before) => ({
+      ...before,
+      progress: markSeason(before.progress, { slug, title, season, provider }, episodes, watched),
+      titles: title ? { ...before.titles, [slug]: title } : before.titles,
+    })),
+    markSeries: (slug, title, provider, seasons, watched) => patch((before) => ({
+      ...before,
+      progress: markSeries(before.progress, { slug, title, provider }, seasons, watched),
+      titles: title ? { ...before.titles, [slug]: title } : before.titles,
     })),
     exportJSON: () => JSON.stringify(encodeLibrary(current.current), null, 2),
     importJSON: (raw) => {

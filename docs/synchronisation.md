@@ -306,3 +306,20 @@ entfernt, nur weil aktuell Google Drive umgesetzt ist.
 Der Abgleich über mehrere Geräte benutzt daneben `LibrarySnapshotStore`, der
 viele Dateien kennt. Umgesetzt ist davon genau einer:
 `GoogleDriveSnapshotStore`. Dropbox, WebDAV und Git sind nicht gebaut.
+
+## Was seit v6 zusätzlich abgeglichen wird
+
+Die Schema-Version bleibt v6 — die neuen Felder sind optional und
+rückwärtskompatibel, alte Stände dekodieren weiter. Abgeglichen werden
+zusätzlich:
+
+- **Untertitel-Einstellungen** (`subtitlePref`, `subtitlesEnabled`) als
+  geteilte Präferenz je eigenem Zeitstempel. Greifen nur, wenn der Stream
+  Untertitelspuren mitbringt — die Quellen liefern heute keine.
+- **Eigene Listen** (`lists`, je `CustomList`). Neben der Merkliste können
+  Nutzer eigene Listen anlegen; je Liste gewinnt der jüngste `updatedAt`, bei
+  Gleichstand die größere Gerätekennung. Die bestehende Merkliste ist kein
+  Mitglied dieser Sammlung und bleibt unangetastet.
+- **Manuelle Markierungen** gelten nicht als eigenes Feld — sie schreiben
+  `completed` in denselben Fortschrittsspeicher wie das automatische Sichern
+  und werden damit über dieselbe `provider|episodePath`-Regel abgeglichen.
