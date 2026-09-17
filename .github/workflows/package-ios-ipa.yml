@@ -158,7 +158,7 @@ jobs:
           name: ${{ steps.meta.outputs.name }}
           path: ${{ steps.pack.outputs.path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
       - name: Lokale Google-Konfiguration entfernen
         if: always()
