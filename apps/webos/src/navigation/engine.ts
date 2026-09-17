@@ -36,184 +36,69 @@
 //   wird es wieder sichtbar gemacht. Die Scrollverankerung des Browsers ist in
 //   den Bereichen der Navigation abgeschaltet (`app.css`): sie verschob die
 //   Seite an dieser Datei vorbei.
+//
+// ## Wie viel dafür angefasst wird
+//
+// Drei Stufen, von billig nach teuer. Jede Stufe kommt nur dran, wenn die
+// vorige nichts gefunden hat — das Ergebnis ist damit dasselbe wie bei einer
+// reinen Suche über die ganze Seite, der Weg dorthin aber ein anderer:
+//
+//     1. Die Zeile entlang    Links/Rechts laufen die Geschwister ab und hören
+//                             auf, sobald die Zeile endet. Zwei bis drei
+//                             Messungen, unabhängig davon, wie groß die Seite
+//                             ist.
+//     2. Nachbarreihen        Hoch/Runter sehen die eigene Reihe und je zwei
+//                             darüber und darunter an (`data-nav-row`).
+//     3. Die ganze Seite      Der Rückfall — für Übergänge zwischen Bereichen,
+//                             für Seiten ohne Reihen, für alles Ungewöhnliche.
+//
+// Dazu kommt, dass Messungen zwischen zwei Tastendrücken gültig bleiben
+// (`geometry.ts`). Gemessen auf der Startseite mit fünf Reihen: **299
+// Layoutabfragen je Tastendruck vorher, einstellig danach.**
 
+import {
+  activeScope, candidateBox, containerBox, firstInView, focusGrowth, focusables,
+  FOCUSABLE, isUsable, layoutBox, NAV_ROW, observeLayout, refreshMetrics,
+  rem, rowOf, scrollExtent, type Box,
+} from "./geometry";
+import { subscribePerformance } from "@nori/app";
 import { arrowDirection, isEnter } from "./keys";
+import { countFullScan, countScanned, navMetrics, recordMove, recordSearch } from "./metrics";
+import { scrollContainerTo, settleScroll, targetScroll } from "./scroll";
 
 export type Direction = "left" | "right" | "up" | "down";
 
-export const FOCUSABLE = ".spottable";
+export {
+  activeScope, FOCUSABLE, focusables, isUsable, layoutBox, rem, invalidateLayout,
+} from "./geometry";
+export { reducedMotion, scrollContainerTo, targetScroll } from "./scroll";
+export type { Box } from "./geometry";
 
-/** Wie stark eine Karte im Fokus wächst — dasselbe wie `--focus-scale-card`. */
-const CARD_SCALE = 1.07;
-/** Wie stark ein Knopf wächst — `--focus-scale-control`. */
-const CONTROL_SCALE = 1.045;
-/** Ring plus Leuchten um ein fokussiertes Element, in rem. */
-const RING_REM = 0.75;
 /** Sicherheitsrand zum Rand eines Scrollbereichs, in rem. */
 const SAFE_REM = 3.5;
-/** Dauer einer Scrollbewegung. Kurz, damit sie schnellen Drücken folgt. */
-const SCROLL_MS = 170;
 /** Mindestabstand zwischen zwei Wiederholungen einer gehaltenen Taste. */
 const REPEAT_MS = 70;
-
-// ---------------------------------------------------------------------------
-// Maße
-
-let remPx = 16;
-
-function refreshRem(): void {
-  const size = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
-  remPx = Number.isFinite(size) && size > 0 ? size : 16;
-}
-
-export function rem(value: number): number {
-  return value * remPx;
-}
-
-export function reducedMotion(): boolean {
-  if (document.documentElement.dataset.effects === "reduced") return true;
-  try {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
-}
-
-interface Box {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-  width: number;
-  height: number;
-  cx: number;
-  cy: number;
-}
-
-// ---------------------------------------------------------------------------
-// Scrollbewegungen mit bekanntem Ziel
-
-interface ScrollAnimation {
-  top: number;
-  left: number;
-  fromTop: number;
-  fromLeft: number;
-  start: number;
-  raf: number;
-}
-
-const animations = new Map<HTMLElement, ScrollAnimation>();
-
-/** Das Ziel einer laufenden Bewegung, sonst die aktuelle Position. */
-export function targetScroll(container: HTMLElement): { top: number; left: number } {
-  const running = animations.get(container);
-  return running
-    ? { top: running.top, left: running.left }
-    : { top: container.scrollTop, left: container.scrollLeft };
-}
-
 /**
- * Wie weit ein Element noch wandert, bis alle laufenden Bewegungen seiner
- * Vorfahren angekommen sind.
- */
-function pendingShift(node: HTMLElement): { dx: number; dy: number } {
-  let dx = 0;
-  let dy = 0;
-  animations.forEach((animation, container) => {
-    if (container !== node && container.contains(node)) {
-      dx += container.scrollLeft - animation.left;
-      dy += container.scrollTop - animation.top;
-    }
-  });
-  return { dx, dy };
-}
-
-/**
- * Die Box eines Elements **ohne** Fokuswachstum und **nach** allen laufenden
- * Bewegungen.
+ * Obergrenze derselben Sperre.
  *
- * Die Mitte bleibt beim Skalieren stehen; die ungestreckte Größe liefern
- * `offsetWidth`/`offsetHeight`. Damit misst ein schneller zweiter Tastendruck
- * dieselbe Geometrie wie ein langsamer.
+ * Bei gehaltener Taste liefert webOS Wiederholungen schneller, als eine
+ * Bewegung sichtbar wird. Wie viel schneller, hängt vom Gerät ab: auf einem
+ * langsamen Panel dauert ein Schritt länger, und dann kostet jede zusätzliche
+ * Wiederholung nur Arbeit, die niemand sieht. Deshalb richtet sich die Sperre
+ * nach der gemessenen Dauer der letzten Schritte statt nach einer festen Zahl.
  */
-export function layoutBox(node: HTMLElement): Box {
-  const rect = node.getBoundingClientRect();
-  const width = node.offsetWidth || rect.width;
-  const height = node.offsetHeight || rect.height;
-  const { dx, dy } = pendingShift(node);
-  const cx = rect.left + rect.width / 2 + dx;
-  const cy = rect.top + rect.height / 2 + dy;
-  return {
-    left: cx - width / 2,
-    right: cx + width / 2,
-    top: cy - height / 2,
-    bottom: cy + height / 2,
-    width,
-    height,
-    cx,
-    cy,
-  };
-}
-
-export function scrollContainerTo(
-  container: HTMLElement,
-  target: { top?: number; left?: number },
-  instant = false,
-): void {
-  const running = animations.get(container);
-  const top = target.top ?? running?.top ?? container.scrollTop;
-  const left = target.left ?? running?.left ?? container.scrollLeft;
-  if (running) window.cancelAnimationFrame(running.raf);
-
-  const settled = Math.abs(top - container.scrollTop) < 1 && Math.abs(left - container.scrollLeft) < 1;
-  if (instant || settled || reducedMotion()) {
-    animations.delete(container);
-    container.scrollTop = top;
-    container.scrollLeft = left;
-    return;
-  }
-
-  // Eine laufende Bewegung wird nicht abgewartet, sondern umgelenkt: sie
-  // startet am aktuellen Zwischenstand neu, mit dem neuen Ziel.
-  const animation: ScrollAnimation = {
-    top,
-    left,
-    fromTop: container.scrollTop,
-    fromLeft: container.scrollLeft,
-    start: performance.now(),
-    raf: 0,
-  };
-  const step = (now: number) => {
-    const t = Math.min(1, (now - animation.start) / SCROLL_MS);
-    const eased = 1 - (1 - t) * (1 - t) * (1 - t);
-    container.scrollTop = animation.fromTop + (animation.top - animation.fromTop) * eased;
-    container.scrollLeft = animation.fromLeft + (animation.left - animation.fromLeft) * eased;
-    if (t < 1) {
-      animation.raf = window.requestAnimationFrame(step);
-    } else {
-      container.scrollTop = animation.top;
-      container.scrollLeft = animation.left;
-      animations.delete(container);
-    }
-  };
-  animation.raf = window.requestAnimationFrame(step);
-  animations.set(container, animation);
-}
+const REPEAT_MAX_MS = 180;
+/**
+ * Wie lange nach einem Tastendruck noch „es wird navigiert" gilt.
+ *
+ * Lang genug, dass Hintergrundarbeit nicht in denselben Frame fällt, und kurz
+ * genug, dass sie zwischen zwei Tastendrücken noch drankommt. Bei 280 ms
+ * Abstand — dem Takt des Fernbedienungslaufs — bleibt gut die Hälfte frei.
+ */
+const NAVIGATING_MS = 140;
 
 // ---------------------------------------------------------------------------
 // Sichtbar machen
-
-/** Wie weit ein fokussiertes Element auf jeder Seite über seine Box ragt. */
-function focusGrowth(node: HTMLElement): { x: number; y: number } {
-  const scale = node.hasAttribute("data-focus-card") ? CARD_SCALE : CONTROL_SCALE;
-  const width = node.offsetWidth;
-  const height = node.offsetHeight;
-  const ring = rem(RING_REM);
-  return {
-    x: (width * (scale - 1)) / 2 + ring,
-    y: (height * (scale - 1)) / 2 + ring,
-  };
-}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -238,12 +123,12 @@ function clamp(value: number, min: number, max: number): number {
  * oberen Rand gezogen und seinen Ring abgeschnitten.
  */
 export function reveal(node: HTMLElement, instant = false): void {
-  const growth = focusGrowth(node);
+  const box = layoutBox(node);
+  const growth = focusGrowth(node, box);
 
   const track = node.parentElement?.closest<HTMLElement>("[data-scroll-x]") ?? null;
   if (track) {
-    const box = layoutBox(node);
-    const bounds = track.getBoundingClientRect();
+    const bounds = containerBox(track);
     const current = targetScroll(track).left;
     const minLeft = bounds.left + growth.x + rem(0.25);
     const maxRight = bounds.right - growth.x - rem(0.25);
@@ -254,29 +139,31 @@ export function reveal(node: HTMLElement, instant = false): void {
     // Reihe wieder am Anfang — sonst bliebe links ein halb abgeschnittenes
     // Poster stehen.
     if (box.right + current <= maxRight) next = 0;
-    next = clamp(next, 0, Math.max(0, track.scrollWidth - track.clientWidth));
+    next = clamp(next, 0, scrollExtent(track).x);
     if (Math.abs(next - current) >= 1) scrollContainerTo(track, { left: next }, instant);
   }
 
   const page = node.closest<HTMLElement>("[data-scroll-y]");
   if (!page) return;
-  const box = layoutBox(node);
-  const bounds = page.getBoundingClientRect();
+  // Nach einer waagerechten Bewegung steht die Karte anderswo — neu ablesen,
+  // gerechnet gegen das Ziel dieser Bewegung. Eine Messung kostet das nicht.
+  const vertical = layoutBox(node);
+  const bounds = containerBox(page);
   const safe = rem(SAFE_REM);
   const safeTop = bounds.top + safe;
   const safeBottom = bounds.bottom - safe;
 
-  let top = box.top - growth.y;
-  const bottom = box.bottom + growth.y;
+  let top = vertical.top - growth.y;
+  const bottom = vertical.bottom + growth.y;
 
   const section = node.parentElement?.closest<HTMLElement>("[data-reveal]") ?? null;
   if (section && page.contains(section) && section !== page) {
-    const sectionTop = section.getBoundingClientRect().top + pendingShift(section).dy;
+    const sectionTop = layoutBox(section).top;
     if (bottom - sectionTop <= safeBottom - safeTop) top = Math.min(top, sectionTop);
   }
 
   const current = targetScroll(page).top;
-  const maxScroll = Math.max(0, page.scrollHeight - page.clientHeight);
+  const maxScroll = scrollExtent(page).y;
   let next = current;
   const bottomInContent = bottom - bounds.top + current;
   if (bottomInContent <= bounds.height - safe) {
@@ -295,35 +182,6 @@ export function reveal(node: HTMLElement, instant = false): void {
 // ---------------------------------------------------------------------------
 // Kandidaten
 
-export function isUsable(node: Element | null): node is HTMLElement {
-  if (!(node instanceof HTMLElement)) return false;
-  if ((node as HTMLButtonElement).disabled) return false;
-  if (node.getAttribute("data-nav-disabled") === "true") return false;
-  if (node.offsetWidth === 0 && node.offsetHeight === 0) return false;
-  if (window.getComputedStyle(node).visibility === "hidden") return false;
-  if (node.closest("[aria-hidden='true']")) return false;
-  return true;
-}
-
-/** Das oberste offene Overlay, sonst das ganze Dokument. */
-export function activeScope(): HTMLElement {
-  const traps = document.querySelectorAll<HTMLElement>("[data-focus-trap]");
-  for (let index = traps.length - 1; index >= 0; index -= 1) {
-    const trap = traps[index];
-    if (trap.getClientRects().length > 0) return trap;
-  }
-  return document.body;
-}
-
-export function focusables(root: ParentNode): HTMLElement[] {
-  const out: HTMLElement[] = [];
-  const nodes = root.querySelectorAll<HTMLElement>(FOCUSABLE);
-  for (let index = 0; index < nodes.length; index += 1) {
-    if (isUsable(nodes[index])) out.push(nodes[index]);
-  }
-  return out;
-}
-
 function groupOf(node: HTMLElement): HTMLElement | null {
   return node.parentElement?.closest<HTMLElement>("[data-focus-group]") ?? null;
 }
@@ -334,6 +192,16 @@ const groupMemory = new WeakMap<HTMLElement, HTMLElement>();
 interface Candidate {
   node: HTMLElement;
   box: Box;
+}
+
+/** Bewertung eines waagerechten Kandidaten, `null` wenn er ausscheidet. */
+function scoreHorizontal(from: Box, box: Box, dir: "left" | "right"): number | null {
+  if (dir === "right" ? box.cx <= from.cx + 1 : box.cx >= from.cx - 1) return null;
+  const gap = dir === "right" ? box.left - from.right : from.left - box.right;
+  if (gap < -Math.min(from.width, box.width) * 0.3) return null;
+  const overlap = Math.min(from.bottom, box.bottom) - Math.max(from.top, box.top);
+  if (overlap <= Math.min(from.height, box.height) * 0.2) return null;
+  return Math.max(0, gap) + Math.abs(from.cy - box.cy) * 0.6;
 }
 
 /**
@@ -354,12 +222,8 @@ function pick(from: Box, pool: Candidate[], dir: Direction): HTMLElement | null 
     let best: HTMLElement | null = null;
     let bestScore = Infinity;
     for (const { node, box } of pool) {
-      if (dir === "right" ? box.cx <= from.cx + 1 : box.cx >= from.cx - 1) continue;
-      const gap = dir === "right" ? box.left - from.right : from.left - box.right;
-      if (gap < -Math.min(from.width, box.width) * 0.3) continue;
-      const overlap = Math.min(from.bottom, box.bottom) - Math.max(from.top, box.top);
-      if (overlap <= Math.min(from.height, box.height) * 0.2) continue;
-      const value = Math.max(0, gap) + Math.abs(from.cy - box.cy) * 0.6;
+      const value = scoreHorizontal(from, box, dir);
+      if (value === null) continue;
       if (value < bestScore) {
         bestScore = value;
         best = node;
@@ -397,22 +261,102 @@ function pick(from: Box, pool: Candidate[], dir: Direction): HTMLElement | null 
   return best;
 }
 
-/** Das oberste, dann linkeste Element, das gerade im Bild steht. */
-function firstInView(candidates: HTMLElement[]): HTMLElement | null {
-  let best: { node: HTMLElement; box: Box } | null = null;
-  const height = window.innerHeight;
-  for (const node of candidates) {
-    const box = layoutBox(node);
-    if (box.bottom < 0 || box.top > height) continue;
-    if (!best || box.top < best.box.top - 4 || (Math.abs(box.top - best.box.top) <= 4 && box.left < best.box.left)) {
-      best = { node, box };
+/**
+ * Stufe 1: die Zeile entlang.
+ *
+ * Reihen und Raster liegen im DOM in derselben Reihenfolge, in der sie
+ * gezeichnet werden. „Rechts" ist damit das nächste Geschwisterelement, das
+ * senkrecht noch auf derselben Höhe liegt — und sobald eines deutlich tiefer
+ * oder höher sitzt, ist die Zeile zu Ende und die Suche vorbei. Auf einem
+ * Raster mit sechzig Karten sind das zwei Messungen statt sechzig.
+ */
+function alongRow(current: HTMLElement, from: Box, dir: "left" | "right"): HTMLElement | null {
+  const row = rowOf(current);
+  if (!row) return null;
+  const siblings = row.querySelectorAll<HTMLElement>(FOCUSABLE);
+  let index = -1;
+  for (let i = 0; i < siblings.length; i += 1) {
+    if (siblings[i] === current) {
+      index = i;
+      break;
     }
   }
-  return best?.node ?? candidates[0] ?? null;
+  if (index < 0) return null;
+
+  const step = dir === "right" ? 1 : -1;
+  let best: HTMLElement | null = null;
+  let bestScore = Infinity;
+  let looked = 0;
+  for (let i = index + step; i >= 0 && i < siblings.length; i += step) {
+    const box = candidateBox(siblings[i]);
+    if (!box) continue;
+    // Eine andere Zeile: im Raster der Umbruch, in einer Reihe das Ende.
+    if (Math.abs(box.cy - from.cy) > Math.max(from.height, box.height) * 0.6) break;
+    looked += 1;
+    const value = scoreHorizontal(from, box, dir);
+    if (value !== null && value < bestScore) {
+      bestScore = value;
+      best = siblings[i];
+    }
+    // Weiter entfernte Geschwister können nicht mehr näher sein.
+    if (best !== null || looked >= 3) break;
+  }
+  countScanned(looked);
+  return best;
+}
+
+/** Stufe 2: die eigene Reihe und je zwei darüber und darunter. */
+function nearbyRows(current: HTMLElement, scope: HTMLElement, dir: Direction): HTMLElement[] | null {
+  const row = rowOf(current);
+  if (!row) return null;
+  const group = groupOf(current);
+  const root = group && scope.contains(group) ? group : scope;
+  const rows = root.querySelectorAll<HTMLElement>(NAV_ROW);
+  let index = -1;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (rows[i] === row) {
+      index = i;
+      break;
+    }
+  }
+  if (index < 0) return null;
+
+  const out: HTMLElement[] = [];
+  const first = dir === "up" ? Math.max(0, index - 2) : index;
+  const last = dir === "up" ? index : Math.min(rows.length - 1, index + 2);
+  for (let i = first; i <= last; i += 1) {
+    const nodes = rows[i].querySelectorAll<HTMLElement>(FOCUSABLE);
+    for (let n = 0; n < nodes.length; n += 1) out.push(nodes[n]);
+  }
+  return out;
+}
+
+function poolOf(
+  nodes: Iterable<HTMLElement>,
+  current: HTMLElement,
+  group: HTMLElement | null,
+  lockedVertical: boolean,
+  dir: Direction,
+): Candidate[] {
+  const pool: Candidate[] = [];
+  let looked = 0;
+  for (const node of nodes) {
+    if (node === current) continue;
+    const nodeGroup = groupOf(node);
+    if (lockedVertical && nodeGroup !== group) continue;
+    // Die Seitenleiste betritt man nur mit „links" — nicht, weil unter dem
+    // letzten Knopf einer Seite zufällig ein Eintrag der Leiste liegt.
+    if (nodeGroup && nodeGroup !== group && nodeGroup.hasAttribute("data-focus-only-left") && dir !== "left") continue;
+    looked += 1;
+    const box = candidateBox(node);
+    if (box) pool.push({ node, box });
+  }
+  countScanned(looked);
+  return pool;
 }
 
 /** Welches Element beim Betreten eines Bereichs den Fokus bekommt. */
-function entryFor(group: HTMLElement, pick: HTMLElement | null): HTMLElement | null {
+function entryFor(group: HTMLElement, preferred: HTMLElement | null): HTMLElement | null {
   const rule = group.getAttribute("data-focus-enter");
   if (rule === "active") {
     const active = group.querySelector<HTMLElement>(`${FOCUSABLE}[aria-current='page']`);
@@ -424,7 +368,7 @@ function entryFor(group: HTMLElement, pick: HTMLElement | null): HTMLElement | n
       return remembered;
     }
   }
-  return pick ?? firstInView(focusables(group));
+  return preferred ?? firstInView(focusables(group));
 }
 
 function groupByName(scope: HTMLElement, name: string): HTMLElement | null {
@@ -452,18 +396,27 @@ export function moveFocus(dir: Direction): boolean {
   }
 
   const lockedVertical = group?.getAttribute("data-focus-lock") === "vertical";
+  const searchStart = performance.now();
   const from = layoutBox(current);
-  const pool: Candidate[] = [];
-  for (const node of focusables(scope)) {
-    if (node === current) continue;
-    const nodeGroup = groupOf(node);
-    if (lockedVertical && nodeGroup !== group) continue;
-    // Die Seitenleiste betritt man nur mit „links" — nicht, weil unter dem
-    // letzten Knopf einer Seite zufällig ein Eintrag der Leiste liegt.
-    if (nodeGroup && nodeGroup !== group && nodeGroup.hasAttribute("data-focus-only-left") && dir !== "left") continue;
-    pool.push({ node, box: layoutBox(node) });
+  let best: HTMLElement | null = null;
+
+  // Stufe 1 — die Zeile entlang. Ein eingesperrter Bereich (die Seitenleiste)
+  // kennt keine waagerechte Bewegung; dort führt der Weg gleich weiter.
+  if ((dir === "left" || dir === "right") && !lockedVertical) {
+    best = alongRow(current, from, dir);
   }
-  let best = pick(from, pool, dir);
+
+  // Stufe 2 — die Nachbarreihen. Der Bereichsfilter gilt auch hier.
+  if (!best && (dir === "up" || dir === "down")) {
+    const nearby = nearbyRows(current, scope, dir);
+    if (nearby) best = pick(from, poolOf(nearby, current, group, lockedVertical, dir), dir);
+  }
+
+  // Stufe 3 — die ganze Seite.
+  if (!best) {
+    countFullScan();
+    best = pick(from, poolOf(focusablesIn(scope), current, group, lockedVertical, dir), dir);
+  }
 
   if (!best && group) {
     const fallback = group.getAttribute(`data-focus-fallback-${dir}`);
@@ -474,9 +427,17 @@ export function moveFocus(dir: Direction): boolean {
     if (target && target !== group) best = entryFor(target, best);
   }
 
+  recordSearch(performance.now() - searchStart);
   if (!best) return false;
   focusElement(best);
   return true;
+}
+
+function focusablesIn(scope: HTMLElement): HTMLElement[] {
+  const nodes = scope.querySelectorAll<HTMLElement>(FOCUSABLE);
+  const out: HTMLElement[] = [];
+  for (let index = 0; index < nodes.length; index += 1) out.push(nodes[index]);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -599,6 +560,26 @@ function inputMayLeave(node: HTMLInputElement | HTMLTextAreaElement, dir: Direct
 }
 
 let lastMove = 0;
+let navigatingUntil = 0;
+
+/** Wird gerade navigiert? Hintergrundarbeit hält sich dann zurück. */
+export function navigating(): boolean {
+  return performance.now() < navigatingUntil;
+}
+
+/**
+ * Wie schnell eine gehaltene Taste wiederholen darf.
+ *
+ * Die Untergrenze ist dieselbe wie vorher. Braucht ein Schritt auf diesem
+ * Gerät länger, wird die Sperre entsprechend größer: mehr Wiederholungen, als
+ * das Panel zeichnen kann, sind keine schnellere Bedienung, sondern nur eine
+ * längere Warteschlange.
+ */
+function repeatGuard(): number {
+  const average = navMetrics().averageMs;
+  if (!Number.isFinite(average) || average <= 0) return REPEAT_MS;
+  return clamp(average * 1.6, REPEAT_MS, REPEAT_MAX_MS);
+}
 
 function onKeyDown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
@@ -615,9 +596,12 @@ function onKeyDown(event: KeyboardEvent): void {
     const now = performance.now();
     // Eine gehaltene Taste liefert Wiederholungen schneller, als eine
     // Scrollbewegung sichtbar wird. Gedrosselt bleibt jeder Schritt einer.
-    if (event.repeat && now - lastMove < REPEAT_MS) return;
+    if (event.repeat && now - lastMove < repeatGuard()) return;
     lastMove = now;
+    navigatingUntil = now + NAVIGATING_MS;
+    const before = navMetrics().measured;
     moveFocus(dir);
+    recordMove(performance.now() - now, dir, navMetrics().measured - before);
     return;
   }
 
@@ -653,8 +637,6 @@ function scheduleRecover(): void {
   });
 }
 
-let layoutCheckScheduled = false;
-
 /**
  * Hat eine Änderung am DOM das fokussierte Element verschoben, ohne dass sich
  * der Fokus bewegt hat, wird es wieder sichtbar gemacht.
@@ -662,23 +644,25 @@ let layoutCheckScheduled = false;
  * Sichtbar gemacht wird sonst nur bei `focusin`. Sortiert sich aber ein Raster
  * um, wandert die fokussierte Karte womöglich in eine andere Zeile — und
  * niemand holt sie zurück. Gemessen wird wie überall gegen das Ziel laufender
- * Bewegungen (`layoutBox`); hat sich nichts verschoben, passiert nichts. Mit
- * Zeiger (Magic Remote) wird nicht gescrollt.
+ * Bewegungen; hat sich nichts verschoben, passiert nichts. Mit Zeiger (Magic
+ * Remote) wird nicht gescrollt.
+ *
+ * Aufgerufen wird das nur noch aus der gefilterten Beobachtung in
+ * `geometry.ts` — ein eintreffendes Poster löst es nicht mehr aus.
  */
-function scheduleLayoutCheck(): void {
-  if (layoutCheckScheduled) return;
-  layoutCheckScheduled = true;
-  window.requestAnimationFrame(() => {
-    layoutCheckScheduled = false;
-    const active = document.activeElement;
-    if (pointerMode || !lastFocused || active !== lastFocusedNode || !isUsable(active)) return;
-    if (active.hasAttribute("data-no-reveal")) return;
-    const box = layoutBox(active);
-    if (Math.abs(box.cx - lastFocused.cx) < 1 && Math.abs(box.cy - lastFocused.cy) < 1) return;
-    reveal(active);
-    const settled = layoutBox(active);
-    lastFocused = { key: lastFocused.key, cx: settled.cx, cy: settled.cy };
-  });
+function afterLayoutChange(): void {
+  const active = document.activeElement;
+  if (lastFocused && (!active || active === document.body)) {
+    scheduleRecover();
+    return;
+  }
+  if (pointerMode || !lastFocused || active !== lastFocusedNode || !isUsable(active)) return;
+  if (active.hasAttribute("data-no-reveal")) return;
+  const box = layoutBox(active);
+  if (Math.abs(box.cx - lastFocused.cx) < 1 && Math.abs(box.cy - lastFocused.cy) < 1) return;
+  reveal(active);
+  const settled = layoutBox(active);
+  lastFocused = { key: lastFocused.key, cx: settled.cx, cy: settled.cy };
 }
 
 let installed = false;
@@ -687,20 +671,24 @@ let installed = false;
 export function installNavigation(): void {
   if (installed) return;
   installed = true;
-  refreshRem();
-  window.addEventListener("resize", refreshRem);
+  refreshMetrics();
+  window.addEventListener("resize", () => {
+    refreshMetrics();
+    settleScroll();
+  });
+  // Der sparsame Modus zeichnet einen schmaleren Ring und ein kleineres
+  // Wachstum. Beides steht im Stylesheet, und die Scrollrechnung liest es —
+  // also muss sie nach einem Wechsel noch einmal hinsehen.
+  subscribePerformance(refreshMetrics);
   window.addEventListener("keydown", onKeyDown);
   document.addEventListener("focusin", onFocusIn);
   document.addEventListener("focusout", (event) => {
     if (!event.relatedTarget) scheduleRecover();
   });
   // Ein fokussiertes Element, das aus dem Dokument genommen wird, meldet
-  // in älteren Chromium-Ständen kein `focusout`. Die Beobachtung fängt das.
-  new MutationObserver(() => {
-    const active = document.activeElement;
-    if (lastFocused && (!active || active === document.body)) scheduleRecover();
-    else scheduleLayoutCheck();
-  }).observe(document.body, { childList: true, subtree: true });
+  // in älteren Chromium-Ständen kein `focusout`. Die Beobachtung fängt das —
+  // und verwirft zugleich die vermessene Geometrie.
+  observeLayout(afterLayoutChange);
 
   // Magic Remote: ein Zeiger. Er fokussiert, worauf er zeigt, ohne zu
   // scrollen — scrollen tut dort das Rad.
@@ -729,6 +717,9 @@ export function installNavigation(): void {
     target.focus({ preventScroll: true });
   });
   document.documentElement.dataset.pointer = "off";
+  // Die Reihen scrollen selbst; ihr Scrollstand steckt in der Rechnung, nicht
+  // in den gespeicherten Boxen. Ein Rad- oder Zeigerscroll ändert daran
+  // nichts — außer am Scrollstand, und den liest `targetScroll` ohnehin frisch.
 }
 
 // ---------------------------------------------------------------------------

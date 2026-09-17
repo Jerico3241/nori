@@ -47,14 +47,14 @@ AGENTS.md
 # Local data & packaged binaries (Releases, not git)
 Nori-Daten/
 *.ipa
-Nori-Portable-x64.zip
-Nori.exe
 *.app
 
 # webOS (apps/webos)
 *.ipk
 apps/webos/dist/
 apps/webos/test-shots/
+# Messwerte von `test/perf-bench.mjs` — die Zahlen stehen im Changelog.
+apps/webos/test-perf/
 shared/nori-core/dist/
 services/nori-api/dist/
 services/nori-api/dist-test/
@@ -74,3 +74,14 @@ native/*/build/
 
 # Screenshots des Fernbedienungslaufs (npm run test:tv)
 apps/webos/shot-*.png
+
+# Windows (apps/windows)
+#
+# `dist/` fängt die Oberfläche schon weiter oben. Hier der Rest: der
+# gebündelte Hauptprozess, die Pakete von electron-builder und was die
+# Desktop-Prüfung nebenbei anlegt. `build/` gehört ausdrücklich **nicht**
+# dazu — dort liegen die Symbole, und die sind Quelltext.
+apps/windows/dist-main/
+apps/windows/release/
+apps/windows/test-shots*/
+apps/windows/test-userdata/

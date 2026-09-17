@@ -169,22 +169,29 @@ export function hasBackdrop(candidate: TMDBCandidate): boolean {
  *
  * Nicht entfernt werden Ziffern: „86" und „91 Days" sind Titel, keine Zählung.
  */
+/** Kombinierende Zeichen — nach NFKD die abgetrennten Akzente. */
+const COMBINING = /\p{M}+/gu;
+/** Alles, was weder Buchstabe noch Ziffer ist, wird zu genau einem Leerzeichen. */
+const SEPARATORS = /[^\p{L}\p{N}]+/gu;
+
+/**
+ * Ein Titel auf seine Buchstaben und Ziffern zurückgeführt.
+ *
+ * Das Ergebnis ist unverändert; der Weg dorthin nicht. Vorher lief eine
+ * Schleife über jedes Zeichen mit **zwei** Ausdrücken darin — und ein
+ * Ausdruck in einer Schleife ist bei jedem Durchlauf ein neues Objekt. Im
+ * CPU-Profil des Fernsehers war diese eine Funktion der größte Einzelposten
+ * überhaupt: beim Aufbau der Startseite mehr als die Hälfte der gesamten
+ * Rechenzeit. Drei Durchläufe über die ganze Zeichenkette mit drei festen
+ * Ausdrücken machen dasselbe.
+ */
 export function normalizeTitle(raw: string): string {
-  const folded = raw.normalize("NFKD").toLowerCase();
-  let out = "";
-  let lastWasSpace = true;
-  for (const char of folded) {
-    // Kombinierende Zeichen sind nach NFKD die abgetrennten Akzente.
-    if (/\p{M}/u.test(char)) continue;
-    if (/[\p{L}\p{N}]/u.test(char)) {
-      out += char;
-      lastWasSpace = false;
-    } else if (!lastWasSpace) {
-      out += " ";
-      lastWasSpace = true;
-    }
-  }
-  return out.replace(/\s+$/, "");
+  return raw
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(COMBINING, "")
+    .replace(SEPARATORS, " ")
+    .trim();
 }
 
 /**
@@ -197,19 +204,26 @@ export function normalizeTitle(raw: string): string {
  *
  * Das Ergebnis ist bereits normalisiert.
  */
+/**
+ * Die Zusätze, die abgezogen werden. Fest, nicht je Aufruf neu gebaut.
+ *
+ * `String.replace` setzt `lastIndex` eines globalen Ausdrucks vor und nach dem
+ * Ersetzen zurück; geteilte Ausdrücke sind hier deshalb unbedenklich.
+ */
+const VARIANT_PATTERNS: RegExp[] = [
+  /\s*\b(19|20)\d{2}\b\s*$/gi,
+  /\s*\b(staffel|season|saison|serie|part|teil|cour)\s+\d+\b/gi,
+  /\s*\b\d+\s*(staffel|season)\b/gi,
+  // Der bestimmte Artikel gehört **in** den Ausdruck, nicht in eine zweite
+  // Zeile danach: „The Final Season" ohne ihn ergibt „… the" und findet
+  // nichts. Das war der gemessene Fall bei Shingeki no Kyojin.
+  /\s*\b(the\s+)?(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b/gi,
+  /\s*\b\d+(st|nd|rd|th)\s+season\b/gi,
+];
+
 export function stripVariants(raw: string): string {
   let text = normalizeTitle(raw);
-  const patterns: RegExp[] = [
-    /\s*\b(19|20)\d{2}\b\s*$/gi,
-    /\s*\b(staffel|season|saison|serie|part|teil|cour)\s+\d+\b/gi,
-    /\s*\b\d+\s*(staffel|season)\b/gi,
-    // Der bestimmte Artikel gehört **in** den Ausdruck, nicht in eine zweite
-    // Zeile danach: „The Final Season" ohne ihn ergibt „… the" und findet
-    // nichts. Das war der gemessene Fall bei Shingeki no Kyojin.
-    /\s*\b(the\s+)?(final|last|second|third|fourth|fifth|zweite|dritte|vierte)\s+(staffel|season)\b/gi,
-    /\s*\b\d+(st|nd|rd|th)\s+season\b/gi,
-  ];
-  for (const pattern of patterns) text = text.replace(pattern, " ");
+  for (const pattern of VARIANT_PATTERNS) text = text.replace(pattern, " ");
   return normalizeTitle(text);
 }
 

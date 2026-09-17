@@ -43,6 +43,73 @@ zum Rand und holt die Überschrift einer Reihe mit herein. Overlays sperren den
 Fokus ein und geben ihn beim Schließen an ihren Auslöser zurück. Fokus und
 Scrollstand werden je Ansicht gemerkt.
 
+Die Navigation besteht aus vier Dateien:
+
+| Datei | Aufgabe |
+| --- | --- |
+| `navigation/engine.ts` | Tasten, Zielwahl, Sichtbarmachen, Fokusrückholung |
+| `navigation/geometry.ts` | Boxen, Erreichbarkeit, Zwischenspeicher, DOM-Beobachtung |
+| `navigation/scroll.ts` | Scrollbewegungen mit bekanntem Ziel |
+| `navigation/metrics.ts` | Zähler und Zeiten, sichtbar unter *Mehr → Diagnose* |
+
+#### Wie viel ein Tastendruck anfasst
+
+Drei Stufen, von billig nach teuer; jede kommt nur dran, wenn die vorige
+nichts gefunden hat. Das Ergebnis ist dasselbe wie bei einer Suche über die
+ganze Seite, der Weg dorthin ein anderer:
+
+1. **Die Zeile entlang.** Links/Rechts laufen die Geschwister innerhalb von
+   `data-nav-row` ab und hören auf, sobald eines senkrecht deutlich versetzt
+   liegt — im Raster der Zeilenumbruch, in einer Reihe das Ende. Zwei bis drei
+   Messungen, unabhängig von der Seitengröße.
+2. **Nachbarreihen.** Hoch/Runter sehen die eigene Reihe und je zwei darüber
+   und darunter an.
+3. **Die ganze Seite.** Der Rückfall — Bereichswechsel, Seiten ohne Reihen,
+   alles Ungewöhnliche.
+
+`data-nav-row` steht an den Behältern, die eine Zeile bilden: `.rail-inner`,
+`.catalog-grid`, `.episode-grid`, `.chips-inner`, `.top-actions`,
+`.hero-actions`, `.nav-list`, `.setting-card`, `.weekstrip`, `.month-grid`,
+`.release-list`, `.season-row`, `.menu-list`.
+
+#### Geometriespeicher
+
+Gemessene Boxen bleiben zwischen zwei Tastendrücken gültig. Gespeichert wird
+nicht die Position auf dem Bildschirm, sondern die im Inhalt — Bildschirmmitte
+plus Scrollstand aller Scrollbereiche darüber. Die ist gegen Scrollen
+unempfindlich; zurückgerechnet wird gegen das **Ziel** laufender Bewegungen,
+nicht gegen deren Zwischenstand.
+
+Verworfen wird bei jeder DOM-Änderung, die etwas verschieben kann — das
+Verwerfen selbst erhöht nur eine Zahl, gemessen wird erst wieder auf Nachfrage.
+Ausgenommen ist genau eine Sorte Änderung, und die ist im Markup angeschrieben:
+alles unterhalb von `data-nav-quiet`. Das sind die Bildflächen (`.card-art`,
+`.ep-thumb`, `.hero-media`). Ihre Größe steht im Stylesheet; ein eintreffendes
+Bild, ein verschwindender Platzhalter, ein wachsender Fortschrittsbalken
+verschiebt dort nichts. **Nicht** ausgenommen ist eine Unterzeile, die nach
+einem TMDB-Treffer unter einer Kachel erscheint — die ändert die Kartenhöhe.
+
+Auch der Scrollstand selbst wird gemerkt: `scrollTop` und `scrollLeft` sind
+Layoutabfragen, und geschrieben wird bei jedem Tastendruck. Gelesen werden sie
+nur noch beim ersten Mal und im `scroll`-Ereignis, wo das Layout ohnehin fertig
+ist.
+
+Gemessen auf der Startseite mit fünf Reihen, CPU sechsfach gedrosselt:
+
+| | vorher | nachher |
+| --- | ---: | ---: |
+| Layoutabfragen je Tastendruck | 299 | 18 |
+| `getComputedStyle` je Tastendruck | 86 | 6 |
+| Zielsuche (Median) | — | 0,9 ms |
+
+#### Wiederholrate
+
+Eine gehaltene Taste liefert Wiederholungen schneller, als eine Bewegung
+sichtbar wird. Die Sperre dazwischen richtet sich nach der **gemessenen** Dauer
+der letzten Schritte (70 bis 180 ms) statt nach einer festen Zahl: mehr
+Wiederholungen, als das Panel zeichnen kann, sind keine schnellere Bedienung,
+sondern eine längere Warteschlange.
+
 Die Scrollverankerung des Browsers ist in diesen Bereichen abgeschaltet
 (`overflow-anchor: none` an `data-scroll-y` und `data-scroll-x`). Sortiert sich
 ein Raster um — im Katalog, sobald TMDB-Treffer eintreffen —, verschob Chromium
@@ -65,14 +132,140 @@ von einer Detailseite bleibt die Ansicht, damit der gemerkte Fokus dieselbe Kart
 an derselben Stelle trifft. Die Regel steht als reine Funktion im Kern
 (`shared/nori-core/src/catalog-order.ts`).
 
+### Artwork: welche Auflösung wohin
+
+`src/services/images.ts` entscheidet, welche TMDB-Stufe eine Stelle bekommt.
+Gerechnet wird die gezeichnete CSS-Breite mal einem Pixelverhältnis — und
+dieses Verhältnis ist **nicht** einfach `devicePixelRatio`.
+
+Ein webOS-Paket mit `"resolution": "1920x1080"` zeichnet in 1920 × 1080
+Bildpunkten; den Rest erledigt der Skalierer des Panels. Viele 4K-Geräte melden
+trotzdem `devicePixelRatio === 2`, weil sie das Panel beschreiben und nicht die
+Fläche, auf der die App zeichnet. Wer das für bare Münze nimmt, lädt Bilder in
+der vierfachen Fläche, ohne dass ein Pixel davon sichtbar würde.
+
+Deshalb gilt: **ein Bild braucht nie mehr Bildpunkte, als die Zeichenfläche der
+App hat.** Die Fläche steht in `appinfo.json` und kommt über
+`__NORI_WEBOS_RESOLUTION__` in den Build — eine Quelle, keine zweite Zahl im
+Quelltext. Im Browser, wo es kein `appinfo.json` gibt, bleibt das echte
+Pixelverhältnis maßgeblich; dort ist es die Wahrheit.
+
+Auf einem 4K-Fernseher mit 1080p-Zeichenfläche:
+
+| Stelle | vorher | nachher |
+| --- | --- | --- |
+| Poster | `w780` | `w342` |
+| Breitbild einer Karte | `w1280` | `w780` |
+| Kopfbild | `original` | `w1280` |
+| Schriftzug | `original` | `w500` |
+
+Auf einer echten 4K-Zeichenfläche (3840 CSS-Pixel breit) bleibt es bei `w780`
+und `original` — dort werden die Pixel auch gezeichnet.
+
+### Artwork: wie viele gleichzeitig
+
+Ein `<img src>` im DOM ist kein Wunsch, sondern ein Auftrag. Auf der Startseite
+standen bis zu achtzig davon gleichzeitig im Baum. `loading="lazy"` löst das
+nicht: Chromium setzt den Vorlauf nach der gemessenen Verbindung, und auf einem
+Fernseher ist die Verbindung selten der Engpass — die CPU ist es.
+
+`src/services/artworkQueue.ts` lässt drei bis vier Abrufe gleichzeitig zu, in
+dieser Rangfolge:
+
+```text
+0  Kopfbereich und die gerade fokussierte Kachel
+1  Karten der ersten Reihe (eager)
+2  alles andere, sobald es in Sichtweite kommt
+```
+
+Angemeldet wird erst beim Eintritt in den Sichtbereich — von oben nach unten
+und von links nach rechts also genau in der Reihenfolge, in der jemand
+hinsieht. Ein Platz wird frei, wenn das Bild geladen ist, gescheitert ist oder
+die Kachel verschwindet; eine Frist von acht Sekunden verhindert, dass ein
+totes Bild die Seite blockiert. `Artwork` trennt dabei zwei Dinge, die vorher
+eines waren: **nachfragen** (TMDB nach diesem Titel) passiert in Sichtweite,
+**laden** (`src` setzen) erst, wenn ein Platz frei ist.
+
+Die Rangfolge der Startseite hängt nicht mehr daran: welche Titel bei TMDB
+nachgeschlagen werden, entscheidet `state/home.ts` für die ersten zwölf jeder
+Reihe, in Leerlaufpausen und höchstens einmal je Titel und Sitzung. Vorher war
+das ein Nebeneffekt des Bildladens.
+
+### Weniger auf einmal zeichnen
+
+Sichtbar ist bei 1080p der Kopfbereich und eine Reihe. Deshalb (`hooks/useProgressive.ts`):
+
+- **Reihen** kommen in Schritten: die ersten sofort, der Rest in
+  Leerlaufpausen. Während die Fernbedienung arbeitet, ruht das Nachziehen.
+- **Karten** einer Reihe stehen zunächst zu zehn (acht im sparsamen Modus);
+  erreicht der Fokus die letzten drei, kommen weitere dazu — im nächsten Bild,
+  nicht im Tastendruck. Die erreichte Breite bleibt je Reihe gemerkt, damit das
+  Fokusgedächtnis beim Zurückkehren dieselbe Karte findet.
+
+`content-visibility: auto` steht bewusst **nicht** im Stylesheet: übersprungene
+Teilbäume liefern keine Geometrie mehr, und die Fernbedienungsnavigation lebt
+von Geometrie. Stattdessen trägt jede Reihe `contain: layout style` — der
+Browser rechnet beim erzwungenen Layout nach einem Tastendruck nur die Reihe
+durch statt der ganzen Seite. Ohne `paint`, denn die fokussierte Karte wächst
+über ihre Reihe hinaus.
+
+### Leistungsmodus
+
+*Mehr → Darstellung → Leistung* mit drei Stufen: **Automatisch** (Voreinstellung),
+**Normal**, **Optimiert**. Getrennt von „Animationen reduzieren": das eine ist
+eine Frage der Hardware, das andere eine des Geschmacks.
+
+„Automatisch" entscheidet an drei Signalen, keines davon eine Modellnummer
+(`src/services/performance.ts`):
+
+1. Ein kurzer Rechenlauf, einmal je Gerät, **nach** dem ersten Bild; das
+   Ergebnis liegt danach im `localStorage`.
+2. Was das Gerät über sich sagt (`hardwareConcurrency`, `deviceMemory`) — ein
+   Hinweis, nie allein ausschlaggebend.
+3. Die gemessene Fokuslatenz. Bleibt die Navigation über viele Tastendrücke
+   zäh, wechselt der Modus auch dann, wenn die ersten beiden unauffällig waren.
+   Das ist das ehrlichste Signal, weil es genau das misst, worum es geht.
+
+„Optimiert" ändert nichts an den Funktionen und wenig am Aussehen: Farben,
+Abstände, Schriftgrößen, Postergrößen, Kopfbereich und die Art, wie der Fokus
+aussieht, bleiben. Zurückgenommen wird die dritte, weiche Schattenebene des
+Fokusrings, ein Hauch Wachstum (1,05 statt 1,07), der wandernde Schimmer der
+Ladeflächen, der zweite Farbverlauf des Hintergrunds; dazu zwei statt vier
+gleichzeitige Bildabrufe, ein kleinerer Vorlauf und kleinere Schritte beim
+Aufbau.
+
+Die Maße des Fokus stehen dabei **nur** in `theme.css`
+(`--focus-scale-card`, `--focus-scale-control`, `--focus-ring-rem`); die
+Scrollrechnung liest sie zur Laufzeit von dort. Zwei Zahlen, die gleich bleiben
+müssen, laufen sonst auseinander.
+
+### Der Referenzfernseher
+
+Als Low-/Mid-End-Referenz gilt der **LG 55UA75006LA**: 4K-Panel, schwache CPU,
+webOS mit 1080p-Zeichenfläche. Er ist Maßstab, nicht Sonderfall — im Quelltext
+steht seine Modellnummer nirgends, und alles, was für ihn getan wurde, gilt für
+jedes Gerät, das sich genauso misst.
+
 ## Aufbau
 
 ```
 apps/webos/          TV-Oberfläche (React, TypeScript, Enact Spotlight, hls.js)
+shared/nori-app/     gemeinsame Anwendungsschicht — Zustand, Dienste, Hooks,
+                     Wiedergabeanbindung, `Artwork` und `Icon`
 shared/nori-core/    gemeinsamer Kern in TypeScript — Modelle, Provider,
                      Parser, Hoster-Resolver, Bibliotheksregeln, TMDB
 services/nori-api/   Provider-Schicht als HTTP-Dienst, benutzt denselben Kern
 ```
+
+`shared/nori-app/` teilt sich der Fernseher mit der Windows-App. Sie enthält
+keine Annahme über das Gerät: was sie darüber wissen muss, fragt sie über
+`NoriPlatform`, und `apps/webos/src/services/webos.ts` meldet die Antworten
+des Fernsehers beim Start an. **Wer dort etwas ändert, ändert beide Apps** —
+dann gehören beide Prüfläufe dazu, nicht nur der Fernbedienungslauf.
+
+Die Oberfläche bleibt getrennt und soll es bleiben: hier ist sie für drei
+Meter Abstand und ein Steuerkreuz gebaut, dort für Zeiger, Tastatur und ein
+Fenster, dessen Größe sich ändert.
 
 Der Kern ist die TypeScript-Entsprechung von `native/NoriCore/`, dem
 gemeinsamen Swift-Kern der Apple-Apps. Maßgeblich ist für beide
@@ -449,6 +642,46 @@ Aufbau über `file://`. Die Ansichten werden getrennt bei **1920 × 1080** und
 
 Die Bildschirmfotos landen in `apps/webos/test-shots/` (nicht im Repository),
 `NORI_SHOTS=<Ordner>` legt sie woanders ab.
+
+### Leistung messen
+
+`test/perf-bench.mjs` beantwortet nicht „stimmt es", sondern „was kostet es".
+Er läuft mit gedrosselter CPU, kaltem Bildspeicher und großem Katalog und
+zählt im Browser selbst — `getBoundingClientRect`, `getComputedStyle`,
+`offsetWidth`/`offsetHeight`, `scrollWidth`/`scrollHeight` werden vor jedem
+Skript der Seite ersetzt. Ein Tastendruck ist damit nicht mehr „fühlt sich träge
+an", sondern „283 Layoutabfragen".
+
+```bash
+cd apps/webos
+npm run build
+NORI_MOCK_TITLES=400 NORI_MOCK_SYNTH_TMDB=1 node test/mock-server.mjs &
+node test/perf-bench.mjs --label vorher  --out test-perf/vorher.json
+# … Änderungen, neu bauen …
+node test/perf-bench.mjs --label nachher --out test-perf/nachher.json
+node test/perf-bench.mjs --compare test-perf/vorher.json test-perf/nachher.json
+```
+
+`NORI_MOCK_TITLES` stellt einen großen Katalog her, `NORI_MOCK_SYNTH_TMDB=1`
+lässt den TMDB-Nachbau zu jedem Titel eine Antwort erfinden — sonst hat die
+Startseite zwei Reihen statt sieben. Beides ist **aus**, wenn nichts gesetzt
+ist; der Fernbedienungslauf prüft ausdrücklich den Fall „Titel ohne
+TMDB-Eintrag", und der verschwände sonst.
+
+`--throttle` setzt die Drosselung (Vorgabe 6×), `--perf lean` misst den
+sparsamen Modus, `--keys` die Zahl der Tastendrücke.
+
+Was der Lauf **nicht** kann: Farbauftrag und Zusammensetzung messen. Headless
+Chromium zeichnet nicht auf ein Panel; was der sparsame Modus an Schatten und
+Animation spart, zeigt sich dort nicht. Gemessen wird, was auf dem Hauptthread
+passiert — und das ist auf einem Fernseher der Engpass.
+
+Zur Laufzeit stehen dieselben Zahlen unter *Mehr → Diagnose* im Abschnitt
+**Leistung**: Modus und Begründung, mittlere und schlechteste Fokuslatenz,
+Zahl der Messungen gegenüber den Treffern im Zwischenspeicher, die gewählten
+TMDB-Stufen und der Stand der Bildwarteschlange. Im Quelltext hängen sie an
+`window.__noriNav` und `window.__noriArtwork()` — reine Zahlenobjekte, kein
+Steuerpult.
 
 Der Nachbau unter `test/mock-tmdb.mjs` enthält absichtlich die drei Fälle, die
 in der Praxis schiefgehen: ein Titel, dessen TMDB-Name mit dem Quelltitel

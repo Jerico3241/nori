@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { SpotButton } from "../navigation/Spot";
-import { Artwork } from "./Artwork";
+import { Artwork } from "@nori/app";
 
 export interface PosterCardProps {
   slug: string;
@@ -48,7 +48,7 @@ export function PosterCard(props: PosterCardProps) {
         else navigate(`/titel/${props.provider}/${encodeURIComponent(props.slug)}`);
       }}
     >
-      <span className="card-art poster-art">
+      <span className="card-art poster-art" data-nav-quiet="">
         <Artwork
           kind="poster"
           slug={props.slug}

@@ -11,10 +11,10 @@
 //   geöffnet wurde. Das leistet `SpotArea`.
 
 import type { ReactNode } from "react";
+import { Icon } from "@nori/app";
 
 import { useBackHandler } from "../navigation/back";
 import { SpotArea, SpotButton, useAutoFocus } from "../navigation/Spot";
-import { Icon } from "./Icon";
 
 export function Dialog({
   open, onClose, eyebrow, title, className, initial = ".spottable", id, children,
@@ -87,7 +87,7 @@ export function Menu<T extends string>({
       className="menu"
       initial={value !== null ? ".menu-item.selected" : ".menu-item"}
     >
-      <div className="menu-list">
+      <div className="menu-list" data-nav-row="">
         {options.map((option) => {
           const selected = option.value === value;
           return (

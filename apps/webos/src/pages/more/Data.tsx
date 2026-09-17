@@ -16,8 +16,7 @@ import { Dialog } from "../../components/Overlay";
 import { Screen } from "../../components/Screen";
 import { restoreFocusSoon } from "../../navigation/focusMemory";
 import { SpotButton } from "../../navigation/Spot";
-import { useLibrary } from "../../state/library";
-import { useSettings } from "../../state/settings";
+import { useLibrary, useSettings } from "@nori/app";
 import { Info, Row } from "../More";
 
 const ROUTE = "more-data";
@@ -53,7 +52,7 @@ export function DataPage() {
   return (
     <Screen route={ROUTE} eyebrow="Mehr" title="Daten" className="more-sub">
       <div className="settings-grid">
-        <section className="setting-card" aria-label="Bibliothek">
+        <section className="setting-card" data-nav-row="" aria-label="Bibliothek">
           <h3>Bibliothek</h3>
           <Info label="Schema" value={`v${LIBRARY_SCHEMA_VERSION}`} tone="idle" />
           <Info label="Merkliste" value={`${library.state.favorites.length} Titel`} tone="idle" />
@@ -93,7 +92,7 @@ export function DataPage() {
           />
         </section>
 
-        <section className="setting-card" aria-label="Zurücksetzen">
+        <section className="setting-card" data-nav-row="" aria-label="Zurücksetzen">
           <h3>Zurücksetzen</h3>
           <Row route={ROUTE} area="data" id="clear-history" label="Verlauf leeren" hint="Zuletzt geöffnete Titel" value="" chevron onClick={() => setConfirm("history")} />
           <Row route={ROUTE} area="data" id="clear-progress" label="Fortschritt löschen" hint="Alle Folgen gelten danach als ungesehen" value="" chevron onClick={() => setConfirm("progress")} />

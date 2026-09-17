@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Eine strenge Inhaltsrichtlinie.
+
+      Das Fenster lädt sein eigenes Skript und sonst nichts Ausführbares.
+      Bilder kommen von TMDB und von den Quellen, Videos von den Hostern —
+      beides über `https:` und `blob:` (hls.js reicht Segmente als Blob an das
+      `<video>`). `script-src 'self'` schließt aus, dass eine eingeschleuste
+      Zeichenkette aus einer Hoster-Seite je ausgeführt wird.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob: data:; connect-src 'self' https: blob:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
+    <title>Nori</title>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Kaltstart: erst die Hülle, dann die Daten. -->
+      <div class="boot">
+        <img src="./icon.png" alt="" />
+        <p>Nori startet …</p>
+      </div>
+    </div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>

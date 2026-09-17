@@ -350,6 +350,42 @@ export function handleTmdb(path, params) {
   return null;
 }
 
+/**
+ * Zusätzliche, erfundene Serien für die Leistungsmessung.
+ *
+ * Der Nachbau kennt von Hand vierzehn Titel — genug, um jede Zuordnung zu
+ * prüfen, zu wenig für eine Startseite, wie sie an einem echten Katalog
+ * entsteht. `NORI_MOCK_SYNTH_TMDB=1` lässt ihn deshalb zu **jedem** Titel des
+ * Katalogs eine Antwort erfinden. Damit füllen sich „Neu & beliebt",
+ * „Entdecke etwas Neues" und „Für dich" so, wie sie es auf einem Fernseher
+ * täten.
+ *
+ * Voreingestellt aus: der Fernbedienungslauf prüft ausdrücklich den Fall
+ * „Titel ohne TMDB-Eintrag", und der verschwände sonst.
+ */
+export function registerCatalogTitles(titles) {
+  if (process.env.NORI_MOCK_SYNTH_TMDB !== "1") return;
+  let index = 0;
+  for (const { slug, title } of titles) {
+    index += 1;
+    if (SERIES[slug]) continue;
+    const year = 2000 + (index % 26);
+    SERIES[slug] = {
+      id: 900_000 + index,
+      name: title,
+      original: title,
+      alternates: [title],
+      firstAir: `${year}-03-0${(index % 9) + 1}`,
+      lastAir: `${year + 1}-06-12`,
+      popularity: 400 - (index % 380),
+      vote: 5 + ((index * 7) % 45) / 10,
+      votes: 60 + ((index * 37) % 4000),
+      seasons: [{ n: 1, count: 12 }, { n: 2, count: 12 }],
+      ...(index <= 30 ? { trending: index } : {}),
+    };
+  }
+}
+
 /** Die Titel, die dieser Nachbau kennt — der Katalog richtet sich danach. */
 export const TMDB_SLUGS = Object.keys(SERIES);
 

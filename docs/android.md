@@ -8,16 +8,18 @@ Compose.**
 Naheliegend wäre, die vorhandene Web-App in eine Android-Hülle zu stecken.
 Das geht hier nicht:
 
-- `server/` ist **gebautes** Nitro-Bundle. Der Quelltext der Web-App liegt
-  nicht in diesem Repository — nur minifizierte `.mjs`-Dateien mit
-  Hash-Namen.
-- Die App nutzt serverseitige Funktionen (`createServerFn`). Die
-  Electron-Hülle startet dafür einen Node-Prozess auf `127.0.0.1:17321`.
-  Android hat keine Node-Laufzeit.
+Gemeint war damit die frühere Windows-Fassung: ein gebautes Nitro-Bundle mit
+serverseitigen Funktionen (`createServerFn`), dessen Quelltext nie in diesem
+Repository lag, und eine Electron-Hülle, die dafür einen Node-Prozess auf
+`127.0.0.1:17321` startete. Beides ist mit Windows 2.0.0 entfallen.
 
-Eine WebView-Hülle bräuchte also einen Server, den jemand betreibt. Die
-Apple-Apps kommen ohne aus — sie lesen AniWorld und Serienstream direkt.
-Android soll das auch.
+Was seitdem unter `apps/windows/` steht, ist Quelltext — aber es hilft
+Android nicht weiter: Die Quellenschicht läuft dort im **Hauptprozess** von
+Electron, also in Node. Eine WebView unter Android hat keine Node-Laufzeit,
+und eine WebView allein kommt an AniWorld und Serienstream nicht heran —
+fremde Herkunft, kein `Referer`, keine lesbaren Weiterleitungen. Es bliebe
+ein Server, den jemand betreibt. Die Apple-Apps kommen ohne aus; Android soll
+das auch.
 
 ## Warum nicht alles in Kotlin
 

@@ -1,7 +1,7 @@
 // Mehr: die Einstellungen als große Karten.
 //
 //     Wiedergabe         Autoplay, Fortsetzen, Sprache, Hoster, Tempo, Sprung
-//     Darstellung        Bereich, Animationen reduzieren
+//     Darstellung        Bereich, Animationen, Leistung
 //     Synchronisierung   Google Drive: Zustand, abgleichen, einrichten
 //     Nori               TMDB-Zustand, Verbindung, Diagnose, Verlauf, Daten
 //
@@ -18,16 +18,21 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DeviceSignInDialog, relativeTime } from "../components/DeviceSignIn";
-import { Icon } from "../components/Icon";
 import { Menu, type MenuOption } from "../components/Overlay";
 import { Screen } from "../components/Screen";
-import { useTick } from "../hooks/useTick";
+import {
+  Icon,
+  performanceMode,
+  performanceReason,
+  useData,
+  useLibrary,
+  useSettings,
+  useTick,
+  useTmdbState,
+  type PerformanceSetting,
+} from "@nori/app";
 import { restoreFocusSoon } from "../navigation/focusMemory";
 import { SpotButton } from "../navigation/Spot";
-import { useTmdbState } from "../services/tmdbStatus";
-import { useData } from "../state/data";
-import { useLibrary } from "../state/library";
-import { useSettings } from "../state/settings";
 import { syncStatusLabel, useSync } from "../state/sync";
 
 const ROUTE = "more";
@@ -40,7 +45,28 @@ export const LANGUAGES: MenuOption<string>[] = [
 
 export const HOSTERS = ["VOE", "Vidmoly", "Vidoza", "Lulustream", "Speedfiles", "Filemoon", "Doodstream"];
 
-type MenuId = "lang" | "hoster" | "speed" | "seek" | "chrome" | "scope" | null;
+type MenuId = "lang" | "hoster" | "speed" | "seek" | "chrome" | "scope" | "performance" | null;
+
+/**
+ * Die drei Leistungsstufen.
+ *
+ * „Automatisch" ist die Voreinstellung und in fast allen Fällen die richtige:
+ * Nori misst einmal je Gerät, wie schnell es rechnet, und beobachtet danach,
+ * wie lange die Fernbedienung tatsächlich braucht. Die beiden festen Stufen
+ * gibt es für den Fall, dass jemand es besser weiß — und damit sich beides auf
+ * demselben Gerät vergleichen lässt.
+ */
+const PERFORMANCE_OPTIONS: MenuOption<PerformanceSetting>[] = [
+  { value: "auto", label: "Automatisch", detail: "Nori misst Rechenleistung und Reaktionszeit" },
+  { value: "full", label: "Normal", detail: "Volle Darstellung, alle Übergänge" },
+  { value: "lean", label: "Optimiert", detail: "Sparsamere Effekte, weniger Bilder gleichzeitig" },
+];
+
+const PERFORMANCE_LABEL: Record<PerformanceSetting, string> = {
+  auto: "Automatisch",
+  full: "Normal",
+  lean: "Optimiert",
+};
 
 export function MorePage() {
   const navigate = useNavigate();
@@ -64,7 +90,7 @@ export function MorePage() {
   return (
     <Screen route={ROUTE} eyebrow="Nori" title="Mehr" className="more">
       <div className="settings-grid">
-        <section className="setting-card" aria-label="Wiedergabe">
+        <section className="setting-card" data-nav-row="" aria-label="Wiedergabe">
           <h3>Wiedergabe</h3>
           <Toggle area="playback" id="set-autoplay" label="Autoplay" hint="Nächste Folge automatisch starten" value={library.state.autoplayNext} onChange={(value) => library.setPreference({ autoplayNext: value })} />
           <Toggle area="playback" id="set-resume" label="Fortsetzen" hint="An der letzten Stelle weiter — ab 8 Sekunden" value={library.state.resumeEnabled} onChange={(value) => library.setPreference({ resumeEnabled: value })} />
@@ -75,13 +101,23 @@ export function MorePage() {
           <Row area="playback" id="set-chrome" label="Bedienung ausblenden nach" value={`${settings.controlsTimeout} s`} onClick={() => setMenu("chrome")} />
         </section>
 
-        <section className="setting-card" aria-label="Darstellung">
+        <section className="setting-card" data-nav-row="" aria-label="Darstellung">
           <h3>Darstellung</h3>
           <Row area="display" id="set-scope" label="Bereich" hint="Gilt für Start, Katalog und Kalender" value={SCOPES[library.state.scope].label} onClick={() => setMenu("scope")} />
           <Toggle area="display" id="set-effects" label="Animationen reduzieren" hint="Weniger Bewegung, flüssiger auf älteren Fernsehern" value={settings.reduceEffects} onChange={(value) => update({ reduceEffects: value })} />
+          <Row
+            area="display"
+            id="set-performance"
+            label="Leistung"
+            hint={settings.performance === "auto"
+              ? `Automatisch — gerade ${performanceMode() === "lean" ? "optimiert" : "normal"} (${performanceReason()})`
+              : "Feste Stufe statt Messung"}
+            value={PERFORMANCE_LABEL[settings.performance]}
+            onClick={() => setMenu("performance")}
+          />
         </section>
 
-        <section className="setting-card" aria-label="Synchronisierung">
+        <section className="setting-card" data-nav-row="" aria-label="Synchronisierung">
           <h3>Synchronisierung</h3>
           <Info label="Google Drive" hint="Merkliste, Verlauf, Fortschritt und Einstellungen — keine Videos" value={syncStatusLabel(sync)} tone={sync.status === "idle" ? "ok" : sync.status === "error" || sync.needsReauthorization ? "error" : "idle"} />
           {/* Die Anmeldung ist ein Knopf — direkt hier, ohne Umweg über eine Unterseite. */}
@@ -95,7 +131,7 @@ export function MorePage() {
           <Row area="sync" id="set-sync" label="Abgleich verwalten" hint={sync.isConfigured ? "Trennen, Zugriff widerrufen, Zustand" : "Diese Fassung wurde ohne Google-Abgleich gebaut"} value="" chevron onClick={() => navigate("/mehr/abgleich")} />
         </section>
 
-        <section className="setting-card" aria-label="Nori">
+        <section className="setting-card" data-nav-row="" aria-label="Nori">
           <h3>Nori</h3>
           <Info label="TMDB" hint={tmdbInfo.detail} value={tmdbInfo.label} tone={tmdbInfo.tone} />
           <Row area="nori" id="set-connection" label="Verbindung & TMDB" hint={tmdbRoute.effective === "server" ? "Über den Nori-Server" : tmdbRoute.effective === "direct" ? "Dieser Fernseher fragt selbst" : "TMDB aus"} value="" chevron onClick={() => navigate("/mehr/verbindung")} />
@@ -114,6 +150,7 @@ export function MorePage() {
       <Menu open={menu === "speed"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Geschwindigkeit" id="menu-speed" value={String(library.state.playbackSpeed)} options={PLAYBACK_SPEEDS.map((speed) => ({ value: String(speed), label: `${speed.toLocaleString("de-DE")}×` }))} onPick={(value) => library.setPreference({ playbackSpeed: Number(value) })} />
       <Menu open={menu === "seek"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Sprung mit ← →" id="menu-seek" value={String(settings.seekStep)} options={[5, 10, 15, 30].map((step) => ({ value: String(step), label: `${step} Sekunden` }))} onPick={(value) => update({ seekStep: Number(value) })} />
       <Menu open={menu === "chrome"} onClose={() => setMenu(null)} eyebrow="Wiedergabe" title="Bedienung ausblenden nach" id="menu-chrome" value={String(settings.controlsTimeout)} options={[3, 4, 5, 8].map((seconds) => ({ value: String(seconds), label: `${seconds} Sekunden` }))} onPick={(value) => update({ controlsTimeout: Number(value) })} />
+      <Menu open={menu === "performance"} onClose={() => setMenu(null)} eyebrow="Darstellung" title="Leistung" id="menu-performance" value={settings.performance} options={PERFORMANCE_OPTIONS} onPick={(value) => update({ performance: value })} />
       <Menu open={menu === "scope"} onClose={() => setMenu(null)} eyebrow="Darstellung" title="Bereich" id="menu-scope" value={library.state.scope} options={LIBRARY_SCOPES.map((scope) => ({ value: scope, label: SCOPES[scope].label, detail: SCOPES[scope].headline }))} onPick={(value) => library.setScope(value)} />
     </Screen>
   );

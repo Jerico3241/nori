@@ -1,0 +1,252 @@
+/*
+ * Nori auf dem Schreibtisch — Farben, Maße, Zustände.
+ *
+ * ## Dieselbe Farbwelt wie überall
+ *
+ * Die Werte unter `:root` sind zeichengleich die aus `apps/webos/src/styles/
+ * theme.css`: sehr dunkler Grund mit einem Hauch Blau, Flächen in
+ * Blau-Graphit, helle Schrift, ein zurückhaltendes Eisblau als Akzent. Kein
+ * Orange, kein Warmton außer dem Stern der Bewertung. Nori soll auf dem
+ * Fernseher und auf dem Rechner dieselbe App sein.
+ *
+ * ## Was anders ist, und warum
+ *
+ * **Die Skalierung.** Auf dem Fernseher wächst 1 rem mit der Bildgröße, weil
+ * dort der Sitzabstand gleich bleibt und das Bild größer wird. Auf dem
+ * Schreibtisch ist es umgekehrt: Der Abstand ist immer derselbe, die
+ * Fenstergröße ändert sich dauernd, und Windows regelt die Textgröße bereits
+ * selbst (125 %, 150 %, 200 %). Ein rem ist hier deshalb 16 px, und das
+ * Layout richtet sich nach der Breite, nicht nach einem Faktor.
+ *
+ * **Die Maße.** Drei Meter Abstand brauchen große Schrift und viel Luft; ein
+ * halber Meter nicht. Poster sind schmaler, Abstände kleiner, Schrift
+ * kleiner — dieselben Verhältnisse, andere Zahlen.
+ *
+ * **Die Zustände.** Der Fernseher kennt genau einen: Fokus. Der Schreibtisch
+ * kennt drei, und sie sind nicht dasselbe:
+ *
+ *     :hover          der Zeiger steht darüber  — leichte Hervorhebung
+ *     :focus-visible  die Tastatur ist dort     — Ring, deutlich sichtbar
+ *     :active         es wird gerade gedrückt   — kurz kleiner
+ *
+ * `:focus-visible` statt `:focus` ist der Unterschied zwischen einer App, die
+ * sich mit der Tastatur bedienen lässt, und einer, die nach jedem Mausklick
+ * einen Ring stehen lässt.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #03070d;
+  --bg-top: #07111c;
+  --panel: rgba(18, 29, 43, 0.78);
+  --panel-soft: rgba(18, 29, 43, 0.68);
+  --panel-solid: #111c29;
+  --stroke: rgba(255, 255, 255, 0.1);
+  --stroke-soft: rgba(255, 255, 255, 0.07);
+
+  --text: #f5f8fc;
+  --text-soft: #dfe7f1;
+  --text-dim: #bdc8d6;
+  --muted: #94a3b8;
+  --muted-2: #8796aa;
+
+  /* Der Akzent: Eisblau für „aktiv", Fortschritt und den Ring. */
+  --accent: #79c7ff;
+  --accent-soft: rgba(121, 199, 255, 0.14);
+  --accent-glow: rgba(121, 199, 255, 0.28);
+
+  --focus: #eef8ff;
+  --focus-text: #08111a;
+
+  /* Nur Bewertungen. */
+  --star: #ffd34f;
+
+  --ok: #6dbb93;
+  --ok-text: #aef0cf;
+  --danger: #ff8a7a;
+
+  /* Aufteilung. */
+  --sidebar-w: 14.5rem;
+  --sidebar-compact: 4.75rem;
+  --gutter: 2rem;
+  --radius-card: 0.875rem;
+  --radius-panel: 1rem;
+
+  /* Zustände. */
+  --hover-scale: 1.035;
+  --press-scale: 0.985;
+  --ring: 0 0 0 0.125rem var(--bg), 0 0 0 0.25rem var(--accent);
+  --shadow-card: 0 0.75rem 1.75rem rgba(0, 0, 0, 0.45);
+  --ms: 130ms;
+
+  --z-sticky: 20;
+  --z-sidebar: 40;
+  --z-dialog: 100;
+  --z-player: 200;
+}
+
+/*
+ * Der sparsame Modus.
+ *
+ * Denselben Schalter gibt es auf dem Fernseher, und er tut dasselbe: Schatten
+ * mit großem Weichzeichner und laufende Animationen kosten Bilder pro Sekunde,
+ * auf einem alten Notebook genauso wie auf einem alten Panel. Farben, Maße und
+ * die Art, wie ein Zustand aussieht, bleiben.
+ */
+:root[data-perf="lean"] {
+  --hover-scale: 1.02;
+  --shadow-card: 0 0.375rem 0.75rem rgba(0, 0, 0, 0.5);
+  --ms: 90ms;
+}
+
+:root[data-perf="lean"] .skeleton,
+:root[data-perf="lean"] .skeleton-line {
+  animation: none;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html {
+  font-size: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Text lässt sich in Beschreibungen markieren, Bedienelemente nicht. */
+  user-select: none;
+}
+
+p,
+.selectable {
+  user-select: text;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* Ein Ring, und zwar nur für die Tastatur. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/*
+ * Schmale, dunkle Bildlaufleisten.
+ *
+ * Die Standardleiste von Windows ist hell und breit und zerschneidet eine
+ * dunkle Oberfläche. Sie ganz zu verstecken wäre der andere Fehler: auf dem
+ * Schreibtisch ist sie eine Auskunft darüber, wie viel noch kommt.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 0.1875rem solid transparent;
+  border-radius: 0.5rem;
+  background-clip: content-box;
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+:root[data-effects="reduced"] *,
+:root[data-effects="reduced"] *::before,
+:root[data-effects="reduced"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Kaltstart, bevor React gezeichnet hat. */
+.boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 38%, rgba(121, 199, 255, 0.1), transparent 36%), #03070d;
+  color: #94a3b8;
+}
+
+.boot img {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1.25rem;
+}
+
+.boot p {
+  margin: 1.25rem 0 0;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

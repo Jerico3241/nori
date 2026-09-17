@@ -1,0 +1,18 @@
+{
+  "name": "@nori/app",
+  "version": "2.4.1",
+  "private": true,
+  "type": "module",
+  "description": "Gemeinsame Anwendungsschicht der Nori-Clients — Daten, Zustand, TMDB, Bilder, Abgleich. Ohne Oberfläche und ohne Plattformannahmen.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "peerDependencies": {
+    "@nori/core": "file:../nori-core",
+    "react": "^18.3.1",
+    "hls.js": "^1.7.2"
+  }
+}

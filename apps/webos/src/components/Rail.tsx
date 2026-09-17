@@ -26,7 +26,7 @@ export function Rail({ id, title, note, children }: {
         {note ? <span>{note}</span> : null}
       </div>
       <div className="rail" data-scroll-x="" data-scroll-key={`rail-${id}`}>
-        <div className="rail-inner">{children}</div>
+        <div className="rail-inner" data-nav-row="">{children}</div>
       </div>
     </section>
   );

@@ -600,6 +600,22 @@ export class HomeCatalogIndex {
    */
   private readonly buckets = new Map<string, HomeTitle[]>();
 
+  /**
+   * Bereits zugeordnete TMDB-Zeilen.
+   *
+   * Ein Index ist unveränderlich: dieselbe Zeile ergibt darin immer denselben
+   * Titel. Genau dieselben Zeilen kommen aber bei **jeder** Neuberechnung der
+   * Startseite wieder — Trendliste, Beliebtheitsliste, Ausstrahlungsliste —,
+   * und jede Zuordnung normalisiert bis zu sechs Schreibweisen. Im CPU-Profil
+   * eines Fernsehers war das der größte Posten des Seitenaufbaus.
+   *
+   * Der Schlüssel trägt neben der Kennung auch den Namen und die Zahl der
+   * Alternativschreibweisen: dieselbe Serie kommt aus der Liste ohne und aus
+   * der Detailabfrage mit Alternativtiteln, und die zweite darf die erste
+   * überholen können.
+   */
+  private readonly matched = new Map<string, HomeTitle | null>();
+
   constructor(titles: HomeTitle[]) {
     for (const title of titles) {
       const forms = new Set<string>();
@@ -631,6 +647,15 @@ export class HomeCatalogIndex {
    * Form haben.
    */
   match(candidate: TMDBCandidate): HomeTitle | null {
+    const key = `${candidate.id}|${candidate.alternateNames.length}|${candidate.name}`;
+    const known = this.matched.get(key);
+    if (known !== undefined) return known;
+    const found = this.matchUncached(candidate);
+    this.matched.set(key, found);
+    return found;
+  }
+
+  private matchUncached(candidate: TMDBCandidate): HomeTitle | null {
     const forms: string[] = [];
     for (const raw of [candidate.name, candidate.originalName, ...candidate.alternateNames]) {
       if (!raw) continue;
