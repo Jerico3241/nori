@@ -21,6 +21,9 @@ struct SeriesView: View {
     /// Standbilder und Beschreibungen der Folgen, nach Nummer.
     @State private var episodeInfo: [Int: EpisodeInfo] = [:]
     @State private var similarItems: [CatalogItem] = []
+    /// „Serie als gesehen markieren" holt die übrigen Staffeln nach. Solange
+    /// das läuft, bleibt der Eintrag im Menü gesperrt.
+    @State private var markingSeries = false
 
     /// Läuft neu, sobald die Staffel wechselt **oder** die Serie eintrifft:
     /// beim ersten Aufbau steht die Staffel schon auf „1", `detail` aber noch
@@ -271,11 +274,13 @@ struct SeriesView: View {
                         playButton(detail)
                         BookmarkButton(slug: slug, title: detail.title, large: true)
                         seasonPicker(detail)
+                        watchMenu(detail)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
                             playButton(detail)
                             BookmarkButton(slug: slug, title: detail.title, large: true)
+                            watchMenu(detail)
                         }
                         seasonPicker(detail)
                     }
@@ -309,6 +314,80 @@ struct SeriesView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.defaultAction)
+    }
+
+    /// Die Quelle dieser Serie. An **einer** Stelle, weil der Fortschritt nach
+    /// `provider|episodePath` geschlüsselt ist: die Vorgabequelle zu nehmen
+    /// schriebe bei einer Serienstream-Serie in den AniWorld-Schlüssel, sobald
+    /// der Schalter in der Seitenleiste auf Anime steht.
+    private var source: CatalogProvider { providerOverride ?? library.provider }
+
+    /// Gesehen, ungesehen, vergessen — für Staffel und ganze Serie.
+    ///
+    /// Auf dem Mac ein eigenes Menü neben „Abspielen" statt eines
+    /// Kontextmenüs: ein Befehl, den man nicht findet, gibt es nicht. Die
+    /// Regeln dahinter stehen im Kern (`WatchMarks`) und sind dieselben wie auf
+    /// iPhone und Fernseher.
+    private func watchMenu(_ detail: SeriesDetail) -> some View {
+        Menu {
+            Section("Staffel") {
+                Button("Als gesehen markieren") {
+                    library.setSeasonWatched(
+                        true, slug: slug, title: detail.title, season: season,
+                        episodes: detail.episodes, provider: source
+                    )
+                }
+                .disabled(detail.episodes.isEmpty)
+
+                Button("Als ungesehen markieren") {
+                    library.setSeasonWatched(
+                        false, slug: slug, title: detail.title, season: season,
+                        episodes: detail.episodes, provider: source
+                    )
+                }
+                .disabled(detail.episodes.isEmpty)
+            }
+
+            Section("Serie") {
+                Button(markingSeries ? "Wird markiert…" : "Als gesehen markieren") {
+                    Task { await markSeriesWatched(detail) }
+                }
+                .disabled(markingSeries || detail.episodes.isEmpty)
+
+                Button("Fortschritt vergessen") {
+                    library.resetSeriesProgress(slug: slug, provider: source)
+                }
+                .disabled(library.seriesWatchSummary(slug: slug, provider: source).state == .unseen)
+            }
+        } label: {
+            Label("Sehstand", systemImage: "checkmark.circle")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Folgen, Staffel oder Serie als gesehen oder ungesehen markieren")
+    }
+
+    /// Die ganze Serie abhaken.
+    ///
+    /// Die einzige Stelle, die dafür Netz braucht: die Folgenliste jeder
+    /// Staffel steht nur auf der Seite der Quelle. Die schon geladene Staffel
+    /// wird nicht noch einmal geholt, und geschrieben wird am Ende **einmal**.
+    @MainActor
+    private func markSeriesWatched(_ detail: SeriesDetail) async {
+        guard !markingSeries else { return }
+        markingSeries = true
+        defer { markingSeries = false }
+
+        var seasons: [SeasonEpisodes] = [SeasonEpisodes(season: season, episodes: detail.episodes)]
+        for ref in detail.seasons where ref.id != season {
+            guard let loaded = try? await AniworldClient.shared.getSeries(
+                provider: source, slug: slug, season: ref.id
+            ) else { continue }
+            guard !loaded.episodes.isEmpty else { continue }
+            seasons.append(SeasonEpisodes(season: ref.id, episodes: loaded.episodes))
+        }
+        library.setSeriesWatched(slug: slug, title: detail.title, seasons: seasons, provider: source)
     }
 
     @ViewBuilder
@@ -427,6 +506,7 @@ struct SeriesView: View {
                         series: detail,
                         episode: ep,
                         season: season,
+                        provider: source,
                         info: episodeInfo[ep.number]
                     ) { resumeAt in
                         open(series: detail, episode: ep, resumeAt: resumeAt)
@@ -655,6 +735,14 @@ struct EpisodeRow: View {
     let series: SeriesDetail
     let episode: Episode
     let season: String
+    /// Die Quelle dieser Serie.
+    ///
+    /// Vorher stand hier `library.provider` — die Vorgabe der Seitenleiste.
+    /// Bei einer Serienstream-Serie, geöffnet während der Schalter auf Anime
+    /// stand, las und schrieb die Zeile damit den AniWorld-Schlüssel: der
+    /// Fortschritt ist nach `provider|episodePath` getrennt, und beide Stände
+    /// gingen durcheinander.
+    let provider: CatalogProvider
     /// Bild und Beschreibung aus TMDB. `nil`, solange nichts geladen ist oder
     /// TMDB die Serie nicht kennt — dann sieht die Zeile aus wie zuvor, nur
     /// mit einer Kachel im 16:9-Format statt eines Quadrats.
@@ -705,7 +793,7 @@ struct EpisodeRow: View {
     }
 
     var body: some View {
-        let item = library.progress(slug: series.slug, season: season, episode: episode.number, path: episode.path, provider: library.provider)
+        let item = library.progress(slug: series.slug, season: season, episode: episode.number, path: episode.path, provider: provider)
         let complete = isEpisodeComplete(item)
         let ratio = watchRatio(item)
         let resumeAt = library.resumeEnabled ? resumePosition(item) : 0
@@ -761,6 +849,22 @@ struct EpisodeRow: View {
             Button("Abspielen") { play(resumeAt) }
             if resumeAt >= 8 {
                 Button("Von vorne abspielen") { play(0) }
+            }
+            Divider()
+            Button(complete ? "Als ungesehen markieren" : "Als gesehen markieren") {
+                library.setWatched(
+                    !complete,
+                    slug: series.slug,
+                    title: series.title,
+                    season: season,
+                    episode: episode,
+                    provider: provider
+                )
+            }
+            if let item, item.positionSec > 0 {
+                Button("Fortschritt zurücksetzen") {
+                    library.upsert(contentsOf: [WatchMarks.reset(item)])
+                }
             }
         }
     }

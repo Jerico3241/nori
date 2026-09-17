@@ -432,9 +432,21 @@ final class LibraryStore {
         lastProgressKey = nil
     }
 
+    /// Je Serie der jüngste **angefasste** Eintrag, sofern er nicht durch ist.
+    ///
+    /// „Angefasst" heißt Position > 0 oder abgeschlossen — dieselbe Grenze wie
+    /// in `watchSummary`. Bis hierher zählte jeder Eintrag, auch der leere, den
+    /// schon das bloße Öffnen einer Folge anlegt. Das hatte zwei Folgen: eine
+    /// nur angetippte Folge stand in „Weiterschauen", und „Aus Weiterschauen
+    /// entfernen" konnte gar nicht wirken — der zurückgesetzte Eintrag wäre
+    /// mit Position 0 sofort wieder dagewesen.
+    ///
+    /// Die halb gesehene Folge bleibt trotzdem stehen, wenn danach eine andere
+    /// nur geöffnet wurde: der leere Eintrag zählt nicht mehr mit, also ist der
+    /// jüngste angefasste weiterhin der halb gesehene.
     func continueWatching() -> [WatchProgress] {
         var latest: [String: WatchProgress] = [:]
-        for item in progress.values {
+        for item in progress.values where item.positionSec > 0 || item.completed == true {
             let itemProvider = item.provider ?? providerFromPath(item.episodePath)
             let key = "\(itemProvider.rawValue)|\(item.slug)"
             if latest[key] == nil || item.updatedAt > latest[key]!.updatedAt { latest[key] = item }

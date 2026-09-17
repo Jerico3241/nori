@@ -682,6 +682,40 @@ h1 {
   width: 24.375rem;
 }
 
+/*
+ * Der Knopf am Ende einer Reihe („Titel entfernen"). Er ist so hoch wie die
+ * Karten daneben, damit die Zeile nicht ausfranst und der Fokusring über
+ * derselben Linie liegt — schmaler, weil dort nur zwei Wörter stehen.
+ *
+ * Bewusst **keine** `land-card`: er ist keine Folge, und Prüfungen, die die
+ * Karten einer Reihe zählen, sollen ihn nicht mitzählen.
+ */
+.rail-action {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 13rem;
+  min-height: 13.75rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  background: rgba(18, 29, 43, 0.72);
+  text-align: center;
+}
+
+.rail-action .icon {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.rail-action.active {
+  border-color: rgba(255, 180, 168, 0.6);
+  color: #ffb4a8;
+}
+
 .catalog-grid .poster-card {
   width: 100%;
 }
@@ -897,6 +931,12 @@ h1 {
   font-size: 1.0625rem;
 }
 
+/* Der Knopf für „Sehstand ändern" rückt ans rechte Ende der Zeile, damit die
+   Staffelwahl links ihren Platz behält. */
+.season-mark {
+  margin-left: auto;
+}
+
 .episode-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -958,6 +998,32 @@ h1 {
 
 .ep-card.done .art img.loaded {
   opacity: 0.62;
+}
+
+/* „Sehstand ändern": das Schild sagt, was OK jetzt tut. Es liegt über dem
+   Bild wie „Gesehen", nur unten — beide zugleich müssen lesbar bleiben. */
+.ep-mark {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: inline-grid;
+  grid-auto-flow: column;
+  column-gap: 0.375rem;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(4, 8, 14, 0.86);
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+.ep-mark .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.ep-card.marking {
+  border-color: rgba(122, 162, 247, 0.55);
 }
 
 .ep-body {
@@ -1520,6 +1586,13 @@ h1 {
 
 .dialog-actions {
   justify-content: flex-end;
+}
+
+/* Vier Sehstand-Knöpfe passen nicht in eine Zeile eines 1080p-Dialogs. Links
+   ausgerichtet, damit die Reihe beim Umbruch nicht springt. */
+.dialog-actions.wrap {
+  justify-content: flex-start;
+  margin-bottom: 1rem;
 }
 
 .setting-card .chips {

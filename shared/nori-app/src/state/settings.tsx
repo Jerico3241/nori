@@ -5,6 +5,7 @@
 // steht nur, was den Fernseher selbst betrifft — wohin er sich verbindet und
 // wie er den Player bedient.
 
+import { AUTOPLAY_COUNTDOWN_SEC } from "@nori/core";
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from "react";
@@ -22,7 +23,14 @@ export interface DeviceSettings {
   controlsTimeout: number;
   /** Sekunden je Sprung mit Links/Rechts. */
   seekStep: number;
-  /** Sekunden Countdown vor der nächsten Folge. */
+  /**
+   * Sekunden Countdown vor der nächsten Folge.
+   *
+   * Die Vorgabe kommt aus dem Kern (`AUTOPLAY_COUNTDOWN_SEC`) und ist damit
+   * dieselbe wie auf iPhone und Mac. Am Fernseher bleibt sie einstellbar: wer
+   * mit der Fernbedienung erst zum Knopf navigieren muss, braucht länger als
+   * jemand mit einem Finger auf dem Bildschirm.
+   */
   autoplayCountdown: number;
   /**
    * Woher die TMDB-Daten kommen.
@@ -80,7 +88,7 @@ const DEFAULTS: DeviceSettings = {
   serverUrl: "",
   controlsTimeout: 4,
   seekStep: 10,
-  autoplayCountdown: 10,
+  autoplayCountdown: AUTOPLAY_COUNTDOWN_SEC,
   tmdbMode: "server",
   tmdbKey: "",
   reduceEffects: false,

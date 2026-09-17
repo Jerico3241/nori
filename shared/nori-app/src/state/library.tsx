@@ -23,11 +23,13 @@
 
 import {
   continueWatching as coreContinueWatching, decodeLibrary, emptyLibrary, encodeLibrary,
-  favoriteKey, findProgress, findProgressByEpisode, mergeLibrarySnapshots,
-  nextPlay as coreNextPlay, recentKey,
-  rememberRecent, seasonStats as coreSeasonStats, upsertProgress,
+  favoriteKey, findProgress, findProgressByEpisode, markEpisode, markSeason, markSeries,
+  mergeLibrarySnapshots, nextPlay as coreNextPlay, recentKey,
+  removeFromContinueWatching as coreRemoveFromContinueWatching, rememberRecent,
+  resetSeriesProgress as coreResetSeriesProgress, seasonStats as coreSeasonStats,
+  seriesWatchSummary as coreSeriesWatchSummary, upsertProgress,
   type CatalogProvider, type Episode, type LibraryBag, type LibraryScope, type LibraryState,
-  type WatchProgress,
+  type SeasonEpisodes, type WatchProgress, type WatchSummary,
 } from "@nori/core";
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
@@ -76,6 +78,26 @@ interface LibraryContextValue {
   seasonStats(slug: string, season: string, episodes: Episode[], provider: CatalogProvider): {
     watched: number; total: number; pct: number;
   };
+  /** Der Sehstand eines Titels — dieselbe Regel wie in der Merkliste. */
+  seriesWatchSummary(slug: string, provider: CatalogProvider): WatchSummary;
+  /** Eine Folge abhaken oder wieder freigeben. */
+  setWatched(
+    seen: boolean, slug: string, title: string, season: string,
+    episode: Episode, provider: CatalogProvider,
+  ): void;
+  /** Eine ganze Staffel — ein Schreibvorgang, nicht einer je Folge. */
+  setSeasonWatched(
+    seen: boolean, slug: string, title: string, season: string,
+    episodes: Episode[], provider: CatalogProvider,
+  ): void;
+  /** Eine ganze Serie als gesehen; die Folgenlisten holt der Aufrufer. */
+  setSeriesWatched(
+    slug: string, title: string, seasons: SeasonEpisodes[], provider: CatalogProvider,
+  ): void;
+  /** Jeden bekannten Fortschritt einer Serie zurücksetzen. */
+  resetSeriesProgress(slug: string, provider: CatalogProvider): void;
+  /** Eine Serie aus „Weiterschauen" nehmen, ohne „gesehen" zu verlieren. */
+  removeFromContinueWatching(slug: string, provider: CatalogProvider): void;
   nextPlay(slug: string, season: string, episodes: Episode[], provider: CatalogProvider): {
     episode: number; resumeAt: number; kind: "play" | "resume" | "next";
   };
@@ -278,6 +300,46 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     continueWatching: () => coreContinueWatching(state.progress),
     seasonStats: (slug, season, episodes, provider) =>
       coreSeasonStats(state.progress, slug, season, episodes, provider),
+    seriesWatchSummary: (slug, provider) => coreSeriesWatchSummary(state.progress, slug, provider),
+    // Die Marken entstehen im Kern (`markEpisode` und Geschwister) und nicht
+    // hier: „gesehen" muss auf dem Fernseher dasselbe schreiben wie auf dem
+    // iPhone, sonst nimmt der nächste Abgleich es wieder zurück.
+    setWatched: (seen, slug, title, season, episode, provider) => patch((before) => ({
+      ...before,
+      progress: upsertProgress(
+        before.progress,
+        markEpisode(before.progress, { slug, title, season, provider }, episode, seen),
+      ),
+      titles: { ...before.titles, [slug]: title },
+    })),
+    setSeasonWatched: (seen, slug, title, season, episodes, provider) => patch((before) => {
+      const marks = markSeason(before.progress, { slug, title, season, provider }, episodes, seen);
+      if (marks.length === 0) return before;
+      return {
+        ...before,
+        progress: applyMarks(before.progress, marks),
+        titles: { ...before.titles, [slug]: title },
+      };
+    }),
+    setSeriesWatched: (slug, title, seasons, provider) => patch((before) => {
+      const marks = markSeries(before.progress, { slug, title, provider }, seasons, true);
+      if (marks.length === 0) return before;
+      return {
+        ...before,
+        progress: applyMarks(before.progress, marks),
+        titles: { ...before.titles, [slug]: title },
+      };
+    }),
+    resetSeriesProgress: (slug, provider) => patch((before) => {
+      const marks = coreResetSeriesProgress(before.progress, slug, provider);
+      if (marks.length === 0) return before;
+      return { ...before, progress: applyMarks(before.progress, marks) };
+    }),
+    removeFromContinueWatching: (slug, provider) => patch((before) => {
+      const marks = coreRemoveFromContinueWatching(before.progress, slug, provider);
+      if (marks.length === 0) return before;
+      return { ...before, progress: applyMarks(before.progress, marks) };
+    }),
     nextPlay: (slug, season, episodes, provider) =>
       coreNextPlay(state.progress, slug, season, episodes, provider, state.resumeEnabled),
     // Je Einstellung ein eigener Zeitstempel. Ein globales `modifiedAt` reicht
@@ -354,6 +416,23 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 }
 
 /** Die genannten Einstellungen auf „gerade geändert" setzen. */
+/**
+ * Mehrere Marken auf einmal ablegen.
+ *
+ * Ein `upsertProgress` je Folge wäre bei vierundzwanzig Folgen vierundzwanzig
+ * vollständige Kopien der Fortschrittstabelle — auf einem Fernseher genug, um
+ * Bilder zu kosten. Aufgeräumt wird trotzdem je Eintrag: `upsertProgress`
+ * entfernt Reste älterer Schlüsselformen, und das darf nicht wegfallen.
+ */
+function applyMarks(
+  progress: Record<string, WatchProgress>,
+  marks: WatchProgress[],
+): Record<string, WatchProgress> {
+  let out = progress;
+  for (const mark of marks) out = upsertProgress(out, mark);
+  return out;
+}
+
 function stamped(before: Record<string, number>, keys: string[]): Record<string, number> {
   const next = { ...before };
   const now = Date.now();

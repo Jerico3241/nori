@@ -40,8 +40,9 @@ import {
   Icon, attachPlayback, log, useData, useLibrary, useSettings, warn, type Playback,
 } from "@nori/app";
 import {
-  NoriError, availableLanguages, episodePathFor, formatClock, hosterRank, nextEpisode,
-  previousEpisode, resumePosition,
+  NoriError, availableLanguages, emptyRecovery, episodePathFor, formatClock, hosterRank,
+  nextEpisode, noteSourceFailure, noteSourceSuccess, noteSourceSwitch, planRecovery,
+  previousEpisode, recoveryForEpisode, remainingSources, resumePosition,
   type CatalogProvider, type Episode, type HosterOption, type PlaySource, type SeriesDetail,
   type WatchInfo,
 } from "@nori/core";
@@ -84,7 +85,14 @@ export function PlayerPage() {
   const [phase, setPhase] = useState<Phase>("resolving");
   const [statusText, setStatusText] = useState("Folge wird geöffnet …");
   const [errorText, setErrorText] = useState("");
-  const [failedHosters, setFailedHosters] = useState<string[]>([]);
+  /**
+   * Welche Quellen für diese Folge schon gescheitert sind und wie oft
+   * gewechselt wurde. Die Regeln stehen im Kern (`planRecovery`) und gelten
+   * damit auf jedem Nori-Client gleich.
+   */
+  const [recovery, setRecovery] = useState(() => emptyRecovery());
+  /** Sekunden bis zur nächsten Folge. `null` heißt: kein Countdown. */
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [lang, setLang] = useState(library.state.langPref);
 
   const [playing, setPlaying] = useState(false);
@@ -128,7 +136,8 @@ export function PlayerPage() {
     setStatusText("Folge wird geöffnet …");
     setInfo(null);
     setSource(null);
-    setFailedHosters([]);
+    setCountdown(null);
+    setRecovery((state) => recoveryForEpisode(state, `${provider}|${episodePath}`));
     watch(provider, episodePath).then(
       (value) => {
         if (cancelled) return;
@@ -165,6 +174,7 @@ export function PlayerPage() {
       });
       log("resolver", "Stream", resolved.hoster, resolved.lang, resolved.kind);
       setSource(resolved);
+      setRecovery((state) => noteSourceSuccess(state));
       setPhase("playing");
     } catch (cause) {
       const message = cause instanceof NoriError
@@ -178,10 +188,41 @@ export function PlayerPage() {
 
   useEffect(() => {
     if (!info) return;
-    void resolveWith(undefined, failedHosters);
+    void resolveWith(undefined, recovery.failed);
     // Nur bei neuen Hosterdaten oder gewechselter Sprache neu auflösen.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info, lang]);
+
+  /**
+   * Ein Stream ist mitten in der Wiedergabe abgebrochen.
+   *
+   * Nicht einfach den Fehler stehen lassen: eine Schutzseite oder eine
+   * abgelaufene Adresse ist beim nächsten Hoster regelmäßig nicht da. Wie weit
+   * das gehen darf, entscheidet der Kern (`planRecovery`) — mit Budget, damit
+   * es nicht in eine Schleife läuft.
+   */
+  const recoverFrom = useCallback((message: string) => {
+    const current = source ? { hoster: source.hoster, lang: source.lang } : null;
+    const failed = noteSourceFailure(recovery, current);
+    const step = planRecovery(failed, info?.hosters ?? [], current, library.state.hosterPref);
+
+    if (step.kind === "switch") {
+      const advanced = noteSourceSwitch(failed);
+      setRecovery(advanced);
+      warn("playback", message, "— weiter mit", step.option.name);
+      void resolveWith(step.option, advanced.failed);
+      return;
+    }
+    if (step.kind === "retry") {
+      setRecovery(failed);
+      warn("playback", message, "— noch einmal");
+      void resolveWith(undefined, failed.failed);
+      return;
+    }
+    setRecovery(failed);
+    setErrorText([message, step.reason].filter(Boolean).join("\n"));
+    setPhase("error");
+  }, [source, recovery, info, library.state.hosterPref, resolveWith]);
 
   // ---- Wiedergabe ---------------------------------------------------------
 
@@ -195,10 +236,7 @@ export function PlayerPage() {
       kind: source.kind,
       startAt: startAt.current,
       onEngine: (engine) => log("playback", "Engine", engine),
-      onFatal: (message) => {
-        setErrorText(message);
-        setPhase("error");
-      },
+      onFatal: (message) => recoverFrom(message),
     });
     playback.current = attached;
     void node.play().catch(() => undefined);
@@ -243,6 +281,26 @@ export function PlayerPage() {
     startAt.current = at;
   }, [navigate, provider, slug, season]);
 
+  /**
+   * Der Countdown zur nächsten Folge.
+   *
+   * Eigener Effekt, nicht in der Aufgabe, die ihn gestartet hat: ein Wechsel
+   * der Folge räumt diese Ansicht ab, und ein Timer darin liefe ins Leere.
+   * Abgebrochen wird er durch jeden Druck auf „Abbrechen" — und dadurch, dass
+   * `countdown` beim Öffnen einer Folge auf `null` zurückfällt.
+   */
+  useEffect(() => {
+    if (countdown === null) return undefined;
+    if (countdown <= 0) {
+      const next = latest.current.nextEp;
+      setCountdown(null);
+      if (next) openEpisode(next, 0);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setCountdown((value) => (value === null ? null : value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [countdown, openEpisode]);
+
   useEffect(() => {
     const node = video.current;
     if (!node) return undefined;
@@ -261,9 +319,15 @@ export function PlayerPage() {
     const onEnded = () => {
       const { saveProgress: save, nextEp: next, settings: device } = latest.current;
       save(node.duration || 0, node.duration || 0, true);
-      if (device.autoplayCountdown >= 0 && latest.current.library.state.autoplayNext && next) {
+      if (!latest.current.library.state.autoplayNext || !next) return;
+      // Mit Countdown statt sofortigem Sprung — wie auf iPhone, Mac und
+      // Fernseher. Die Länge kommt aus den Geräteeinstellungen, deren Vorgabe
+      // im Kern steht (`AUTOPLAY_COUNTDOWN_SEC`). Bei 0 geht es sofort weiter.
+      if (device.autoplayCountdown <= 0) {
         openEpisode(next, 0);
+        return;
       }
+      setCountdown(device.autoplayCountdown);
     };
     node.addEventListener("timeupdate", onTime);
     node.addEventListener("progress", onTime);
@@ -414,12 +478,21 @@ export function PlayerPage() {
     .filter((option) => option.lang.toLowerCase() === lang.toLowerCase())
     .sort((a, b) => hosterRank(a.name) - hosterRank(b.name)), [info, lang]);
 
+  /** Die Quellen, die für diese Folge noch übrig sind — ohne die gescheiterten. */
+  const remainingHosters = useMemo(
+    () => (info ? remainingSources(recovery, info.hosters, lang, library.state.hosterPref) : []),
+    [info, lang, library.state.hosterPref, recovery],
+  );
+
   const tryNextHoster = useCallback(() => {
-    if (!source) return;
-    const skipped = [...failedHosters, source.hoster];
-    setFailedHosters(skipped);
-    void resolveWith(undefined, skipped);
-  }, [failedHosters, resolveWith, source]);
+    const next = remainingHosters[0];
+    if (!next) return;
+    const advanced = noteSourceSwitch(
+      source ? noteSourceFailure(recovery, { hoster: source.hoster, lang: source.lang }) : recovery,
+    );
+    setRecovery(advanced);
+    void resolveWith(next, advanced.failed);
+  }, [remainingHosters, recovery, resolveWith, source]);
 
   const percent = duration > 0 ? (position / duration) * 100 : 0;
   const bufferPercent = duration > 0 ? (buffered / duration) * 100 : 0;
@@ -439,6 +512,26 @@ export function PlayerPage() {
         onClick={togglePlay}
       />
 
+      {countdown !== null && nextEp ? (
+        <div className="player-next" role="status">
+          <span className="eyebrow">Als Nächstes</span>
+          <strong>{nextEp.number}. {nextEp.germanTitle || nextEp.englishTitle || `Folge ${nextEp.number}`}</strong>
+          <small>Startet in {countdown} {countdown === 1 ? "Sekunde" : "Sekunden"}</small>
+          <div className="hero-actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => { setCountdown(null); openEpisode(nextEp, 0); }}
+            >
+              <Icon name="play" /><span>Jetzt abspielen</span>
+            </button>
+            <button type="button" className="btn" onClick={() => setCountdown(null)}>
+              <Icon name="close" /><span>Abbrechen</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {phase !== "playing" ? (
         <div className="player-overlay">
           {phase === "error" ? (
@@ -449,9 +542,9 @@ export function PlayerPage() {
                 <button type="button" className="btn primary" onClick={() => void resolveWith()}>
                   <Icon name="refresh" /><span>Erneut versuchen</span>
                 </button>
-                {hosters.length > 1 ? (
+                {remainingHosters.length > 0 ? (
                   <button type="button" className="btn" onClick={tryNextHoster}>
-                    <Icon name="layers" /><span>Anderer Hoster</span>
+                    <Icon name="layers" /><span>Anderer Hoster ({remainingHosters[0].name})</span>
                   </button>
                 ) : null}
                 <button type="button" className="btn" onClick={leave}>

@@ -183,9 +183,20 @@ export const PosterCard = memo(function PosterCard(props: CardProps) {
 }, sameCard);
 
 /** Eine 16:9-Karte — für Folgen, nicht für Serien. */
-export const LandscapeCard = memo(function LandscapeCard(props: CardProps & { still?: string | null }) {
+export const LandscapeCard = memo(function LandscapeCard(
+  props: CardProps & {
+    still?: string | null;
+    /**
+     * „Aus Weiterschauen entfernen". Ein eigener Knopf auf der Karte statt
+     * eines Kontextmenüs; er erscheint beim Überfahren und ist mit der
+     * Tastatur erreichbar. Gelöscht wird dabei nichts (`WatchMarks` im Kern).
+     */
+    onRemove?(): void;
+  },
+) {
   const percent = clampPercent(props.percent);
   return (
+    <div className="card-wrap">
     <button
       type="button"
       className="card land"
@@ -213,6 +224,18 @@ export const LandscapeCard = memo(function LandscapeCard(props: CardProps & { st
       <span className="card-title">{props.title}</span>
       {props.subtitle ? <span className="card-sub">{props.subtitle}</span> : null}
     </button>
+    {props.onRemove ? (
+      <button
+        type="button"
+        className="card-remove"
+        title="Aus „Weiterschauen“ entfernen"
+        aria-label={`${props.title} aus „Weiterschauen“ entfernen`}
+        onClick={props.onRemove}
+      >
+        <Icon name="close" />
+      </button>
+    ) : null}
+    </div>
   );
 }, sameCard);
 
@@ -220,11 +243,15 @@ function sameCard(a: CardProps & { still?: string | null }, b: CardProps & { sti
   return a.slug === b.slug && a.provider === b.provider && a.title === b.title
     && a.subtitle === b.subtitle && a.percent === b.percent && a.eager === b.eager
     && a.still === b.still && a.onSelect === b.onSelect
+    && (a as { onRemove?: unknown }).onRemove === (b as { onRemove?: unknown }).onRemove
     && (a.alts?.join("|") ?? "") === (b.alts?.join("|") ?? "");
 }
 
 /** Eine Folge in der Liste der Detailseite. */
-export function EpisodeRow({ number, label, meta, state, done, still, slug, provider, seriesTitle, percent, onSelect }: {
+export function EpisodeRow({
+  number, label, meta, state, done, still, slug, provider, seriesTitle, percent,
+  onSelect, onToggleWatched,
+}: {
   number: number;
   label: string;
   meta: string;
@@ -236,8 +263,19 @@ export function EpisodeRow({ number, label, meta, state, done, still, slug, prov
   seriesTitle: string;
   percent: number;
   onSelect(): void;
+  /**
+   * Haken setzen oder wegnehmen.
+   *
+   * Ein eigener Knopf und kein Kontextmenü: ein Befehl, den man nicht findet,
+   * gibt es nicht. Er liegt am rechten Rand der Zeile, ist mit der Tastatur
+   * erreichbar und trägt seinen Zustand über `aria-pressed`. Die Regel
+   * dahinter steht im Kern (`WatchMarks`) und gilt genauso auf dem Fernseher,
+   * dem iPhone und dem Mac.
+   */
+  onToggleWatched?(): void;
 }) {
   return (
+    <div className={`ep-wrap${done ? " done" : ""}`}>
     <button type="button" className={`ep${done ? " done" : ""}`} onClick={onSelect}>
       <span className="ep-thumb" data-nav-quiet="">
         <Artwork
@@ -259,6 +297,19 @@ export function EpisodeRow({ number, label, meta, state, done, still, slug, prov
         <span className={`ep-state${done ? " done" : ""}`}>{state ?? " "}</span>
       </span>
     </button>
+    {onToggleWatched ? (
+      <button
+        type="button"
+        className={`ep-mark${done ? " done" : ""}`}
+        aria-pressed={done}
+        title={done ? "Als ungesehen markieren" : "Als gesehen markieren"}
+        aria-label={`Folge ${number} ${done ? "als ungesehen" : "als gesehen"} markieren`}
+        onClick={onToggleWatched}
+      >
+        <Icon name="check" />
+      </button>
+    ) : null}
+    </div>
   );
 }
 

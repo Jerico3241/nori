@@ -17,10 +17,10 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 | Plattform | Version | Status |
 | --- | --- | --- |
-| iOS / iPadOS | **1.25.2** | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **1.20.1** | Native SwiftUI-App mit eigener Mac-Oberfläche |
-| Windows | **2.0.0** | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
-| LG webOS | **2.4.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+| iOS / iPadOS | **1.26.0** | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **1.21.0** | Native SwiftUI-App mit eigener Mac-Oberfläche |
+| Windows | **2.1.0** | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
+| LG webOS | **2.5.0** | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
 
 ## Projektstruktur
 
@@ -66,6 +66,19 @@ Die Oberflächen bleiben bewusst plattformspezifisch. iOS nutzt unter anderem Ta
 
 Beide Testreihen prüfen absichtlich dieselben HTML-Ausschnitte — `native/Tests/NoriCoreTests/Fixtures.swift` und `shared/nori-core/test/fixtures.ts`.
 
+Gemeinsam ist außerdem alles, was „gesehen", „weiterschauen", „gefunden" und
+„der Stream ist abgebrochen" bedeutet. Jede dieser Regeln liegt genau zweimal —
+einmal Swift, einmal TypeScript — und wird in beiden Sprachen gegen dieselben
+Fälle geprüft:
+
+| Swift | TypeScript | Inhalt |
+| --- | --- | --- |
+| `WatchMarks.swift` | `watch.ts` | Sehstand setzen und herleiten |
+| `Playback.swift` | `playback.ts` | Countdown, Quellenwechsel, Übersprungmarken |
+| `CatalogSearch.swift` | `search.ts` | Suchstufen und Tippfehlertoleranz |
+| `LibrarySync.swift` | `sync.ts` | Zusammenführung |
+| `LibraryStore.swift` | `library.ts` | Ablageformat und Migration |
+
 ### Gemeinsame Anwendungsschicht
 
 `shared/nori-app/` liegt zwischen dem Kern und den Oberflächen: Zustand
@@ -94,7 +107,9 @@ für sich.
 - Anime-Katalog über AniWorld
 - Serien-Katalog über Serienstream
 - gemeinsame Bibliotheksansicht mit Anime, Serien und K-Drama-Bereich
-- Suche
+- Suche in Stufen und mit Tippfehlertoleranz, überall dieselbe: „pokemon"
+  trifft „Pokémon", „shingeki no kyojin" den Eintrag, den die Quelle „Attack on
+  Titan" nennt, und „Damonenjager" den „Dämonenjäger"
 - Detailseiten für Serien und Anime
 - Staffeln, Episoden und Filme
 - Cover und Metadaten
@@ -147,7 +162,11 @@ Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
 - Bild einpassen oder formatfüllend
 - AirPlay über `AVRoutePickerView`, Picture-in-Picture über
   `AVPictureInPictureController`
-- automatischer Start der nächsten Folge, mit Countdown-Ring und Abbruch
+- automatischer Start der nächsten Folge nach zehn Sekunden, mit Countdown und
+  Abbruch; die Länge steht im Kern und gilt auf allen Plattformen
+- **Wiederherstellung nach einem abgebrochenen Stream**: die nächste Quelle
+  wird selbst versucht, höchstens dreimal je Folge, eine gescheiterte kein
+  zweites Mal — danach eine Meldung statt einer Schleife
 - Bedienung blendet nach vier Sekunden aus — nicht im Stehen, nicht beim
   Ziehen, nicht bei offenem Menü, nicht mit VoiceOver
 
@@ -158,6 +177,11 @@ Lizenzhinweise in `THIRD-PARTY-NOTICES.md`.
 - automatisches Speichern des Wiedergabefortschritts
 - Weiterschauen / Resume an der letzten Position
 - Folgen gelten ab etwa 90 % Wiedergabe als abgeschlossen
+- **gesehen und ungesehen von Hand** — je Folge, je Staffel, je Serie, auf
+  iPhone, iPad, Mac, Windows und Fernseher nach denselben Regeln
+- **„Aus Weiterschauen entfernen"** und **Fortschritt zurücksetzen**; beides
+  löscht nichts, es setzt angefangene Folgen auf null und lässt abgeschlossene
+  abgeschlossen
 - Fortschritt wird nach Provider und normalisiertem Episodenpfad getrennt gespeichert
 - Migration älterer lokaler Bibliotheksstände
 

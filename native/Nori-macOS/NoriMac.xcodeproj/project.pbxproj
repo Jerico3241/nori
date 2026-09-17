@@ -34,6 +34,8 @@
 		ABA0 /* TMDBArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACA0 /* TMDBArtwork.swift */; };
 		AB71 /* TMDBMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC71 /* TMDBMatcher.swift */; };
 		AB9A /* CatalogSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9A /* CatalogSearch.swift */; };
+		AB9B /* WatchMarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9B /* WatchMarks.swift */; };
+		AB9C /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9C /* Playback.swift */; };
 		AB72 /* LibrarySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC72 /* LibrarySync.swift */; };
 		AB73 /* LibrarySyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC73 /* LibrarySyncEngine.swift */; };
 		AB74 /* GoogleDrive.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC74 /* GoogleDrive.swift */; };
@@ -73,6 +75,8 @@
 		ACA0 /* TMDBArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBArtwork.swift; sourceTree = "<group>"; };
 		AC71 /* TMDBMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TMDBMatcher.swift; sourceTree = "<group>"; };
 		AC9A /* CatalogSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogSearch.swift; sourceTree = "<group>"; };
+		AC9B /* WatchMarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarks.swift; sourceTree = "<group>"; };
+		AC9C /* Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playback.swift; sourceTree = "<group>"; };
 		AC72 /* LibrarySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySync.swift; sourceTree = "<group>"; };
 		AC73 /* LibrarySyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySyncEngine.swift; sourceTree = "<group>"; };
 		AC74 /* GoogleDrive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleDrive.swift; sourceTree = "<group>"; };
@@ -138,6 +142,8 @@
 				ACA0 /* TMDBArtwork.swift */,
 				AC71 /* TMDBMatcher.swift */,
 				AC9A /* CatalogSearch.swift */,
+				AC9B /* WatchMarks.swift */,
+				AC9C /* Playback.swift */,
 				AC20 /* Assets.xcassets */,
 				AC21 /* Info.plist */,
 			);
@@ -260,6 +266,8 @@
 				ABA0 /* TMDBArtwork.swift in Sources */,
 				AB71 /* TMDBMatcher.swift in Sources */,
 				AB9A /* CatalogSearch.swift in Sources */,
+				AB9B /* WatchMarks.swift in Sources */,
+				AB9C /* Playback.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -273,7 +281,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -281,7 +289,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.20.1;
+				MARKETING_VERSION = 1.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.macos;
 				PRODUCT_NAME = Nori;
 				SDKROOT = macosx;
@@ -299,7 +307,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Nori/Info.plist;
@@ -307,7 +315,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.20.1;
+				MARKETING_VERSION = 1.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = to.nori.macos;
 				PRODUCT_NAME = Nori;
 				SDKROOT = macosx;

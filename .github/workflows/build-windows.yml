@@ -1,41 +1,63 @@
 name: Build Windows
 
-# Der Lauf, der Nori für Windows baut — auf einem **von GitHub gestellten**
-# Windows-Runner.
+# Der Lauf, der Nori für Windows baut — auf dem self-hosted Mac, wie alle
+# anderen Läufe des Projekts.
 #
-# ## Warum nicht der self-hosted Mac
+# ## Warum nicht mehr auf einem Windows-Runner von GitHub
 #
-# `electron-builder` ruft für die Windows-Ressourcen und die
-# Deinstallationsroutine Windows-Programme auf. Auf einem Mac oder unter Linux
-# braucht es dafür Wine — in **beiden** Hälften, 64 und 32 Bit; ohne die
-# 32-Bit-Hälfte scheitert NSIS mit `failed to load syswow64\ntdll.dll`. Das
-# ließe sich einrichten, ergäbe aber ein kreuzgebautes Paket, das nie auf
-# Windows lief.
+# Weil es ihn nicht mehr gibt. Bei einem privaten Repository zählen gestellte
+# Runner gegen das Minutenkontingent, Windows mit Faktor 2, und das Kontingent
+# ist aufgebraucht — derselbe Grund, aus dem alle Apple-Läufe hier liegen.
+# Gemessen, nicht vermutet: Lauf 35225331616 lief am öffentlichen Repository
+# grün durch (14/14 Schritte, 4:25 min), Lauf 35227553568 zwanzig Minuten
+# später am privaten scheiterte nach vier Sekunden mit
+# `billable.WINDOWS.total_ms = 0` — der Job bekam nie einen Runner.
 #
-# Hier läuft es auf echtem Windows, und die Desktop-Prüfung startet die
-# gebaute App auf demselben System, für das sie gedacht ist — zweimal: gegen
-# den Quellordner und gegen das gepackte `app.asar`.
+# ## Was der Mac kann und was nicht
 #
-# ## Was das kostet
+# Bauen und durchspielen kann er alles: `tsc`, `esbuild` und Vite sind
+# plattformunabhängig, und die Desktop-Prüfung startet Electron für macOS mit
+# demselben Haupt- und Renderer-Code, den Windows später ausführt. Das ist die
+# Prüfung, die Fehler in der App findet.
 #
-# Windows-Runner rechnen mit **Faktor 2**: eine Minute Laufzeit sind zwei
-# Minuten vom Kontingent, ein Durchlauf also rund 10–16 Minuten. Das ist
-# ausdrücklich freigegeben; die Pfadfilter unten halten es trotzdem bei den
-# Änderungen, die Windows tatsächlich betreffen.
+# Zwei Schritte kann er **nicht**:
+#
+#   Packen   `electron-builder` ruft für Windows-Ressourcen und die
+#            NSIS-Deinstallationsroutine Windows-Programme auf. Auf einem Mac
+#            braucht es dafür Wine — in **beiden** Hälften, 64 und 32 Bit;
+#            ohne die 32-Bit-Hälfte scheitert NSIS an
+#            `failed to load syswow64\ntdll.dll`. Der Schritt darunter prüft
+#            das vorher und sagt genau das, statt mitten im Packen
+#            umzufallen.
+#
+#   Das Paket prüfen   Was dabei entsteht, ist eine `Nori.exe`. Die lässt sich
+#            auf einem Mac nicht starten, auch nicht unter Wine mit Playwright
+#            davor. Dieser Schritt läuft deshalb nur auf einem
+#            Windows-Runner — und steht hier, damit er wieder anspringt, sobald
+#            es einen gibt.
+#
+# Ein auf dem Mac geschnürtes Paket ist damit kreuzgebaut und auf dem Zielsystem
+# ungetestet. Wer Installer und ZIP wirklich geprüft haben will, braucht einen
+# self-hosted Windows-Runner. Siehe docs/windows.md.
 #
 # ## Wann er läuft
 #
 #   Pull Request   bei jeder Änderung an Windows, der geteilten Schicht oder
 #                  dem Kern — das Ergebnis liegt danach 30 Tage als Artefakt am
 #                  Lauf und lässt sich von github.com laden.
+#   Push auf main  dasselbe noch einmal auf dem gemergten Stand.
 #   von Hand       Actions → Build Windows → Run workflow.
-#   Tag            `windows-v<version>` legt zusätzlich einen Release an und
-#                  hängt Installer und ZIP daran.
 #
-# `pull_request` und `push` sind getrennte Ereignisse — deshalb stehen die
-# Pfadfilter beim einen und der Tag beim anderen. In **einem** `push`-Block
-# würden `paths` und `tags` mit UND verknüpft, und ein Tag ohne passende
-# Pfadänderung liefe nie.
+# Kein Tag-Auslöser, und der Branch-Filter bei `push` ist keine Zierde.
+# Seit der gemeinsamen Release-Pipeline veröffentlicht ausschließlich
+# `release.yml`, und `tools/test_nori_release.py` besteht darauf, dass **kein**
+# Workflow an einem Tag hängt — auch nicht mittelbar über ein `push` ohne
+# Branch-Filter, das für Tags mitläuft. Sonst stieße ein Release-Tag die Builds
+# ein zweites Mal an und legte einen zweiten Release an.
+#
+# Windows ist in dieser Pipeline noch nicht vorgesehen: `nori-release.py` kennt
+# ios, macos und webos. Installer und ZIP liegen deshalb vorerst als Artefakt
+# am Lauf, nicht an einem Release. Siehe docs/windows.md.
 on:
   pull_request:
     paths:
@@ -43,15 +65,14 @@ on:
       - 'shared/nori-app/**'
       - 'shared/nori-core/**'
       - '.github/workflows/build-windows.yml'
-  workflow_dispatch:
-    inputs:
-      release:
-        description: 'Zusätzlich einen Release anlegen (nur mit passendem Tag)'
-        type: boolean
-        default: false
   push:
-    tags:
-      - 'windows-v*'
+    branches: [main]
+    paths:
+      - 'apps/windows/**'
+      - 'shared/nori-app/**'
+      - 'shared/nori-core/**'
+      - '.github/workflows/build-windows.yml'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -62,7 +83,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 30
 
     steps:
@@ -76,24 +97,22 @@ jobs:
         with:
           node-version: '22'
 
-      # Die Version steht in `apps/windows/package.json` und sonst nirgends.
-      # Bei einem Tag muss sie dazu passen, sonst entstünde ein Release
-      # `windows-v2.0.1` mit einer `Nori-Setup-2.0.0.exe` darin.
-      - name: Version bestimmen und gegen den Tag prüfen
+      # Die Version steht in `apps/windows/package.json` und sonst nirgends —
+      # `electron-builder` nimmt sie von dort in Dateinamen,
+      # Windows-Ressourcen und Deinstallationseintrag. Sie muss zur Wurzel
+      # passen, sonst tragen Installer und Repository verschiedene Nummern.
+      - name: Version bestimmen
         id: meta
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./apps/windows/package.json').version")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            TAG="${{ github.ref_name }}"
-            if [ "${TAG#windows-v}" != "$VERSION" ]; then
-              echo "Tag $TAG, aber apps/windows/package.json sagt $VERSION." >&2
-              exit 1
-            fi
+          ROOT="$(node -p "require('./package.json').version")"
+          if [ "$VERSION" != "$ROOT" ]; then
+            echo "apps/windows/package.json sagt $VERSION, package.json sagt $ROOT." >&2
+            exit 1
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Nori für Windows $VERSION"
 
       # Der geteilte Kern zuerst: die Windows-App bindet ihn als `file:`-Paket
@@ -131,14 +150,56 @@ jobs:
           npm i --no-save --no-audit --no-fund playwright
           node test/desktop.test.mjs
 
+      # Nur bei einem Fehlschlag, vorher `always()`.
+      #
+      # Bildschirmfotos sind Diagnose, nicht Ergebnis: Auf einem grünen Lauf
+      # sieht sie niemand an. Am 17.09. haben sie einen solchen Lauf gekippt —
+      # der Fernbedienungslauf meldete 341/341, der Upload danach scheiterte an
+      # `Artifact storage quota has been hit`, und alles ab dort wurde
+      # übersprungen: der produktive Build, das Paket und sein
+      # Referenzvergleich. Ein Diagnoseschritt hat die eigentliche Prüfung
+      # verdeckt.
+      #
+      # `continue-on-error` wäre der naheliegende Griff und ist hier verboten:
+      # `tools/test_nori_release.py` lässt in einem Paket-Job keinen Schritt zu,
+      # der übergangen werden darf — sonst entstünde ein Paket über einer
+      # ausgefallenen Prüfung. `if: failure()` erreicht dasselbe, ohne die Regel
+      # anzutasten: Auf dem grünen Weg läuft der Schritt gar nicht erst.
       - name: Bildschirmfotos ablegen
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Nori-Windows-Screenshots
           path: apps/windows/test-shots/*.png
           if-no-files-found: warn
           retention-days: 14
+
+      # Erst die Werkzeuge, dann packen — dieselbe Lehre wie bei den
+      # Apple-Läufen: eine fehlende Voraussetzung sieht sonst aus wie ein
+      # Fehler im Quelltext. `electron-builder` bricht ohne die 32-Bit-Hälfte
+      # von Wine mitten in NSIS ab, mit einer Meldung über `syswow64\ntdll.dll`,
+      # die niemand ohne Vorwissen einordnet.
+      - name: Voraussetzungen fürs Packen
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "Windows-Runner — kein Wine nötig."
+            exit 0
+          fi
+          MISSING=""
+          command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1 || MISSING="wine64"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Wine fehlt auf diesem Runner — ohne es entsteht kein Windows-Paket."
+            {
+              echo "  Gebraucht werden beide Hälften, 64 und 32 Bit."
+              echo "  Ohne die 32-Bit-Hälfte scheitert NSIS an syswow64\\ntdll.dll."
+              echo "  Einrichtung: docs/windows.md, Abschnitt 'In der CI bauen'."
+              echo "  Alternative ohne Wine: ein self-hosted Windows-Runner."
+            } >&2
+            exit 1
+          fi
+          wine64 --version 2>/dev/null || wine --version
 
       - name: Installer und ZIP schnüren
         working-directory: apps/windows
@@ -147,7 +208,12 @@ jobs:
       # Dieselben 56 Prüfungen noch einmal, aber gegen das **gepackte**
       # Ergebnis: `electron-builder` entscheidet selbst, was ins `app.asar`
       # kommt, und was dort fehlt, fällt sonst erst beim Nutzer auf.
+      # Nur auf einem Windows-Runner: Was `electron-builder` ablegt, ist eine
+      # `Nori.exe`, und die startet auf einem Mac nicht — auch nicht mit
+      # Playwright davor. Der Schritt bleibt stehen, damit er wieder
+      # anspringt, sobald ein Windows-Runner da ist.
       - name: Desktop-Prüfung gegen das Paket
+        if: runner.os == 'Windows'
         working-directory: apps/windows
         env:
           NORI_PACKAGED: release/win-unpacked/Nori.exe
@@ -163,59 +229,6 @@ jobs:
             apps/windows/release/Nori-*-portable.zip
           if-no-files-found: error
           retention-days: 30
-
-      # Nur bei einem Tag. Ein Artefakt verfällt nach 30 Tagen, ein Release
-      # nicht — und eine Adresse auf `github.com` ist die, die man weitergeben
-      # kann.
-      - name: Release anlegen und Installer anhängen
-        if: github.ref_type == 'tag'
-        shell: bash
-        env:
-          TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          set -euo pipefail
-          API="https://api.github.com/repos/${{ github.repository }}"
-
-          python3 tools/changelog-section.py Windows "$VERSION" > notes.md
-          {
-            echo ""
-            echo "---"
-            echo ""
-            echo "\`Nori-Setup-$VERSION.exe\` ist ein Installer ohne Administratorrechte."
-            echo "\`Nori-$VERSION-portable.zip\` entpacken und \`Nori.exe\` starten — es wird nichts installiert."
-            echo ""
-            echo "Das Paket ist **nicht signiert**: SmartScreen meldet sich beim ersten Start."
-            echo "Weitere Informationen → Trotzdem ausführen."
-          } >> notes.md
-
-          BODY="$(python3 -c '
-          import json, os
-          print(json.dumps({
-              "tag_name": os.environ["TAG"],
-              "name": "Nori für Windows " + os.environ["VERSION"],
-              "body": open("notes.md", encoding="utf-8").read(),
-              "draft": False,
-              "prerelease": False,
-          }))')"
-
-          ID="$(curl -sS -X POST "$API/releases" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -d "$BODY" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or sys.exit("Release nicht angelegt: " + json.dumps(d)[:400]))')"
-
-          for FILE in "apps/windows/release/Nori-Setup-$VERSION.exe" \
-                      "apps/windows/release/Nori-$VERSION-portable.zip"; do
-            NAME="$(basename "$FILE")"
-            curl -sS -X POST \
-              "https://uploads.github.com/repos/${{ github.repository }}/releases/$ID/assets?name=$NAME" \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$FILE" \
-              | python3 -c 'import json,sys; d=json.load(sys.stdin); print("Angehängt:", d.get("name") or sys.exit("Anhang fehlgeschlagen: " + json.dumps(d)[:400]))'
-          done
 
       - name: Prüfsummen ins Protokoll
         if: always()

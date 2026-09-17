@@ -17,7 +17,8 @@ import {
 } from "@nori/app";
 import {
   HomeCatalogIndex, PROVIDERS, formatClock, homeTitleFrom, isEpisodeComplete, progressPercent,
-  resumePosition, type CatalogProvider, type HomeCandidate, type SeriesDetail,
+  resumePosition, seasonProgressLabel, watchStateText,
+  type CatalogProvider, type Episode, type HomeCandidate, type SeasonEpisodes, type SeriesDetail,
 } from "@nori/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -45,6 +46,8 @@ export function DetailsPage() {
   const [, setArtVersion] = useState(0);
   const [seasonArt, setSeasonArt] = useState<SeasonArt | null>(null);
   const [similar, setSimilar] = useState<HomeCandidate[]>([]);
+  /** „Serie als gesehen" holt die übrigen Staffeln nach. */
+  const [markingSeries, setMarkingSeries] = useState(false);
 
   const base = useAsync<SeriesDetail>(() => series(provider, slug), [provider, slug]);
   const wantsOther = Boolean(season) && Boolean(base.data) && season !== base.data?.activeSeason;
@@ -157,6 +160,34 @@ export function DetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [art.tmdbID, catalogIndex, catalog.items.length, provider, slug]);
 
+  /**
+   * Die ganze Serie abhaken.
+   *
+   * Die einzige Stelle hier, die dafür Netz braucht: die Folgenliste jeder
+   * Staffel steht nur auf der Seite der Quelle. Die schon geladene Staffel
+   * wird nicht noch einmal geholt, geschrieben wird am Ende **einmal**.
+   */
+  const markSeriesSeen = useCallback(async (loaded: SeriesDetail, seasonId: string, known: Episode[]) => {
+    if (markingSeries) return;
+    setMarkingSeries(true);
+    try {
+      const all: SeasonEpisodes[] = [{ season: seasonId, episodes: known }];
+      for (const ref of loaded.seasons) {
+        if (ref.id === seasonId) continue;
+        try {
+          const other = await series(provider, slug, ref.id);
+          if (other.episodes.length > 0) all.push({ season: ref.id, episodes: other.episodes });
+        } catch (cause) {
+          log("data", "Staffel nicht ladbar", slug, ref.id, (cause as Error)?.message);
+        }
+      }
+      library.setSeriesWatched(slug, loaded.title, all, provider);
+    } finally {
+      setMarkingSeries(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markingSeries, provider, slug]);
+
   const openEpisode = useCallback((number: number, at = 0) => {
     const path = episodes.find((episode) => episode.number === number)?.path ?? "";
     navigate(
@@ -182,6 +213,10 @@ export function DetailsPage() {
     ? library.nextPlay(slug, activeSeason, episodes, provider)
     : { episode: 1, resumeAt: 0, kind: "play" as const };
   const stats = library.seasonStats(slug, activeSeason, episodes, provider);
+  // „7 von 12 gesehen" — der Text kommt aus dem Kern, damit alle Nori-Apps
+  // denselben schreiben.
+  const seasonLabelText = seasonProgressLabel(stats.watched, stats.total);
+  const seriesSummary = library.seriesWatchSummary(slug, provider);
   const seasons = base.data?.seasons ?? [];
   const seasonCount = seasons.filter((entry) => Number.parseInt(entry.id, 10) > 0).length;
   const latest = library.progressForEpisode(slug, activeSeason, plan.episode, undefined, provider);
@@ -268,8 +303,56 @@ export function DetailsPage() {
               {detail === null
                 ? "Folgen werden geladen …"
                 : `${episodes.length} ${episodes.length === 1 ? "Folge" : "Folgen"}`
-                  + (stats.total > 0 && stats.watched > 0 ? ` · ${stats.watched} von ${stats.total} gesehen` : "")}
+                  + (seasonLabelText ? ` · ${seasonLabelText}` : "")}
             </span>
+            {/*
+              Sehstand für Staffel und Serie. Auf dem Desktop sichtbare Knöpfe
+              statt eines Kontextmenüs: ein Befehl, den man nicht findet, gibt
+              es nicht. Je Folge sitzt der Haken rechts in der Zeile.
+            */}
+            {detail !== null && episodes.length > 0 ? (
+              <span className="season-actions">
+                <button
+                  type="button"
+                  className="btn small"
+                  title="Alle Folgen dieser Staffel abhaken"
+                  onClick={() => library.setSeasonWatched(
+                    true, slug, title, activeSeason, episodes, provider,
+                  )}
+                >
+                  <Icon name="check" /><span>Staffel gesehen</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  title="Den Haken bei allen Folgen dieser Staffel wegnehmen"
+                  onClick={() => library.setSeasonWatched(
+                    false, slug, title, activeSeason, episodes, provider,
+                  )}
+                >
+                  <Icon name="close" /><span>Staffel ungesehen</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={markingSeries}
+                  title="Jede Staffel dieser Serie abhaken — die fehlenden werden nachgeladen"
+                  onClick={() => void markSeriesSeen(detail, activeSeason, episodes)}
+                >
+                  <Icon name="check" />
+                  <span>{markingSeries ? "Wird markiert …" : "Serie gesehen"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={seriesSummary.state === "unseen"}
+                  title={`Sehstand: ${watchStateText(seriesSummary)}`}
+                  onClick={() => library.resetSeriesProgress(slug, provider)}
+                >
+                  <Icon name="trash" /><span>Fortschritt vergessen</span>
+                </button>
+              </span>
+            ) : null}
           </div>
 
           {wantsOther && seasonData.status === "error" ? (
@@ -312,6 +395,9 @@ export function DetailsPage() {
                     seriesTitle={title}
                     percent={percent}
                     onSelect={() => openEpisode(episode.number, library.state.resumeEnabled ? resumeAt : 0)}
+                    onToggleWatched={() => library.setWatched(
+                      !done, slug, title, activeSeason, episode, provider,
+                    )}
                   />
                 );
               })}

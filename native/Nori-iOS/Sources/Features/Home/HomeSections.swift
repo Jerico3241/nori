@@ -28,6 +28,10 @@ struct ContinueWatchingSection: View {
     /// läuft, muss erst die Detailseite da sein.
     let preparing: String?
     let onPlay: (WatchProgress) -> Void
+    /// Dieselbe Folge, aber von vorn.
+    let onRestart: (WatchProgress) -> Void
+    /// Die Serie aus der Reihe nehmen, ohne „gesehen" zu verlieren.
+    let onRemove: (WatchProgress) -> Void
 
     var body: some View {
         if !items.isEmpty {
@@ -50,7 +54,31 @@ struct ContinueWatchingSection: View {
                 .overlay(alignment: .top) { veil(for: item) }
         }
         .buttonStyle(NoriPressStyle(scale: 0.97))
+        .contextMenu { menu(for: item) }
         .accessibilityLabel("\(item.title), Staffel \(item.season) Folge \(item.episode), fortsetzen")
+        .accessibilityAction(named: "Aus Weiterschauen entfernen") { onRemove(item) }
+    }
+
+    /// Was sich an einer Kachel dieser Reihe tun lässt, außer sie zu starten.
+    ///
+    /// „Entfernen" löscht nichts: es setzt die angefangenen Folgen dieser
+    /// Serie auf null zurück. Abgeschlossene Folgen bleiben abgeschlossen —
+    /// wer eine Serie aus der Reihe nimmt, will sie loswerden und nicht seinen
+    /// Stand. Die Regel steht im Kern (`WatchMarks`), damit der Fernseher
+    /// dasselbe tut.
+    @ViewBuilder
+    private func menu(for item: WatchProgress) -> some View {
+        Button {
+            onRestart(item)
+        } label: {
+            Label("Folge von vorn", systemImage: "backward.end.fill")
+        }
+
+        Button(role: .destructive) {
+            onRemove(item)
+        } label: {
+            Label("Aus Weiterschauen entfernen", systemImage: "minus.circle")
+        }
     }
 
     @ViewBuilder

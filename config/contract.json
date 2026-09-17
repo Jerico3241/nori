@@ -43,7 +43,8 @@
     "WatchProgress": ["slug", "title", "season", "episode", "episodePath", "germanTitle", "englishTitle", "positionSec", "durationSec", "updatedAt", "lang", "completed", "provider"],
     "RecentItem": ["slug", "title", "viewedAt", "provider"],
     "AiringEntry": ["airingAt", "episode", "season", "title", "english", "slug", "languages", "dayKey", "dayLabel", "coverPath", "hasTime", "provider"],
-    "CalendarPayload": ["upcoming", "recent", "fetchedAt"]
+    "CalendarPayload": ["upcoming", "recent", "fetchedAt"],
+    "SkipSegment": ["type", "start", "end"]
   },
   "library": {
     "schemaVersion": 6,
@@ -193,7 +194,12 @@
   "rules": {
     "complete": "completed == true OR (durationSec >= 20 AND positionSec >= durationSec * 0.9)",
     "resume": "if complete then 0; if positionSec < 8 then 0; else positionSec",
-    "autoplay": "when enabled and a following episode exists, show an 8 second countdown and start the next episode",
+    "autoplay": "when enabled and a following episode exists, show a 10 second countdown and start the next episode. Die Länge steht im Kern (Playback.autoplayCountdownSec, AUTOPLAY_COUNTDOWN_SEC) und sonst nirgends; webOS darf sie je Gerät erhöhen, weil eine Fernbedienung länger braucht als ein Finger.",
+    "continueWatching": "Je Serie der jüngste angefasste Eintrag (positionSec > 0 oder completed), sofern er nicht abgeschlossen ist und nicht über 96 % steht, höchstens 16. Ein nur geöffneter Eintrag mit Position 0 zählt nicht — sonst stünde eine nie gesehene Folge in der Reihe, und „Aus Weiterschauen entfernen“ könnte nicht wirken.",
+    "watchMarks": "Gesehen/ungesehen wird von Hand gesetzt — je Folge, je Staffel, je Serie. „Gesehen“ schreibt completed = true mit positionSec = durationSec, „ungesehen“ einen leeren Stand (positionSec 0, completed false) mit frischem updatedAt. Nie gelöscht: für Fortschritt gibt es keinen Grabstein je Eintrag, und ein fehlender Eintrag käme beim nächsten Abgleich vom nächsten Gerät zurück. Alle Marken tragen Millisekunden seit 1970, wie jeder andere Zeitstempel der Bibliothek.",
+    "search": "Stufen von streng nach tolerant: 0 Titel gleich, 1 Titel beginnt damit, 2 Titel enthält es, 3 ein Alternativtitel oder Genre enthält es, 4 jedes Wort steht irgendwo im Eintrag, 5 jedes Wort mit Tippfehler (ab vier Buchstaben einer, ab sieben zwei). Verglichen wird in normalisierter Form (TMDBMatcher.normalize bzw. normalizeTitle). Gesucht wird ab zwei Zeichen; Stufe 5 läuft nur, wenn die strengen Stufen unter zwölf Treffer finden. Ziffern werden nie korrigiert — 1998 ist kein Vertipper von 1999.",
+    "playbackRecovery": "Eine Quelle, der ein Fehlschlag zugeordnet werden konnte, gilt für diese Folge als verbraucht; weiter geht es mit der nächsten aus hosterOrder. Höchstens drei automatische Wechsel je Folge, ein Wiederholungsversuch für einen nicht zuordenbaren Fehlschlag. Danach eine verständliche Meldung statt einer Schleife. Der Stand gehört zu genau einer Folge und beginnt bei der nächsten neu. Die Auswahl von Hand bleibt vollständig.",
+    "skipSegments": "Modell vorhanden (intro | outro | recap mit start und end in Sekunden), Datenquelle nicht. Weder AniWorld noch Serienstream nennen Zeitmarken, und TMDB kennt sie nicht. Feste Zeiten zu erfinden ist untersagt; ohne Daten wird nichts angeboten.",
     "playbackSpeeds": [0.75, 1.0, 1.25, 1.5, 2.0],
     "langOrder": ["DE", "GerSub", "EN"],
     "hosterOrder": ["voe", "vidmoly", "vidoza", "lulustream", "speedfiles", "filemoon", "doodstream"],

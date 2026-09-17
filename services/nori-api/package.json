@@ -1,6 +1,6 @@
 {
   "name": "@nori/api",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
   "description": "Nori-Provider-Schicht als HTTP-Dienst für Clients, die nicht selbst scrapen können (webOS)",

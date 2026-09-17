@@ -13,8 +13,9 @@
 // Keine Download-Knöpfe: Nori lädt nichts herunter.
 
 import {
-  HomeCatalogIndex, PROVIDERS, homeTitleFrom, progressPercent, resumePosition,
-  type CatalogProvider, type HomeCandidate, type SeriesDetail,
+  HomeCatalogIndex, PROVIDERS, homeTitleFrom, isEpisodeComplete, progressPercent, resumePosition,
+  seasonProgressLabel, watchStateText,
+  type CatalogProvider, type HomeCandidate, type SeasonEpisodes, type SeriesDetail,
 } from "@nori/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -69,6 +70,15 @@ export function DetailsPage() {
   const [similar, setSimilar] = useState<HomeCandidate[]>([]);
   const [seasonMenu, setSeasonMenu] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /**
+   * „Sehstand ändern": OK setzt eine Folge auf gesehen oder ungesehen, statt
+   * sie abzuspielen. Derselbe sichtbare Modus wie „Bearbeiten" in der
+   * Merkliste — eine Fernbedienung hat keinen langen Druck und kein
+   * Kontextmenü.
+   */
+  const [marking, setMarking] = useState(false);
+  /** „Serie als gesehen" holt die übrigen Staffeln nach. */
+  const [markingSeries, setMarkingSeries] = useState(false);
   const [limit, setLimit] = useState(() => {
     const remembered = recallFocus(route, "episodes");
     const number = remembered ? Number(remembered.replace("episode-", "")) : 0;
@@ -210,6 +220,37 @@ export function DetailsPage() {
     );
   }, [activeSeason, episodes, navigate, provider, slug]);
 
+  /**
+   * Die ganze Serie abhaken.
+   *
+   * Die einzige Stelle hier, die dafür Netz braucht: die Folgenliste jeder
+   * Staffel steht nur auf der Seite der Quelle. Die schon geladene Staffel
+   * wird nicht noch einmal geholt, und geschrieben wird am Ende **einmal** —
+   * auf einem Fernseher ist ein Schreibvorgang je Folge sichtbar.
+   */
+  const markSeriesSeen = useCallback(async () => {
+    const detailNow = detail;
+    if (!detailNow || markingSeries) return;
+    setMarkingSeries(true);
+    try {
+      const loaded: SeasonEpisodes[] = [{ season: activeSeason, episodes }];
+      for (const ref of detailNow.seasons) {
+        if (ref.id === activeSeason) continue;
+        try {
+          const other = await series(provider, slug, ref.id);
+          if (other.episodes.length > 0) loaded.push({ season: ref.id, episodes: other.episodes });
+        } catch (cause) {
+          log("data", "Staffel nicht ladbar", slug, ref.id, (cause as Error)?.message);
+        }
+      }
+      library.setSeriesWatched(slug, title, loaded, provider);
+    } finally {
+      setMarkingSeries(false);
+      setInfoOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, markingSeries, activeSeason, episodes, provider, slug, title]);
+
   const back = (
     <SpotButton className="glassbtn" focusRoute={route} focusArea="top" focusKey="back" onClick={() => navigate(-1)}>
       <Icon name="back" />
@@ -230,6 +271,10 @@ export function DetailsPage() {
     ? library.nextPlay(slug, activeSeason, episodes, provider)
     : { episode: 1, resumeAt: 0, kind: "play" as const };
   const stats = library.seasonStats(slug, activeSeason, episodes, provider);
+  // „7 von 12 gesehen" — der Text kommt aus dem Kern, damit iPhone, Mac und
+  // Fernseher denselben schreiben.
+  const seasonLabelText = seasonProgressLabel(stats.watched, stats.total);
+  const seriesSummary = library.seriesWatchSummary(slug, provider);
   const seasons = base.data?.seasons ?? [];
   const seasonCount = seasons.filter((entry) => Number.parseInt(entry.id, 10) > 0).length;
   const latest = library.progressForEpisode(slug, activeSeason, plan.episode, undefined, provider);
@@ -330,9 +375,28 @@ export function DetailsPage() {
             {loadingEpisodes
               ? "Folgen werden geladen …"
               : `${episodes.length} ${episodes.length === 1 ? "Folge" : "Folgen"}`
-                + (stats.total > 0 && stats.watched > 0 ? ` · ${stats.watched} von ${stats.total} gesehen` : "")}
+                + (seasonLabelText ? ` · ${seasonLabelText}` : "")}
           </span>
+          {episodes.length > 0 ? (
+            <SpotButton
+              className={`chip season-mark${marking ? " active" : ""}`}
+              focusRoute={route}
+              focusArea="seasons"
+              focusKey="season-mark"
+              aria-pressed={marking}
+              onClick={() => setMarking((value) => !value)}
+            >
+              <Icon name={marking ? "close" : "check"} />
+              {marking ? "Fertig" : "Sehstand"}
+            </SpotButton>
+          ) : null}
         </div>
+
+        {marking ? (
+          <p className="muted-note">
+            OK setzt eine Folge auf gesehen oder ungesehen. Abspielen geht nach „Fertig" wieder.
+          </p>
+        ) : null}
 
         {wantsOther && seasonData.status === "error" ? (
           <ErrorState title="Staffel nicht ladbar" message={seasonData.error ?? "Unbekannter Fehler"} onRetry={() => seasonData.reload()} />
@@ -367,8 +431,15 @@ export function DetailsPage() {
                   extras={seasonArt?.episodes[episode.number] ?? null}
                   progress={library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider)}
                   focusRoute={route}
+                  marking={marking}
                   onSelect={() => {
                     const item = library.progressForEpisode(slug, activeSeason, episode.number, episode.path, provider);
+                    if (marking) {
+                      library.setWatched(
+                        !isEpisodeComplete(item), slug, title, activeSeason, episode, provider,
+                      );
+                      return;
+                    }
                     openEpisode(episode.number, library.state.resumeEnabled ? resumePosition(item) : 0);
                   }}
                 />
@@ -412,7 +483,57 @@ export function DetailsPage() {
       />
 
       <Dialog open={infoOpen} onClose={() => setInfoOpen(false)} eyebrow="Mehr zu" title={title} id="details-info">
+        <div className="dialog-actions wrap">
+          <SpotButton
+            className="hero-btn"
+            focusKey="info-season-seen"
+            disabled={episodes.length === 0}
+            onClick={() => {
+              library.setSeasonWatched(true, slug, title, activeSeason, episodes, provider);
+              setInfoOpen(false);
+            }}
+          >
+            <Icon name="check" />
+            Staffel gesehen
+          </SpotButton>
+          <SpotButton
+            className="hero-btn"
+            focusKey="info-season-unseen"
+            disabled={episodes.length === 0}
+            onClick={() => {
+              library.setSeasonWatched(false, slug, title, activeSeason, episodes, provider);
+              setInfoOpen(false);
+            }}
+          >
+            <Icon name="close" />
+            Staffel ungesehen
+          </SpotButton>
+          <SpotButton
+            className="hero-btn"
+            focusKey="info-series-seen"
+            disabled={markingSeries || episodes.length === 0}
+            onClick={() => void markSeriesSeen()}
+          >
+            <Icon name="check" />
+            {markingSeries ? "Wird markiert …" : "Serie gesehen"}
+          </SpotButton>
+          <SpotButton
+            className="hero-btn"
+            focusKey="info-series-reset"
+            disabled={seriesSummary.state === "unseen"}
+            onClick={() => {
+              library.resetSeriesProgress(slug, provider);
+              setInfoOpen(false);
+            }}
+          >
+            <Icon name="trash" />
+            Fortschritt vergessen
+          </SpotButton>
+        </div>
+
         <dl className="info-list">
+          <dt>Sehstand</dt>
+          <dd>{watchStateText(seriesSummary)}</dd>
           {alts.length > 0 ? (<><dt>Auch bekannt als</dt><dd>{alts.slice(0, 4).join(" · ")}</dd></>) : null}
           {years ? (<><dt>Jahre</dt><dd>{years}</dd></>) : null}
           {base.data?.genres.length ? (<><dt>Genres</dt><dd>{base.data.genres.join(" · ")}</dd></>) : null}

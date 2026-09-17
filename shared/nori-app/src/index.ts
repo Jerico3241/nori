@@ -40,7 +40,6 @@ export * from "./state/library";
 export * from "./state/settings";
 export * from "./state/catalog";
 export * from "./state/catalogOrder";
-export * from "./state/search";
 export * from "./state/home";
 export * from "./state/calendarDates";
 

@@ -126,8 +126,23 @@ jobs:
           kill "$MOCK" 2>/dev/null || true
           exit "$STATUS"
 
+      # Nur bei einem Fehlschlag, vorher `always()`.
+      #
+      # Bildschirmfotos sind Diagnose, nicht Ergebnis: Auf einem grünen Lauf
+      # sieht sie niemand an. Am 17.09. haben sie einen solchen Lauf gekippt —
+      # der Fernbedienungslauf meldete 341/341, der Upload danach scheiterte an
+      # `Artifact storage quota has been hit`, und alles ab dort wurde
+      # übersprungen: der produktive Build, das Paket und sein
+      # Referenzvergleich. Ein Diagnoseschritt hat die eigentliche Prüfung
+      # verdeckt.
+      #
+      # `continue-on-error` wäre der naheliegende Griff und ist hier verboten:
+      # `tools/test_nori_release.py` lässt in einem Paket-Job keinen Schritt zu,
+      # der übergangen werden darf — sonst entstünde ein Paket über einer
+      # ausgefallenen Prüfung. `if: failure()` erreicht dasselbe, ohne die Regel
+      # anzutasten: Auf dem grünen Weg läuft der Schritt gar nicht erst.
       - name: Bildschirmfotos ablegen
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Nori-webOS-Screenshots
