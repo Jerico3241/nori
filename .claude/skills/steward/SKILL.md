@@ -33,22 +33,24 @@ Ein erfolgreicher statischer Check ersetzt keinen Xcode-Build. Für Änderungen 
 
 ## Versionspflege
 
-Die Apple-Plattformen haben eigene App-Versionen. Technische Source of Truth ist `MARKETING_VERSION` im jeweiligen `project.pbxproj`.
+Seit 2.6.0 tragen alle Plattformen **eine gemeinsame Nori-Version** — iOS/iPadOS, macOS, Windows, LG webOS, dazu Kern, Anwendungsschicht und Nori-Server. Welche Dateien sie tragen, weiß `tools/nori-version.py`; auf Apple landet sie über `MARKETING_VERSION` im Bundle.
 
-Bei einer Funktionsänderung:
+Bei jeder Änderung, die in einem Paket landet:
 
-1. `MARKETING_VERSION` anheben.
-2. `CURRENT_PROJECT_VERSION` anheben.
-3. `README.md`-Versionstabelle aktualisieren.
+1. `python3 tools/nori-version.py bump patch|minor|major` — setzt die Nummer überall und erhöht `CURRENT_PROJECT_VERSION` von iOS und macOS.
+2. `CHANGELOG.md`: Abschnitt `## [Nori x.y.z]` mit den Unterabschnitten, die sich tatsächlich geändert haben; `Nori **x.y.z**` in der Übersicht.
+3. `README.md` unter „Aktueller Stand“: `Nori **x.y.z**` und die Nummer in jeder Plattformzeile.
 4. Plattform-README aktualisieren, falls dort ein aktueller Versionsstand genannt wird.
-5. `CHANGELOG.md` ergänzen.
-6. UI-interne Release-Hinweise aktualisieren, falls die Plattform solche anzeigt.
+5. UI-interne Release-Hinweise aktualisieren: `NoriRelease.highlights` der Mac-App.
+6. `python3 tools/nori-version.py check --against origin/main`.
+
+Nie eine Plattform zurückstufen, nie eine Nummer zweimal für verschiedene Pakete vergeben.
 
 **Nicht mehr pflegen:** eine App-Version in `contract.json`. Der Contract ist plattformübergreifend und enthält keine App-Version.
 
 ## Bibliotheksschema
 
-`LibraryStore.schemaVersion` ist die technische Source of Truth. Aktuell: **v4**.
+`LibraryStore.schemaVersion` ist die technische Source of Truth. Aktuell: **v6**.
 
 `config/contract.json` muss denselben Wert dokumentieren. Änderungen an gespeicherten Feldern brauchen eine rückwärtskompatible Migration. Neue Felder möglichst optional halten.
 
@@ -79,15 +81,15 @@ Details stehen in `.claude/skills/apple-parity/SKILL.md`.
 
 ## Release
 
-Tags:
+Eine Version, ein Tag, ein Release:
 
-- `ios-vX.Y.Z`
-- `macos-vX.Y.Z`
-- `webos-vX.Y.Z`
+- Tag `vX.Y.Z`, GitHub Release `Nori vX.Y.Z`
+- Anhänge `Nori-<Plattform>-vX.Y.Z.<Endung>` und `checksums-sha256.txt`
+- keine Plattform-Tags mehr (`ios-v…`, `macos-v…`, `webos-v…`, `windows-v…`) — die alten bleiben stehen
 
-Releases werden nicht von Hand getaggt. Sie entstehen automatisch als letzter Job von `Package iOS IPA`, `Build webOS` und `Package macOS Source` auf `main`, sobald dort eine neue Version gebaut und geprüft ist — Voraussetzung ist ein Abschnitt `[<Plattform> <Version>]` in `CHANGELOG.md`. Regeln und Nachholen: `docs/releases.md`, Logik: `tools/nori-release.py`.
+Releases werden nicht von Hand getaggt und entstehen nicht in Plattform-Läufen. Einziger Weg: **GitHub → Actions → Nori Release → Run workflow → Version**, nachdem die Nummer auf `main` steht. Der Lauf prüft, baut, veröffentlicht, prüft nach und räumt erst dann alte Läufe auf. Regeln: `docs/releases.md`, Logik: `tools/nori-release.py`.
 
-Ein Release-Quellpaket muss enthalten:
+Das macOS-Quellpaket (`Nori-macOS-Source-vX.Y.Z.zip`) muss enthalten:
 
 - jeweiligen Plattformordner
 - `native/NoriCore/`
@@ -97,7 +99,7 @@ Ein Release-Quellpaket muss enthalten:
 - `README.md`
 - `CHANGELOG.md`
 
-Symlinks beim ZIPpen erhalten (`zip -y`), sonst geht die gemeinsame Core-Struktur im Quellpaket verloren.
+Symlinks müssen erhalten bleiben, sonst geht die gemeinsame Core-Struktur im Quellpaket verloren. `tools/nori-release.py source-package` schnürt das Paket deshalb direkt aus dem Commit, mit Symlinks als Symlinks.
 
 ## Build-Ausgabe
 

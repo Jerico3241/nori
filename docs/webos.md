@@ -435,14 +435,26 @@ npm run dev            # hört auf 0.0.0.0:8730, TMDB ohne Einrichtung
 derselben Nummer, aber unterschiedlichem Inhalt, sind hinterher nicht mehr
 unterscheidbar — und der Fernseher installiert das zweite nicht über das erste.
 
-Zu erhöhen sind `apps/webos/appinfo.json`, `apps/webos/package.json`,
-`shared/nori-core/package.json`, `services/nori-api/package.json` und
-`API_VERSION` in `services/nori-api/src/server.ts`; dazu gehört ein Abschnitt
-`## [webOS x.y.z]` im `CHANGELOG.md` und die Zeile in seiner Übersicht. Die
-Oberfläche zeigt die Nummer unter Mehr → Nori; sie wird beim Bauen aus
-`appinfo.json` gelesen. `python3 tools/check-webos-package.py` vergleicht alle vier
-Stellen samt Paketnamen und den Dateien im Paket und bricht ab, wenn eine
-abweicht.
+Seit 2.6.0 ist das die **gemeinsame Nori-Version** aller Plattformen. Gesetzt
+wird sie an einer Stelle für alle:
+
+```bash
+python3 tools/nori-version.py bump patch    # oder minor, major, set x.y.z
+```
+
+Das Werkzeug schreibt sie unter anderem in `apps/webos/appinfo.json`,
+`apps/webos/package.json`, `shared/nori-core/package.json`,
+`shared/nori-app/package.json`, `services/nori-api/package.json` und
+`API_VERSION` in `services/nori-api/src/server.ts`. Dazu gehört ein Abschnitt
+`## [Nori x.y.z]` im `CHANGELOG.md` und `Nori **x.y.z**` in seiner Übersicht.
+Die Oberfläche zeigt die Nummer unter Mehr → Nori; sie wird beim Bauen aus
+`appinfo.json` gelesen. `python3 tools/check-webos-package.py` vergleicht die
+webOS-Stellen samt Paketnamen und den Dateien im Paket,
+`python3 tools/nori-version.py check` alle Stellen aller Plattformen.
+
+Im GitHub Release heißt das Paket `Nori-webOS-v<VERSION>.ipk`
+([releases.md](releases.md)); `npm run webos:package` legt es weiterhin als
+`tv.nori.app_<VERSION>_all.ipk` ab. Für `ares-install` ist der Name gleich.
 
 ## Entwicklungsstand
 

@@ -1,27 +1,36 @@
 name: Check release pipeline
 
-# Die Release-Logik, ihre Tests und die Notes der aktuellen Versionen — sobald
-# sich daran oder am Changelog etwas ändert, auch auf Branches. So fällt ein
-# fehlender Changelog-Abschnitt oder ein kaputter Workflow vor dem Merge auf,
-# nicht erst beim nächsten Release auf main. Legt nichts an.
+# Gemeinsame Version und Release-Werkzeug — bei jeder Änderung, die ein Paket,
+# eine Versionsstelle, den Changelog oder die Release-Logik berührt, auch auf
+# Branches. So fällt eine vergessene Nummer, ein fehlender Changelog-Abschnitt
+# oder ein kaputter Workflow vor dem Merge auf, nicht erst beim nächsten
+# Release. Legt nichts an und löscht nichts.
+#
+# Auf einem Branch gilt zusätzlich: Ändert er etwas, das in einem Paket
+# landet, muss die gemeinsame Nori-Version größer sein als jede Nummer auf
+# main, und die Buildnummern von iOS und macOS müssen steigen. Sonst gäbe es
+# zwei verschiedene Pakete unter derselben Nummer, und ein Gerät hielte das
+# neuere nicht für neuer.
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
     branches: ['**']
     paths:
+      - 'native/**'
+      - 'apps/**'
+      - 'shared/**'
+      - 'services/**'
+      - 'config/contract.json'
+      - 'package.json'
+      - 'CHANGELOG.md'
+      - 'README.md'
       - 'tools/nori-release.py'
+      - 'tools/nori-version.py'
       - 'tools/test_nori_release.py'
+      - 'tools/test_nori_version.py'
       - 'tools/changelog-section.py'
       - 'tools/check-webos-package.py'
-      - 'CHANGELOG.md'
-      - 'apps/webos/appinfo.json'
-      - 'native/Nori-iOS/Nori.xcodeproj/project.pbxproj'
-      - 'native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj'
-      - '.github/workflows/check-release.yml'
-      - '.github/workflows/release.yml'
-      - '.github/workflows/package-ios-ipa.yml'
-      - '.github/workflows/package-macos-source.yml'
-      - '.github/workflows/build-webos.yml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -34,19 +43,28 @@ concurrency:
 jobs:
   check:
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      # Die ganze Geschichte: der Vergleich braucht origin/main.
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Versionswerkzeug testen
+        run: python3 tools/test_nori_version.py
 
       - name: Release-Werkzeug testen
         run: python3 tools/test_nori_release.py
 
-      - name: Release Notes der aktuellen Versionen
+      - name: Gemeinsame Version prüfen
         run: |
-          for platform in ios macos webos; do
-            echo "::group::$platform"
-            python3 tools/nori-release.py meta --platform "$platform"
-            python3 tools/nori-release.py notes --platform "$platform"
-            echo "::endgroup::"
-          done
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            python3 tools/nori-version.py check
+          else
+            python3 tools/nori-version.py check --against origin/main
+          fi
+
+      - name: Release Notes der aktuellen Version
+        run: python3 tools/nori-release.py notes

@@ -294,18 +294,20 @@ def check_versions() -> None:
             f"{version!r}, apps/webos/package.json {package.get('version')!r}"
         )
 
+    # Seit 2.6.0 tragen alle Plattformen dieselbe Nummer; ihr Abschnitt heißt
+    # `[Nori x.y.z]`. Die übrigen Stellen prüft tools/nori-version.py.
     changelog = ROOT / "CHANGELOG.md"
     if changelog.exists():
         text = changelog.read_text(encoding="utf-8")
-        if f"[webOS {version}]" not in text:
+        if f"[Nori {version}]" not in text:
             problems.append(
-                f"CHANGELOG.md hat keinen Abschnitt `[webOS {version}]`. "
+                f"CHANGELOG.md hat keinen Abschnitt `[Nori {version}]`. "
                 "Ein Paket ohne Eintrag ist eines, dessen Änderungen niemand kennt."
             )
-        # Die Übersicht am Anfang nennt die Stände aller Plattformen.
-        if not re.search(rf"LG webOS \*\*{re.escape(version)}\*\*", text):
+        # Die Übersicht am Anfang nennt die gemeinsame Nummer.
+        if f"Nori **{version}**" not in text.split("\n## ", 1)[0]:
             warnings.append(
-                f"CHANGELOG.md nennt in der Übersicht nicht `LG webOS **{version}**`."
+                f"CHANGELOG.md nennt in der Übersicht nicht `Nori **{version}**`."
             )
 
     packages = sorted(APP.glob("*.ipk"))

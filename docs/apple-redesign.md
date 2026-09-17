@@ -127,7 +127,7 @@ xcodebuild -project native/Nori-macOS/NoriMac.xcodeproj -scheme Nori \
 ```
 
 Liquid Glass braucht das SDK von Xcode 26 oder neuer. Die Workflows
-`Build iOS`, `Build macOS` und `Package iOS IPA` fordern das über
+`Build iOS` (beide Jobs) und `Build macOS` fordern das über
 `tools/require-xcode.sh 26` ausdrücklich an; ein älterer Mac bricht mit
 klarer Meldung ab, statt an `has no member` zu scheitern.
 

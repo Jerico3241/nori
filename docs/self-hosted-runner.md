@@ -1,9 +1,10 @@
 # Den eigenen Mac als GitHub-Runner einrichten
 
-Alle sieben Workflows laufen auf `runs-on: [self-hosted, macOS]`. Solange kein
-Runner mit diesen beiden Bezeichnungen angemeldet ist, bleiben die Jobs in der
+Alle Workflows laufen auf `runs-on: [self-hosted, macOS]` — auch
+`Build Windows` und der zentrale Release `Nori Release`. Solange kein Runner
+mit diesen beiden Bezeichnungen angemeldet ist, bleiben die Jobs in der
 Warteschlange stehen (Actions zeigt sie als „Queued"), ohne Fehlermeldung und
-ohne Zeitlimit.
+ohne Zeitlimit. Ein Release wird dann nicht vorgetäuscht, sondern wartet.
 
 Grund für den Umbau: bei einem **privaten** Repository zählt GitHub jede
 macOS-Minute **zehnfach** gegen das Monatskontingent (GitHub Free: 2.000
@@ -69,11 +70,20 @@ darf neuer sein als das Ziel — umgekehrt nicht.
 `tools/require-xcode.sh` nennt den gefundenen Pfad in seiner Fehlermeldung,
 auch den der Beta.
 
-Alles Weitere ist schon da: `git`, `curl`, `zip`, `unzip` und `python3` kommen
-mit den Command Line Tools, die Xcode mitbringt. Homebrew wird nicht gebraucht
-— die Workflows kommen bewusst ohne aus, deshalb legt `release.yml` das
-GitHub-Release über die REST-API an (`tools/nori-release.py`, nur
+Alles Weitere ist schon da: `git`, `curl`, `zip`, `unzip`, `ruby` und
+`python3` kommen mit macOS und den Command Line Tools, die Xcode mitbringt.
+Node holen die Läufe selbst (`actions/setup-node`). Homebrew wird nicht
+gebraucht — die Workflows kommen bewusst ohne aus, deshalb legt `release.yml`
+das GitHub-Release über die REST-API an (`tools/nori-release.py`, nur
 Python-Standardbibliothek) und nicht über die `gh`-CLI.
+
+Für Windows braucht der Mac **kein Wine**: `electron-builder` 26 packt
+Installer und ZIP unter macOS ohne. Auf einem Mac mit Apple-Chip muss aber
+**Rosetta 2** installiert sein — der NSIS-Compiler, den `electron-builder`
+mitbringt, liegt für macOS nur als Intel-Programm vor
+(`mac/makensis: Mach-O 64-bit executable x86_64`). `Build Windows` prüft das
+vor dem Packen; nachinstallieren mit
+`softwareupdate --install-rosetta --agree-to-license`.
 
 Gegenprobe:
 

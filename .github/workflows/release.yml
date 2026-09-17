@@ -1,115 +1,352 @@
-name: Release
+name: Nori Release
 
-# Legt GitHub-Releases an — plattformgetrennt, jede Version genau einmal.
+# Der eine Weg zu einem Nori-Release: eine Version, ein Tag `v<VERSION>`, ein
+# GitHub Release `Nori v<VERSION>` mit den Paketen aller gewählten Plattformen
+# und `checksums-sha256.txt`.
 #
-# Kein eigener Auslöser über Tags. Dieser Workflow ist der letzte Job der
-# Paket-Läufe `Package iOS IPA`, `Build webOS` und `Package macOS Source` und
-# startet dort nur, wenn deren Paket-Job auf `main` mit allen Produktions- und
-# Zugangsdatenprüfungen grün war (`needs:` ohne `always()`). Veröffentlicht
-# wird genau das Artefakt dieses Laufs, erkannt an der Prüfsumme, die der
-# Paket-Job nach seinen Prüfungen festgehalten hat. Gebaut wird hier nichts.
+#   GitHub → Actions → Nori Release → Run workflow → Version 2.6.0
 #
-# Die Regeln — Tag-Schema, keine Duplikate, nie verschieben, Release Notes ohne
-# interne Einzelheiten — stehen in tools/nori-release.py, die Tests in
-# tools/test_nori_release.py, die Beschreibung in docs/releases.md.
+# Die Nummer steht vorher im Repository: `python3 tools/nori-version.py set …`
+# und ein Abschnitt `## [Nori …]` in CHANGELOG.md, gemergt auf main. Die
+# Eingabe hier bestätigt sie nur — weicht sie ab, entsteht nichts.
 #
-# Von Hand (workflow_dispatch) lässt sich nur ein Release für einen schon
-# abgeschlossenen, erfolgreichen Paket-Lauf nachholen: den jüngsten auf main,
-# für die Version, die main gerade trägt. Standardmäßig als Probelauf.
+#   prepare    Eingabe, Versionsstellen, Changelog, vorhandene Tags und
+#              Releases, Buildnummern früherer Releases, Windows-Secrets
+#   checks     Werkzeuge, Apple-Quellen, Swift-Kern, TypeScript-Kern, Server
+#   ios · macos · webos · windows
+#              die Plattform-Läufe mit `release-version`: bauen, testen,
+#              packen, Paket prüfen, als Übergabe (ein Tag) ablegen
+#   publish    alle Pakete holen und noch einmal prüfen, Prüfsummen, Entwurf,
+#              Anhänge, Tag, Veröffentlichung
+#   validate   den veröffentlichten Release von außen nachprüfen
+#   cleanup    erst dann: alte Läufe der Nori-Workflows und die Übergabe-
+#              Artefakte dieses Laufs löschen
+#
+# Scheitert ein Schritt, laufen die folgenden nicht: kein halber Release, kein
+# Aufräumen. Eine abgewählte Plattform steht in den Notes als „nicht enthalten".
+#
+# Alle Jobs laufen auf dem self-hosted Mac (docs/self-hosted-runner.md). Ist
+# er nicht erreichbar, warten sie in der Warteschlange — nichts wird
+# vorgetäuscht. Einzelheiten: docs/releases.md.
 on:
-  workflow_call:
-    inputs:
-      platform:
-        description: ios, macos oder webos
-        type: string
-        required: true
-      artifact:
-        description: Name des geprüften Artefakts in diesem Lauf
-        type: string
-        required: true
-      sha256:
-        description: Prüfsumme des geprüften Pakets aus dem Paket-Job
-        type: string
-        required: true
-      run_id:
-        type: string
-        required: false
-        default: ''
-      dry_run:
-        type: boolean
-        required: false
-        default: false
   workflow_dispatch:
     inputs:
-      platform:
-        description: Plattform
-        type: choice
-        options: [ios, macos, webos]
-        required: true
-      run_id:
-        description: ID des erfolgreichen Paket-Laufs auf main
+      version:
+        description: 'Version, z. B. 2.6.0 oder v2.6.0 — muss der Nummer im Repository entsprechen'
         type: string
         required: true
-      dry_run:
-        description: Nur prüfen, nichts anlegen
+      ios:
+        description: 'iOS / iPadOS (IPA)'
         type: boolean
         default: true
+      macos:
+        description: 'macOS (Quellpaket)'
+        type: boolean
+        default: true
+      webos:
+        description: 'LG webOS (IPK)'
+        type: boolean
+        default: true
+      windows:
+        description: 'Windows (Installer und ZIP)'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Probelauf: alles bauen und prüfen, nichts veröffentlichen, nichts löschen'
+        type: boolean
+        default: false
+
+# Nie zwei Releases gleichzeitig, und ein laufender wird nicht abgebrochen.
+concurrency:
+  group: nori-release
+  cancel-in-progress: false
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
 
 jobs:
-  release:
-    name: GitHub-Release
+  prepare:
+    name: Version prüfen
     runs-on: [self-hosted, macOS]
-    timeout-minutes: 20
-    # Ein Release wird nie mitten im Veröffentlichen abgebrochen; Läufe
-    # derselben Plattform warten aufeinander.
-    concurrency:
-      group: nori-release-${{ inputs.platform }}
-      cancel-in-progress: false
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      platforms: ${{ steps.prepare.outputs.platforms }}
+      ios: ${{ steps.prepare.outputs.ios }}
+      macos: ${{ steps.prepare.outputs.macos }}
+      webos: ${{ steps.prepare.outputs.webos }}
+      windows: ${{ steps.prepare.outputs.windows }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
+      # Alle Tags: die Buildnummern früherer Releases stehen in deren Stand.
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Release-Werkzeug prüfen
-        run: python3 tools/test_nori_release.py
+      - name: Plattformen und Modus
+        id: mode
+        env:
+          WANT_IOS: ${{ inputs.ios }}
+          WANT_MACOS: ${{ inputs.macos }}
+          WANT_WEBOS: ${{ inputs.webos }}
+          WANT_WINDOWS: ${{ inputs.windows }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          PLATFORMS=""
+          for pair in "ios=$WANT_IOS" "macos=$WANT_MACOS" "webos=$WANT_WEBOS" "windows=$WANT_WINDOWS"; do
+            if [ "${pair#*=}" = "true" ]; then
+              PLATFORMS="$PLATFORMS,${pair%%=*}"
+            fi
+          done
+          echo "platforms=${PLATFORMS#,}" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Geprüftes Paket dieses Laufs holen
-        if: inputs.run_id == ''
+      # Früh statt nach einer halben Stunde Bauen: Ein Windows-Paket ohne
+      # Google-Desktop-Client wäre eine Fassung ohne Abgleich. Geprüft wird
+      # nur, ob die Secrets gesetzt sind — ihr Wert erscheint nirgends.
+      - name: Windows-Voraussetzungen
+        if: ${{ inputs.windows }}
+        env:
+          HAS_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID != '' }}
+          HAS_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET != '' }}
+        run: |
+          if [ "$HAS_ID" != "true" ] || [ "$HAS_SECRET" != "true" ]; then
+            echo "::error::Windows ist gewählt, aber die Repository-Secrets NORI_GOOGLE_DESKTOP_CLIENT_ID und NORI_GOOGLE_DESKTOP_CLIENT_SECRET fehlen – ohne sie hätte Nori für Windows keinen Google-Abgleich. Secrets anlegen (docs/windows.md) oder Windows abwählen."
+            exit 1
+          fi
+
+      # Die Eingabe kommt nur als Umgebungsvariable ins Skript, nie als
+      # eingesetzter Text. Das Werkzeug akzeptiert 2.6.0 und v2.6.0 und
+      # arbeitet danach nur mit 2.6.0.
+      - name: Release vorbereiten
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION_INPUT: ${{ inputs.version }}
+          PLATFORMS: ${{ steps.mode.outputs.platforms }}
+        run: python3 tools/nori-release.py prepare --version "$VERSION_INPUT" --platforms "$PLATFORMS" --github-output
+
+  checks:
+    name: Gemeinsamer Kern
+    needs: prepare
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Werkzeuge testen
+        run: |
+          python3 tools/test_nori_version.py
+          python3 tools/test_nori_release.py
+          python3 tools/test_check_webos_package.py
+          python3 tools/test_configure_google_oauth.py
+
+      - name: Apple-Quellen prüfen
+        run: python3 tools/check-apple-sources.py
+
+      - name: Toolchain prüfen
+        run: tools/require-xcode.sh 15
+
+      - name: Swift-Kern testen
+        working-directory: native
+        run: swift test
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: TypeScript-Kern testen
+        working-directory: shared/nori-core
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Nori-Server testen
+        working-directory: services/nori-api
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm test
+
+  ios:
+    name: iOS / iPadOS
+    needs: [prepare, checks]
+    if: needs.prepare.outputs.ios == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-ios.yml
+    with:
+      release-version: ${{ needs.prepare.outputs.version }}
+
+  macos:
+    name: macOS
+    needs: [prepare, checks]
+    if: needs.prepare.outputs.macos == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      release-version: ${{ needs.prepare.outputs.version }}
+
+  webos:
+    name: LG webOS
+    needs: [prepare, checks]
+    if: needs.prepare.outputs.webos == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-webos.yml
+    with:
+      release-version: ${{ needs.prepare.outputs.version }}
+
+  windows:
+    name: Windows
+    needs: [prepare, checks]
+    if: needs.prepare.outputs.windows == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      release-version: ${{ needs.prepare.outputs.version }}
+    secrets:
+      NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+      NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
+
+  # Nur wenn jede gewählte Plattform grün ist. `!cancelled()` statt der
+  # stillen Vorgabe, weil abgewählte Plattformen als „skipped" gelten — die
+  # Bedingung verlangt deshalb für jede Plattform ausdrücklich: nicht gewählt
+  # oder erfolgreich.
+  publish:
+    name: Release veröffentlichen
+    needs: [prepare, checks, ios, macos, webos, windows]
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && needs.checks.result == 'success'
+      && (needs.prepare.outputs.ios != 'true' || needs.ios.result == 'success')
+      && (needs.prepare.outputs.macos != 'true' || needs.macos.result == 'success')
+      && (needs.prepare.outputs.webos != 'true' || needs.webos.result == 'success')
+      && (needs.prepare.outputs.windows != 'true' || needs.windows.result == 'success') }}
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Pakete dieses Laufs holen
         uses: actions/download-artifact@v5
         with:
-          name: ${{ inputs.artifact }}
-          path: ${{ runner.temp }}/nori-release/asset
+          pattern: nori-release-*
+          path: ${{ runner.temp }}/nori-release/assets
+          merge-multiple: true
 
-      # Liest Version und Build aus dem Commit, prüft Name, Prüfsumme und Inhalt
-      # des Pakets, wiederholt die Produktionsprüfung der Plattform, erzeugt die
-      # Notes aus CHANGELOG.md — und legt erst dann Entwurf, Anhang, Tag und
-      # Veröffentlichung an. Gibt es den Release schon, endet es hier grün.
+      # Prüft jedes Paket noch einmal gegen die Prüfsumme aus seinem Paket-Job,
+      # wiederholt die Produktionsprüfungen, schreibt checksums-sha256.txt und
+      # die Notes — und legt erst dann Entwurf, Anhänge, Tag und
+      # Veröffentlichung an. Gibt es Tag oder Release inzwischen, bricht es ab.
       - name: Release anlegen
-        if: inputs.run_id == ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PLATFORM: ${{ inputs.platform }}
-          SHA256: ${{ inputs.sha256 }}
-          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORMS: ${{ needs.prepare.outputs.platforms }}
+          DRY_RUN: ${{ needs.prepare.outputs.dry_run == 'true' && '--dry-run' || '' }}
+          SHA256_IOS: ${{ needs.ios.outputs.sha256 }}
+          SHA256_MACOS: ${{ needs.macos.outputs.sha256 }}
+          SHA256_WEBOS: ${{ needs.webos.outputs.sha256 }}
+          SHA256_WINDOWS_INSTALLER: ${{ needs.windows.outputs.sha256_installer }}
+          SHA256_WINDOWS_PORTABLE: ${{ needs.windows.outputs.sha256_portable }}
+          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
+          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
         run: |
-          python3 tools/nori-release.py publish --platform "$PLATFORM" \
-            --dir "$RUNNER_TEMP/nori-release/asset" --sha256 "$SHA256" --commit "$GITHUB_SHA" $DRY_RUN
-
-      - name: Release für einen abgeschlossenen Paket-Lauf nachholen
-        if: inputs.run_id != ''
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PLATFORM: ${{ inputs.platform }}
-          RUN_ID: ${{ inputs.run_id }}
-          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
-        run: python3 tools/nori-release.py from-run --platform "$PLATFORM" --run-id "$RUN_ID" $DRY_RUN
+          python3 tools/nori-release.py publish --version "$VERSION" --platforms "$PLATFORMS" \
+            --dir "$RUNNER_TEMP/nori-release/assets" --commit "$GITHUB_SHA" \
+            --sha256 "ios=$SHA256_IOS" --sha256 "macos=$SHA256_MACOS" --sha256 "webos=$SHA256_WEBOS" \
+            --sha256 "windows-installer=$SHA256_WINDOWS_INSTALLER" \
+            --sha256 "windows-portable=$SHA256_WINDOWS_PORTABLE" \
+            $DRY_RUN
 
       - name: Heruntergeladene Pakete entfernen
         if: always()
         run: rm -rf "$RUNNER_TEMP/nori-release"
+
+  validate:
+    name: Release nachprüfen
+    needs: [prepare, publish]
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && needs.publish.result == 'success'
+      && needs.prepare.outputs.dry_run != 'true' }}
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Von außen, mit Lesezugriff: Release veröffentlicht, Tag auf diesem
+      # Commit, genau die erwarteten Anhänge, jede Prüfsumme bei GitHub gleich
+      # der in checksums-sha256.txt.
+      - name: Release von außen prüfen
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORMS: ${{ needs.prepare.outputs.platforms }}
+        run: python3 tools/nori-release.py validate --version "$VERSION" --platforms "$PLATFORMS" --commit "$GITHUB_SHA"
+
+  # Erst nach einem veröffentlichten und nachgeprüften Release. Gelöscht
+  # werden nur abgeschlossene, ältere Läufe der Nori-Build- und
+  # Release-Workflows (Liste in tools/nori-release.py) und die
+  # Übergabe-Artefakte dieses Laufs — nie dieser Lauf, nie Releases, Anhänge,
+  # Tags, Branches oder Workflow-Dateien.
+  cleanup:
+    name: Alte Läufe aufräumen
+    needs: [prepare, publish, validate]
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && needs.publish.result == 'success'
+      && needs.validate.result == 'success'
+      && needs.prepare.outputs.dry_run != 'true' }}
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Alte Nori-Läufe und Übergabe-Artefakte löschen
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORMS: ${{ needs.prepare.outputs.platforms }}
+        run: |
+          python3 tools/nori-release.py cleanup --version "$VERSION" --platforms "$PLATFORMS" \
+            --commit "$GITHUB_SHA" --keep-run "$GITHUB_RUN_ID"

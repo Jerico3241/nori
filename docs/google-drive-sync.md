@@ -208,7 +208,7 @@ Client-ID, aber kein Secret gesetzt ist.
 
 **Was CI baut.** `Build iOS` und `Build macOS` sind Typprüfungen: sie checken
 frisch aus, haben keine `.local`-Datei und bauen deshalb bewusst ohne
-Google-Abgleich. `Package iOS IPA` dagegen erzeugt eine **verteilbare** Fassung,
+Google-Abgleich. Der Job `ipa` in `Build iOS` dagegen erzeugt eine **verteilbare** Fassung,
 und die muss den Abgleich haben — Nori 1.25.0 (37) ging ohne hinaus, weil der
 Lauf die Datei nicht bereitstellte und trotzdem grün war. Seit 1.25.1 gilt:
 

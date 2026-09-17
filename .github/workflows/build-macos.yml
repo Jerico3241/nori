@@ -1,5 +1,21 @@
 name: Build macOS
 
+# Ein Lauf für macOS, zwei Jobs:
+#
+#   build      Typprüfung bei jedem Push, der macOS oder den Kern berührt.
+#   package    Release-Build (unsigniert) als Nachweis, dass der Stand baut und
+#              die richtige Version trägt, dazu das Quellpaket — für einen
+#              Release, aufgerufen von `Nori Release` mit `release-version`,
+#              oder als Testpaket von Hand (Run workflow → „Quellpaket").
+#
+# Veröffentlicht wird das **Quellpaket**, nicht das Programm: Auf dem Runner
+# gibt es kein Zertifikat „Developer ID Application" und keine
+# Notarisierung, und ein unsigniertes Mac-Programm lässt sich auf einem
+# anderen Mac nur mit Umwegen öffnen. Was für eine `.dmg` fehlt, steht in
+# docs/releases.md.
+#
+# Bis 2.6.0 lag das Quellpaket in einem eigenen Lauf `Package macOS Source`,
+# der bei jedem Push auf main ein Paket und einen Release `macos-v…` anlegte.
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
@@ -10,18 +26,44 @@ on:
       - 'tools/require-xcode.sh'
       - '.github/workflows/build-macos.yml'
   workflow_dispatch:
+    inputs:
+      source:
+        description: 'Release-Build und Quellpaket als Testpaket (drei Tage am Lauf)'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      release-version:
+        description: Gemeinsame Nori-Version des Releases
+        type: string
+        required: true
+    outputs:
+      asset:
+        description: Dateiname des geprüften Quellpakets
+        value: ${{ jobs.package.outputs.asset }}
+      sha256:
+        description: Prüfsumme des geprüften Quellpakets
+        value: ${{ jobs.package.outputs.sha256 }}
 
+# Im Release eine eigene Gruppe je Lauf — Begründung in build-ios.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ inputs.release-version && format('nori-release-{0}-macos', github.run_id) || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: ${{ !inputs.release-version }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Debug-Build
+    if: ${{ !inputs.release-version && !inputs.source }}
     runs-on: [self-hosted, macOS]
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Toolchain prüfen
         run: tools/require-xcode.sh 26
@@ -53,3 +95,103 @@ jobs:
           name: nori-macos-xcodebuild-log
           path: ${{ runner.temp }}/nori-xcodebuild.log
           if-no-files-found: ignore
+          retention-days: 3
+
+  package:
+    name: Release-Build und Quellpaket
+    if: ${{ inputs.release-version || inputs.source }}
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    outputs:
+      asset: ${{ steps.meta.outputs.asset }}
+      sha256: ${{ steps.release-check.outputs.sha256 }}
+    env:
+      RELEASE_VERSION: ${{ inputs.release-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Toolchain prüfen
+        run: tools/require-xcode.sh 26
+
+      - name: Version prüfen
+        id: meta
+        run: python3 tools/nori-release.py meta --platform macos --release-version "$RELEASE_VERSION" --github-output
+
+      - name: Swift-Pakete auflösen
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project native/Nori-macOS/NoriMac.xcodeproj \
+            -scheme Nori
+
+      # Ohne Google-Konfiguration: Dieser Build ist Nachweis, kein Paket.
+      - name: Release-Build (unsigniert)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project native/Nori-macOS/NoriMac.xcodeproj \
+            -scheme Nori \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/NoriMacRelease" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee "$RUNNER_TEMP/nori-macos-release.log"
+
+      - name: Version im gebauten Programm prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/NoriMacRelease/Build/Products" -maxdepth 2 -name 'Nori.app' -path '*Release*' | head -n 1)"
+          test -n "$APP"
+          python3 tools/nori-release.py check-app --platform macos --app "$APP" --release-version "$RELEASE_VERSION"
+
+      # Aus dem Commit selbst, nicht aus der Arbeitskopie: nichts, was ein
+      # Build oder ein Werkzeug danebengelegt hat, kann hinein — auch keine
+      # lokale Google-Konfiguration. Symlinks bleiben Symlinks.
+      - name: Quellpaket aus dem Commit schnüren
+        id: pack
+        shell: bash
+        env:
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/nori-macos"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          python3 tools/nori-release.py source-package --output "$OUT/$ASSET"
+          echo "path=$OUT/$ASSET" >> "$GITHUB_OUTPUT"
+          ls -lh "$OUT/$ASSET"
+
+      # Jede Datei im Paket ist Byte für Byte die des Commits — keine
+      # zusätzliche, keine fehlende, keine lokal veränderte — und Version und
+      # Build stimmen. Der Release veröffentlicht nur ein Paket mit derselben
+      # Prüfsumme.
+      - name: Quellpaket prüfen
+        id: release-check
+        run: python3 tools/nori-release.py verify --asset macos --file "${{ steps.pack.outputs.path }}" --release-version "$RELEASE_VERSION" --github-output
+
+      - name: Quellpaket hochladen
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: ${{ steps.pack.outputs.path }}
+          if-no-files-found: error
+          retention-days: ${{ steps.meta.outputs.retention }}
+          overwrite: true
+
+      - name: Zwischenstände entfernen
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/nori-macos" "$RUNNER_TEMP/NoriMacRelease"
+
+      - name: Build-Log bei Fehlschlag hochladen
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-macos-release-log
+          path: ${{ runner.temp }}/nori-macos-release.log
+          if-no-files-found: ignore
+          retention-days: 3

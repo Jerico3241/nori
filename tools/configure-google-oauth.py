@@ -39,7 +39,7 @@ jede Plattform genau ihre eigene Client-ID enthält und keine fremde.
 ohne lokale Vergleichsdatei: `GoogleClientID` in der `Info.plist` muss
 vorhanden, nicht leer und eine Google-Client-ID sein, und im Bündel darf kein
 Client-Secret stehen. Die IPA wird dafür selbst entpackt — geprüft wird, was
-ausgeliefert wird, nicht eine Build-Einstellung. Der Workflow `Package iOS IPA`
+ausgeliefert wird, nicht eine Build-Einstellung. Der Job `ipa` in `Build iOS`
 bricht damit ab, statt eine Fassung ohne Google-Abgleich hochzuladen.
 
 Im CI-Protokoll (`CI` gesetzt) erscheinen Client-IDs nur als Form, nie im Wortlaut.
