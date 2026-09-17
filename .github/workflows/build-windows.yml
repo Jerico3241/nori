@@ -1,33 +1,48 @@
 name: Build Windows
 
-# Der einzige Lauf des Projekts auf einem **von GitHub gestellten** Runner —
-# und deshalb der einzige, der Geld kostet.
+# Der Lauf, der Nori für Windows baut — auf einem **von GitHub gestellten**
+# Windows-Runner.
 #
 # ## Warum nicht der self-hosted Mac
 #
-# Alle anderen Läufe liegen dort, weil bei einem privaten Repository jede
-# GitHub-Minute zählt; das Kontingent war schon einmal aufgebraucht. Für
-# Windows geht das trotzdem nicht ohne: `electron-builder` ruft für die
-# Windows-Ressourcen und die Deinstallationsroutine Windows-Programme auf. Auf
-# einem Mac oder unter Linux braucht es dafür Wine — in **beiden** Hälften,
-# 64 und 32 Bit; ohne die 32-Bit-Hälfte scheitert NSIS mit
-# `failed to load syswow64\ntdll.dll`. Das ließe sich einrichten, ergäbe aber
-# ein kreuzgebautes Paket, das nie auf Windows lief.
+# `electron-builder` ruft für die Windows-Ressourcen und die
+# Deinstallationsroutine Windows-Programme auf. Auf einem Mac oder unter Linux
+# braucht es dafür Wine — in **beiden** Hälften, 64 und 32 Bit; ohne die
+# 32-Bit-Hälfte scheitert NSIS mit `failed to load syswow64\ntdll.dll`. Das
+# ließe sich einrichten, ergäbe aber ein kreuzgebautes Paket, das nie auf
+# Windows lief.
 #
 # Hier läuft es auf echtem Windows, und die Desktop-Prüfung startet die
-# gebaute App auf demselben System, für das sie gedacht ist.
+# gebaute App auf demselben System, für das sie gedacht ist — zweimal: gegen
+# den Quellordner und gegen das gepackte `app.asar`.
 #
 # ## Was das kostet
 #
 # Windows-Runner rechnen mit **Faktor 2**: eine Minute Laufzeit sind zwei
-# Minuten vom Kontingent. Ein Durchlauf liegt bei etwa fünf bis acht Minuten,
-# also rund 10–16 Minuten je Lauf.
+# Minuten vom Kontingent, ein Durchlauf also rund 10–16 Minuten. Das ist
+# ausdrücklich freigegeben; die Pfadfilter unten halten es trotzdem bei den
+# Änderungen, die Windows tatsächlich betreffen.
 #
-# Deshalb **kein** Auslöser bei jedem Push. Der Lauf startet von Hand oder
-# über einen Tag `windows-v<version>`; dann legt er zusätzlich einen Release
-# an und hängt den Installer daran. Wer ihn doch bei jedem Push haben will,
-# ergänzt hier einen `push:`-Block — mit offenen Augen, was er kostet.
+# ## Wann er läuft
+#
+#   Pull Request   bei jeder Änderung an Windows, der geteilten Schicht oder
+#                  dem Kern — das Ergebnis liegt danach 30 Tage als Artefakt am
+#                  Lauf und lässt sich von github.com laden.
+#   von Hand       Actions → Build Windows → Run workflow.
+#   Tag            `windows-v<version>` legt zusätzlich einen Release an und
+#                  hängt Installer und ZIP daran.
+#
+# `pull_request` und `push` sind getrennte Ereignisse — deshalb stehen die
+# Pfadfilter beim einen und der Tag beim anderen. In **einem** `push`-Block
+# würden `paths` und `tags` mit UND verknüpft, und ein Tag ohne passende
+# Pfadänderung liefe nie.
 on:
+  pull_request:
+    paths:
+      - 'apps/windows/**'
+      - 'shared/nori-app/**'
+      - 'shared/nori-core/**'
+      - '.github/workflows/build-windows.yml'
   workflow_dispatch:
     inputs:
       release:
