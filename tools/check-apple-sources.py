@@ -612,6 +612,59 @@ def check_ios_package_oauth() -> None:
             '`#include? "Google.local.xcconfig"` fehlt — dort schreibt das Werkzeug die Client-ID hin.')
 
 
+def check_macos_package_oauth() -> None:
+    """Das verteilbare macOS-Paket muss Google-Abgleich haben.
+
+    Bis 2.6.0 ging nur das Quellpaket hinaus; der Release-Build war Nachweis
+    ohne Google-Konfiguration. Ab 2.7.0 ist `Nori.app` das Hauptpaket und
+    braucht denselben Schutz wie die IPA: Konfiguration vor dem Build,
+    Prüfung des Programms und des ZIP vor dem Hochladen.
+    """
+    name = "build-macos.yml"
+    workflow = ROOT / ".github/workflows" / name
+    if not workflow.exists():
+        return
+    whole = workflow.read_text()
+    job = re.search(r"^  package:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", whole, re.MULTILINE | re.DOTALL)
+    if job is None:
+        add("ERROR", name, "Der Job `package` fehlt — ohne ihn gibt es kein geprüftes Nori.app.")
+        return
+    text = job.group(1)
+
+    def position(pattern: str) -> int:
+        match = re.search(pattern, text)
+        return match.start() if match else -1
+
+    configure = position(r"tools/configure-google-oauth\.py\s+--macos\b")
+    build = position(r"-configuration\s+Release")
+    verify_app = position(r"tools/configure-google-oauth\.py\s+--verify-macos-app\b")
+    verify_zip = position(r"tools/configure-google-oauth\.py\s+--verify-macos-zip\b")
+    upload = position(r"actions/upload-artifact@")
+
+    if configure < 0 or build < 0 or configure > build:
+        add("ERROR", name, "Vor dem Release-Build fehlt `python3 tools/configure-google-oauth.py --macos`. "
+            "Ohne ihn entsteht ein Nori.app ohne Google-Abgleich.")
+    if verify_app < 0 or verify_app < build:
+        add("ERROR", name, "Nach dem Build fehlt `tools/configure-google-oauth.py --verify-macos-app` "
+            "für das gebaute Nori.app.")
+    if verify_zip < 0 or upload < 0 or verify_zip > upload:
+        add("ERROR", name, "Vor dem Hochladen fehlt `tools/configure-google-oauth.py --verify-macos-zip` "
+            "für das fertige App-Paket.")
+    if "--ios" in text or "--webos" in text:
+        add("ERROR", name, "Der macOS-Paketlauf fasst eine fremde Google-Konfiguration an.")
+
+    plist_path = ROOT / "native/Nori-macOS/Nori/Info.plist"
+    plist = plist_path.read_text() if plist_path.exists() else ""
+    if "<key>GoogleClientID</key>" not in plist or "$(GOOGLE_CLIENT_ID)" not in plist:
+        add("ERROR", "macOS/Info.plist", "GoogleClientID muss aus der Build-Einstellung $(GOOGLE_CLIENT_ID) kommen.")
+    if "<key>GoogleClientSecret</key>" not in plist or "$(GOOGLE_CLIENT_SECRET)" not in plist:
+        add("ERROR", "macOS/Info.plist", "GoogleClientSecret muss aus der Build-Einstellung $(GOOGLE_CLIENT_SECRET) kommen.")
+    xcconfig = ROOT / "native/Nori-macOS/Config/Nori.xcconfig"
+    if xcconfig.exists() and '#include? "Google.local.xcconfig"' not in xcconfig.read_text():
+        add("ERROR", "native/Nori-macOS/Config/Nori.xcconfig",
+            '`#include? "Google.local.xcconfig"` fehlt — dort schreibt das Werkzeug Client-ID und Secret hin.')
+
+
 def check_main_actor_calls(folder: Path, label: str) -> None:
     """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
 
@@ -895,6 +948,7 @@ def main() -> int:
     check_ios_runner()
     check_glass_runner()
     check_ios_package_oauth()
+    check_macos_package_oauth()
     check_fill_in_fixed_frame(IOS, "iOS")
     check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()

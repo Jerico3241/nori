@@ -67,6 +67,27 @@ class PackagingTests(unittest.TestCase):
             (app / name).write_bytes(data)
         return app
 
+    def make_macos_app(self, info: dict, extra: dict[str, bytes] | None = None) -> Path:
+        app = self.tmp / f"mac-{len(list(self.tmp.iterdir()))}" / "Nori.app"
+        (app / "Contents" / "MacOS").mkdir(parents=True)
+        base = {"CFBundleIdentifier": "to.nori.macos", "CFBundleShortVersionString": "9.9.9",
+                "CFBundleExecutable": "Nori"}
+        (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({**base, **info}, fmt=plistlib.FMT_BINARY))
+        (app / "Contents" / "MacOS" / "Nori").write_bytes(b"\xcf\xfa\xed\xfe binary")
+        for name, data in (extra or {}).items():
+            target = app / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        return app
+
+    def make_macos_zip(self, app: Path) -> Path:
+        archive_path = app.parent / "Nori-macOS-test.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            for file in app.rglob("*"):
+                if file.is_file():
+                    archive.write(file, Path("Nori.app") / file.relative_to(app))
+        return archive_path
+
     def make_ipa(self, app: Path) -> Path:
         ipa = app.parent / "Nori-test.ipa"
         with zipfile.ZipFile(ipa, "w") as archive:
@@ -245,6 +266,33 @@ class PackagingTests(unittest.TestCase):
         result = self.run_tool("--macos")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn(f"GOOGLE_CLIENT_SECRET = {FAKE_SECRET}", (self.root / "native/Nori-macOS/Config/Google.local.xcconfig").read_text())
+
+    def test_valid_macos_bundle_passes(self) -> None:
+        app = self.make_macos_app({"GoogleClientID": FAKE_ID, "GoogleClientSecret": FAKE_SECRET})
+        result = self.run_tool("--verify-macos-app", str(app))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Google OAuth: configured", result.stdout)
+        self.assertIn("Google Client-Secret: included", result.stdout)
+        self.assertNotIn(FAKE_ID, result.stdout)
+        self.assertNotIn(FAKE_SECRET, result.stdout)
+
+    def test_macos_bundle_without_client_id_is_rejected(self) -> None:
+        self.assert_rejected(self.run_tool("--verify-macos-app", str(self.make_macos_app({}))), "GoogleClientID fehlt")
+
+    def test_macos_bundle_without_secret_is_rejected(self) -> None:
+        app = self.make_macos_app({"GoogleClientID": FAKE_ID})
+        self.assert_rejected(self.run_tool("--verify-macos-app", str(app)), "GoogleClientSecret fehlt")
+
+    def test_valid_macos_zip_passes(self) -> None:
+        app = self.make_macos_app({"GoogleClientID": FAKE_ID, "GoogleClientSecret": FAKE_SECRET})
+        result = self.run_tool("--verify-macos-zip", str(self.make_macos_zip(app)))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Google OAuth: configured", result.stdout)
+
+    def test_broken_macos_zip_is_rejected(self) -> None:
+        broken = self.tmp / "broken.zip"
+        broken.write_bytes(b"kein zip")
+        self.assert_rejected(self.run_tool("--verify-macos-zip", str(broken)), "kein gültiges ZIP-Archiv")
 
 
 if __name__ == "__main__":

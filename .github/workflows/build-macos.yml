@@ -3,19 +3,18 @@ name: Build macOS
 # Ein Lauf für macOS, zwei Jobs:
 #
 #   build      Typprüfung bei jedem Push, der macOS oder den Kern berührt.
-#   package    Release-Build (unsigniert) als Nachweis, dass der Stand baut und
-#              die richtige Version trägt, dazu das Quellpaket — für einen
-#              Release, aufgerufen von `Nori Release` mit `release-version`,
-#              oder als Testpaket von Hand (Run workflow → „Quellpaket").
+#   package    Release-Build (unsigniert) als `Nori.app` im ZIP, dazu das
+#              Quellpaket — für einen Release, aufgerufen von `Nori Release`
+#              mit `release-version`, oder als Testpaket von Hand
+#              (Actions → Build macOS → Run workflow → „App und Quellpaket").
 #
-# Veröffentlicht wird das **Quellpaket**, nicht das Programm: Auf dem Runner
-# gibt es kein Zertifikat „Developer ID Application" und keine
-# Notarisierung, und ein unsigniertes Mac-Programm lässt sich auf einem
-# anderen Mac nur mit Umwegen öffnen. Was für eine `.dmg` fehlt, steht in
-# docs/releases.md.
+# Das Programm ist unsigniert: Auf dem Runner gibt es kein Zertifikat
+# „Developer ID Application" und keine Notarisierung. Nach dem Entpacken
+# öffnet man `Nori.app` per Rechtsklick → Öffnen; Gatekeeper fragt einmal.
+# Das Quellpaket bleibt daneben, wer in Xcode mit eigenem Team signieren will.
 #
-# Bis 2.6.0 lag das Quellpaket in einem eigenen Lauf `Package macOS Source`,
-# der bei jedem Push auf main ein Paket und einen Release `macos-v…` anlegte.
+# Bis 2.6.0 lag nur das Quellpaket im Release; das gebaute Programm blieb auf
+# dem Runner. Ab 2.7.0 ist `Nori.app` das Hauptpaket.
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
@@ -24,11 +23,13 @@ on:
       - 'native/Nori-macOS/**'
       - 'native/NoriCore/**'
       - 'tools/require-xcode.sh'
+      - 'tools/nori-release.py'
+      - 'tools/configure-google-oauth.py'
       - '.github/workflows/build-macos.yml'
   workflow_dispatch:
     inputs:
       source:
-        description: 'Release-Build und Quellpaket als Testpaket (drei Tage am Lauf)'
+        description: 'Nori.app und Quellpaket als Testpaket (drei Tage am Lauf)'
         type: boolean
         default: false
   workflow_call:
@@ -39,11 +40,17 @@ on:
         required: true
     outputs:
       asset:
-        description: Dateiname des geprüften Quellpakets
+        description: Dateiname des geprüften App-Pakets
         value: ${{ jobs.package.outputs.asset }}
       sha256:
-        description: Prüfsumme des geprüften Quellpakets
+        description: Prüfsumme des geprüften App-Pakets
         value: ${{ jobs.package.outputs.sha256 }}
+      asset_source:
+        description: Dateiname des geprüften Quellpakets
+        value: ${{ jobs.package.outputs.asset_source }}
+      sha256_source:
+        description: Prüfsumme des geprüften Quellpakets
+        value: ${{ jobs.package.outputs.sha256_source }}
 
 # Im Release eine eigene Gruppe je Lauf — Begründung in build-ios.yml.
 concurrency:
@@ -98,13 +105,15 @@ jobs:
           retention-days: 3
 
   package:
-    name: Release-Build und Quellpaket
+    name: Release-Build, App und Quellpaket
     if: ${{ inputs.release-version || inputs.source }}
     runs-on: [self-hosted, macOS]
     timeout-minutes: 30
     outputs:
-      asset: ${{ steps.meta.outputs.asset }}
-      sha256: ${{ steps.release-check.outputs.sha256 }}
+      asset: ${{ steps.meta.outputs.asset_macos }}
+      sha256: ${{ steps.app-check.outputs.sha256 }}
+      asset_source: ${{ steps.meta.outputs.asset_macos_source }}
+      sha256_source: ${{ steps.source-check.outputs.sha256 }}
     env:
       RELEASE_VERSION: ${{ inputs.release-version }}
     steps:
@@ -120,6 +129,12 @@ jobs:
         id: meta
         run: python3 tools/nori-release.py meta --platform macos --release-version "$RELEASE_VERSION" --github-output
 
+      # Ein verteilbares Nori.app ohne Google-Client wäre eine Fassung ohne
+      # Abgleich. Dieselbe Datei wie am Entwicklerrechner, geschrieben aus
+      # ~/.config/nori/secrets/google-macos-oauth.json auf dem Runner.
+      - name: Google OAuth für macOS bereitstellen
+        run: python3 tools/configure-google-oauth.py --macos
+
       - name: Swift-Pakete auflösen
         run: |
           xcodebuild \
@@ -127,7 +142,6 @@ jobs:
             -project native/Nori-macOS/NoriMac.xcodeproj \
             -scheme Nori
 
-      # Ohne Google-Konfiguration: Dieser Build ist Nachweis, kein Paket.
       - name: Release-Build (unsigniert)
         run: |
           set -o pipefail
@@ -141,6 +155,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build | tee "$RUNNER_TEMP/nori-macos-release.log"
 
+      - name: Google OAuth im gebauten Programm prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/NoriMacRelease/Build/Products" -maxdepth 2 -name 'Nori.app' -path '*Release*' | head -n 1)"
+          test -n "$APP"
+          python3 tools/configure-google-oauth.py --verify-macos-app "$APP"
+
       - name: Version im gebauten Programm prüfen
         shell: bash
         run: |
@@ -149,36 +171,59 @@ jobs:
           test -n "$APP"
           python3 tools/nori-release.py check-app --platform macos --app "$APP" --release-version "$RELEASE_VERSION"
 
+      # ditto erhält Ressourcen-Forks und die Bundle-Struktur; ein Python-ZIP
+      # würde Finder-Metadaten verlieren. --keepParent legt Nori.app oben ins Archiv.
+      - name: Nori.app packen
+        id: pack-app
+        shell: bash
+        env:
+          ASSET: ${{ steps.meta.outputs.asset_macos }}
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/NoriMacRelease/Build/Products" -maxdepth 2 -name 'Nori.app' -path '*Release*' | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "Build lief durch, aber Nori.app fehlt." >&2
+            exit 1
+          fi
+          OUT="$RUNNER_TEMP/nori-macos"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          ditto -c -k --keepParent --sequesterRsrc "$APP" "$OUT/$ASSET"
+          echo "path=$OUT/$ASSET" >> "$GITHUB_OUTPUT"
+          ls -lh "$OUT/$ASSET"
+          unzip -l "$OUT/$ASSET" | head -12
+
+      - name: Google OAuth im App-Paket prüfen
+        run: python3 tools/configure-google-oauth.py --verify-macos-zip "${{ steps.pack-app.outputs.path }}"
+
+      - name: App-Paket für den Release prüfen
+        id: app-check
+        run: python3 tools/nori-release.py verify --asset macos --file "${{ steps.pack-app.outputs.path }}" --release-version "$RELEASE_VERSION" --github-output
+
       # Aus dem Commit selbst, nicht aus der Arbeitskopie: nichts, was ein
       # Build oder ein Werkzeug danebengelegt hat, kann hinein — auch keine
       # lokale Google-Konfiguration. Symlinks bleiben Symlinks.
       - name: Quellpaket aus dem Commit schnüren
-        id: pack
+        id: pack-source
         shell: bash
         env:
-          ASSET: ${{ steps.meta.outputs.asset }}
+          ASSET: ${{ steps.meta.outputs.asset_macos_source }}
         run: |
           set -euo pipefail
           OUT="$RUNNER_TEMP/nori-macos"
-          rm -rf "$OUT"
-          mkdir -p "$OUT"
           python3 tools/nori-release.py source-package --output "$OUT/$ASSET"
           echo "path=$OUT/$ASSET" >> "$GITHUB_OUTPUT"
           ls -lh "$OUT/$ASSET"
 
-      # Jede Datei im Paket ist Byte für Byte die des Commits — keine
-      # zusätzliche, keine fehlende, keine lokal veränderte — und Version und
-      # Build stimmen. Der Release veröffentlicht nur ein Paket mit derselben
-      # Prüfsumme.
       - name: Quellpaket prüfen
-        id: release-check
-        run: python3 tools/nori-release.py verify --asset macos --file "${{ steps.pack.outputs.path }}" --release-version "$RELEASE_VERSION" --github-output
+        id: source-check
+        run: python3 tools/nori-release.py verify --asset macos-source --file "${{ steps.pack-source.outputs.path }}" --release-version "$RELEASE_VERSION" --github-output
 
-      - name: Quellpaket hochladen
+      - name: Pakete hochladen
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.meta.outputs.artifact }}
-          path: ${{ steps.pack.outputs.path }}
+          path: ${{ runner.temp }}/nori-macos/
           if-no-files-found: error
           retention-days: ${{ steps.meta.outputs.retention }}
           overwrite: true

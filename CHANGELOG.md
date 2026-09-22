@@ -3,11 +3,66 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-Seit 2.6.0 tragen alle Plattformen dieselbe Nummer: Nori **2.6.0** für
+Seit 2.6.0 tragen alle Plattformen dieselbe Nummer: Nori **2.7.0** für
 iOS/iPadOS, macOS, Windows und LG webOS, veröffentlicht als ein gemeinsamer
-GitHub Release `Nori v2.6.0`. Die Abschnitte darunter stammen aus der Zeit
+GitHub Release `Nori v2.7.0`. Die Abschnitte darunter stammen aus der Zeit
 getrennter Stände; zuletzt waren das iOS/iPadOS 1.26.0, macOS 1.21.0,
 Windows 2.1.0 und LG webOS 2.5.0.
+
+## [Nori 2.7.0] — 2026-09-22
+
+macOS liefert jetzt ein fertiges **Nori.app**, nicht nur den Quelltext.
+
+### macOS
+
+- **`Nori.app` im Release.** Der Anhang `Nori-macOS-v2.7.0.zip` enthält das
+  gebaute Programm. Nach dem Entpacken per Rechtsklick auf Nori.app → Öffnen
+  (nicht doppelklicken) – Gatekeeper fragt beim ersten Start nach. Weiterhin
+  unsigniert: für ein notarisiertes Paket fehlen ein Zertifikat „Developer ID
+  Application“ und die Notarisierung.
+- **Google-Abgleich im gebauten Programm.** Der Release-Build schreibt die
+  Client-ID und das Secret vor dem Packen, und das fertige ZIP wird dagegen
+  geprüft – analog zur IPA. Ohne die lokale macOS-OAuth-Datei auf dem Runner
+  entsteht kein Paket.
+- **Quellpaket bleibt.** `Nori-macOS-Source-v2.7.0.zip` hängt weiterhin am
+  Release, für den, der in Xcode mit eigenem Team signieren will.
+- `Mac-App-bauen.command` baut jetzt Release und legt `Nori.app` samt ZIP
+  daneben.
+- Version 2.7.0, Build 33.
+
+### iOS / iPadOS
+
+- Version 2.7.0 (vorher 2.6.0), Build 42. Keine funktionale Änderung.
+
+### Windows
+
+- Version 2.7.0. Keine funktionale Änderung.
+
+### webOS
+
+- Version 2.7.0. Keine funktionale Änderung.
+
+### Technische Änderungen
+
+- `tools/nori-release.py`: neues Paket `macos` (`Nori-macOS-v…zip`, Art
+  `macos-app`) neben `macos-source`. Prüfer für Bundle-Struktur, Version,
+  Build, ausführbare Datei und Google-Felder.
+- `tools/configure-google-oauth.py`: `--verify-macos-app` und
+  `--verify-macos-zip`.
+- `Build macOS` Job `package` stellt OAuth bereit, baut, prüft das Programm,
+  packt mit `ditto` und prüft App-ZIP und Quellpaket vor dem Hochladen.
+- `tools/check-apple-sources.py` verlangt diese Reihenfolge für den
+  macOS-Paketjob, analog zur IPA.
+
+### Bekannte Einschränkungen
+
+- **macOS-App unsigniert.** Gatekeeper blockiert den Doppelklick bei Dateien
+  aus dem Internet. Rechtsklick → Öffnen reicht einmal.
+- **Windows im Release braucht den Google-Desktop-Client.** Solange die
+  Repository-Secrets fehlen, bricht ein Release mit Windows ab; Windows lässt
+  sich dann abwählen.
+- **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
+  werden.
 
 ## [Nori 2.6.0] — 2026-09-17
 

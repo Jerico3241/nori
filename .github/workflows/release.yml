@@ -40,7 +40,7 @@ on:
         type: boolean
         default: true
       macos:
-        description: 'macOS (Quellpaket)'
+        description: 'macOS (Nori.app und Quellpaket)'
         type: boolean
         default: true
       webos:
@@ -271,6 +271,7 @@ jobs:
           DRY_RUN: ${{ needs.prepare.outputs.dry_run == 'true' && '--dry-run' || '' }}
           SHA256_IOS: ${{ needs.ios.outputs.sha256 }}
           SHA256_MACOS: ${{ needs.macos.outputs.sha256 }}
+          SHA256_MACOS_SOURCE: ${{ needs.macos.outputs.sha256_source }}
           SHA256_WEBOS: ${{ needs.webos.outputs.sha256 }}
           SHA256_WINDOWS_INSTALLER: ${{ needs.windows.outputs.sha256_installer }}
           SHA256_WINDOWS_PORTABLE: ${{ needs.windows.outputs.sha256_portable }}
@@ -279,7 +280,8 @@ jobs:
         run: |
           python3 tools/nori-release.py publish --version "$VERSION" --platforms "$PLATFORMS" \
             --dir "$RUNNER_TEMP/nori-release/assets" --commit "$GITHUB_SHA" \
-            --sha256 "ios=$SHA256_IOS" --sha256 "macos=$SHA256_MACOS" --sha256 "webos=$SHA256_WEBOS" \
+            --sha256 "ios=$SHA256_IOS" --sha256 "macos=$SHA256_MACOS" --sha256 "macos-source=$SHA256_MACOS_SOURCE" \
+            --sha256 "webos=$SHA256_WEBOS" \
             --sha256 "windows-installer=$SHA256_WINDOWS_INSTALLER" \
             --sha256 "windows-portable=$SHA256_WINDOWS_PORTABLE" \
             $DRY_RUN

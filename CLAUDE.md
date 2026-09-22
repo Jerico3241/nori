@@ -183,8 +183,8 @@ Stand“, auf dem Mac die Hinweise in `NoriRelease.highlights`.
 `check` verlangt auf einem Branch, der etwas ändert, das in einem Paket landet,
 eine Nummer über jeder auf `main`; „Check release pipeline“ prüft das bei jedem
 Push. `tools/check-webos-package.py` prüft zusätzlich die Version **im gebauten
-`.ipk`**, `tools/nori-release.py verify` die in IPA, Quellpaket, Installer und
-ZIP.
+`.ipk`**, `tools/nori-release.py verify` die in IPA, macOS-App-ZIP, Quellpaket,
+Installer und Windows-ZIP.
 
 ### Releases
 

@@ -9,7 +9,7 @@ von den Plattform-Läufen, die er aufruft — `Build iOS`, `Build macOS`,
     python3 tools/nori-release.py prepare        --version v2.6.0 --platforms ios,macos,webos,windows
     python3 tools/nori-release.py source-package --output Nori-macOS-Source-v2.6.0.zip
     python3 tools/nori-release.py check-app      --platform macos --app <Nori.app>
-    python3 tools/nori-release.py verify         --asset webos --file <Paket> [--release-version 2.6.0]
+    python3 tools/nori-release.py verify         --asset macos --file <Nori-macOS-v…zip>
     python3 tools/nori-release.py notes          [--platforms ios,macos,webos,windows]
     python3 tools/nori-release.py publish        --version 2.6.0 --platforms … --dir <Ordner> --sha256 ios=<…> … --commit <SHA>
     python3 tools/nori-release.py validate       --version 2.6.0 --platforms … --commit <SHA>
@@ -161,8 +161,14 @@ ASSETS = {
         "Unsigniert – vor der Installation signieren, etwa mit Feather, ESign oder SideStore.",
     ),
     "macos": AssetSpec(
-        "macos", "macos", "Nori-macOS-Source-v{version}{suffix}.zip", "source-zip", "application/zip", "macOS",
-        "Quellpaket – in Xcode öffnen und mit einem eigenen Team signieren; ein fertiges Programm liegt nicht bei.",
+        "macos", "macos", "Nori-macOS-v{version}{suffix}.zip", "macos-app", "application/zip", "macOS",
+        "Unsigniert – nach dem Entpacken per Rechtsklick auf Nori.app öffnen, nicht doppelklicken. "
+        "Gatekeeper fragt beim ersten Start nach.",
+    ),
+    "macos-source": AssetSpec(
+        "macos-source", "macos", "Nori-macOS-Source-v{version}{suffix}.zip", "source-zip", "application/zip",
+        "macOS (Quellpaket)",
+        "Quellpaket – in Xcode öffnen und mit einem eigenen Team signieren.",
     ),
     "webos": AssetSpec(
         "webos", "webos", "Nori-webOS-v{version}{suffix}.ipk", "ipk", "application/octet-stream", "LG webOS",
@@ -182,7 +188,8 @@ ASSETS = {
 
 PLATFORMS = {
     "ios": Platform("ios", "iOS / iPadOS", "iOS", ".github/workflows/build-ios.yml", ("ios",), "ios-v"),
-    "macos": Platform("macos", "macOS", "macOS", ".github/workflows/build-macos.yml", ("macos",), "macos-v"),
+    "macos": Platform("macos", "macOS", "macOS", ".github/workflows/build-macos.yml",
+                      ("macos", "macos-source"), "macos-v"),
     "webos": Platform("webos", "LG webOS", "webOS", ".github/workflows/build-webos.yml", ("webos",), "webos-v"),
     "windows": Platform("windows", "Windows", "Windows", ".github/workflows/build-windows.yml",
                         ("windows-installer", "windows-portable"), "windows-v"),
@@ -222,6 +229,7 @@ SOURCE_PATHS = {
 ALLOWED_CREDENTIALS = {
     "ipa": {"google-ios-client-id"},
     "ipk": {"google-webos-oauth.json client_id", "google-webos-oauth.json client_secret"},
+    "macos-app": {"google-macos-oauth.json client_id", "google-macos-oauth.json client_secret"},
     "source-zip": set(),
     "windows-installer": set(),
     "windows-portable": set(),
@@ -396,6 +404,7 @@ FORBIDDEN_FILES = re.compile(
 VERIFIERS = {
     "ipa": "verify_ipa",
     "ipk": "verify_ipk",
+    "macos-app": "verify_macos_app",
     "source-zip": "verify_source_zip",
     "windows-installer": "verify_windows_installer",
     "windows-portable": "verify_windows_portable",
@@ -534,6 +543,46 @@ def verify_ipa(meta: Meta, path: Path) -> None:
         expect_equal(label, "Bundle-ID", info.get("CFBundleIdentifier"), meta.bundle_ids["ios"])
         files = ((entry.filename, archive.read(entry)) for entry in infos if not entry.is_dir())
         scan_contents(label, files, "ipa", patterns=True)
+
+
+def verify_macos_app(meta: Meta, path: Path) -> None:
+    """ZIP mit genau einem `Nori.app`: Version, Build, Kennung, ausführbare Datei."""
+    label = path.name
+    with open_zip(path, label) as archive:
+        infos = archive.infolist()
+        names = [info.filename for info in infos]
+        for name in names:
+            safe_member(name, label)
+        outside = [name for name in names if not name.startswith("Nori.app/") and name not in ("Nori.app", "Nori.app/")]
+        if outside:
+            raise ReleaseError(f"{label}: Dateien außerhalb von Nori.app/: {', '.join(outside[:3])}")
+        check_names(label, names)
+        plist_name = "Nori.app/Contents/Info.plist"
+        try:
+            info = plistlib.loads(archive.read(plist_name))
+        except KeyError:
+            raise ReleaseError(f"{label}: {plist_name} fehlt") from None
+        except Exception as error:
+            raise ReleaseError(f"{label}: Info.plist nicht lesbar ({type(error).__name__})") from None
+        expect_equal(label, "Version (CFBundleShortVersionString)", info.get("CFBundleShortVersionString"), meta.version)
+        expect_equal(label, "Build (CFBundleVersion)", info.get("CFBundleVersion"), meta.builds["macos"])
+        expect_equal(label, "Bundle-ID", info.get("CFBundleIdentifier"), meta.bundle_ids["macos"])
+        client = info.get("GoogleClientID")
+        if not isinstance(client, str) or not client.strip():
+            raise ReleaseError(f"{label}: GoogleClientID fehlt oder ist leer – diese Fassung hätte keinen Google-Abgleich")
+        if "$(" in client:
+            raise ReleaseError(f"{label}: GoogleClientID ist ein unaufgelöster Platzhalter")
+        secret = info.get("GoogleClientSecret")
+        if not isinstance(secret, str) or not secret.strip():
+            raise ReleaseError(f"{label}: GoogleClientSecret fehlt oder ist leer")
+        if "$(" in secret:
+            raise ReleaseError(f"{label}: GoogleClientSecret ist ein unaufgelöster Platzhalter")
+        executable = info.get("CFBundleExecutable") or "Nori"
+        binary = f"Nori.app/Contents/MacOS/{executable}"
+        if binary not in names:
+            raise ReleaseError(f"{label}: {binary} fehlt")
+        files = ((entry.filename, archive.read(entry)) for entry in infos if not entry.is_dir())
+        scan_contents(label, files, "macos-app", patterns=True, secret_pattern_allowed=True)
 
 
 def webos_checker():
@@ -842,6 +891,8 @@ def production_check(meta: Meta, spec: AssetSpec, path: Path) -> None:
         command = [sys.executable, str(ROOT / "tools/configure-google-oauth.py"), "--verify-ios-ipa", str(path)]
     elif spec.kind == "ipk":
         command = [sys.executable, str(ROOT / "tools/check-webos-package.py"), "--production", "--ipk", str(path)]
+    elif spec.kind == "macos-app":
+        command = [sys.executable, str(ROOT / "tools/configure-google-oauth.py"), "--verify-macos-zip", str(path)]
     else:
         # Quellpaket: verify_source_zip hat jede Datei mit dem Commit verglichen.
         # Installer: sein Inhalt ist der des geprüften ZIP aus demselben Build.

@@ -28,6 +28,8 @@ Aufrufe:
         --inspect-ios <Nori.app> --inspect-macos <Nori.app> --inspect-webos <.ipk>
     python3 tools/configure-google-oauth.py --verify-ios-app <Nori.app>
     python3 tools/configure-google-oauth.py --verify-ios-ipa <Nori.ipa>
+    python3 tools/configure-google-oauth.py --verify-macos-app <Nori.app>
+    python3 tools/configure-google-oauth.py --verify-macos-zip <Nori-macOS-v….zip>
 
 `--check` prüft, dass die lokalen Dateien von Git ignoriert und nicht
 verfolgt werden, dass die drei Client-IDs verschieden sind und dass kein
@@ -41,6 +43,11 @@ vorhanden, nicht leer und eine Google-Client-ID sein, und im Bündel darf kein
 Client-Secret stehen. Die IPA wird dafür selbst entpackt — geprüft wird, was
 ausgeliefert wird, nicht eine Build-Einstellung. Der Job `ipa` in `Build iOS`
 bricht damit ab, statt eine Fassung ohne Google-Abgleich hochzuladen.
+
+`--verify-macos-app` und `--verify-macos-zip` tun dasselbe für das Mac-Paket:
+`GoogleClientID` und `GoogleClientSecret` müssen gesetzt und aufgelöst sein.
+Der Job `package` in `Build macOS` bricht damit ab, statt ein `Nori.app` ohne
+Abgleich hochzuladen.
 
 Im CI-Protokoll (`CI` gesetzt) erscheinen Client-IDs nur als Form, nie im Wortlaut.
 
@@ -529,6 +536,101 @@ def verify_ios_ipa(ipa: Path) -> None:
         verify_ios_bundle(apps[0], f"IPA {ipa.name}")
 
 
+def known_macos_client() -> tuple[str, str] | None:
+    """Die erwartete macOS-Client-ID und das Secret, falls beides da ist."""
+    if MAC_JSON.is_file():
+        client = read_json_client(MAC_JSON, "macOS")
+        if client:
+            return client
+    assignments = read_assignments(MAC_LOCAL)
+    client_id = assignments.get("GOOGLE_CLIENT_ID", "")
+    secret = assignments.get("GOOGLE_CLIENT_SECRET", "")
+    if CLIENT_ID.match(client_id) and secret:
+        return client_id, secret
+    return None
+
+
+def verify_macos_bundle(app: Path, label: str) -> None:
+    """Ein fertiges `Nori.app` für macOS: eigene Client-ID und eigenes Secret, nichts Fremdes."""
+    plist = app / "Contents" / "Info.plist"
+    if not plist.is_file():
+        fail(f"{label}: Contents/Info.plist fehlt")
+        return
+    try:
+        info = plistlib.loads(plist.read_bytes())
+    except Exception as error:
+        fail(f"{label}: Info.plist nicht lesbar ({type(error).__name__})")
+        return
+
+    expected = known_macos_client()
+    before = len(problems)
+    value = info.get("GoogleClientID")
+    if value is None:
+        fail(f"{label}: GoogleClientID fehlt in der Info.plist")
+    elif not isinstance(value, str) or not value.strip():
+        fail(f"{label}: GoogleClientID ist leer — diese Fassung hätte keinen Google-Abgleich")
+    elif "$(" in value:
+        fail(f"{label}: GoogleClientID ist ein unaufgelöster Platzhalter")
+    elif not value.endswith(SUFFIX):
+        fail(f"{label}: GoogleClientID endet nicht auf {SUFFIX}")
+    elif not CLIENT_ID.match(value):
+        fail(f"{label}: GoogleClientID hat nicht die Form einer Google-Client-ID")
+    elif expected and value != expected[0]:
+        fail(f"{label}: GoogleClientID ist nicht die macOS-Client-ID dieses Rechners")
+    id_ok = len(problems) == before
+    if id_ok:
+        ok(f"{label}: GoogleClientID vorhanden ({shown(value)})")
+
+    before = len(problems)
+    secret = info.get("GoogleClientSecret")
+    if secret is None or (isinstance(secret, str) and not secret.strip()):
+        fail(f"{label}: GoogleClientSecret fehlt oder ist leer — der macOS-Client braucht es")
+    elif isinstance(secret, str) and "$(" in secret:
+        fail(f"{label}: GoogleClientSecret ist ein unaufgelöster Platzhalter")
+    elif expected and secret != expected[1]:
+        fail(f"{label}: GoogleClientSecret ist nicht das macOS-Secret dieses Rechners")
+    secret_ok = len(problems) == before
+    if secret_ok:
+        print("Google Client-Secret: included")
+        ok(f"{label}: GoogleClientSecret vorhanden")
+    if id_ok and secret_ok:
+        print("Google OAuth: configured")
+
+    text = artifact_text(app)
+    foreign = set(ANY_CLIENT_ID.findall(text)) - ({value} if isinstance(value, str) else set())
+    if foreign:
+        fail(f"{label}: Bündel enthält {len(foreign)} fremde Client-ID(s)")
+    secrets = secret_values()
+    own = {v for label_name, v in secrets.items() if label_name in ("macOS-JSON", "macOS-xcconfig")}
+    for origin, other in secrets.items():
+        if origin not in ("macOS-JSON", "macOS-xcconfig") and other not in own and other in text:
+            fail(f"{label}: Bündel enthält ein fremdes Secret ({origin})")
+
+
+def verify_macos_zip(archive_path: Path) -> None:
+    """Das App-ZIP selbst entpacken und das darin liegende Programm prüfen."""
+    if not archive_path.is_file():
+        fail(f"macOS-Paket {archive_path} fehlt")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                for name in archive.namelist():
+                    parts = Path(name).parts
+                    if name.startswith("/") or ".." in parts:
+                        fail(f"macOS-Paket {archive_path.name}: unzulässiger Pfad im Archiv")
+                        return
+                archive.extractall(tmp)
+        except zipfile.BadZipFile:
+            fail(f"macOS-Paket {archive_path.name}: kein gültiges ZIP-Archiv")
+            return
+        app = Path(tmp) / "Nori.app"
+        if not app.is_dir():
+            fail(f"macOS-Paket {archive_path.name}: erwartet Nori.app im Archiv")
+            return
+        verify_macos_bundle(app, f"macOS-Paket {archive_path.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--ios", action="store_true", help="iOS-Konfiguration schreiben")
@@ -544,6 +646,8 @@ def main() -> int:
     parser.add_argument("--inspect-webos", type=Path)
     parser.add_argument("--verify-ios-app", type=Path, help="fertiges iOS-Nori.app prüfen")
     parser.add_argument("--verify-ios-ipa", type=Path, help="fertige iOS-IPA entpacken und prüfen")
+    parser.add_argument("--verify-macos-app", type=Path, help="fertiges macOS-Nori.app prüfen")
+    parser.add_argument("--verify-macos-zip", type=Path, help="fertiges macOS-App-ZIP entpacken und prüfen")
     args = parser.parse_args()
 
     if args.ios:
@@ -573,9 +677,15 @@ def main() -> int:
     if args.verify_ios_ipa:
         verify_ios_ipa(args.verify_ios_ipa)
 
+    if args.verify_macos_app:
+        verify_macos_bundle(args.verify_macos_app, "macOS-Programm")
+    if args.verify_macos_zip:
+        verify_macos_zip(args.verify_macos_zip)
+
     if not any((args.ios, args.macos, args.webos, args.check,
                 args.inspect_ios, args.inspect_macos, args.inspect_webos,
-                args.verify_ios_app, args.verify_ios_ipa)):
+                args.verify_ios_app, args.verify_ios_ipa,
+                args.verify_macos_app, args.verify_macos_zip)):
         parser.print_help()
         return 0
     print(f"\n{len(problems)} Fehler" if problems else "\nkeine Auffälligkeiten")
