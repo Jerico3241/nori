@@ -15,16 +15,16 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 ## Aktueller Stand
 
-Nori **2.6.0** — seit 2.6.0 tragen alle Apps dieselbe Versionsnummer und
-erscheinen gemeinsam in einem GitHub Release `Nori v2.6.0` (Tag `v2.6.0`).
+Nori **2.7.0** — seit 2.6.0 tragen alle Apps dieselbe Versionsnummer und
+erscheinen gemeinsam in einem GitHub Release `Nori v2.7.0` (Tag `v2.7.0`).
 Wie ein Release entsteht: [docs/releases.md](docs/releases.md).
 
 | Plattform | Version | Paket im Release | Status |
 | --- | --- | --- | --- |
-| iOS / iPadOS | **2.6.0** (Build 41) | `Nori-iOS-v2.6.0.ipa`, unsigniert | Native SwiftUI-App, aktueller Hauptstand |
-| macOS | **2.6.0** (Build 32) | `Nori-macOS-Source-v2.6.0.zip`, Quellpaket | Native SwiftUI-App mit eigener Mac-Oberfläche |
-| Windows | **2.6.0** | `Nori-Windows-v2.6.0.exe`, `Nori-Windows-v2.6.0.zip` | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
-| LG webOS | **2.6.0** | `Nori-webOS-v2.6.0.ipk` | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
+| iOS / iPadOS | **2.7.0** (Build 42) | `Nori-iOS-v2.7.0.ipa`, unsigniert | Native SwiftUI-App, aktueller Hauptstand |
+| macOS | **2.7.0** (Build 33) | `Nori-macOS-v2.7.0.zip` (`Nori.app`, unsigniert), dazu `Nori-macOS-Source-v2.7.0.zip` | Native SwiftUI-App mit eigener Mac-Oberfläche; nach dem Entpacken per Rechtsklick öffnen |
+| Windows | **2.7.0** | `Nori-Windows-v2.7.0.exe`, `Nori-Windows-v2.7.0.zip` | Neu gebaute Desktop-App (`apps/windows/`): Electron-Hauptprozess mit der Quellenschicht aus dem Kern, ohne Server und ohne Port; Maus, Tastatur, Trackpad, Vollbild, DPI-Skalierung |
+| LG webOS | **2.7.0** | `Nori-webOS-v2.7.0.ipk` | TV-Oberfläche nach Design V4, eigene Fernbedienungsnavigation, 1080p und 4K, Google-Anmeldung per QR-Code, Abgleich über den TV-Spiegel; auf einem echten Gerät noch nicht erprobt |
 | Android / Google TV | — | — | Keine App in diesem Repository |
 
 Die Nummer setzt und prüft `tools/nori-version.py`:
@@ -399,12 +399,12 @@ Gebaut auf Chrome 79 — die Engine von webOS 6. Damit läuft dasselbe Paket auf
 ### Prüfen
 
 ```bash
-npm --prefix shared/nori-core test        # Kern, 122 Tests
+npm --prefix shared/nori-core test        # Kern
 python3 tools/check-webos-package.py      # Quelltext, Paket, Versionen
 cd apps/webos && npm run build
 npm run mock &                            # Nori-Server und TMDB mit festen Daten
 npm i -D playwright && npx playwright install chromium
-npm run test:tv                           # 130 Prüfungen mit echten LG-Tastencodes
+npm run test:tv                           # Fernbedienungslauf mit echten LG-Tastencodes
 ```
 
 Der Fernbedienungslauf legt dabei 21 Bildschirmfotos in
@@ -489,9 +489,9 @@ Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am g
 
 Der Lauf **Build webOS** liegt auf demselben Runner, braucht dort aber kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
 
-Ein Release entsteht von Hand und für alle Plattformen zugleich: **GitHub → Actions → Nori Release → Run workflow → Version 2.6.0**. Der Lauf prüft Version und Changelog, testet den gemeinsamen Kern, baut iOS, macOS, webOS und Windows aus demselben Commit, prüft jedes Paket, legt den Release `Nori v<VERSION>` mit dem Tag `v<VERSION>` und `checksums-sha256.txt` an, prüft ihn nach und löscht erst dann alte Läufe der Nori-Workflows. Jede Version bekommt genau einen Release; Tags werden nie verschoben, Releases nie gelöscht. Einzelheiten: [docs/releases.md](docs/releases.md).
+Ein Release entsteht von Hand und für alle Plattformen zugleich: **GitHub → Actions → Nori Release → Run workflow → Version**. Der Lauf prüft Version und Changelog, testet den gemeinsamen Kern, baut iOS, macOS, webOS und Windows aus demselben Commit, prüft jedes Paket, legt den Release `Nori v<VERSION>` mit dem Tag `v<VERSION>` und `checksums-sha256.txt` an, prüft ihn nach und löscht erst dann alte Läufe der Nori-Workflows. Jede Version bekommt genau einen Release; Tags werden nie verschoben, Releases nie gelöscht. Einzelheiten: [docs/releases.md](docs/releases.md).
 
-Das macOS-Quellpaket enthält neben `native/Nori-macOS` auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md`, damit die Symlinks im Xcode-Projekt auflösbar bleiben. Es wird aus dem Commit selbst geschnürt; Symlinks bleiben Symlinks.
+macOS hängt zwei Dateien an: `Nori-macOS-v<VERSION>.zip` mit dem fertigen `Nori.app` (unsigniert – nach dem Entpacken per Rechtsklick öffnen) und das Quellpaket `Nori-macOS-Source-v<VERSION>.zip`. Das Quellpaket enthält neben `native/Nori-macOS` auch `native/NoriCore`, `native/Package.swift`, `native/Tests`, `config/contract.json`, `README.md` und `CHANGELOG.md`, damit die Symlinks im Xcode-Projekt auflösbar bleiben. Es wird aus dem Commit selbst geschnürt; Symlinks bleiben Symlinks.
 
 ## Technische Hinweise
 

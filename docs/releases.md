@@ -8,11 +8,12 @@ Plattformen zugleich.
 | Version | `2.6.0` — in allen Apps gleich |
 | Tag | `v2.6.0` |
 | GitHub Release | `Nori v2.6.0` |
-| Anhänge | ein Paket je Plattform und `checksums-sha256.txt` |
+| Anhänge | die Pakete der Plattformen (macOS: App und Quellpaket) und `checksums-sha256.txt` |
 
 | Plattform | Anhang | Was es ist | Gebaut von |
 | --- | --- | --- | --- |
 | iOS / iPadOS | `Nori-iOS-v<VERSION>.ipa` | unsignierte IPA, vor der Installation signieren | Build iOS, Job `ipa` |
+| macOS | `Nori-macOS-v<VERSION>.zip` | unsigniertes `Nori.app`; nach dem Entpacken per Rechtsklick öffnen | Build macOS, Job `package` |
 | macOS | `Nori-macOS-Source-v<VERSION>.zip` | Quellpaket, in Xcode öffnen und selbst signieren | Build macOS, Job `package` |
 | LG webOS | `Nori-webOS-v<VERSION>.ipk` | Installationspaket mit produktivem TV-Client | Build webOS |
 | Windows | `Nori-Windows-v<VERSION>.exe` | NSIS-Installer ohne Administratorrechte, nicht signiert | Build Windows |
@@ -20,9 +21,10 @@ Plattformen zugleich.
 | alle | `checksums-sha256.txt` | SHA-256 jedes Pakets | Nori Release |
 
 Das Schema der Dateinamen ist `Nori-<Plattform>-v<VERSION>.<Endung>`. macOS
-trägt `macOS-Source` als Plattform, weil es ein Quellpaket ist und kein
-Programm. Android und Google TV haben keine App in diesem Repository; die
-Notes nennen sie unter „nicht enthalten“, ein Paket wird nicht erfunden.
+liefert zwei Anhänge: das Programm (`Nori-macOS-v…zip` mit `Nori.app`) und das
+Quellpaket (`Nori-macOS-Source-v…zip`). Android und Google TV haben keine App
+in diesem Repository; die Notes nennen sie unter „nicht enthalten“, ein Paket
+wird nicht erfunden.
 
 Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
 `v1.8.0` von Windows) bleiben stehen. Neue entstehen nicht.
@@ -326,7 +328,7 @@ aufgebraucht. Ist der Mac aus, warten die Jobs; es wird nichts vorgetäuscht.
 | Plattform | Automatisiert | Einschränkung |
 | --- | --- | --- |
 | iOS / iPadOS | ja | unsigniert — kein Verteilungszertifikat im Repository |
-| macOS | ja, als Quellpaket | für ein `.dmg` fehlen ein Zertifikat „Developer ID Application“ und die Notarisierung (App-spezifisches Passwort oder API-Schlüssel); beides müsste im Schlüsselbund des Runners bzw. als Secret liegen, danach: `PLATFORMS["macos"]` und `ASSETS["macos"]` in `tools/nori-release.py` umstellen und einen Prüfer für das Programm ergänzen |
+| macOS | ja, als `Nori.app` (unsigniert) plus Quellpaket | kein Developer-ID-Zertifikat, keine Notarisierung – nach dem Entpacken per Rechtsklick öffnen. Für ein notarisiertes `.dmg` bräuchte es Zertifikat und Notarisierung im Schlüsselbund des Runners |
 | LG webOS | ja | Paket nicht auf einem echten Fernseher erprobt |
 | Windows | ja, wenn die Secrets gesetzt sind | `NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET` (Settings → Secrets and variables → Actions) fehlen derzeit; ohne sie bricht ein Release mit Windows im ersten Job ab. Kreuzgebaut auf dem Mac, das gepackte Programm startet nur ein Windows-Runner (`NORI_WINDOWS_RUNNER`, [windows.md](windows.md)). Nicht signiert |
 | Android / Google TV | nein | keine App in diesem Repository; `Build Android core` baut nur den Swift-Kern von Hand. Für einen Release bräuchte es die App, einen Build-Job, `versionName`/`versionCode` in `tools/nori-version.py`, einen Eintrag in `PLATFORMS` und einen Prüfer für `.apk` |

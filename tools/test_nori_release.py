@@ -143,6 +143,24 @@ def make_secrets(directory: Path) -> None:
     (directory / "google-ios-client-id").write_text(IOS_ID + "\n")
 
 
+def make_macos_app(directory: Path, version: str = VERSION, build: str = "31", bundle: str = "to.nori.macos",
+                   name: str | None = None, extra: dict[str, bytes] | None = None,
+                   client_id: str = MAC_ID, client_secret: str = MAC_SECRET,
+                   executable: str = "Nori", binary: str | None = None) -> Path:
+    path = directory / (name or f"Nori-macOS-v{version}.zip")
+    binary = executable if binary is None else binary
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        info = {"CFBundleShortVersionString": version, "CFBundleVersion": build,
+                "CFBundleIdentifier": bundle, "CFBundleExecutable": executable,
+                "GoogleClientID": client_id, "GoogleClientSecret": client_secret}
+        archive.writestr("Nori.app/Contents/Info.plist", plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
+        if binary:
+            archive.writestr(f"Nori.app/Contents/MacOS/{binary}", b"\xcf\xfa\xed\xfe nori-macos")
+        for member, data in (extra or {}).items():
+            archive.writestr(member, data)
+    return path
+
+
 def make_ipa(directory: Path, version: str = VERSION, build: str = "40", bundle: str = "to.nori.ios",
              name: str | None = None, extra: dict[str, bytes] | None = None, apps: tuple[str, ...] = ("Nori.app",)) -> Path:
     path = directory / (name or f"Nori-iOS-v{version}.ipa")
@@ -439,7 +457,8 @@ class ReleaseTestCase(unittest.TestCase):
         directory.mkdir(exist_ok=True)
         makers = {
             "ios": lambda: make_ipa(directory),
-            "macos": lambda: self.source_zip_into(directory),
+            "macos": lambda: make_macos_app(directory),
+            "macos-source": lambda: self.source_zip_into(directory),
             "webos": lambda: make_ipk(directory),
             "windows-installer": lambda: make_installer(directory),
             "windows-portable": lambda: make_windows_zip(directory),
@@ -471,7 +490,7 @@ class MetaTests(ReleaseTestCase):
         self.assertEqual(meta.bundle_ids, {"ios": "to.nori.ios", "macos": "to.nori.macos", "webos": "tv.nori.app"})
         self.assertEqual(sorted(self.tool.expected_assets(VERSION, ALL)), [
             "Nori-Windows-v2.6.0.exe", "Nori-Windows-v2.6.0.zip", "Nori-iOS-v2.6.0.ipa",
-            "Nori-macOS-Source-v2.6.0.zip", "Nori-webOS-v2.6.0.ipk",
+            "Nori-macOS-Source-v2.6.0.zip", "Nori-macOS-v2.6.0.zip", "Nori-webOS-v2.6.0.ipk",
         ])
 
     def test_every_asset_follows_the_naming_scheme(self) -> None:
@@ -645,7 +664,8 @@ class PublishTests(ReleaseTestCase):
         for expected in ("**Nori 2.6.0** für iOS / iPadOS, macOS, LG webOS, Windows",
                          f"[`{self.commit[:7]}`](https://github.com/owner/nori/commit/{self.commit})",
                          "| iOS / iPadOS | `Nori-iOS-v2.6.0.ipa` | Build 40. Unsigniert",
-                         "| macOS | `Nori-macOS-Source-v2.6.0.zip` | Build 31. Quellpaket",
+                         "| macOS | `Nori-macOS-v2.6.0.zip` | Build 31. Unsigniert",
+                         "| macOS (Quellpaket) | `Nori-macOS-Source-v2.6.0.zip` | Build 31. Quellpaket",
                          "| Windows | `Nori-Windows-v2.6.0.exe` |", "| Windows (ohne Installation) | `Nori-Windows-v2.6.0.zip` |",
                          "| LG webOS | `Nori-webOS-v2.6.0.ipk` |",
                          "Nicht enthalten: Android (keine App in diesem Repository), Google TV",
@@ -836,7 +856,7 @@ class VerifyTests(ReleaseTestCase):
             self.assertEqual(archive.read(link), b"../../NoriCore/Sources/NoriCore/Models.swift")
         self.assertEqual((infos["native/Nori-macOS/Mac-App-bauen.command"].external_attr >> 16) & 0o777, 0o755)
         self.assertNotIn("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", infos)
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos"], path)
+        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos-source"], path)
 
     def test_source_package_ignores_the_worktree(self) -> None:
         (self.repo / "native/Nori-macOS/Notizen.txt").write_text("nicht eingecheckt")
@@ -848,7 +868,7 @@ class VerifyTests(ReleaseTestCase):
             self.assertNotEqual(archive.read("README.md"), "# lokal geändert\n".encode())
         self.assertNotIn("native/Nori-macOS/Notizen.txt", names)
         self.assertNotIn("native/Nori-macOS/Config/Google.local.xcconfig", names)
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos"], path)
+        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos-source"], path)
 
     def test_source_zip_must_equal_the_commit(self) -> None:
         good = self.source_zip()
@@ -861,12 +881,31 @@ class VerifyTests(ReleaseTestCase):
                     data = b"# anders\n"
                 target.writestr(info, data)
             target.writestr("native/Nori-macOS/Config/Google.local.xcconfig", f"GOOGLE_CLIENT_ID = {MAC_ID}\n")
-        self.assertRejected("macos", tampered, "unzulässige Datei")
+        self.assertRejected("macos-source", tampered, "unzulässige Datei")
 
     def test_source_zip_from_an_older_commit_is_rejected(self) -> None:
         older = self.source_zip()
         self.commit_files({"native/Nori-macOS/Nori/NoriApp.swift": "@main struct NoriApp { let neu = 1 }\n"})
-        self.assertRejected("macos", older, "NoriApp.swift weicht vom Stand")
+        self.assertRejected("macos-source", older, "NoriApp.swift weicht vom Stand")
+
+    def test_macos_app_zip(self) -> None:
+        path = make_macos_app(self.out)
+        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos"], path)
+        self.assertRejected("macos", make_macos_app(self.out, extra={"README.txt": b"hi"}), "außerhalb von Nori.app")
+        self.assertRejected("macos", make_macos_app(self.out, version="2.5.0", name="Nori-macOS-v2.6.0.zip"),
+                            "CFBundleShortVersionString")
+        self.assertRejected("macos", make_macos_app(self.out, build="30"), "CFBundleVersion")
+        self.assertRejected("macos", make_macos_app(self.out, bundle="to.nori.ios"), "Bundle-ID")
+        self.assertRejected("macos", make_macos_app(self.out, client_id=""), "GoogleClientID fehlt oder ist leer")
+        self.assertRejected("macos", make_macos_app(self.out, client_secret=""), "GoogleClientSecret fehlt oder ist leer")
+        self.assertRejected("macos", make_macos_app(self.out, extra={"Nori.app/Contents/MacOS/other": b"x"},
+                                                   binary=""), "MacOS/Nori fehlt")
+        self.assertRejected("macos", make_macos_app(self.out, extra={"Nori.app/Contents/leak.js": IOS_ID.encode()}),
+                            "google-ios-client-id")
+        self.assertRejected("macos", make_macos_app(self.out, client_id="$(GOOGLE_CLIENT_ID)"),
+                            "unaufgelöster Platzhalter")
+        self.assertRejected("macos", make_macos_app(self.out, client_secret="$(GOOGLE_CLIENT_SECRET)"),
+                            "unaufgelöster Platzhalter")
 
     def test_windows_installer(self) -> None:
         self.tool.verify_asset(self.meta(), self.tool.ASSETS["windows-installer"], make_installer(self.out))
@@ -1407,6 +1446,7 @@ class WorkflowTests(unittest.TestCase):
         publish = next(step for step in jobs["publish"]["steps"] if "nori-release.py publish" in step.get("run", ""))
         self.assertIn('--commit "$GITHUB_SHA"', publish["run"])
         self.assertIn("--sha256", publish["run"])
+        self.assertIn("macos-source=$SHA256_MACOS_SOURCE", publish["run"])
         cleanup = next(step for step in jobs["cleanup"]["steps"] if "nori-release.py cleanup" in step.get("run", ""))
         self.assertIn('--keep-run "$GITHUB_RUN_ID"', cleanup["run"])
         for name in ("publish", "validate", "cleanup"):
@@ -1427,6 +1467,10 @@ class WorkflowTests(unittest.TestCase):
                 if platform == "windows":
                     self.assertIn("sha256_installer", outputs)
                     self.assertIn("sha256_portable", outputs)
+                elif platform == "macos":
+                    self.assertIn("sha256", outputs)
+                    self.assertIn("sha256_source", outputs)
+                    self.assertIn("asset_source", outputs)
                 else:
                     self.assertIn("sha256", outputs)
                 group = workflow["concurrency"]["group"]
@@ -1503,8 +1547,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--production", webos["Paket prüfen"]["run"])
         self.assertIn("--reference-dist", webos["Paket prüfen"]["run"])
         macos = {step.get("name"): step for step in load_workflow("build-macos.yml")["jobs"]["package"]["steps"]}
+        self.assertIn("--macos", macos["Google OAuth für macOS bereitstellen"]["run"])
+        self.assertIn("--verify-macos-app", macos["Google OAuth im gebauten Programm prüfen"]["run"])
+        self.assertIn("--verify-macos-zip", macos["Google OAuth im App-Paket prüfen"]["run"])
         self.assertIn("check-app --platform macos", macos["Version im gebauten Programm prüfen"]["run"])
+        self.assertIn("ditto -c -k --keepParent", macos["Nori.app packen"]["run"])
         self.assertIn("nori-release.py source-package", macos["Quellpaket aus dem Commit schnüren"]["run"])
+        self.assertIn("--asset macos ", macos["App-Paket für den Release prüfen"]["run"])
+        self.assertIn("--asset macos-source", macos["Quellpaket prüfen"]["run"])
         windows = {step.get("name"): step for step in load_workflow("build-windows.yml")["jobs"]["build"]["steps"]}
         self.assertIn("inputs.release-version", str(windows["Google-Zugang für den Release prüfen"]["if"]))
         verify = windows["Pakete für den Release prüfen"]["run"]

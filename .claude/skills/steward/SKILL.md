@@ -89,7 +89,7 @@ Eine Version, ein Tag, ein Release:
 
 Releases werden nicht von Hand getaggt und entstehen nicht in Plattform-Läufen. Einziger Weg: **GitHub → Actions → Nori Release → Run workflow → Version**, nachdem die Nummer auf `main` steht. Der Lauf prüft, baut, veröffentlicht, prüft nach und räumt erst dann alte Läufe auf. Regeln: `docs/releases.md`, Logik: `tools/nori-release.py`.
 
-Das macOS-Quellpaket (`Nori-macOS-Source-vX.Y.Z.zip`) muss enthalten:
+Das macOS-Release hängt **zwei** Pakete an: `Nori-macOS-vX.Y.Z.zip` (`Nori.app`, unsigniert) und das Quellpaket `Nori-macOS-Source-vX.Y.Z.zip`. Das Quellpaket muss enthalten:
 
 - jeweiligen Plattformordner
 - `native/NoriCore/`
