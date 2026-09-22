@@ -320,17 +320,26 @@ nur als Umgebungsvariable.
 
 ## Plattformen und Runner
 
-Alle Jobs laufen auf dem self-hosted Mac (`[self-hosted, macOS]`,
-[self-hosted-runner.md](self-hosted-runner.md)). Von GitHub gestellte Runner
-starten bei diesem privaten Repository nicht mehr — das Minutenkontingent ist
-aufgebraucht. Ist der Mac aus, warten die Jobs; es wird nichts vorgetäuscht.
+Die Jobs laufen auf GitHub-hosted Runnern. Der eigene Mac ist nicht nötig.
+
+| Job | Runner |
+| --- | --- |
+| Build iOS, Build macOS, Swift tests, Release `checks` | `macos-26` |
+| Build webOS, Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
+| Build Windows | `windows-latest` |
+
+IPA, macOS-App und webOS-Paket brauchen die Google-Zugangsdaten als
+Repository-Secrets (`NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_CLIENT_ID`,
+`NORI_GOOGLE_MACOS_CLIENT_SECRET`, `NORI_GOOGLE_TV_CLIENT_ID`,
+`NORI_GOOGLE_TV_CLIENT_SECRET`). Lokal bleiben die Dateien unter
+`~/.config/nori/secrets/`.
 
 | Plattform | Automatisiert | Einschränkung |
 | --- | --- | --- |
 | iOS / iPadOS | ja | unsigniert — kein Verteilungszertifikat im Repository |
-| macOS | ja, als `Nori.app` (unsigniert) plus Quellpaket | kein Developer-ID-Zertifikat, keine Notarisierung – nach dem Entpacken per Rechtsklick öffnen. Für ein notarisiertes `.dmg` bräuchte es Zertifikat und Notarisierung im Schlüsselbund des Runners |
+| macOS | ja, als `Nori.app` (unsigniert) plus Quellpaket | kein Developer-ID-Zertifikat, keine Notarisierung – nach dem Entpacken per Rechtsklick öffnen |
 | LG webOS | ja | Paket nicht auf einem echten Fernseher erprobt |
-| Windows | ja, wenn die Secrets gesetzt sind | `NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET` (Settings → Secrets and variables → Actions) fehlen derzeit; ohne sie bricht ein Release mit Windows im ersten Job ab. Kreuzgebaut auf dem Mac, das gepackte Programm startet nur ein Windows-Runner (`NORI_WINDOWS_RUNNER`, [windows.md](windows.md)). Nicht signiert |
+| Windows | ja, wenn die Secrets gesetzt sind | `NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET` (Settings → Secrets and variables → Actions). Ohne sie bricht ein Release mit Windows im ersten Job ab. Nicht signiert |
 | Android / Google TV | nein | keine App in diesem Repository; `Build Android core` baut nur den Swift-Kern von Hand. Für einen Release bräuchte es die App, einen Build-Job, `versionName`/`versionCode` in `tools/nori-version.py`, einen Eintrag in `PLATFORMS` und einen Prüfer für `.apk` |
 
 ## Tests
@@ -344,7 +353,7 @@ Ohne echte Releases, Tags oder Löschungen: GitHub ist nachgebaut, das
 Repository ein Wegwerf-Repository, alle Zugangsdaten sind erfunden. Die
 Workflow-Struktur — Auslöser, `needs`, `if`, Berechtigungen, Aufbewahrung,
 Reihenfolge von Prüfung und Hochladen — lesen die Tests aus den echten
-Dateien (dafür braucht es `ruby`, das macOS mitbringt). Der Lauf **Check
+Dateien (dafür braucht es `ruby`). Der Lauf **Check
 release pipeline** führt beides bei jeder Änderung an Paketen, Versionen,
 Changelog, Werkzeugen oder Workflows aus, und **Nori Release** noch einmal vor
 jedem Release.

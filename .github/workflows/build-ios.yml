@@ -54,7 +54,7 @@ jobs:
   simulator:
     name: Simulator-Build
     if: ${{ !inputs.release-version && !inputs.ipa }}
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-26
     timeout-minutes: 25
     steps:
       - name: Checkout
@@ -100,7 +100,7 @@ jobs:
   ipa:
     name: IPA
     if: ${{ inputs.release-version || inputs.ipa }}
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-26
     timeout-minutes: 30
     outputs:
       asset: ${{ steps.meta.outputs.asset }}
@@ -128,12 +128,15 @@ jobs:
       # es die Datei aber nicht, der Build lief grün, und die App meldete
       # „ohne Google-Abgleich gebaut".
       #
-      # Die iOS-Client-ID ist kein Secret, gehört aber nicht ins Repository. Sie
-      # liegt auf dem Runner unter ~/.config/nori/secrets/google-ios-client-id,
-      # neben den OAuth-JSON der anderen Plattformen, und dasselbe Werkzeug wie
-      # am Entwicklerrechner schreibt daraus die nicht eingecheckte
-      # Google.local.xcconfig. Fehlt die Datei, bricht der Job hier ab.
+      # Die iOS-Client-ID ist kein Secret im engeren Sinn, gehört aber nicht
+      # ins Repository. Auf GitHub-Runnern kommt sie aus dem Repository-Secret
+      # `NORI_GOOGLE_IOS_CLIENT_ID`; lokal (und früher auf dem eigenen Mac)
+      # aus ~/.config/nori/secrets/google-ios-client-id. Dasselbe Werkzeug
+      # schreibt daraus die nicht eingecheckte Google.local.xcconfig. Fehlt
+      # beides, bricht der Job hier ab.
       - name: Google OAuth für iOS bereitstellen
+        env:
+          NORI_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NORI_GOOGLE_IOS_CLIENT_ID }}
         run: python3 tools/configure-google-oauth.py --ios
 
       - name: Swift-Pakete auflösen

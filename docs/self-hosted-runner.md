@@ -1,18 +1,25 @@
-# Den eigenen Mac als GitHub-Runner einrichten
+# Eigenen Mac als GitHub-Runner (optional)
 
-Alle Workflows laufen auf `runs-on: [self-hosted, macOS]` — auch
-`Build Windows` und der zentrale Release `Nori Release`. Solange kein Runner
-mit diesen beiden Bezeichnungen angemeldet ist, bleiben die Jobs in der
-Warteschlange stehen (Actions zeigt sie als „Queued"), ohne Fehlermeldung und
-ohne Zeitlimit. Ein Release wird dann nicht vorgetäuscht, sondern wartet.
+Die Workflows laufen auf **GitHub-hosted Runnern**:
 
-Grund für den Umbau: bei einem **privaten** Repository zählt GitHub jede
-macOS-Minute **zehnfach** gegen das Monatskontingent (GitHub Free: 2.000
-Minuten). Ist es aufgebraucht und das Ausgabenlimit steht auf 0 $, stoppen
-*alle* Workflows — auch die auf Linux. Ein eigener Mac verbraucht davon nichts.
+| Job | Runner |
+| --- | --- |
+| Build iOS, Build macOS, Swift tests, Release-Job `checks`, Build Android core | `macos-26` (Xcode 26) |
+| Build webOS, Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
+| Build Windows | `windows-latest` |
 
-Was das dafür kostet: der Mac muss an, wach und online sein. Und es gibt nur
-einen Runner, die Jobs laufen also nacheinander.
+Ein eigener Mac ist nicht nötig. Die Anleitung darunter gilt nur, falls jemand
+die Workflows wieder auf `[self-hosted, macOS]` stellt.
+
+---
+
+## Warum der eigene Mac früher da war
+
+Bei einem **privaten** Repository zählt GitHub jede macOS-Minute **zehnfach**
+gegen das Monatskontingent (GitHub Free: 2.000 Minuten). Ist es aufgebraucht
+und das Ausgabenlimit steht auf 0 $, stoppen *alle* Workflows — auch die auf
+Linux. Ein eigener Mac verbraucht davon nichts, muss aber an, wach und online
+sein.
 
 ---
 
@@ -226,9 +233,9 @@ cd ~/actions-runner
 ./config.sh remove --token <NEUES TOKEN VON DER RUNNER-SEITE>
 ```
 
-Danach die Workflows wieder auf `runs-on: macos-14` (macOS/Tests/Release) bzw.
-`macos-15` (iOS) umstellen, sonst warten sie auf einen Runner, den es nicht
-mehr gibt.
+Danach die Workflows wieder auf die GitHub-hosted Labels stellen
+(`macos-26`, `ubuntu-latest`, `windows-latest`), sonst warten sie auf einen
+Runner, den es nicht mehr gibt.
 
 ---
 

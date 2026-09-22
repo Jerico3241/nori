@@ -38,8 +38,8 @@ Die Regeln stehen hier und nirgends sonst:
   Anhänge, Tags und Branches kann dieses Werkzeug gar nicht löschen: `GitHub`
   lässt `DELETE` nur für Workflow-Läufe und -Artefakte zu.
 
-Die GitHub-API wird über `urllib` angesprochen, nicht über die `gh`-CLI: der
-Runner kommt ohne Homebrew aus (docs/self-hosted-runner.md). Das Token kommt aus
+Die GitHub-API wird über `urllib` angesprochen, nicht über die `gh`-CLI:
+kein Homebrew, keine zusätzliche CLI auf dem Runner. Das Token kommt aus
 `GITHUB_TOKEN` oder `GH_TOKEN` und erscheint in keiner Ausgabe.
 """
 

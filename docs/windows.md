@@ -216,40 +216,12 @@ lädt.
 ### In der CI bauen
 
 `Build Windows` (`.github/workflows/build-windows.yml`) läuft auf dem
-**self-hosted Mac**, wie alle anderen Läufe des Projekts.
+GitHub-Runner **`windows-latest`**. Die Desktop-Prüfung startet damit das
+gepackte `Nori.exe`.
 
-Vorher lag er auf einem von GitHub gestellten Windows-Runner. Das geht nicht
-mehr: Bei einem privaten Repository zählen gestellte Runner gegen das
-Minutenkontingent — Windows mit Faktor 2 —, und das Kontingent ist
-aufgebraucht. Lauf `35227553568` endete nach vier Sekunden mit
-`billable.WINDOWS.total_ms = 0`: Der Job hat nie einen Runner bekommen.
-
-**Was der Mac kann:** bauen, durchspielen und packen. `tsc`, `esbuild` und
-Vite sind plattformunabhängig, und die Desktop-Prüfung startet Electron für
-macOS mit demselben Haupt- und Renderer-Code, den Windows ausführt. Packen
-geht ohne Wine: `electron-builder` 26 schreibt Symbol und Versionsangaben der
-EXE mit `resedit` (reines JavaScript) und liest die
-NSIS-Deinstallationsroutine unter macOS direkt aus dem Installer
-(`UninstallerReader`). Am 17.09. auf dem Runner-Mac nachgestellt — ohne Wine
-entstanden `Nori-Setup-2.6.0.exe` (86 MB) und `Nori-2.6.0-portable.zip`
-(122 MB), beide mit Produktversion `2.6.0.0`. Wine braucht es nur unter
-Linux (siehe unten). Auf einem Mac mit Apple-Chip braucht es dafür
-**Rosetta 2**: Der mitgelieferte NSIS-Compiler ist ein Intel-Programm. Der
-Schritt *Voraussetzungen fürs Packen* prüft das vorher.
-
-**Was er nicht kann:** das gepackte `Nori.exe` starten. Der Schritt
-*Desktop-Prüfung gegen das Paket* steht unter `if: runner.os == 'Windows'`.
-Ein auf dem Mac geschnürtes Paket ist damit **kreuzgebaut und auf dem
-Zielsystem ungetestet**. Geprüft wird es trotzdem, von außen:
-`tools/nori-release.py verify` liest die Produktversion von `Nori.exe` und
-Installer, packt `app.asar` aus und vergleicht Version und Inhalt.
-
-**Ein Windows-Runner** lässt sich ohne Änderung am Workflow wählen: die
-Repository-Variable `NORI_WINDOWS_RUNNER` auf die Bezeichnungen setzen, etwa
-`["self-hosted", "Windows"]`. Er braucht Git Bash, `python3` im `PATH` und
-`openssl`; Node holt der Lauf selbst. Dann laufen alle Schritte, und die
-Desktop-Prüfung läuft zweimal — gegen den Quellordner und gegen das gepackte
-`app.asar`.
+Ein anderer Runner geht über die Repository-Variable `NORI_WINDOWS_RUNNER`,
+etwa `["self-hosted", "Windows"]`. Er braucht Git Bash, `python3` im `PATH`
+und `openssl`; Node und Python holt der Lauf selbst.
 
 **Wann er läuft:**
 

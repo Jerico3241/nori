@@ -50,8 +50,10 @@ class PackagingTests(unittest.TestCase):
 
     # MARK: - Hilfen
 
-    def run_tool(self, *args: str) -> subprocess.CompletedProcess:
+    def run_tool(self, *args: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.home), "CI": "true"}
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(
             [sys.executable, str(self.root / "tools" / TOOL.name), *args],
             capture_output=True, text=True, env=env, cwd=self.root,
@@ -187,6 +189,21 @@ class PackagingTests(unittest.TestCase):
         mode = (self.root / "native/Nori-iOS/Config/Google.local.xcconfig").stat().st_mode & 0o777
         self.assertEqual(mode, 0o600)
 
+    def test_ios_configuration_from_environment(self) -> None:
+        result = self.run_tool("--ios", extra_env={"NORI_GOOGLE_IOS_CLIENT_ID": FAKE_ID})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn(FAKE_ID, result.stdout)
+        written = (self.root / "native/Nori-iOS/Config/Google.local.xcconfig").read_text()
+        self.assertIn(f"GOOGLE_CLIENT_ID = {FAKE_ID}", written)
+
+    def test_ios_environment_beats_secrets_file(self) -> None:
+        (self.home / ".config/nori/secrets/google-ios-client-id").write_text(OTHER_ID + "\n")
+        result = self.run_tool("--ios", extra_env={"NORI_GOOGLE_IOS_CLIENT_ID": FAKE_ID})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        written = (self.root / "native/Nori-iOS/Config/Google.local.xcconfig").read_text()
+        self.assertIn(f"GOOGLE_CLIENT_ID = {FAKE_ID}", written)
+        self.assertNotIn(OTHER_ID, written)
+
     def test_invalid_secrets_file_is_rejected(self) -> None:
         (self.home / ".config/nori/secrets/google-ios-client-id").write_text("keine-id\n")
         result = self.run_tool("--ios")
@@ -220,6 +237,22 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_ID={FAKE_ID}", written)
         self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_SECRET={FAKE_SECRET}", written)
         self.assertEqual(env.stat().st_mode & 0o777, 0o600)
+
+    def test_webos_configuration_from_environment(self) -> None:
+        result = self.run_tool("--webos", extra_env={
+            "NORI_GOOGLE_TV_CLIENT_ID": FAKE_ID,
+            "NORI_GOOGLE_TV_CLIENT_SECRET": FAKE_SECRET,
+        })
+        self.assertEqual(result.returncode, 0, result.stdout)
+        written = (self.root / "apps/webos/.env.local").read_text()
+        self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_ID={FAKE_ID}", written)
+        self.assertIn(f"VITE_NORI_GOOGLE_TV_CLIENT_SECRET={FAKE_SECRET}", written)
+
+    def test_webos_partial_environment_is_a_hard_error(self) -> None:
+        result = self.run_tool("--webos", extra_env={"NORI_GOOGLE_TV_CLIENT_ID": FAKE_ID})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("NORI_GOOGLE_TV_CLIENT_SECRET fehlt", result.stdout)
+        self.assertFalse((self.root / "apps/webos/.env.local").exists())
 
     def test_webos_missing_json_is_a_hard_error(self) -> None:
         self.assert_webos_rejected("google-webos-oauth.json fehlt")
@@ -266,6 +299,16 @@ class PackagingTests(unittest.TestCase):
         result = self.run_tool("--macos")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn(f"GOOGLE_CLIENT_SECRET = {FAKE_SECRET}", (self.root / "native/Nori-macOS/Config/Google.local.xcconfig").read_text())
+
+    def test_macos_configuration_from_environment(self) -> None:
+        result = self.run_tool("--macos", extra_env={
+            "NORI_GOOGLE_MACOS_CLIENT_ID": FAKE_ID,
+            "NORI_GOOGLE_MACOS_CLIENT_SECRET": FAKE_SECRET,
+        })
+        self.assertEqual(result.returncode, 0, result.stdout)
+        written = (self.root / "native/Nori-macOS/Config/Google.local.xcconfig").read_text()
+        self.assertIn(f"GOOGLE_CLIENT_ID = {FAKE_ID}", written)
+        self.assertIn(f"GOOGLE_CLIENT_SECRET = {FAKE_SECRET}", written)
 
     def test_valid_macos_bundle_passes(self) -> None:
         app = self.make_macos_app({"GoogleClientID": FAKE_ID, "GoogleClientSecret": FAKE_SECRET})

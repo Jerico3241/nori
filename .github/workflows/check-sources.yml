@@ -5,6 +5,8 @@ name: Check Apple sources
 # Merge-Commit ist der Branch-Kopf. Das prüfte alles doppelt und kostete die
 # doppelten Minuten. GitHub ordnet die push-Läufe dem Pull Request ohnehin zu,
 # sie erscheinen dort also weiterhin als Prüfungen.
+#
+# Läuft auf ubuntu-latest: reines Python, kein Xcode.
 on:
   push:
     # Nur Branches: ein Release-Tag startet keinen Lauf.
@@ -21,14 +23,6 @@ on:
       - '.github/workflows/build-macos.yml'
   workflow_dispatch:
 
-# Läuft auf dem self-hosted Runner (ein Mac). Der verbraucht keine
-# GitHub-Minuten — bei einem privaten Repository zählt eine macOS-Minute sonst
-# zehnfach, und genau daran war das Kontingent aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -38,7 +32,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout

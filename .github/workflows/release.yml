@@ -25,9 +25,9 @@ name: Nori Release
 # Scheitert ein Schritt, laufen die folgenden nicht: kein halber Release, kein
 # Aufräumen. Eine abgewählte Plattform steht in den Notes als „nicht enthalten".
 #
-# Alle Jobs laufen auf dem self-hosted Mac (docs/self-hosted-runner.md). Ist
-# er nicht erreichbar, warten sie in der Warteschlange — nichts wird
-# vorgetäuscht. Einzelheiten: docs/releases.md.
+# Runner: Linux für prepare/publish/validate/cleanup, macos-26 für den
+# gemeinsamen Swift-Kern, die Plattform-Läufe auf ihren eigenen Images
+# (docs/releases.md). Einzelheiten: docs/releases.md.
 on:
   workflow_dispatch:
     inputs:
@@ -67,7 +67,7 @@ permissions:
 jobs:
   prepare:
     name: Version prüfen
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -139,7 +139,7 @@ jobs:
   checks:
     name: Gemeinsamer Kern
     needs: prepare
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: read
@@ -190,6 +190,7 @@ jobs:
     if: needs.prepare.outputs.ios == 'true'
     permissions:
       contents: read
+    secrets: inherit
     uses: ./.github/workflows/build-ios.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
@@ -200,6 +201,7 @@ jobs:
     if: needs.prepare.outputs.macos == 'true'
     permissions:
       contents: read
+    secrets: inherit
     uses: ./.github/workflows/build-macos.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
@@ -210,6 +212,7 @@ jobs:
     if: needs.prepare.outputs.webos == 'true'
     permissions:
       contents: read
+    secrets: inherit
     uses: ./.github/workflows/build-webos.yml
     with:
       release-version: ${{ needs.prepare.outputs.version }}
@@ -242,7 +245,7 @@ jobs:
       && (needs.prepare.outputs.macos != 'true' || needs.macos.result == 'success')
       && (needs.prepare.outputs.webos != 'true' || needs.webos.result == 'success')
       && (needs.prepare.outputs.windows != 'true' || needs.windows.result == 'success') }}
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
@@ -298,7 +301,7 @@ jobs:
       && needs.prepare.result == 'success'
       && needs.publish.result == 'success'
       && needs.prepare.outputs.dry_run != 'true' }}
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
@@ -332,7 +335,7 @@ jobs:
       && needs.publish.result == 'success'
       && needs.validate.result == 'success'
       && needs.prepare.outputs.dry_run != 'true' }}
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       actions: write

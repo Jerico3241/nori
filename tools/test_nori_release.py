@@ -1371,6 +1371,29 @@ BUILD_WORKFLOWS = {
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_jobs_use_github_hosted_runners(self) -> None:
+        # Der eigene Mac ist offline. Kein Job darf auf [self-hosted, …] warten.
+        # Ohne ruby: die runs-on-Zeilen selbst, nicht der geparste Baum.
+        hosted = ("ubuntu-latest", "macos-26", "windows-latest")
+        for path in sorted((REPO / ".github/workflows").glob("*.yml")):
+            text = path.read_text()
+            self.assertNotRegex(
+                text,
+                r"(?m)^\s+runs-on:\s*\[?\s*self-hosted",
+                f"{path.name} wartet auf einen self-hosted Runner",
+            )
+            for match in re.finditer(r"(?m)^\s+runs-on:\s*(.+)$", text):
+                value = match.group(1).strip()
+                if "NORI_WINDOWS_RUNNER" in value:
+                    self.assertIn("windows-latest", value)
+                    self.assertNotIn("self-hosted", value)
+                    continue
+                self.assertTrue(
+                    any(label == value or f'"{label}"' == value or f"'{label}'" == value
+                        for label in hosted),
+                    f"{path.name}: unexpected runs-on {value!r}",
+                )
+
     def test_release_is_only_started_by_hand(self) -> None:
         on = triggers(load_workflow("release.yml"))
         self.assertEqual(set(on), {"workflow_dispatch"})
