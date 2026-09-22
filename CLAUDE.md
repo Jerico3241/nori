@@ -105,7 +105,7 @@ cd native && swift test
 python3 tools/nori-version.py check --against origin/main
 ```
 
-Die echten App-Typechecks laufen über GitHub Actions auf dem self-hosted Mac:
+Die echten App-Typechecks laufen über GitHub Actions auf `macos-26`:
 
 - `Build iOS`
 - `Build macOS`

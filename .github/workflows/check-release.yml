@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       # Die ganze Geschichte: der Vergleich braucht origin/main.

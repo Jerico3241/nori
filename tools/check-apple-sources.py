@@ -454,11 +454,10 @@ def check_glass_runner() -> None:
     SDK des Runners, und ein Xcode 16 kennt `glassEffect` überhaupt nicht.
     Der Fehler lautet dann „has no member" und weist auf nichts hin.
 
-    Die Apple-Workflows laufen auf einem self-hosted Mac, dessen Xcode-Version
-    diese Datei nicht kennen kann. Deshalb wird geprüft, dass sie
-    `tools/require-xcode.sh` mit mindestens 26 aufrufen — das bricht mit
-    klarer Meldung ab, statt den Build zwanzig Minuten später scheitern zu
-    lassen.
+    Die Apple-Workflows laufen auf GitHub-hosted `macos-26` (Xcode 26).
+    Zusätzlich wird geprüft, dass sie `tools/require-xcode.sh` mit mindestens
+    26 aufrufen — das bricht mit klarer Meldung ab, statt den Build zwanzig
+    Minuten später scheitern zu lassen.
     """
     glass = re.compile(r"\.glassEffect\(|\.scrollEdgeEffectStyle\(")
     used: list[str] = []
@@ -493,11 +492,12 @@ def check_ios_runner() -> None:
     prüft nur zur Laufzeit.
 
     Bei GitHub-Runnern steht die Xcode-Version über das Label fest, also lässt
-    sie sich hier prüfen: `macos-14` reicht nicht. Auf dem self-hosted Mac
-    hängt sie dagegen an dem, was dort installiert ist — das kann diese Datei
-    nicht wissen. Dafür muss der Workflow selbst einen Schritt haben, der die
-    Version liest und mit klarer Meldung abbricht, statt den Build zwanzig
-    Minuten später an „has no member" scheitern zu lassen.
+    sie sich hier prüfen: `macos-14` reicht nicht, `macos-26` ist der Stand.
+    Falls jemand wieder auf einen self-hosted Mac stellt, hängt die Version
+    an dem, was dort installiert ist — das kann diese Datei nicht wissen.
+    Dafür muss der Workflow selbst einen Schritt haben, der die Version liest
+    und mit klarer Meldung abbricht, statt den Build zwanzig Minuten später
+    an „has no member" scheitern zu lassen.
     """
     used = set()
     for path in swift_files(IOS):

@@ -44,6 +44,11 @@ macOS liefert jetzt ein fertiges **Nori.app**, nicht nur den Quelltext.
 
 ### Technische Änderungen
 
+- GitHub Actions laufen auf GitHub-hosted Runnern (`macos-26`, `ubuntu-latest`,
+  `windows-latest`). Der eigene Mac ist nicht mehr nötig.
+- `tools/configure-google-oauth.py` liest Client-IDs und Secrets auch aus
+  Repository-Secrets (`NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_*`,
+  `NORI_GOOGLE_TV_*`), nicht nur aus Dateien auf dem Runner.
 - `tools/nori-release.py`: neues Paket `macos` (`Nori-macOS-v…zip`, Art
   `macos-app`) neben `macos-source`. Prüfer für Bundle-Struktur, Version,
   Build, ausführbare Datei und Google-Felder.
@@ -61,6 +66,11 @@ macOS liefert jetzt ein fertiges **Nori.app**, nicht nur den Quelltext.
 - **Windows im Release braucht den Google-Desktop-Client.** Solange die
   Repository-Secrets fehlen, bricht ein Release mit Windows ab; Windows lässt
   sich dann abwählen.
+- **IPA, macOS-App und webOS-Paket brauchen Google-Secrets im Repository.**
+  Ohne `NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_CLIENT_ID` /
+  `NORI_GOOGLE_MACOS_CLIENT_SECRET` und `NORI_GOOGLE_TV_CLIENT_ID` /
+  `NORI_GOOGLE_TV_CLIENT_SECRET` entstehen keine Pakete — die Dateien auf dem
+  eigenen Mac gelten in der CI nicht mehr.
 - **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
   werden.
 

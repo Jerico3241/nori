@@ -631,16 +631,15 @@ cd apps/webos && npm run typecheck
 
 In der CI macht das der Lauf **Build webOS**, ausgelöst durch Pushes auf
 `apps/webos/**`, `shared/nori-core/**` und `services/nori-api/**`. Er läuft auf
-demselben self-hosted Mac wie alle anderen Läufe (siehe
-`docs/self-hosted-runner.md`) — ist der aus, wartet der Job in der
-Warteschlange, statt zu scheitern. Xcode braucht er nicht, nur Node.
+`ubuntu-latest` — Xcode braucht er nicht, nur Node.
 
 Das abgelegte Paket ist seit 2.2.1 das **installierbare Paket mit
 Google-Abgleich** — im Release als `Nori-webOS-v<VERSION>.ipk`, bei einem
 gewöhnlichen Push als Testpaket mit dem Commit im Namen. Der Fernbedienungslauf läuft gegen einen Build mit leeren
 TV-Variablen; danach schreibt `tools/configure-google-oauth.py --webos` die
-`.env.local` aus `~/.config/nori/secrets/google-webos-oauth.json` auf dem
-Runner, der produktive Build wird gepackt und mit
+`.env.local` aus den Repository-Secrets `NORI_GOOGLE_TV_CLIENT_ID` und
+`NORI_GOOGLE_TV_CLIENT_SECRET` (lokal aus
+`~/.config/nori/secrets/google-webos-oauth.json`), der produktive Build wird gepackt und mit
 `check-webos-package.py --production --reference-dist …` im fertigen `.ipk`
 geprüft. Einzelheiten: `docs/google-drive-sync.md`, Abschnitt zur
 Build-Konfiguration für webOS. Lokal ändert sich nichts — ohne `.env.local`

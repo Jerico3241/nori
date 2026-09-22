@@ -1,37 +1,12 @@
 name: Build Windows
 
-# Der Lauf, der Nori für Windows baut, prüft und packt — auf dem self-hosted
-# Mac, wie alle anderen Läufe des Projekts.
+# Der Lauf, der Nori für Windows baut, prüft und packt — auf dem
+# GitHub-Runner `windows-latest`. Die Desktop-Prüfung läuft damit gegen
+# das gepackte `Nori.exe`, nicht nur gegen Electron für macOS.
 #
-# ## Warum nicht auf einem Windows-Runner von GitHub
-#
-# Weil keiner mehr startet: Bei einem privaten Repository zählen gestellte
-# Runner gegen das Minutenkontingent, Windows doppelt, und das Kontingent ist
-# aufgebraucht. Gemessen, nicht vermutet: Lauf 35225331616 lief am
-# öffentlichen Repository grün durch, Lauf 35227553568 am privaten endete nach
-# vier Sekunden mit `billable.WINDOWS.total_ms = 0` — der Job bekam nie einen
-# Runner.
-#
-# ## Was der Mac kann — und was nicht
-#
-# Bauen, durchspielen und packen. `electron-builder` 26 schreibt Symbol und
-# Versionsangaben der EXE mit `resedit` (reines JavaScript) und liest die
-# NSIS-Deinstallationsroutine auf macOS ohne Wine aus dem fertigen Installer
-# (`UninstallerReader`). Wine braucht es nur unter Linux; auf einem Apple-Chip
-# aber Rosetta 2, weil der mitgelieferte NSIS-Compiler ein Intel-Programm ist.
-# Am 17.09. auf dem Runner-Mac nachgestellt: Installer und ZIP entstanden ohne
-# Wine, und `tools/nori-release.py verify` las Produktversion und `app.asar`
-# daraus.
-#
-# Nicht kann er: das gepackte `Nori.exe` starten. Die Desktop-Prüfung läuft
-# gegen Electron für macOS mit demselben Haupt- und Renderer-Code; die Prüfung
-# gegen das Paket nur auf einem Windows-Runner. Ein hier geschnürtes Paket ist
-# kreuzgebaut und auf dem Zielsystem ungetestet.
-#
-# Ein self-hosted Windows-Runner lässt sich ohne Änderung an dieser Datei
-# wählen: Repository-Variable `NORI_WINDOWS_RUNNER`, etwa
-# `["self-hosted", "Windows"]`. Dann läuft auch die Prüfung gegen das Paket.
-# Was er mitbringen muss: docs/windows.md.
+# Ein anderer Runner lässt sich ohne Änderung an dieser Datei wählen:
+# Repository-Variable `NORI_WINDOWS_RUNNER`, etwa
+# `["self-hosted", "Windows"]`. Was er mitbringen muss: docs/windows.md.
 #
 # ## Wann er läuft
 #
@@ -90,7 +65,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ vars.NORI_WINDOWS_RUNNER && fromJSON(vars.NORI_WINDOWS_RUNNER) || fromJSON('["self-hosted", "macOS"]') }}
+    runs-on: ${{ vars.NORI_WINDOWS_RUNNER && fromJSON(vars.NORI_WINDOWS_RUNNER) || 'windows-latest' }}
     timeout-minutes: 40
     outputs:
       asset_installer: ${{ steps.meta.outputs.asset_windows_installer }}
@@ -110,6 +85,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       # Die Version steht in `apps/windows/package.json`; `electron-builder`
       # nimmt sie von dort in Dateinamen, Versionsangaben der EXE und

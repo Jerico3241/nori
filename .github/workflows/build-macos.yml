@@ -64,7 +64,7 @@ jobs:
   build:
     name: Debug-Build
     if: ${{ !inputs.release-version && !inputs.source }}
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-26
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -107,7 +107,7 @@ jobs:
   package:
     name: Release-Build, App und Quellpaket
     if: ${{ inputs.release-version || inputs.source }}
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-26
     timeout-minutes: 30
     outputs:
       asset: ${{ steps.meta.outputs.asset_macos }}
@@ -130,9 +130,14 @@ jobs:
         run: python3 tools/nori-release.py meta --platform macos --release-version "$RELEASE_VERSION" --github-output
 
       # Ein verteilbares Nori.app ohne Google-Client wäre eine Fassung ohne
-      # Abgleich. Dieselbe Datei wie am Entwicklerrechner, geschrieben aus
-      # ~/.config/nori/secrets/google-macos-oauth.json auf dem Runner.
+      # Abgleich. Auf GitHub-Runnern kommen Client-ID und Secret aus den
+      # Repository-Secrets `NORI_GOOGLE_MACOS_CLIENT_ID` und
+      # `NORI_GOOGLE_MACOS_CLIENT_SECRET`; lokal aus
+      # ~/.config/nori/secrets/google-macos-oauth.json.
       - name: Google OAuth für macOS bereitstellen
+        env:
+          NORI_GOOGLE_MACOS_CLIENT_ID: ${{ secrets.NORI_GOOGLE_MACOS_CLIENT_ID }}
+          NORI_GOOGLE_MACOS_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_MACOS_CLIENT_SECRET }}
         run: python3 tools/configure-google-oauth.py --macos
 
       - name: Swift-Pakete auflösen

@@ -11,16 +11,19 @@ eingecheckten Dateien, die dieses Skript schreibt:
 
 Quellen:
 
-    iOS    --ios-client-id, sonst ~/.config/nori/secrets/google-ios-client-id
+    iOS    --ios-client-id, sonst NORI_GOOGLE_IOS_CLIENT_ID, sonst
+           ~/.config/nori/secrets/google-ios-client-id
            (eine Zeile; der iOS-Client hat kein Secret und keine JSON)
-    macOS  ~/.config/nori/secrets/google-macos-oauth.json   (Typ „Desktop-App")
-    webOS  ~/.config/nori/secrets/google-webos-oauth.json   (Typ „TVs and Limited Input devices",
+    macOS  NORI_GOOGLE_MACOS_CLIENT_ID + NORI_GOOGLE_MACOS_CLIENT_SECRET, sonst
+           ~/.config/nori/secrets/google-macos-oauth.json   (Typ „Desktop-App")
+    webOS  NORI_GOOGLE_TV_CLIENT_ID + NORI_GOOGLE_TV_CLIENT_SECRET, sonst
+           ~/.config/nori/secrets/google-webos-oauth.json   (Typ „TVs and Limited Input devices",
            `installed` ohne `redirect_uris`; anderes wird abgewiesen)
 
 Aufrufe:
 
     python3 tools/configure-google-oauth.py --ios --ios-client-id <ID>
-    python3 tools/configure-google-oauth.py --ios              # aus ~/.config/nori/secrets
+    python3 tools/configure-google-oauth.py --ios              # Umgebung oder ~/.config/nori/secrets
     python3 tools/configure-google-oauth.py --macos
     python3 tools/configure-google-oauth.py --webos
     python3 tools/configure-google-oauth.py --check
@@ -218,11 +221,43 @@ def write_ios(client_id: str) -> None:
     ok(f"iOS: {IOS_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)})")
 
 
-def write_macos(json_path: Path) -> None:
-    client = read_json_client(json_path, "macOS")
-    if not client:
-        return
-    client_id, secret = client
+def env_value(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+def env_pair(id_var: str, secret_var: str, label: str) -> tuple[str, str] | None:
+    """Client-ID und Secret aus der Umgebung.
+
+    `None` nur, wenn keines von beiden gesetzt ist. Ein halbes Paar ist ein
+    Fehler: sonst würde die CI still auf die lokale Datei zurückfallen, die
+    auf einem GitHub-Runner nicht existiert.
+    """
+    client_id = env_value(id_var)
+    secret = env_value(secret_var)
+    if not client_id and not secret:
+        return None
+    if not client_id:
+        fail(f"{label}: {id_var} fehlt, {secret_var} ist gesetzt")
+        return None
+    if not secret:
+        fail(f"{label}: {secret_var} fehlt, {id_var} ist gesetzt")
+        return None
+    if PLACEHOLDER.search(client_id):
+        fail(f"{label}: {id_var} ist ein Platzhalter")
+        return None
+    if not CLIENT_ID.match(client_id):
+        fail(f"{label}: {id_var} sieht nicht nach einer Google-Client-ID aus")
+        return None
+    if re.search(r"\s", secret):
+        fail(f"{label}: {secret_var} enthält Leerraum")
+        return None
+    if PLACEHOLDER.search(secret):
+        fail(f"{label}: {secret_var} ist ein Platzhalter")
+        return None
+    return client_id, secret
+
+
+def write_macos_values(client_id: str, secret: str) -> None:
     if not (safe_value(client_id, "macOS") and safe_value(secret, "macOS")):
         return
     write_private(MAC_LOCAL, HEADER + "// Nur der macOS-Client (Typ „Desktop-App\").\n"
@@ -231,11 +266,14 @@ def write_macos(json_path: Path) -> None:
     ok(f"macOS: {MAC_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)}, Client-Secret vorhanden)")
 
 
-def write_webos(json_path: Path) -> None:
-    client = read_json_client(json_path, "webOS", tv=True)
+def write_macos(json_path: Path) -> None:
+    client = read_json_client(json_path, "macOS")
     if not client:
         return
-    client_id, secret = client
+    write_macos_values(*client)
+
+
+def write_webos_values(client_id: str, secret: str) -> None:
     keep = []
     if WEBOS_LOCAL.is_file():
         keep = [line for line in WEBOS_LOCAL.read_text(encoding="utf-8").splitlines()
@@ -246,6 +284,13 @@ def write_webos(json_path: Path) -> None:
     print("Google TV Client ID: valid")
     print("Google TV Client Secret: included")
     ok(f"webOS: {WEBOS_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)}, Client-Secret vorhanden)")
+
+
+def write_webos(json_path: Path) -> None:
+    client = read_json_client(json_path, "webOS", tv=True)
+    if not client:
+        return
+    write_webos_values(*client)
 
 
 # MARK: - Prüfen
@@ -653,14 +698,24 @@ def main() -> int:
     if args.ios:
         if args.ios_client_id:
             write_ios(args.ios_client_id.strip())
+        elif env_value("NORI_GOOGLE_IOS_CLIENT_ID"):
+            write_ios(env_value("NORI_GOOGLE_IOS_CLIENT_ID"))
         else:
             client_id = read_ios_id_file(args.ios_client_id_file.expanduser())
             if client_id:
                 write_ios(client_id)
     if args.macos:
-        write_macos(args.macos_json.expanduser())
+        from_env = env_pair("NORI_GOOGLE_MACOS_CLIENT_ID", "NORI_GOOGLE_MACOS_CLIENT_SECRET", "macOS")
+        if from_env:
+            write_macos_values(*from_env)
+        elif not env_value("NORI_GOOGLE_MACOS_CLIENT_ID") and not env_value("NORI_GOOGLE_MACOS_CLIENT_SECRET"):
+            write_macos(args.macos_json.expanduser())
     if args.webos:
-        write_webos(args.webos_json.expanduser())
+        from_env = env_pair("NORI_GOOGLE_TV_CLIENT_ID", "NORI_GOOGLE_TV_CLIENT_SECRET", "webOS")
+        if from_env:
+            write_webos_values(*from_env)
+        elif not env_value("NORI_GOOGLE_TV_CLIENT_ID") and not env_value("NORI_GOOGLE_TV_CLIENT_SECRET"):
+            write_webos(args.webos_json.expanduser())
 
     if args.check or args.inspect_ios or args.inspect_macos or args.inspect_webos:
         check_ignored()

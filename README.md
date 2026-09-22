@@ -485,9 +485,10 @@ dafür die Richtlinie lockert, prüft nicht mehr die App, die ausgeliefert wird.
 
 ## CI / Releases
 
-Die GitHub-Actions-Läufe verwenden den self-hosted Mac-Runner. Änderungen am gemeinsamen `native/NoriCore/` müssen sowohl den iOS- als auch den macOS-Build auslösen, zusätzlich zu den Swift-Tests.
+Die GitHub-Actions-Läufe verwenden GitHub-hosted Runner (`macos-26` für Apple,
+`ubuntu-latest` für webOS und Prüfungen, `windows-latest` für Windows). Änderungen am gemeinsamen `native/NoriCore/` müssen sowohl den iOS- als auch den macOS-Build auslösen, zusätzlich zu den Swift-Tests.
 
-Der Lauf **Build webOS** liegt auf demselben Runner, braucht dort aber kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
+Der Lauf **Build webOS** braucht kein Xcode, nur Node. Er baut Kern, Server und App, schnürt das `.ipk`, prüft es und legt es als Artefakt ab.
 
 Ein Release entsteht von Hand und für alle Plattformen zugleich: **GitHub → Actions → Nori Release → Run workflow → Version**. Der Lauf prüft Version und Changelog, testet den gemeinsamen Kern, baut iOS, macOS, webOS und Windows aus demselben Commit, prüft jedes Paket, legt den Release `Nori v<VERSION>` mit dem Tag `v<VERSION>` und `checksums-sha256.txt` an, prüft ihn nach und löscht erst dann alte Läufe der Nori-Workflows. Jede Version bekommt genau einen Release; Tags werden nie verschoben, Releases nie gelöscht. Einzelheiten: [docs/releases.md](docs/releases.md).
 

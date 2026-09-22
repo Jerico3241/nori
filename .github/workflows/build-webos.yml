@@ -1,16 +1,7 @@
 name: Build webOS
 
-# Läuft auf demselben self-hosted Mac wie alle anderen Läufe. Bei einem
-# privaten Repository zählt eine GitHub-Minute — genau daran war das Kontingent
-# schon einmal aufgebraucht.
-#
-# Folgen davon: der Mac muss an und online sein, sonst warten die Jobs. Und es
-# gibt nur einen Runner, die Jobs laufen also nacheinander — deshalb die
-# concurrency-Gruppe, die überholte Läufe abbricht, statt sie abzuarbeiten.
-#
-# Anders als die Swift-Läufe braucht dieser hier kein Xcode, nur Node. Er ist
-# damit der einzige Lauf des Projekts, der eine Änderung tatsächlich
-# durchbauen und testen kann, statt sie nur statisch zu prüfen.
+# Läuft auf ubuntu-latest. Xcode braucht er nicht, nur Node — deshalb kein
+# macOS-Runner (die zählen bei einem privaten Repository zehnfach).
 #
 # Derselbe Lauf baut das `.ipk` für einen Release: `Nori Release` ruft ihn mit
 # `release-version` auf. Das Paket heißt dann `Nori-webOS-v<VERSION>.ipk` und
@@ -58,7 +49,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       asset: ${{ steps.meta.outputs.asset }}
@@ -143,7 +134,7 @@ jobs:
         working-directory: apps/webos
         run: |
           npm i playwright --no-save --no-audit --no-fund
-          npx playwright install chromium
+          npx playwright install --with-deps chromium
           npm run mock &
           MOCK=$!
           # Dem Nachbau einen Moment geben, bevor der Browser startet.
@@ -174,26 +165,21 @@ jobs:
           rm -rf "$RUNNER_TEMP/webos-dist-tested"
           cp -R apps/webos/dist "$RUNNER_TEMP/webos-dist-tested"
 
-      # Das installierbare Paket braucht den produktiven TV-Client. Er liegt auf
-      # dem Runner außerhalb des Repositorys unter
-      # ~/.config/nori/secrets/google-webos-oauth.json, neben den Zugangsdaten
-      # der anderen Plattformen. Dasselbe Werkzeug wie am Entwicklerrechner
-      # schreibt daraus die nicht eingecheckte apps/webos/.env.local (0600) und
-      # meldet nur „configured" — nie einen Wert. Fehlt die Datei oder ist sie
-      # ungültig, bricht der Lauf hier ab, bevor ein Paket entsteht.
-      # `configure-google-oauth.py` **behält** vorhandene Zeilen in
-      # `.env.local` — am Entwicklerrechner richtig, hier nicht: Der Runner ist
-      # self-hosted, sein Arbeitsverzeichnis überlebt den Lauf, und ein
-      # abgebrochener Lauf kommt nicht mehr bis zum Aufräumen am Ende. Was dann
-      # liegenbleibt, landet im produktiven Build — aber nicht im
-      # Vergleichsbuild, der die Datei vorher löscht. Der Referenzvergleich
-      # meldet das als „unterscheidet sich über die Zugangsdaten hinaus", ohne
-      # sagen zu können, woran es liegt.
+      # Das installierbare Paket braucht den produktiven TV-Client. Auf
+      # GitHub-Runnern kommen ID und Secret aus den Repository-Secrets
+      # `NORI_GOOGLE_TV_CLIENT_ID` und `NORI_GOOGLE_TV_CLIENT_SECRET`; lokal
+      # aus ~/.config/nori/secrets/google-webos-oauth.json. Dasselbe Werkzeug
+      # schreibt daraus die nicht eingecheckte apps/webos/.env.local (0600)
+      # und meldet nur „configured" — nie einen Wert. Fehlt beides, bricht
+      # der Lauf hier ab, bevor ein Paket entsteht.
       #
-      # Deshalb: erst weg, dann schreiben. Und die vorhandenen Schlüssel
-      # nennen, damit ein nächster Fall nicht wieder geraten werden muss —
-      # Namen, nie Werte.
+      # `configure-google-oauth.py` **behält** vorhandene Zeilen in
+      # `.env.local`. Deshalb: erst weg, dann schreiben. Und die vorhandenen
+      # Schlüssel nennen — Namen, nie Werte.
       - name: Google-TV-OAuth bereitstellen
+        env:
+          NORI_GOOGLE_TV_CLIENT_ID: ${{ secrets.NORI_GOOGLE_TV_CLIENT_ID }}
+          NORI_GOOGLE_TV_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_TV_CLIENT_SECRET }}
         run: |
           if [ -f apps/webos/.env.local ]; then
             echo "Übrig gebliebene .env.local, Schlüssel:"

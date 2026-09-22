@@ -1,7 +1,9 @@
 #!/bin/bash
-# Wählt auf einem self-hosted Mac automatisch ein vollständiges Xcode in
-# ausreichender Version aus und stellt es nachfolgenden GitHub-Actions-Schritten
-# über DEVELOPER_DIR bereit.
+# Wählt auf einem Mac automatisch ein vollständiges Xcode in ausreichender
+# Version aus und stellt es nachfolgenden GitHub-Actions-Schritten über
+# DEVELOPER_DIR bereit. Auf GitHub-hosted macos-26 ist das Standard-Xcode
+# bereits 26; das Skript fängt den Fall ab, dass jemand ein älteres Image
+# oder einen eigenen Mac nimmt.
 #
 #   tools/require-xcode.sh 16
 #
