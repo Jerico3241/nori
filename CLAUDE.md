@@ -12,7 +12,7 @@ Anime- und Serien-App für iPhone und iPad. Kataloge von AniWorld und Serienstre
 | `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
 
-macOS, Windows und LG webOS sind mit Nori 2.7.0 eingestellt; ihr Quelltext
+macOS, Windows und LG webOS sind mit Nori 2.8.0 eingestellt; ihr Quelltext
 (`native/Nori-macOS/`, `apps/`, `shared/`, `services/`) liegt nur noch in der
 Git-Geschichte. Nicht wieder anlegen, ohne dass der Nutzer es ausdrücklich will.
 
@@ -114,7 +114,7 @@ Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei 
 
 ## Synchronisation
 
-Abgeglichen wird ausschließlich über **Google Drive**. iOS verwendet `drive.appdata` als primäre Ablage. Für die ausdrücklich aktivierte TV-Synchronisation verwendet iOS zusätzlich `drive.file` als Spiegel. Seit die webOS-App eingestellt ist, liest diesen Spiegel kein Nori mehr; der Schalter bleibt, bis der Nutzer anders entscheidet. Andere Cloud-Anbieter, eigener Server oder Proxy bleiben ausgeschlossen. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
+Abgeglichen wird ausschließlich über **Google Drive**. iOS verwendet `drive.appdata` als einzige Ablage. Den TV-Spiegel (`drive.file`) und den Schalter „Mit Fernseher teilen" gibt es seit 2.8.0 in der Oberfläche nicht mehr; `NoriApp` schaltet einen eingeschalteten Spiegel beim Start aus und löscht nichts. Der Spiegel-Code im Kern (`TVMirrorState`, `mirrorEngine`, `DriveSpace.tvMirror`) ruht und ist samt Tests noch vorhanden; die Regeln unten gelten für ihn, falls er je wieder angeschaltet wird. Andere Cloud-Anbieter, eigener Server oder Proxy bleiben ausgeschlossen. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
 
 Der Grund für den Spiegel: Googles Gerätefluss für Fernseher (`/device/code`) lehnt `drive.appdata` reproduzierbar mit `invalid_scope` ab — mit mehreren TV-Clients und auch in einem separaten Google-Cloud-Projekt, entgegen Googles Dokumentation. Die Messungen stehen in `docs/google-drive-sync.md`, Abschnitt 10.
 
@@ -171,7 +171,7 @@ Ein zugeklappter Diagnosebereich darf Client-ID, Herkunft und Bereich zeigen —
 
 Was eine ältere Fassung im Gerät hinterlassen hat, wird weiter **gelesen** (Schlüsselbund/`UserDefaults`) und hat Vorrang vor dem Build, weil die vorhandenen Tokens dazu gehören. Neu eintragen lässt sich nichts.
 
-Der Fluss: Authorization Code mit PKCE (`ASWebAuthenticationSession`, geteilte Browser-Sitzung). Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird `drive.appdata` und nur nach „Mit Fernseher teilen" zusätzlich `drive.file` (mit `include_granted_scopes`).
+Der Fluss: Authorization Code mit PKCE (`ASWebAuthenticationSession`, geteilte Browser-Sitzung). Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird nur `drive.appdata`.
 
 Tokens, Autorisierungscodes und Secrets gehören in **kein** Protokoll. Verbindlich beschrieben ist das alles in `config/contract.json` unter `sync.auth`.
 

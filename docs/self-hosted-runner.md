@@ -1,6 +1,6 @@
 # Eigenen Mac als GitHub-Runner (optional)
 
-> **Stand Nori 2.7.0:** macOS, Windows und LG webOS sind eingestellt. Was hier
+> **Stand Nori 2.8.0:** macOS, Windows und LG webOS sind eingestellt. Was hier
 > über Build macOS und Build Windows steht, beschreibt den früheren Stand.
 
 Die Workflows laufen auf **GitHub-hosted Runnern**:

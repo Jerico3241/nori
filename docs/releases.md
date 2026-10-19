@@ -1,15 +1,15 @@
 # Nori-Releases
 
-Seit 2.6.0 gilt: **eine Version, ein Tag, ein GitHub Release**. Seit 2.7.0
+Seit 2.6.0 gilt: **eine Version, ein Tag, ein GitHub Release**. Seit 2.8.0
 gibt es Nori nur noch für iPhone und iPad; macOS, Windows und LG webOS sind
 eingestellt und erscheinen in keinem Release mehr.
 
 | | Beispiel |
 | --- | --- |
-| Version | `2.7.0` |
-| Tag | `v2.7.0` |
-| GitHub Release | `Nori v2.7.0` |
-| Anhänge | `Nori-iOS-v2.7.0.ipa` und `checksums-sha256.txt` |
+| Version | `2.8.0` |
+| Tag | `v2.8.0` |
+| GitHub Release | `Nori v2.8.0` |
+| Anhänge | `Nori-iOS-v2.8.0.ipa` und `checksums-sha256.txt` |
 
 | Anhang | Was es ist | Gebaut von |
 | --- | --- | --- |
@@ -28,18 +28,18 @@ Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
    [Semantic Versioning](https://semver.org/lang/de/):
 
    ```bash
-   python3 tools/nori-version.py bump patch   # Fehlerbehebung: 2.7.0 → 2.7.1
-   python3 tools/nori-version.py bump minor   # neue Funktionen: 2.7.1 → 2.8.0
-   python3 tools/nori-version.py bump major   # Inkompatibles:   2.8.0 → 3.0.0
+   python3 tools/nori-version.py bump patch   # Fehlerbehebung: 2.8.0 → 2.8.1
+   python3 tools/nori-version.py bump minor   # neue Funktionen: 2.8.1 → 2.9.0
+   python3 tools/nori-version.py bump major   # Inkompatibles:   2.9.0 → 3.0.0
    ```
 
    Das setzt die Nummer im Xcode-Projekt und erhöht die Buildnummer um eins.
-   `python3 tools/nori-version.py set 2.8.0` geht auch.
+   `python3 tools/nori-version.py set 2.9.0` geht auch.
 
 2. **Beschreiben**, was sich geändert hat — in `CHANGELOG.md` ein Abschnitt
 
    ```markdown
-   ## [Nori 2.8.0] — 2026-11-01
+   ## [Nori 2.9.0] — 2026-11-01
 
    ### Allgemein
    ### iOS / iPadOS
@@ -47,7 +47,7 @@ Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
    ```
 
    mit nur den Unterabschnitten, in denen sich tatsächlich etwas geändert hat,
-   dazu `Nori **2.8.0**` in der Übersicht am Anfang. In `README.md` unter
+   dazu `Nori **2.9.0**` in der Übersicht am Anfang. In `README.md` unter
    „Aktueller Stand“ dieselbe Nummer in der Zeile iOS / iPadOS.
 
 3. **Prüfen** und über einen Pull Request nach `main` bringen:
@@ -57,7 +57,7 @@ Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
    ```
 
 4. **Auslösen:** GitHub → **Actions** → **Nori Release** → **Run workflow** →
-   *Use workflow from* `main`, Version `2.8.0` (auch `v2.8.0` geht) →
+   *Use workflow from* `main`, Version `2.9.0` (auch `v2.9.0` geht) →
    **Run workflow**. **Probelauf** baut und prüft alles, legt aber nichts an
    und löscht nichts.
 
@@ -294,7 +294,7 @@ Die IPA braucht die Google-Client-ID als Repository-Secret
 | Plattform | Automatisiert | Einschränkung |
 | --- | --- | --- |
 | iOS / iPadOS | ja | unsigniert — kein Verteilungszertifikat im Repository |
-| macOS, Windows, LG webOS | nein | eingestellt mit 2.7.0 |
+| macOS, Windows, LG webOS | nein | eingestellt mit 2.8.0 |
 | Android / Google TV | nein | keine App in diesem Repository; `Build Android core` baut nur den Swift-Kern von Hand |
 
 ## Tests

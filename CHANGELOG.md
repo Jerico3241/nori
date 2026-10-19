@@ -3,13 +3,13 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-Seit 2.6.0 tragen alle Plattformen dieselbe Nummer: Nori **2.7.0**. Seit
-2.7.0 gibt es Nori nur noch für iPhone und iPad, veröffentlicht als GitHub
-Release `Nori v2.7.0`. Die Abschnitte darunter stammen aus der Zeit mehrerer
+Seit 2.6.0 tragen alle Plattformen dieselbe Nummer. Seit Nori **2.8.0** gibt
+es Nori nur noch für iPhone und iPad, veröffentlicht als GitHub Release
+`Nori v2.8.0`. Die Abschnitte darunter stammen aus der Zeit mehrerer
 Plattformen; zuletzt waren das iOS/iPadOS 1.26.0, macOS 1.21.0, Windows 2.1.0
 und LG webOS 2.5.0.
 
-## [Nori 2.7.0] — 2026-10-19
+## [Nori 2.8.0] — 2026-10-19
 
 Nori gibt es nur noch für **iPhone und iPad**. Die Apps für macOS, Windows
 und LG-Fernseher sind eingestellt.
@@ -24,9 +24,12 @@ und LG-Fernseher sind eingestellt.
 
 ### iOS / iPadOS
 
-- Version 2.7.0 (vorher 2.6.0), Build 42. Keine funktionale Änderung.
-- Der Schalter „Mit Fernseher teilen" bleibt vorerst. Er legt weiter einen
-  Spiegel in Google Drive an, den aber kein Gerät mehr liest.
+- **„Mit Fernseher teilen" entfernt.** Der Schalter in den Einstellungen
+  unter Synchronisation ist weg, weil es keine Fernseher-App mehr gibt. War er
+  eingeschaltet, schaltet Nori ihn beim Start aus. Gelöscht wird nichts: Die
+  Kopie im Google-Drive-Ordner „Nori" bleibt liegen und kann von Hand
+  gelöscht werden.
+- Version 2.8.0 (vorher 2.7.0), Build 43.
 
 ### Technische Änderungen
 
@@ -50,6 +53,71 @@ und LG-Fernseher sind eingestellt.
 
 - **Die IPA braucht das Google-Secret im Repository.** Ohne
   `NORI_GOOGLE_IOS_CLIENT_ID` entsteht kein Paket.
+- **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
+  werden.
+
+## [Nori 2.7.0] — 2026-09-22
+
+macOS liefert jetzt ein fertiges **Nori.app**, nicht nur den Quelltext.
+
+### macOS
+
+- **`Nori.app` im Release.** Der Anhang `Nori-macOS-v2.7.0.zip` enthält das
+  gebaute Programm. Nach dem Entpacken per Rechtsklick auf Nori.app → Öffnen
+  (nicht doppelklicken) – Gatekeeper fragt beim ersten Start nach. Weiterhin
+  unsigniert: für ein notarisiertes Paket fehlen ein Zertifikat „Developer ID
+  Application“ und die Notarisierung.
+- **Google-Abgleich im gebauten Programm.** Der Release-Build schreibt die
+  Client-ID und das Secret vor dem Packen, und das fertige ZIP wird dagegen
+  geprüft – analog zur IPA. Ohne die lokale macOS-OAuth-Datei auf dem Runner
+  entsteht kein Paket.
+- **Quellpaket bleibt.** `Nori-macOS-Source-v2.7.0.zip` hängt weiterhin am
+  Release, für den, der in Xcode mit eigenem Team signieren will.
+- `Mac-App-bauen.command` baut jetzt Release und legt `Nori.app` samt ZIP
+  daneben.
+- Version 2.7.0, Build 33.
+
+### iOS / iPadOS
+
+- Version 2.7.0 (vorher 2.6.0), Build 42. Keine funktionale Änderung.
+
+### Windows
+
+- Version 2.7.0. Keine funktionale Änderung.
+
+### webOS
+
+- Version 2.7.0. Keine funktionale Änderung.
+
+### Technische Änderungen
+
+- GitHub Actions laufen auf GitHub-hosted Runnern (`macos-26`, `ubuntu-latest`,
+  `windows-latest`). Der eigene Mac ist nicht mehr nötig.
+- `tools/configure-google-oauth.py` liest Client-IDs und Secrets auch aus
+  Repository-Secrets (`NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_*`,
+  `NORI_GOOGLE_TV_*`), nicht nur aus Dateien auf dem Runner.
+- `tools/nori-release.py`: neues Paket `macos` (`Nori-macOS-v…zip`, Art
+  `macos-app`) neben `macos-source`. Prüfer für Bundle-Struktur, Version,
+  Build, ausführbare Datei und Google-Felder.
+- `tools/configure-google-oauth.py`: `--verify-macos-app` und
+  `--verify-macos-zip`.
+- `Build macOS` Job `package` stellt OAuth bereit, baut, prüft das Programm,
+  packt mit `ditto` und prüft App-ZIP und Quellpaket vor dem Hochladen.
+- `tools/check-apple-sources.py` verlangt diese Reihenfolge für den
+  macOS-Paketjob, analog zur IPA.
+
+### Bekannte Einschränkungen
+
+- **macOS-App unsigniert.** Gatekeeper blockiert den Doppelklick bei Dateien
+  aus dem Internet. Rechtsklick → Öffnen reicht einmal.
+- **Windows im Release braucht den Google-Desktop-Client.** Solange die
+  Repository-Secrets fehlen, bricht ein Release mit Windows ab; Windows lässt
+  sich dann abwählen.
+- **IPA, macOS-App und webOS-Paket brauchen Google-Secrets im Repository.**
+  Ohne `NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_CLIENT_ID` /
+  `NORI_GOOGLE_MACOS_CLIENT_SECRET` und `NORI_GOOGLE_TV_CLIENT_ID` /
+  `NORI_GOOGLE_TV_CLIENT_SECRET` entstehen keine Pakete — die Dateien auf dem
+  eigenen Mac gelten in der CI nicht mehr.
 - **iOS weiterhin unsigniert.** Die IPA muss vor der Installation signiert
   werden.
 

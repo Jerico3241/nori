@@ -15,15 +15,15 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 ## Aktueller Stand
 
-Nori **2.7.0** — Nori gibt es nur noch für iPhone und iPad. Die Apps für
+Nori **2.8.0** — Nori gibt es nur noch für iPhone und iPad. Die Apps für
 macOS, Windows und LG webOS sind mit dieser Fassung eingestellt und aus dem
 Repository entfernt; ihr letzter Stand bleibt in der Git-Geschichte erhalten.
-Ein Release heißt `Nori v2.7.0` (Tag `v2.7.0`). Wie er entsteht:
+Ein Release heißt `Nori v2.8.0` (Tag `v2.8.0`). Wie er entsteht:
 [docs/releases.md](docs/releases.md).
 
 | Plattform | Version | Paket im Release | Status |
 | --- | --- | --- | --- |
-| iOS / iPadOS | **2.7.0** (Build 42) | `Nori-iOS-v2.7.0.ipa`, unsigniert | Native SwiftUI-App, einzige gepflegte Plattform |
+| iOS / iPadOS | **2.8.0** (Build 43) | `Nori-iOS-v2.8.0.ipa`, unsigniert | Native SwiftUI-App, einzige gepflegte Plattform |
 | macOS, Windows, LG webOS | — | — | eingestellt |
 | Android / Google TV | — | — | Keine App in diesem Repository |
 
@@ -151,7 +151,7 @@ Aktuelles Library-Schema: **v6**. Die maßgebliche Implementierung ist `LibraryS
 
 ### Synchronisation
 
-Abgeglichen wird über **Google Drive**. Nori nutzt den versteckten `appDataFolder`. Der Schalter „Mit Fernseher teilen" legt zusätzlich einen sichtbaren Spiegel im Ordner „Nori" an; seit die LG-App eingestellt ist, liest ihn kein Gerät mehr. Jedes Gerät schreibt nur seine eigene Datei und liest die aller anderen; der Ablauf ist immer Pull → Merge → Push. Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy.
+Abgeglichen wird über **Google Drive**. Nori nutzt den versteckten `appDataFolder`. Den sichtbaren TV-Spiegel im Ordner „Nori" und den Schalter „Mit Fernseher teilen" gibt es seit 2.8.0 nicht mehr; ein früher angelegter Spiegel bleibt in Drive liegen, wird aber nicht mehr geschrieben. Jedes Gerät schreibt nur seine eigene Datei und liest die aller anderen; der Ablauf ist immer Pull → Merge → Push. Kein iCloud, kein Dropbox, kein WebDAV, kein eigener Server, kein Proxy.
 
 **Für den Nutzer ist das ein Knopf:**
 
@@ -166,7 +166,7 @@ Danach zeigt die Seite den Zustand, „Jetzt synchronisieren" und „Dieses Ger�
 | iOS / iPadOS | Authorization Code + PKCE über `ASWebAuthenticationSession` |
 | Android | vorbereitet, noch nicht umgesetzt — `docs/android.md` |
 
-Angefordert wird `https://www.googleapis.com/auth/drive.appdata`, zusätzlich `https://www.googleapis.com/auth/drive.file` nur nach „Mit Fernseher teilen". Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
+Angefordert wird nur `https://www.googleapis.com/auth/drive.appdata`. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
 
 **Für den, der Nori baut**, ist die Client-ID eine lokale Build-Einstellung und nie eingecheckt: `GOOGLE_CLIENT_ID` in `native/Nori-iOS/Config/Google.local.xcconfig`, bei GitHub das Secret `NORI_GOOGLE_IOS_CLIENT_ID`. Geschrieben und geprüft wird sie mit `tools/configure-google-oauth.py`. Die Einrichtung steht in **[docs/google-drive-sync.md](docs/google-drive-sync.md)**, die Begründungen in **[docs/synchronisation.md](docs/synchronisation.md)**.
 

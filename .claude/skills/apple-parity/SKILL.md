@@ -5,7 +5,7 @@ description: Regeln für Änderungen an der iOS-App von Nori und am gemeinsamen 
 
 # iOS-App und gemeinsamer Kern
 
-Seit Nori 2.7.0 gibt es nur noch die iOS/iPadOS-App. Die macOS-App ist
+Seit Nori 2.8.0 gibt es nur noch die iOS/iPadOS-App. Die macOS-App ist
 eingestellt; ihr Quelltext liegt nur noch in der Git-Geschichte.
 
 ## 1. Kernlogik

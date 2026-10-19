@@ -1,11 +1,11 @@
 # Abgleich über Google Drive
 
-> **Stand Nori 2.7.0:** macOS, Windows und LG webOS sind eingestellt und aus
+> **Stand Nori 2.8.0:** macOS, Windows und LG webOS sind eingestellt und aus
 > dem Repository entfernt. Was hier über diese Plattformen, den
 > TypeScript-Kern (`shared/`) oder den Nori-Server steht, beschreibt den
-> früheren Stand und bleibt als Begründung stehen. Der TV-Spiegel
-> („Mit Fernseher teilen") wird auf iPhone und iPad weiter geschrieben, aber
-> von keinem Gerät mehr gelesen.
+> früheren Stand und bleibt als Begründung stehen. Den TV-Spiegel
+> und den Schalter „Mit Fernseher teilen" gibt es seit 2.8.0 nicht mehr; ein
+> früher angelegter Spiegel bleibt in Drive liegen.
 
 Merkliste, Verlauf, Wiedergabefortschritt und die geteilten Einstellungen
 zwischen iPhone, iPad, Mac und Fernseher. Eine Cloud, ein Konto, kein Server.

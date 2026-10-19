@@ -21,10 +21,15 @@ struct NoriApp: App {
         // aus ihr entsteht die Rückleitungsadresse. Die ID kann aus der
         // Build-Einstellung kommen oder in den Einstellungen eingetragen
         // werden; beides landet hier.
-        _sync = State(initialValue: GoogleDriveSync(store: library) { configuration in
+        let sync = GoogleDriveSync(store: library) { configuration in
             configuration.reversedClientId
                 .map(WebAuthenticationSignInPresenter.init(reversedClientId:))
-        })
+        }
+        // „Mit Fernseher teilen" gibt es seit dem Ende der LG-App nicht mehr.
+        // Wer es eingeschaltet hatte, schreibt den Spiegel ab jetzt nicht mehr;
+        // gelöscht wird dabei nichts, weder in Drive noch hier.
+        if sync.isTVMirrorEnabled { sync.disableTVMirror() }
+        _sync = State(initialValue: sync)
     }
 
     var body: some Scene {
