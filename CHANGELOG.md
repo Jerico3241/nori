@@ -46,15 +46,15 @@ Swift-Kern wie iPhone und iPad. Sie entsteht bisher nur von Hand über den Lauf
 
 ### Technische Änderungen
 
-- `Build Android` (`.github/workflows/build-android-app.yml`) läuft auf
+- `Build Android` (`.github/workflows/build-android.yml`, vorher nur der Kern)
+  baut jetzt die ganze App und läuft auf
   `ubuntu-24.04` statt auf dem self-hosted Mac und **nur von Hand**. Er holt
   Swift 6.3.3 und das Swift-SDK für Android von swift.org, richtet es gegen
   das NDK des Runners ein, baut `libNoriAndroid.so` für arm64 und x86_64, die
   APKs über Gradle und prüft sie mit `tools/check-android-apk.py`. Am Lauf
   hängt `Nori-Android-v2.9.0.apk`.
-- Entfernt: `build-android.yml` (nur der Kern, auf macOS),
-  `tools/require-swift-android.sh` und `tools/android-sdk.sh` — beide nur für
-  den Mac.
+- Entfernt: `tools/require-swift-android.sh` und `tools/android-sdk.sh` —
+  beide nur für den Mac.
 - `native/Package.swift`: Produkt `NoriAndroid` (dynamisch) und das C-Target
   `NoriJNI`.
 - `NoriStorage` in `Models.swift`: der Ablageort von `library.json`,

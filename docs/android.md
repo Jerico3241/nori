@@ -79,7 +79,7 @@ Beide Dateien bleiben zwischen iOS und macOS **byte-gleich** —
 
 ## Bauen
 
-`.github/workflows/build-android-app.yml` („Build Android"), **nur von Hand**:
+`.github/workflows/build-android.yml` („Build Android"), **nur von Hand**:
 *Actions → Build Android → Run workflow*. Er läuft auf einem Linux-Runner von
 GitHub (`ubuntu-latest`, derzeit 24.04), nicht auf einem Mac — weder der Swift-Kern für
 Android noch Gradle braucht einen, und ein Mac-Runner zählt bei einem privaten
