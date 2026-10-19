@@ -8,7 +8,7 @@ name: Check release pipeline
 #
 # Auf einem Branch gilt zusätzlich: Ändert er etwas, das in einem Paket
 # landet, muss die gemeinsame Nori-Version größer sein als jede Nummer auf
-# main, und die Buildnummern von iOS und macOS müssen steigen. Sonst gäbe es
+# main, und die Buildnummer von iOS muss steigen. Sonst gäbe es
 # zwei verschiedene Pakete unter derselben Nummer, und ein Gerät hielte das
 # neuere nicht für neuer.
 on:
@@ -17,11 +17,7 @@ on:
     branches: ['**']
     paths:
       - 'native/**'
-      - 'apps/**'
-      - 'shared/**'
-      - 'services/**'
       - 'config/contract.json'
-      - 'package.json'
       - 'CHANGELOG.md'
       - 'README.md'
       - 'tools/nori-release.py'
@@ -29,7 +25,6 @@ on:
       - 'tools/test_nori_release.py'
       - 'tools/test_nori_version.py'
       - 'tools/changelog-section.py'
-      - 'tools/check-webos-package.py'
       - '.github/workflows/**'
   workflow_dispatch:
 

@@ -1,5 +1,10 @@
 # Nori auf Android
 
+> **Stand Nori 2.8.0:** macOS, Windows und LG webOS sind eingestellt und aus
+> dem Repository entfernt. Was hier über diese Plattformen, den
+> TypeScript-Kern (`shared/`) oder den Nori-Server steht, beschreibt den
+> früheren Stand und bleibt als Begründung stehen.
+
 Der Plan in einem Satz: **der geteilte Kern bleibt Swift, die Oberfläche wird
 Compose.**
 

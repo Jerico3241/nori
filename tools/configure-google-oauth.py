@@ -1,61 +1,38 @@
 #!/usr/bin/env python3
-"""Die lokale Google-OAuth-Konfiguration von Nori schreiben und prüfen.
+"""Die lokale Google-OAuth-Konfiguration der iOS-App schreiben und prüfen.
 
-Nori benutzt drei OAuth-Clients desselben Google-Cloud-Projekts, je Plattform
-einen. Keiner ihrer Werte steht im Repository; sie liegen in nicht
-eingecheckten Dateien, die dieses Skript schreibt:
+Nori benutzt für iPhone und iPad einen OAuth-Client. Sein Wert steht nicht im
+Repository; er liegt in einer nicht eingecheckten Datei, die dieses Skript
+schreibt:
 
-    iOS    native/Nori-iOS/Config/Google.local.xcconfig     GOOGLE_CLIENT_ID
-    macOS  native/Nori-macOS/Config/Google.local.xcconfig   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-    webOS  apps/webos/.env.local                            VITE_NORI_GOOGLE_TV_CLIENT_ID, VITE_NORI_GOOGLE_TV_CLIENT_SECRET
+    native/Nori-iOS/Config/Google.local.xcconfig     GOOGLE_CLIENT_ID
 
-Quellen:
-
-    iOS    --ios-client-id, sonst NORI_GOOGLE_IOS_CLIENT_ID, sonst
-           ~/.config/nori/secrets/google-ios-client-id
-           (eine Zeile; der iOS-Client hat kein Secret und keine JSON)
-    macOS  NORI_GOOGLE_MACOS_CLIENT_ID + NORI_GOOGLE_MACOS_CLIENT_SECRET, sonst
-           ~/.config/nori/secrets/google-macos-oauth.json   (Typ „Desktop-App")
-    webOS  NORI_GOOGLE_TV_CLIENT_ID + NORI_GOOGLE_TV_CLIENT_SECRET, sonst
-           ~/.config/nori/secrets/google-webos-oauth.json   (Typ „TVs and Limited Input devices",
-           `installed` ohne `redirect_uris`; anderes wird abgewiesen)
+Quelle: --ios-client-id, sonst NORI_GOOGLE_IOS_CLIENT_ID, sonst
+~/.config/nori/secrets/google-ios-client-id (eine Zeile; der iOS-Client hat
+kein Secret und keine JSON).
 
 Aufrufe:
 
     python3 tools/configure-google-oauth.py --ios --ios-client-id <ID>
     python3 tools/configure-google-oauth.py --ios              # Umgebung oder ~/.config/nori/secrets
-    python3 tools/configure-google-oauth.py --macos
-    python3 tools/configure-google-oauth.py --webos
     python3 tools/configure-google-oauth.py --check
-    python3 tools/configure-google-oauth.py --check \\
-        --inspect-ios <Nori.app> --inspect-macos <Nori.app> --inspect-webos <.ipk>
+    python3 tools/configure-google-oauth.py --check --inspect-ios <Nori.app>
     python3 tools/configure-google-oauth.py --verify-ios-app <Nori.app>
     python3 tools/configure-google-oauth.py --verify-ios-ipa <Nori.ipa>
-    python3 tools/configure-google-oauth.py --verify-macos-app <Nori.app>
-    python3 tools/configure-google-oauth.py --verify-macos-zip <Nori-macOS-v….zip>
 
-`--check` prüft, dass die lokalen Dateien von Git ignoriert und nicht
-verfolgt werden, dass die drei Client-IDs verschieden sind und dass kein
-Secret-Wert im Index, in den verfolgten Dateien oder in den Commits seit
-`origin/main` steht. `--inspect-*` sieht in fertige Builds und prüft, dass
-jede Plattform genau ihre eigene Client-ID enthält und keine fremde.
+`--check` prüft, dass die lokale Datei von Git ignoriert und nicht verfolgt
+wird und dass kein Secret- oder Token-Muster in den verfolgten Dateien oder im
+Index steht. `--inspect-ios` sieht in einen fertigen Build und prüft, dass er
+genau die eigene Client-ID enthält und keine fremde.
 
-`--verify-ios-app` und `--verify-ios-ipa` prüfen ein verteilbares iOS-Paket
-ohne lokale Vergleichsdatei: `GoogleClientID` in der `Info.plist` muss
-vorhanden, nicht leer und eine Google-Client-ID sein, und im Bündel darf kein
+`--verify-ios-app` und `--verify-ios-ipa` prüfen ein verteilbares Paket ohne
+lokale Vergleichsdatei: `GoogleClientID` in der `Info.plist` muss vorhanden,
+nicht leer und eine Google-Client-ID sein, und im Bündel darf kein
 Client-Secret stehen. Die IPA wird dafür selbst entpackt — geprüft wird, was
 ausgeliefert wird, nicht eine Build-Einstellung. Der Job `ipa` in `Build iOS`
 bricht damit ab, statt eine Fassung ohne Google-Abgleich hochzuladen.
 
-`--verify-macos-app` und `--verify-macos-zip` tun dasselbe für das Mac-Paket:
-`GoogleClientID` und `GoogleClientSecret` müssen gesetzt und aufgelöst sein.
-Der Job `package` in `Build macOS` bricht damit ab, statt ein `Nori.app` ohne
-Abgleich hochzuladen.
-
 Im CI-Protokoll (`CI` gesetzt) erscheinen Client-IDs nur als Form, nie im Wortlaut.
-
-**Secrets werden nie ausgegeben** — weder beim Schreiben noch beim Prüfen.
-Gemeldet wird höchstens „vorhanden" oder „gefunden in <Datei>".
 
 Exit-Code 1 bei einem Fehler, 0 sonst.
 """
@@ -63,15 +40,12 @@ Exit-Code 1 bei einem Fehler, 0 sonst.
 from __future__ import annotations
 
 import argparse
-import io
-import json
 import os
 import re
 import stat
 import subprocess
 import sys
 import plistlib
-import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -80,11 +54,6 @@ ROOT = Path(__file__).resolve().parent.parent
 SECRETS = Path.home() / ".config/nori/secrets"
 
 IOS_LOCAL = ROOT / "native/Nori-iOS/Config/Google.local.xcconfig"
-MAC_LOCAL = ROOT / "native/Nori-macOS/Config/Google.local.xcconfig"
-WEBOS_LOCAL = ROOT / "apps/webos/.env.local"
-
-MAC_JSON = SECRETS / "google-macos-oauth.json"
-WEBOS_JSON = SECRETS / "google-webos-oauth.json"
 IOS_ID_FILE = SECRETS / "google-ios-client-id"
 
 SUFFIX = ".apps.googleusercontent.com"
@@ -92,9 +61,6 @@ CLIENT_ID = re.compile(r"^\d+-[a-z0-9]+" + re.escape(SUFFIX) + r"$")
 ANY_CLIENT_ID = re.compile(r"\d{6,}-[a-z0-9]{20,}" + re.escape(SUFFIX))
 
 SECRET_PATTERN = re.compile("GOCSPX" + r"-[A-Za-z0-9_-]{10,}")
-# Werte aus Vorlagen und Beispielen. Eng gefasst: ein echtes Secret ist
-# zufällig und darf nicht zufällig an einem zu kurzen Muster hängenbleiben.
-PLACEHOLDER = re.compile(r"[<>]|beispiel|example|placeholder|platzhalter|changeme|nie einchecken|^0+-", re.IGNORECASE)
 IN_CI = bool(os.environ.get("CI"))
 
 problems: list[str] = []
@@ -117,61 +83,8 @@ def ok(message: str) -> None:
 # MARK: - Lesen
 
 
-def read_json_client(path: Path, label: str, tv: bool = False) -> tuple[str, str] | None:
-    """`installed.client_id` und `installed.client_secret` — sonst nichts.
-
-    Mit `tv` zusätzlich die Prüfung auf den Clienttyp „TVs and Limited Input
-    devices". Google legt dessen Download ebenfalls unter `installed` ab, aber
-    ohne `redirect_uris` — ein Desktop-Client hat sie, ein Web-Client steht
-    unter `web`. Beides wäre auf dem Fernseher `invalid_client`.
-    """
-    if not path.is_file():
-        fail(f"{label}: {path} fehlt")
-        return None
-    mode = path.stat().st_mode
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
-        print(f"Hinweis {label}: {path} ist für andere Benutzer lesbar (chmod 600 empfohlen)")
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        fail(f"{label}: {path.name} ist kein gültiges JSON ({type(error).__name__})")
-        return None
-    if not isinstance(document, dict) or not isinstance(document.get("installed"), dict):
-        kind = next(iter(document), "?") if isinstance(document, dict) and document else "?"
-        fail(f"{label}: {path.name} hat nicht die erwartete Form (erwartet `installed`, gefunden `{kind}`)")
-        return None
-    installed = document["installed"]
-    if tv and "redirect_uris" in installed:
-        fail(f"{label}: {path.name} ist kein TV-Client (redirect_uris vorhanden — Desktop- oder Web-Client)")
-        return None
-    if "client_id" not in installed:
-        fail(f"{label}: client_id fehlt in {path.name}")
-        return None
-    if "client_secret" not in installed:
-        fail(f"{label}: client_secret fehlt in {path.name}")
-        return None
-    client_id = str(installed["client_id"]).strip()
-    secret = str(installed["client_secret"]).strip()
-    if not client_id:
-        fail(f"{label}: client_id in {path.name} ist leer")
-        return None
-    if PLACEHOLDER.search(client_id):
-        fail(f"{label}: client_id in {path.name} ist ein Platzhalter")
-        return None
-    if not CLIENT_ID.match(client_id):
-        fail(f"{label}: client_id in {path.name} sieht nicht nach einer Google-Client-ID aus")
-        return None
-    if not secret or re.search(r"\s", secret):
-        fail(f"{label}: client_secret in {path.name} ist leer oder enthält Leerraum")
-        return None
-    if PLACEHOLDER.search(secret):
-        fail(f"{label}: client_secret in {path.name} ist ein Platzhalter")
-        return None
-    return client_id, secret
-
-
 def read_assignments(path: Path) -> dict[str, str]:
-    """`NAME = wert` (xcconfig) oder `NAME=wert` (.env) — ohne Kommentare."""
+    """`NAME = wert` aus einer xcconfig — ohne Kommentare."""
     values: dict[str, str] = {}
     if not path.is_file():
         return values
@@ -225,74 +138,6 @@ def env_value(name: str) -> str:
     return os.environ.get(name, "").strip()
 
 
-def env_pair(id_var: str, secret_var: str, label: str) -> tuple[str, str] | None:
-    """Client-ID und Secret aus der Umgebung.
-
-    `None` nur, wenn keines von beiden gesetzt ist. Ein halbes Paar ist ein
-    Fehler: sonst würde die CI still auf die lokale Datei zurückfallen, die
-    auf einem GitHub-Runner nicht existiert.
-    """
-    client_id = env_value(id_var)
-    secret = env_value(secret_var)
-    if not client_id and not secret:
-        return None
-    if not client_id:
-        fail(f"{label}: {id_var} fehlt, {secret_var} ist gesetzt")
-        return None
-    if not secret:
-        fail(f"{label}: {secret_var} fehlt, {id_var} ist gesetzt")
-        return None
-    if PLACEHOLDER.search(client_id):
-        fail(f"{label}: {id_var} ist ein Platzhalter")
-        return None
-    if not CLIENT_ID.match(client_id):
-        fail(f"{label}: {id_var} sieht nicht nach einer Google-Client-ID aus")
-        return None
-    if re.search(r"\s", secret):
-        fail(f"{label}: {secret_var} enthält Leerraum")
-        return None
-    if PLACEHOLDER.search(secret):
-        fail(f"{label}: {secret_var} ist ein Platzhalter")
-        return None
-    return client_id, secret
-
-
-def write_macos_values(client_id: str, secret: str) -> None:
-    if not (safe_value(client_id, "macOS") and safe_value(secret, "macOS")):
-        return
-    write_private(MAC_LOCAL, HEADER + "// Nur der macOS-Client (Typ „Desktop-App\").\n"
-                  f"GOOGLE_CLIENT_ID = {client_id}\n"
-                  f"GOOGLE_CLIENT_SECRET = {secret}\n")
-    ok(f"macOS: {MAC_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)}, Client-Secret vorhanden)")
-
-
-def write_macos(json_path: Path) -> None:
-    client = read_json_client(json_path, "macOS")
-    if not client:
-        return
-    write_macos_values(*client)
-
-
-def write_webos_values(client_id: str, secret: str) -> None:
-    keep = []
-    if WEBOS_LOCAL.is_file():
-        keep = [line for line in WEBOS_LOCAL.read_text(encoding="utf-8").splitlines()
-                if not line.startswith(("VITE_NORI_GOOGLE_TV_CLIENT_ID=", "VITE_NORI_GOOGLE_TV_CLIENT_SECRET="))]
-    lines = keep + [f"VITE_NORI_GOOGLE_TV_CLIENT_ID={client_id}", f"VITE_NORI_GOOGLE_TV_CLIENT_SECRET={secret}"]
-    write_private(WEBOS_LOCAL, "\n".join(lines) + "\n")
-    print("Google TV OAuth: configured")
-    print("Google TV Client ID: valid")
-    print("Google TV Client Secret: included")
-    ok(f"webOS: {WEBOS_LOCAL.relative_to(ROOT)} geschrieben (Client-ID {shown(client_id)}, Client-Secret vorhanden)")
-
-
-def write_webos(json_path: Path) -> None:
-    client = read_json_client(json_path, "webOS", tv=True)
-    if not client:
-        return
-    write_webos_values(*client)
-
-
 # MARK: - Prüfen
 
 
@@ -301,15 +146,14 @@ def git(*args: str, input_text: str | None = None) -> subprocess.CompletedProces
 
 
 def check_ignored() -> None:
-    for path in (IOS_LOCAL, MAC_LOCAL, WEBOS_LOCAL):
-        rel = str(path.relative_to(ROOT))
-        if git("ls-files", "--error-unmatch", rel).returncode == 0:
-            fail(f"{rel} wird von Git verfolgt — sofort mit `git rm --cached {rel}` herausnehmen")
-        elif git("check-ignore", "-q", rel).returncode != 0:
-            fail(f"{rel} wird von .gitignore nicht erfasst")
-        else:
-            ok(f"{rel} ist ignoriert und nicht verfolgt")
-    for name in ("google-macos-oauth.json", "google-webos-oauth.json", "client_secret_123.json"):
+    rel = str(IOS_LOCAL.relative_to(ROOT))
+    if git("ls-files", "--error-unmatch", rel).returncode == 0:
+        fail(f"{rel} wird von Git verfolgt — sofort mit `git rm --cached {rel}` herausnehmen")
+    elif git("check-ignore", "-q", rel).returncode != 0:
+        fail(f"{rel} wird von .gitignore nicht erfasst")
+    else:
+        ok(f"{rel} ist ignoriert und nicht verfolgt")
+    for name in ("google-ios-oauth.json", "client_secret_123.json"):
         if git("check-ignore", "-q", name).returncode != 0:
             fail(f"eine Datei namens {name} würde nicht ignoriert")
     tracked_json = [line for line in git("ls-files").stdout.splitlines()
@@ -320,81 +164,21 @@ def check_ignored() -> None:
         ok("keine OAuth-JSON im Repository")
 
 
-def local_ids() -> dict[str, str]:
-    ids = {
-        "iOS": read_assignments(IOS_LOCAL).get("GOOGLE_CLIENT_ID", ""),
-        "macOS": read_assignments(MAC_LOCAL).get("GOOGLE_CLIENT_ID", ""),
-        "webOS": read_assignments(WEBOS_LOCAL).get("VITE_NORI_GOOGLE_TV_CLIENT_ID", ""),
-    }
-    return {platform: value for platform, value in ids.items() if value}
-
-
-def secret_values() -> dict[str, str]:
-    """Alle bekannten Secret-Werte, nach Herkunft. Werden nie ausgegeben."""
-    values: dict[str, str] = {}
-    for label, path in (("macOS-JSON", MAC_JSON), ("webOS-JSON", WEBOS_JSON)):
-        if path.is_file():
-            try:
-                values[label] = json.loads(path.read_text(encoding="utf-8"))["installed"]["client_secret"]
-            except Exception:
-                pass
-    mac = read_assignments(MAC_LOCAL).get("GOOGLE_CLIENT_SECRET")
-    if mac:
-        values["macOS-xcconfig"] = mac
-    tv = read_assignments(WEBOS_LOCAL).get("VITE_NORI_GOOGLE_TV_CLIENT_SECRET")
-    if tv:
-        values["webOS-.env.local"] = tv
-    return {label: value for label, value in values.items() if len(value) >= 8}
+def local_id() -> str:
+    return read_assignments(IOS_LOCAL).get("GOOGLE_CLIENT_ID", "")
 
 
 def check_ids() -> None:
-    ids = local_ids()
-    for platform in ("iOS", "macOS", "webOS"):
-        if platform in ids:
-            ok(f"{platform}: Client-ID {shown(ids[platform])}")
-        else:
-            print(f"Hinweis {platform}: keine lokale Client-ID — dieser Build hätte keinen Google-Abgleich")
-    seen: dict[str, str] = {}
-    for platform, value in ids.items():
-        if value in seen:
-            fail(f"{platform} und {seen[value]} benutzen dieselbe Client-ID")
-        seen[value] = platform
-    projects = {value.split("-", 1)[0] for value in ids.values()}
-    if len(projects) > 1:
-        fail(f"die Client-IDs stammen aus verschiedenen Cloud-Projekten ({', '.join(sorted(projects))}) — "
-             "dann sehen die Geräte verschiedene appDataFolder")
-    if MAC_JSON.is_file() and "macOS" in ids:
-        client = read_json_client(MAC_JSON, "macOS")
-        if client and client[0] != ids["macOS"]:
-            fail("macOS: Client-ID in Google.local.xcconfig passt nicht zur macOS-JSON")
-        if client and read_assignments(MAC_LOCAL).get("GOOGLE_CLIENT_SECRET") != client[1]:
-            fail("macOS: Client-Secret in Google.local.xcconfig passt nicht zur macOS-JSON")
-    if WEBOS_JSON.is_file() and "webOS" in ids:
-        client = read_json_client(WEBOS_JSON, "webOS")
-        if client and client[0] != ids["webOS"]:
-            fail("webOS: Client-ID in .env.local passt nicht zur webOS-JSON")
+    client_id = local_id()
+    if client_id:
+        ok(f"iOS: Client-ID {shown(client_id)}")
+    else:
+        print("Hinweis iOS: keine lokale Client-ID — dieser Build hätte keinen Google-Abgleich")
     if read_assignments(IOS_LOCAL).get("GOOGLE_CLIENT_SECRET"):
         fail("iOS: Google.local.xcconfig enthält ein Client-Secret — der iOS-Client hat keines")
 
 
 def check_no_secrets_in_git() -> None:
-    secrets = secret_values()
-    locations = {
-        "verfolgte Dateien": ["grep", "-I", "-l", "-F", "-f", "-"],
-        "Index": ["grep", "--cached", "-I", "-l", "-F", "-f", "-"],
-    }
-    for label, value in secrets.items():
-        for where, args in locations.items():
-            found = git(*args, input_text=value + "\n").stdout.split()
-            if found:
-                fail(f"Secret ({label}) steht in {where}: {', '.join(found)}")
-        base = "origin/main" if git("rev-parse", "--verify", "-q", "origin/main").returncode == 0 else None
-        if base:
-            log = git("log", "-p", f"{base}..HEAD").stdout
-            if value in log:
-                fail(f"Secret ({label}) steht in einem Commit seit {base}")
-    if secrets:
-        ok(f"{len(secrets)} bekannte Secret-Werte weder in verfolgten Dateien, Index noch neuen Commits")
     pattern = git("grep", "-I", "-l", "-E", SECRET_PATTERN.pattern).stdout.split()
     staged = git("grep", "--cached", "-I", "-l", "-E", SECRET_PATTERN.pattern).stdout.split()
     if pattern or staged:
@@ -414,18 +198,6 @@ def check_no_secrets_in_git() -> None:
 def artifact_text(path: Path) -> str:
     """Alles Lesbare eines Builds als ein Text — Info.plist, Binärstrings, Bündel."""
     chunks: list[str] = []
-    if path.suffix == ".ipk":
-        import shutil
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            subprocess.run(["ar", "x", str(path.resolve())], cwd=tmp, check=True)
-            data = next(Path(tmp).glob("data.tar.*"))
-            with tarfile.open(data) as archive:
-                for member in archive.getmembers():
-                    if member.isfile():
-                        chunks.append(archive.extractfile(member).read().decode("utf-8", "replace"))
-            shutil.rmtree(tmp, ignore_errors=True)
-        return "\n".join(chunks)
     for file in path.rglob("*"):
         if file.is_file() and file.stat().st_size < 64 * 1024 * 1024:
             raw = file.read_bytes()
@@ -447,36 +219,25 @@ def artifact_text(path: Path) -> str:
     return "\n".join(chunks)
 
 
-def inspect(platform: str, path: Path) -> None:
+def inspect(path: Path) -> None:
     if not path.exists():
-        fail(f"{platform}-Build {path} fehlt")
+        fail(f"iOS-Build {path} fehlt")
         return
-    ids = local_ids()
+    expected = local_id()
     text = artifact_text(path)
-    expected = ids.get(platform)
     found = set(ANY_CLIENT_ID.findall(text))
     if not expected:
-        fail(f"{platform}: keine lokale Client-ID zum Vergleich")
+        fail("iOS: keine lokale Client-ID zum Vergleich")
     elif expected in found:
-        ok(f"{platform}-Build enthält die eigene Client-ID {shown(expected)}")
+        ok(f"iOS-Build enthält die eigene Client-ID {shown(expected)}")
     else:
-        fail(f"{platform}-Build enthält die eigene Client-ID nicht")
-    for other, value in ids.items():
-        if other != platform and value in found:
-            fail(f"{platform}-Build enthält die Client-ID von {other}")
-    foreign = found - set(ids.values())
+        fail("iOS-Build enthält die eigene Client-ID nicht")
+    foreign = found - {expected}
     if foreign:
-        fail(f"{platform}-Build enthält {len(foreign)} unbekannte Client-ID(s)")
-    secrets = secret_values()
-    own = {"macOS": ("macOS-JSON", "macOS-xcconfig"), "webOS": ("webOS-JSON", "webOS-.env.local")}.get(platform, ())
-    own_values = {value for label, value in secrets.items() if label in own}
-    if own_values:
-        present = any(value in text for value in own_values)
-        (ok if present else fail)(f"{platform}-Build: eigenes Client-Secret {'vorhanden' if present else 'fehlt'}")
-    for label, value in secrets.items():
-        if label not in own and value not in own_values and value in text:
-            fail(f"{platform}-Build enthält ein fremdes Secret ({label})")
-    if platform == "iOS" and not any(value in text for value in secrets.values()):
+        fail(f"iOS-Build enthält {len(foreign)} unbekannte Client-ID(s)")
+    if SECRET_PATTERN.search(text):
+        fail("iOS-Build enthält eine Zeichenkette im Format eines Google-Client-Secrets")
+    else:
         ok("iOS-Build enthält kein Client-Secret")
 
 
@@ -546,9 +307,6 @@ def verify_ios_bundle(app: Path, label: str) -> None:
     text = artifact_text(app)
     if SECRET_PATTERN.search(text):
         fail(f"{label}: Zeichenkette im Format eines Google-Client-Secrets im Bündel")
-    for origin, secret in secret_values().items():
-        if secret in text:
-            fail(f"{label}: Bündel enthält ein Client-Secret ({origin})")
     foreign = set(ANY_CLIENT_ID.findall(text)) - ({value} if isinstance(value, str) else set())
     if foreign:
         fail(f"{label}: Bündel enthält {len(foreign)} fremde Client-ID(s)")
@@ -581,118 +339,15 @@ def verify_ios_ipa(ipa: Path) -> None:
         verify_ios_bundle(apps[0], f"IPA {ipa.name}")
 
 
-def known_macos_client() -> tuple[str, str] | None:
-    """Die erwartete macOS-Client-ID und das Secret, falls beides da ist."""
-    if MAC_JSON.is_file():
-        client = read_json_client(MAC_JSON, "macOS")
-        if client:
-            return client
-    assignments = read_assignments(MAC_LOCAL)
-    client_id = assignments.get("GOOGLE_CLIENT_ID", "")
-    secret = assignments.get("GOOGLE_CLIENT_SECRET", "")
-    if CLIENT_ID.match(client_id) and secret:
-        return client_id, secret
-    return None
-
-
-def verify_macos_bundle(app: Path, label: str) -> None:
-    """Ein fertiges `Nori.app` für macOS: eigene Client-ID und eigenes Secret, nichts Fremdes."""
-    plist = app / "Contents" / "Info.plist"
-    if not plist.is_file():
-        fail(f"{label}: Contents/Info.plist fehlt")
-        return
-    try:
-        info = plistlib.loads(plist.read_bytes())
-    except Exception as error:
-        fail(f"{label}: Info.plist nicht lesbar ({type(error).__name__})")
-        return
-
-    expected = known_macos_client()
-    before = len(problems)
-    value = info.get("GoogleClientID")
-    if value is None:
-        fail(f"{label}: GoogleClientID fehlt in der Info.plist")
-    elif not isinstance(value, str) or not value.strip():
-        fail(f"{label}: GoogleClientID ist leer — diese Fassung hätte keinen Google-Abgleich")
-    elif "$(" in value:
-        fail(f"{label}: GoogleClientID ist ein unaufgelöster Platzhalter")
-    elif not value.endswith(SUFFIX):
-        fail(f"{label}: GoogleClientID endet nicht auf {SUFFIX}")
-    elif not CLIENT_ID.match(value):
-        fail(f"{label}: GoogleClientID hat nicht die Form einer Google-Client-ID")
-    elif expected and value != expected[0]:
-        fail(f"{label}: GoogleClientID ist nicht die macOS-Client-ID dieses Rechners")
-    id_ok = len(problems) == before
-    if id_ok:
-        ok(f"{label}: GoogleClientID vorhanden ({shown(value)})")
-
-    before = len(problems)
-    secret = info.get("GoogleClientSecret")
-    if secret is None or (isinstance(secret, str) and not secret.strip()):
-        fail(f"{label}: GoogleClientSecret fehlt oder ist leer — der macOS-Client braucht es")
-    elif isinstance(secret, str) and "$(" in secret:
-        fail(f"{label}: GoogleClientSecret ist ein unaufgelöster Platzhalter")
-    elif expected and secret != expected[1]:
-        fail(f"{label}: GoogleClientSecret ist nicht das macOS-Secret dieses Rechners")
-    secret_ok = len(problems) == before
-    if secret_ok:
-        print("Google Client-Secret: included")
-        ok(f"{label}: GoogleClientSecret vorhanden")
-    if id_ok and secret_ok:
-        print("Google OAuth: configured")
-
-    text = artifact_text(app)
-    foreign = set(ANY_CLIENT_ID.findall(text)) - ({value} if isinstance(value, str) else set())
-    if foreign:
-        fail(f"{label}: Bündel enthält {len(foreign)} fremde Client-ID(s)")
-    secrets = secret_values()
-    own = {v for label_name, v in secrets.items() if label_name in ("macOS-JSON", "macOS-xcconfig")}
-    for origin, other in secrets.items():
-        if origin not in ("macOS-JSON", "macOS-xcconfig") and other not in own and other in text:
-            fail(f"{label}: Bündel enthält ein fremdes Secret ({origin})")
-
-
-def verify_macos_zip(archive_path: Path) -> None:
-    """Das App-ZIP selbst entpacken und das darin liegende Programm prüfen."""
-    if not archive_path.is_file():
-        fail(f"macOS-Paket {archive_path} fehlt")
-        return
-    with tempfile.TemporaryDirectory() as tmp:
-        try:
-            with zipfile.ZipFile(archive_path) as archive:
-                for name in archive.namelist():
-                    parts = Path(name).parts
-                    if name.startswith("/") or ".." in parts:
-                        fail(f"macOS-Paket {archive_path.name}: unzulässiger Pfad im Archiv")
-                        return
-                archive.extractall(tmp)
-        except zipfile.BadZipFile:
-            fail(f"macOS-Paket {archive_path.name}: kein gültiges ZIP-Archiv")
-            return
-        app = Path(tmp) / "Nori.app"
-        if not app.is_dir():
-            fail(f"macOS-Paket {archive_path.name}: erwartet Nori.app im Archiv")
-            return
-        verify_macos_bundle(app, f"macOS-Paket {archive_path.name}")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--ios", action="store_true", help="iOS-Konfiguration schreiben")
     parser.add_argument("--ios-client-id", help="Client-ID des iOS-Clients (sonst aus --ios-client-id-file)")
     parser.add_argument("--ios-client-id-file", type=Path, default=IOS_ID_FILE)
-    parser.add_argument("--macos", action="store_true", help="macOS-Konfiguration aus der JSON schreiben")
-    parser.add_argument("--macos-json", type=Path, default=MAC_JSON)
-    parser.add_argument("--webos", action="store_true", help="webOS-.env.local aus der JSON schreiben")
-    parser.add_argument("--webos-json", type=Path, default=WEBOS_JSON)
-    parser.add_argument("--check", action="store_true", help="Ignorieren, IDs und Secrets in Git prüfen")
+    parser.add_argument("--check", action="store_true", help="Ignorieren, ID und Secrets in Git prüfen")
     parser.add_argument("--inspect-ios", type=Path)
-    parser.add_argument("--inspect-macos", type=Path)
-    parser.add_argument("--inspect-webos", type=Path)
     parser.add_argument("--verify-ios-app", type=Path, help="fertiges iOS-Nori.app prüfen")
     parser.add_argument("--verify-ios-ipa", type=Path, help="fertige iOS-IPA entpacken und prüfen")
-    parser.add_argument("--verify-macos-app", type=Path, help="fertiges macOS-Nori.app prüfen")
-    parser.add_argument("--verify-macos-zip", type=Path, help="fertiges macOS-App-ZIP entpacken und prüfen")
     args = parser.parse_args()
 
     if args.ios:
@@ -704,43 +359,19 @@ def main() -> int:
             client_id = read_ios_id_file(args.ios_client_id_file.expanduser())
             if client_id:
                 write_ios(client_id)
-    if args.macos:
-        from_env = env_pair("NORI_GOOGLE_MACOS_CLIENT_ID", "NORI_GOOGLE_MACOS_CLIENT_SECRET", "macOS")
-        if from_env:
-            write_macos_values(*from_env)
-        elif not env_value("NORI_GOOGLE_MACOS_CLIENT_ID") and not env_value("NORI_GOOGLE_MACOS_CLIENT_SECRET"):
-            write_macos(args.macos_json.expanduser())
-    if args.webos:
-        from_env = env_pair("NORI_GOOGLE_TV_CLIENT_ID", "NORI_GOOGLE_TV_CLIENT_SECRET", "webOS")
-        if from_env:
-            write_webos_values(*from_env)
-        elif not env_value("NORI_GOOGLE_TV_CLIENT_ID") and not env_value("NORI_GOOGLE_TV_CLIENT_SECRET"):
-            write_webos(args.webos_json.expanduser())
 
-    if args.check or args.inspect_ios or args.inspect_macos or args.inspect_webos:
+    if args.check or args.inspect_ios:
         check_ignored()
         check_ids()
         check_no_secrets_in_git()
     if args.inspect_ios:
-        inspect("iOS", args.inspect_ios)
-    if args.inspect_macos:
-        inspect("macOS", args.inspect_macos)
-    if args.inspect_webos:
-        inspect("webOS", args.inspect_webos)
+        inspect(args.inspect_ios)
     if args.verify_ios_app:
         verify_ios_bundle(args.verify_ios_app, "iOS-Programm")
     if args.verify_ios_ipa:
         verify_ios_ipa(args.verify_ios_ipa)
 
-    if args.verify_macos_app:
-        verify_macos_bundle(args.verify_macos_app, "macOS-Programm")
-    if args.verify_macos_zip:
-        verify_macos_zip(args.verify_macos_zip)
-
-    if not any((args.ios, args.macos, args.webos, args.check,
-                args.inspect_ios, args.inspect_macos, args.inspect_webos,
-                args.verify_ios_app, args.verify_ios_ipa,
-                args.verify_macos_app, args.verify_macos_zip)):
+    if not any((args.ios, args.check, args.inspect_ios, args.verify_ios_app, args.verify_ios_ipa)):
         parser.print_help()
         return 0
     print(f"\n{len(problems)} Fehler" if problems else "\nkeine Auffälligkeiten")

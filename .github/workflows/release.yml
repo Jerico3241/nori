@@ -1,8 +1,8 @@
 name: Nori Release
 
 # Der eine Weg zu einem Nori-Release: eine Version, ein Tag `v<VERSION>`, ein
-# GitHub Release `Nori v<VERSION>` mit den Paketen aller gewählten Plattformen
-# und `checksums-sha256.txt`.
+# GitHub Release `Nori v<VERSION>` mit der IPA für iPhone und iPad und
+# `checksums-sha256.txt`. macOS, Windows und LG webOS sind entfernt.
 #
 #   GitHub → Actions → Nori Release → Run workflow → Version 2.6.0
 #
@@ -11,23 +11,21 @@ name: Nori Release
 # Eingabe hier bestätigt sie nur — weicht sie ab, entsteht nichts.
 #
 #   prepare    Eingabe, Versionsstellen, Changelog, vorhandene Tags und
-#              Releases, Buildnummern früherer Releases, Windows-Secrets
-#   checks     Werkzeuge, Apple-Quellen, Swift-Kern, TypeScript-Kern, Server
-#   ios · macos · webos · windows
-#              die Plattform-Läufe mit `release-version`: bauen, testen,
+#              Releases, Buildnummern früherer Releases
+#   checks     Werkzeuge, Apple-Quellen, Swift-Kern
+#   ios        der Lauf `Build iOS` mit `release-version`: bauen, testen,
 #              packen, Paket prüfen, als Übergabe (ein Tag) ablegen
-#   publish    alle Pakete holen und noch einmal prüfen, Prüfsummen, Entwurf,
+#   publish    das Paket holen und noch einmal prüfen, Prüfsummen, Entwurf,
 #              Anhänge, Tag, Veröffentlichung
 #   validate   den veröffentlichten Release von außen nachprüfen
 #   cleanup    erst dann: alte Läufe der Nori-Workflows und die Übergabe-
 #              Artefakte dieses Laufs löschen
 #
 # Scheitert ein Schritt, laufen die folgenden nicht: kein halber Release, kein
-# Aufräumen. Eine abgewählte Plattform steht in den Notes als „nicht enthalten".
+# Aufräumen.
 #
 # Runner: Linux für prepare/publish/validate/cleanup, macos-26 für den
-# gemeinsamen Swift-Kern, die Plattform-Läufe auf ihren eigenen Images
-# (docs/releases.md). Einzelheiten: docs/releases.md.
+# Swift-Kern und die IPA. Einzelheiten: docs/releases.md.
 on:
   workflow_dispatch:
     inputs:
@@ -35,22 +33,6 @@ on:
         description: 'Version, z. B. 2.6.0 oder v2.6.0 — muss der Nummer im Repository entsprechen'
         type: string
         required: true
-      ios:
-        description: 'iOS / iPadOS (IPA)'
-        type: boolean
-        default: true
-      macos:
-        description: 'macOS (Nori.app und Quellpaket)'
-        type: boolean
-        default: true
-      webos:
-        description: 'LG webOS (IPK)'
-        type: boolean
-        default: true
-      windows:
-        description: 'Windows (Installer und ZIP)'
-        type: boolean
-        default: true
       dry_run:
         description: 'Probelauf: alles bauen und prüfen, nichts veröffentlichen, nichts löschen'
         type: boolean
@@ -75,10 +57,6 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       tag: ${{ steps.prepare.outputs.tag }}
       platforms: ${{ steps.prepare.outputs.platforms }}
-      ios: ${{ steps.prepare.outputs.ios }}
-      macos: ${{ steps.prepare.outputs.macos }}
-      webos: ${{ steps.prepare.outputs.webos }}
-      windows: ${{ steps.prepare.outputs.windows }}
       dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
       # Alle Tags: die Buildnummern früherer Releases stehen in deren Stand.
@@ -88,40 +66,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Plattformen und Modus
+      - name: Modus
         id: mode
         env:
-          WANT_IOS: ${{ inputs.ios }}
-          WANT_MACOS: ${{ inputs.macos }}
-          WANT_WEBOS: ${{ inputs.webos }}
-          WANT_WINDOWS: ${{ inputs.windows }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          PLATFORMS=""
-          for pair in "ios=$WANT_IOS" "macos=$WANT_MACOS" "webos=$WANT_WEBOS" "windows=$WANT_WINDOWS"; do
-            if [ "${pair#*=}" = "true" ]; then
-              PLATFORMS="$PLATFORMS,${pair%%=*}"
-            fi
-          done
-          echo "platforms=${PLATFORMS#,}" >> "$GITHUB_OUTPUT"
           if [ "$DRY_RUN" = "true" ]; then
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Früh statt nach einer halben Stunde Bauen: Ein Windows-Paket ohne
-      # Google-Desktop-Client wäre eine Fassung ohne Abgleich. Geprüft wird
-      # nur, ob die Secrets gesetzt sind — ihr Wert erscheint nirgends.
-      - name: Windows-Voraussetzungen
-        if: ${{ inputs.windows }}
+      # Früh statt nach dem Bauen: Eine IPA ohne Google-Client-ID wäre eine
+      # Fassung ohne Abgleich. Geprüft wird nur, ob das Secret gesetzt ist —
+      # sein Wert erscheint nirgends.
+      - name: iOS-Voraussetzungen
         env:
-          HAS_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID != '' }}
-          HAS_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET != '' }}
+          HAS_ID: ${{ secrets.NORI_GOOGLE_IOS_CLIENT_ID != '' }}
         run: |
-          if [ "$HAS_ID" != "true" ] || [ "$HAS_SECRET" != "true" ]; then
-            echo "::error::Windows ist gewählt, aber die Repository-Secrets NORI_GOOGLE_DESKTOP_CLIENT_ID und NORI_GOOGLE_DESKTOP_CLIENT_SECRET fehlen – ohne sie hätte Nori für Windows keinen Google-Abgleich. Secrets anlegen (docs/windows.md) oder Windows abwählen."
+          if [ "$HAS_ID" != "true" ]; then
+            echo "::error::Das Repository-Secret NORI_GOOGLE_IOS_CLIENT_ID fehlt – ohne es hätte Nori keinen Google-Abgleich. Secret anlegen (docs/google-drive-sync.md)."
             exit 1
           fi
 
@@ -133,7 +98,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VERSION_INPUT: ${{ inputs.version }}
-          PLATFORMS: ${{ steps.mode.outputs.platforms }}
+          PLATFORMS: ios
         run: python3 tools/nori-release.py prepare --version "$VERSION_INPUT" --platforms "$PLATFORMS" --github-output
 
   checks:
@@ -153,7 +118,6 @@ jobs:
         run: |
           python3 tools/test_nori_version.py
           python3 tools/test_nori_release.py
-          python3 tools/test_check_webos_package.py
           python3 tools/test_configure_google_oauth.py
 
       - name: Apple-Quellen prüfen
@@ -166,28 +130,9 @@ jobs:
         working-directory: native
         run: swift test
 
-      - name: Node einrichten
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: TypeScript-Kern testen
-        working-directory: shared/nori-core
-        run: |
-          npm install --no-audit --no-fund
-          npm test
-
-      - name: Nori-Server testen
-        working-directory: services/nori-api
-        run: |
-          npm install --no-audit --no-fund
-          npm run build
-          npm test
-
   ios:
     name: iOS / iPadOS
     needs: [prepare, checks]
-    if: needs.prepare.outputs.ios == 'true'
     permissions:
       contents: read
     secrets: inherit
@@ -195,56 +140,15 @@ jobs:
     with:
       release-version: ${{ needs.prepare.outputs.version }}
 
-  macos:
-    name: macOS
-    needs: [prepare, checks]
-    if: needs.prepare.outputs.macos == 'true'
-    permissions:
-      contents: read
-    secrets: inherit
-    uses: ./.github/workflows/build-macos.yml
-    with:
-      release-version: ${{ needs.prepare.outputs.version }}
-
-  webos:
-    name: LG webOS
-    needs: [prepare, checks]
-    if: needs.prepare.outputs.webos == 'true'
-    permissions:
-      contents: read
-    secrets: inherit
-    uses: ./.github/workflows/build-webos.yml
-    with:
-      release-version: ${{ needs.prepare.outputs.version }}
-
-  windows:
-    name: Windows
-    needs: [prepare, checks]
-    if: needs.prepare.outputs.windows == 'true'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/build-windows.yml
-    with:
-      release-version: ${{ needs.prepare.outputs.version }}
-    secrets:
-      NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
-      NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
-
-  # Nur wenn jede gewählte Plattform grün ist. `!cancelled()` statt der
-  # stillen Vorgabe, weil abgewählte Plattformen als „skipped" gelten — die
-  # Bedingung verlangt deshalb für jede Plattform ausdrücklich: nicht gewählt
-  # oder erfolgreich.
+  # Nur wenn alles davor grün ist.
   publish:
     name: Release veröffentlichen
-    needs: [prepare, checks, ios, macos, webos, windows]
+    needs: [prepare, checks, ios]
     if: >-
       ${{ !cancelled()
       && needs.prepare.result == 'success'
       && needs.checks.result == 'success'
-      && (needs.prepare.outputs.ios != 'true' || needs.ios.result == 'success')
-      && (needs.prepare.outputs.macos != 'true' || needs.macos.result == 'success')
-      && (needs.prepare.outputs.webos != 'true' || needs.webos.result == 'success')
-      && (needs.prepare.outputs.windows != 'true' || needs.windows.result == 'success') }}
+      && needs.ios.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -255,14 +159,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Pakete dieses Laufs holen
+      - name: Paket dieses Laufs holen
         uses: actions/download-artifact@v5
         with:
           pattern: nori-release-*
           path: ${{ runner.temp }}/nori-release/assets
           merge-multiple: true
 
-      # Prüft jedes Paket noch einmal gegen die Prüfsumme aus seinem Paket-Job,
+      # Prüft das Paket noch einmal gegen die Prüfsumme aus seinem Paket-Job,
       # wiederholt die Produktionsprüfungen, schreibt checksums-sha256.txt und
       # die Notes — und legt erst dann Entwurf, Anhänge, Tag und
       # Veröffentlichung an. Gibt es Tag oder Release inzwischen, bricht es ab.
@@ -273,20 +177,10 @@ jobs:
           PLATFORMS: ${{ needs.prepare.outputs.platforms }}
           DRY_RUN: ${{ needs.prepare.outputs.dry_run == 'true' && '--dry-run' || '' }}
           SHA256_IOS: ${{ needs.ios.outputs.sha256 }}
-          SHA256_MACOS: ${{ needs.macos.outputs.sha256 }}
-          SHA256_MACOS_SOURCE: ${{ needs.macos.outputs.sha256_source }}
-          SHA256_WEBOS: ${{ needs.webos.outputs.sha256 }}
-          SHA256_WINDOWS_INSTALLER: ${{ needs.windows.outputs.sha256_installer }}
-          SHA256_WINDOWS_PORTABLE: ${{ needs.windows.outputs.sha256_portable }}
-          NORI_GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_ID }}
-          NORI_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.NORI_GOOGLE_DESKTOP_CLIENT_SECRET }}
         run: |
           python3 tools/nori-release.py publish --version "$VERSION" --platforms "$PLATFORMS" \
             --dir "$RUNNER_TEMP/nori-release/assets" --commit "$GITHUB_SHA" \
-            --sha256 "ios=$SHA256_IOS" --sha256 "macos=$SHA256_MACOS" --sha256 "macos-source=$SHA256_MACOS_SOURCE" \
-            --sha256 "webos=$SHA256_WEBOS" \
-            --sha256 "windows-installer=$SHA256_WINDOWS_INSTALLER" \
-            --sha256 "windows-portable=$SHA256_WINDOWS_PORTABLE" \
+            --sha256 "ios=$SHA256_IOS" \
             $DRY_RUN
 
       - name: Heruntergeladene Pakete entfernen

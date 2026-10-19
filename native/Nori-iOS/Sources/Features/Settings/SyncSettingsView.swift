@@ -23,8 +23,12 @@ import SwiftUI
 ///   diesem Konto zurück.
 ///
 /// Das Zweite hinter einem unscheinbaren „Abmelden" zu verstecken, wäre die
-/// Art Fehler, die jemand erst bemerkt, wenn der Fernseher nicht mehr
+/// Art Fehler, die jemand erst bemerkt, wenn ein anderes Gerät nicht mehr
 /// mitkommt.
+///
+/// „Mit Fernseher teilen" stand hier bis Nori 2.7.0. Seit die LG-App
+/// eingestellt ist, liest den Spiegel niemand mehr; `NoriApp` schaltet ihn
+/// beim Start aus, gelöscht wird dabei nichts.
 struct SyncSettingsView: View {
     @Environment(GoogleDriveSync.self) private var sync
 
@@ -32,10 +36,6 @@ struct SyncSettingsView: View {
     /// Der Diagnosebereich ist standardmässig zu. Er richtet sich an den, der
     /// Nori baut — nicht an den, der sie benutzt.
     @State private var showDiagnostics = false
-    /// Die Erklärung vor „Mit Fernseher teilen". Steht vor jedem Einschalten,
-    /// nicht nur vor dem ersten: danach fragt Google ohnehin nach, und wer den
-    /// Schalter umlegt, soll wissen, wofür.
-    @State private var showTVExplanation = false
 
     var body: some View {
         NoriGradientScreen {
@@ -46,7 +46,6 @@ struct SyncSettingsView: View {
                     if sync.isConfigured {
                         connection
                         if isConnected {
-                            television
                             advanced
                         }
                     } else {
@@ -64,12 +63,6 @@ struct SyncSettingsView: View {
         .navigationTitle("Synchronisation")
         .navigationBarTitleDisplayMode(.inline)
         .task { await sync.restore() }
-        .alert("Mit Fernseher teilen", isPresented: $showTVExplanation) {
-            Button("Weiter zu Google") { Task { await sync.enableTVMirror() } }
-            Button("Abbrechen", role: .cancel) {}
-        } message: {
-            Text(GoogleDriveSync.tvMirrorExplanation)
-        }
         .confirmationDialog(
             "Google-Zugriff widerrufen?",
             isPresented: $showRevokeConfirmation,
@@ -82,8 +75,8 @@ struct SyncSettingsView: View {
         } message: {
             Text("""
             Dadurch kann Nori auf deinen Geräten nicht mehr auf die \
-            Google-Drive-Synchronisierung zugreifen — auch nicht auf Mac und \
-            Fernseher. Deine lokale Bibliothek bleibt erhalten.
+            Google-Drive-Synchronisierung zugreifen. Deine lokale Bibliothek \
+            bleibt erhalten.
             """)
         }
     }
@@ -182,40 +175,6 @@ struct SyncSettingsView: View {
         .disabled(sync.isAuthorizing)
     }
 
-    /// „Mit Fernseher teilen" — je Gerät, und aus, bis jemand es einschaltet.
-    ///
-    /// Ohne diesen Schalter fragt Nori nur nach dem versteckten App-Ordner,
-    /// genau wie vorher. Eingeschaltet wird erst nach der Erklärung **und** der
-    /// Zustimmung bei Google; bricht jemand ab, bleibt der Schalter aus.
-    private var television: some View {
-        SettingsGroup(title: "Fernseher", footnote: tvFootnote) {
-            SettingsToggleRow(
-                symbol: "tv",
-                tint: .blue,
-                title: "Mit Fernseher teilen",
-                subtitle: "Merkliste, Verlauf und Fortschritt auch auf dem LG-Fernseher",
-                isOn: tvBinding
-            )
-            .disabled(sync.isAuthorizing)
-
-            if sync.tvMirrorState == .needsConsent {
-                SettingsDivider()
-                SettingsButtonRow(
-                    symbol: "person.badge.key",
-                    tint: .orange,
-                    title: "Zugriff für den Fernseher erlauben",
-                    subtitle: "Google hat ihn nicht erteilt oder zurückgezogen",
-                    action: { showTVExplanation = true }
-                ) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(NoriTheme.muted)
-                }
-                .disabled(sync.isAuthorizing)
-            }
-        }
-    }
-
     private var advanced: some View {
         SettingsGroup(
             title: "Erweitert",
@@ -275,9 +234,7 @@ struct SyncSettingsView: View {
                 """)
                 Text("""
                 Nori sieht dabei weder deinen Namen noch deine E-Mail-Adresse: \
-                gefragt wird nach dem versteckten App-Ordner — und nur mit „Mit \
-                Fernseher teilen“ zusätzlich nach den Dateien, die Nori selbst \
-                im Ordner „Nori“ anlegt.
+                gefragt wird nur nach dem versteckten App-Ordner.
                 """)
                 Text("""
                 Ohne Netz funktioniert Nori vollständig weiter. Änderungen \
@@ -327,24 +284,6 @@ struct SyncSettingsView: View {
                     subtitle: scopeText,
                     value: hasFileScope ? "appdata + file" : "nur appdata"
                 )
-                SettingsDivider()
-                SettingsInfoRow(
-                    symbol: "tv",
-                    tint: sync.tvMirrorState == .needsConsent ? .orange : .blue,
-                    title: "TV-Spiegel",
-                    subtitle: mirrorDiagnosticsText,
-                    value: mirrorStateLabel
-                )
-                if let error = sync.mirrorEngine.lastError {
-                    SettingsDivider()
-                    SettingsInfoRow(
-                        symbol: "exclamationmark.triangle",
-                        tint: .orange,
-                        title: "Letzter Fehler im TV-Spiegel",
-                        subtitle: error,
-                        value: ""
-                    )
-                }
                 // Ob — nie welche. Tokens stehen hier nicht, auch nicht
                 // verkürzt.
                 SettingsDivider()
@@ -422,58 +361,10 @@ struct SyncSettingsView: View {
         }
     }
 
-    // MARK: - Fernseher
-
-    /// Der Schalter springt nicht selbst um: eingeschaltet wird erst nach
-    /// Erklärung und Zustimmung. Ausschalten geht sofort und löscht nichts.
-    private var tvBinding: Binding<Bool> {
-        Binding(
-            get: { sync.isTVMirrorEnabled },
-            set: { on in
-                if on { showTVExplanation = true } else { sync.disableTVMirror() }
-            }
-        )
-    }
-
-    private var deviceName: String {
-        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-    }
-
-    /// Der Fernseher kann `appDataFolder` nicht lesen. Er bekommt Änderungen
-    /// nur über ein Apple-Gerät, das mit ihm teilt — das steht hier ohne
-    /// Fachbegriffe.
-    private var tvFootnote: String {
-        let relay = """
-        Der Fernseher bekommt Änderungen über ein iPhone, iPad oder Mac mit \
-        eingeschaltetem „Mit Fernseher teilen“. Mindestens eines davon muss \
-        regelmäßig synchronisieren — also ab und zu geöffnet werden.
-        """
-        return sync.isTVMirrorEnabled
-            ? "Dieses \(deviceName) teilt mit dem Fernseher. \(relay)"
-            : "Gilt nur für dieses \(deviceName); andere Geräte schalten es selbst ein. \(relay)"
-    }
-
     private var hasFileScope: Bool { sync.grantedScopes.contains(GoogleDriveClient.fileScope) }
 
     private var scopeText: String {
         hasFileScope ? "\(GoogleDriveClient.scope)\n\(GoogleDriveClient.fileScope)" : GoogleDriveClient.scope
-    }
-
-    private var mirrorStateLabel: String {
-        switch sync.tvMirrorState {
-        case .off: return "aus"
-        case .needsConsent: return "Zustimmung fehlt"
-        case .active: return "aktiv"
-        }
-    }
-
-    private var mirrorDiagnosticsText: String {
-        guard sync.tvMirrorState == .active else { return "Nur mit „Mit Fernseher teilen“" }
-        let run = sync.mirrorEngine.lastSuccessfulSync.map {
-            "Zuletzt " + Date(timeIntervalSince1970: $0 / 1000).formatted(.relative(presentation: .named))
-        } ?? "Noch kein Abgleich"
-        let others = sync.mirrorEngine.remoteDeviceCount.map { " · andere Geräte im Spiegel: \($0)" } ?? ""
-        return run + others
     }
 
     // MARK: - Abgeleitetes

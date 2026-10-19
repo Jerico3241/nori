@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Statische Prüfung der beiden Apple-Targets von Nori.
+"""Statische Prüfung der iOS-App von Nori.
 
 Warum das existiert: Swift lässt sich in dieser Umgebung nicht kompilieren –
-der einzige echte Typechecker ist der GitHub-Actions-Lauf `Build macOS`
-(~1 Minute). Dieses Skript fängt vorab die Fehlerklassen ab, die dort schon
+der einzige echte Typechecker ist der GitHub-Actions-Lauf `Build iOS`. Dieses Skript fängt vorab die Fehlerklassen ab, die dort schon
 mehrfach aufgeschlagen sind, damit nicht jeder Tippfehler eine CI-Runde kostet.
 
     python3 tools/check-apple-sources.py
@@ -23,35 +22,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 IOS = ROOT / "native/Nori-iOS/Nori"
-MAC = ROOT / "native/Nori-macOS/Nori"
+CORE = ROOT / "native/NoriCore/Sources/NoriCore"
 
-# Dateien ohne jede plattformspezifische Zeile. Sie müssen Byte für Byte
-# identisch bleiben; eine Änderung gehört immer in beide Targets.
+# Dateien des gemeinsamen Kerns. Im iOS-Ordner sind sie Symlinks auf
+# `native/NoriCore/Sources/NoriCore/`, damit `swift test` dieselben Quellen
+# prüft, die die App baut. Eine Kopie liefe still auseinander.
 SHARED_IDENTICAL = [
     "Models.swift",
     "LibraryStore.swift",
     "AniworldClient.swift",
     "HosterResolver.swift",
-    # Seit dem ersten iOS-Build byte-gleich: die iOS-Fassung hatte lange
-    # Optional-Ketten, an denen der Typechecker abbrach, und fehlende `try`.
-    # Die macOS-Fassung hatte dieselbe Logik bereits aufgelöst.
     "HTML.swift",
-    # Auswertung der HLS-Master-Playlist. Nur der iOS-Player benutzt sie
-    # bisher — die Mac-Fassung spielt mit den Systemreglern —, aber sie
-    # gehört zur Stream-Auswertung und liegt deshalb im gemeinsamen Kern,
-    # wo `swift test` sie erreicht.
     "HLSPlaylist.swift",
-    # Bildadressen und Titelzuordnung von TMDB. Beide Targets brauchen sie,
-    # weil AniworldClient.swift sie benutzt; die Startseite von iOS benutzt
-    # dieselbe Zuordnung, um TMDB-Ranglisten auf Noris Katalog zurückzuführen.
     "TMDBImages.swift",
     "TMDBMatcher.swift",
-    # Die Katalogsuche. Der iPhone-Katalog sucht über `CatalogEntry`, der
-    # Mac-Katalog über `CatalogItem` — mit derselben Normalisierung.
     "CatalogSearch.swift",
-    # Der Geräteabgleich über Google Drive. Regeln, Ablauf, HTTP und OAuth
-    # gehören in beide Targets gleichermaßen; nur der Anmeldeweg ist
-    # plattformeigen und liegt deshalb je Target in `GoogleSignIn.swift`.
+    # Der Geräteabgleich über Google Drive. Nur der Anmeldeweg ist
+    # plattformeigen und liegt deshalb in `GoogleSignIn.swift`.
     "LibrarySync.swift",
     "LibrarySyncEngine.swift",
     "GoogleDrive.swift",
@@ -59,10 +46,6 @@ SHARED_IDENTICAL = [
     "GoogleAuthorization.swift",
     "NoriSync.swift",
 ]
-
-# Gleiche Aufgabe, aber unterschiedlich formuliert. Zurzeit leer – der Eintrag
-# bleibt, weil diese Klasse jederzeit wieder entstehen kann.
-SHARED_STRUCTURE: list[str] = []
 
 # APIs, die es schlicht nicht gibt. Jede Zeile hier hat einmal einen Build
 # gekostet.
@@ -82,58 +65,19 @@ NONEXISTENT = {
     ),
 }
 
-# Symbole, die neuer sind als das Deployment-Target des jeweiligen Targets.
-#
-# Der Wert nennt die nötige Version. `#available` hilft hier **nicht**: die
-# aufgeführten Symbole sind nicht nur zu neu, sie stehen auch in keinem
-# Zweig, den ein Deployment-Target von macOS 14 je erreicht — oder sie
-# lassen sich schlicht nicht sinnvoll gaten (Stile, Container).
-TOO_NEW_MACOS_14 = {
-    r"\.tabViewStyle\(\.sidebarAdaptable\)": "macOS 15",
-    r"\.toolbar\(removing:": "macOS 15",
-    r"\bTabSection\b": "macOS 15",
-    r"\.searchFocused\(": "macOS 15",
-    r"\.windowResizability\(\.automatic\)": "macOS 15",
-    r"\bGlassEffectContainer\b": "macOS 26",
-}
-
 # Symbole, die neuer sind als das Deployment-Target, sich aber hinter
 # `#available` sauber verwenden lassen — der Zweig läuft dann nur auf einem
-# System, das sie kennt.
-#
-# Ohne Absicherung bleiben sie ein Fehler: ein ungeschütztes `glassEffect`
-# stürzt auf macOS 14 nicht ab, es übersetzt gar nicht erst. Geprüft wird auf
-# Dateiebene, weil das Skript keinen Parser hat: liegt im selben Quelltext
-# eine passende `#available`-Abfrage, gilt die Verwendung als abgesichert.
-GATED_MACOS_14 = {
-    r"\.glassEffect\(": (r"#available\(macOS 26", "macOS 26"),
-    r"\.scrollEdgeEffectStyle\(": (r"#available\(macOS 26", "macOS 26"),
-}
-
+# System, das sie kennt. Ohne Absicherung übersetzt die Datei gar nicht erst.
+# Geprüft wird auf Dateiebene, weil das Skript keinen Parser hat: liegt im
+# selben Quelltext eine passende `#available`-Abfrage, gilt die Verwendung als
+# abgesichert.
 GATED_IOS_17 = {
     r"\.glassEffect\(": (r"#available\(iOS 26", "iOS 26"),
     r"\.scrollEdgeEffectStyle\(": (r"#available\(iOS 26", "iOS 26"),
 }
 
-# Frameworks/Typen, die im jeweils anderen Target nicht existieren.
-UIKIT_ONLY = r"\b(UIKit|UIApplication|UIImage|UIColor|UIScreen|UIDevice|UIViewRepresentable|UIViewControllerRepresentable|UIPasteboard)\b"
+# Frameworks/Typen aus macOS, die es unter iOS nicht gibt.
 APPKIT_ONLY = r"\b(AppKit|NSApplication|NSApp|NSImage|NSColor|NSWindow|NSViewRepresentable|NSPasteboard|NSWorkspace)\b"
-
-# Kompiliert auf macOS, tut dort aber nichts oder sieht falsch aus.
-INEFFECTIVE_ON_MACOS = {
-    r"\.refreshable\s*\{": "Pull-to-Refresh gibt es auf macOS nicht – stattdessen einen Aktualisieren-Knopf in die Toolbar.",
-    r"\.navigationBarTitleDisplayMode\(": "iOS-only; auf macOS ohne Wirkung.",
-    r"\.navigationBarBackButtonHidden\(": "iOS-only; auf macOS ohne Wirkung.",
-    r"\.fullScreenCover\(": "iOS-only; auf macOS ein eigenes Fenster (Window-Scene) verwenden.",
-    r"\.listRowBackground\(": "Übermalt die native Auswahlmarkierung; auf macOS listStyle(.inset(alternatesRowBackgrounds:)) bevorzugen.",
-    r"\.preferredColorScheme\(": "Erzwingt ein Erscheinungsbild und ignoriert die Systemeinstellung.",
-}
-
-DECL = re.compile(
-    r"^\s*(?:@\w+\s+)*(?:public\s+|private\s+|internal\s+|fileprivate\s+|static\s+|final\s+)*"
-    r"(?:struct|class|enum|extension|func|actor|protocol)\s+([A-Za-z_]\w*)",
-    re.M,
-)
 
 problems: list[tuple[str, str, str]] = []
 
@@ -238,72 +182,36 @@ def check_string_literals(folder: Path, label: str) -> None:
 
 def check_shared_files() -> None:
     for name in SHARED_IDENTICAL:
-        a, b = IOS / name, MAC / name
-        if not a.exists() or not b.exists():
-            add("ERROR", name, "Datei fehlt in einem der beiden Targets.")
+        path = IOS / name
+        if not path.is_symlink():
+            add("ERROR", f"iOS/{name}", "Muss ein Symlink auf native/NoriCore/Sources/NoriCore/ sein, keine Kopie.")
             continue
-        if a.read_bytes() != b.read_bytes():
-            add(
-                "ERROR",
-                name,
-                "Gemeinsame Datei weicht zwischen iOS und macOS ab. "
-                "Änderungen an Modellen, Store, Client und Resolver gehören in beide Targets "
-                f"(Vergleich: diff native/Nori-iOS/Nori/{name} native/Nori-macOS/Nori/{name}).",
-            )
-
-    for name in SHARED_STRUCTURE:
-        a, b = IOS / name, MAC / name
-        if not a.exists() or not b.exists():
-            add("ERROR", name, "Datei fehlt in einem der beiden Targets.")
-            continue
-        da = set(DECL.findall(a.read_text()))
-        db = set(DECL.findall(b.read_text()))
-        for missing in sorted(da - db):
-            add("ERROR", name, f"`{missing}` gibt es nur im iOS-Target.")
-        for missing in sorted(db - da):
-            add("ERROR", name, f"`{missing}` gibt es nur im macOS-Target.")
+        if path.resolve() != (CORE / name).resolve() or not (CORE / name).is_file():
+            add("ERROR", f"iOS/{name}", f"Zeigt nicht auf native/NoriCore/Sources/NoriCore/{name}.")
 
 
-def check_target(folder: Path, *, is_mac: bool) -> None:
-    label = "macOS" if is_mac else "iOS"
-    wrong_framework = UIKIT_ONLY if is_mac else APPKIT_ONLY
-    other = "UIKit" if is_mac else "AppKit"
-
+def check_target(folder: Path) -> None:
     for path in swift_files(folder):
         raw = path.read_text()
         src = strip_comments_and_strings(raw)
-        where = f"{label}/{path.name}"
+        where = f"iOS/{path.name}"
 
-        for match in re.finditer(wrong_framework, src):
-            add("ERROR", where, f"`{match.group(1)}` stammt aus {other} und existiert im {label}-Target nicht.")
+        for match in re.finditer(APPKIT_ONLY, src):
+            add("ERROR", where, f"`{match.group(1)}` stammt aus AppKit und existiert im iOS-Target nicht.")
 
         for pattern, hint in NONEXISTENT.items():
             if re.search(pattern, src):
                 add("ERROR", where, hint)
 
-        gated = GATED_MACOS_14 if is_mac else GATED_IOS_17
-        floor = "macOS 14.0" if is_mac else "iOS 17.0"
-        for pattern, (guard, since) in gated.items():
+        for pattern, (guard, since) in GATED_IOS_17.items():
             if re.search(pattern, src) and not re.search(guard, src):
                 add(
                     "ERROR",
                     where,
-                    f"Braucht {since}, das Target ist auf {floor} festgelegt, und die "
+                    f"Braucht {since}, das Target ist auf iOS 17.0 festgelegt, und die "
                     f"Verwendung steht in keinem `{guard.replace(chr(92), '')}…)`-Zweig. "
                     "Über die Hülle in NoriGlass.swift gehen statt direkt.",
                 )
-
-        if is_mac:
-            for pattern, since in TOO_NEW_MACOS_14.items():
-                if re.search(pattern, src):
-                    add("ERROR", where, f"Braucht {since}, das Target ist auf macOS 14.0 festgelegt.")
-            for pattern, hint in INEFFECTIVE_ON_MACOS.items():
-                if re.search(pattern, src):
-                    add("WARN", where, hint)
-            # .tabItem ist im Settings-Fenster die übliche Bauform, in der
-            # Hauptnavigation dagegen ein iOS-Import.
-            if path.name != "SettingsView.swift" and re.search(r"\.tabItem\s*\{", src):
-                add("WARN", where, "TabView/.tabItem als Hauptnavigation ist iOS-Bauform; auf macOS NavigationSplitView mit Seitenleiste.")
 
 
 def check_section_initializers(folder: Path, label: str) -> None:
@@ -429,7 +337,7 @@ def check_no_secrets() -> None:
         r'\s*(?:=|:)\s*"[^"\n]{8,}"',
         re.IGNORECASE,
     )
-    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+    for label, folder in (("iOS", IOS),):
         for path in swift_files(folder):
             raw = path.read_text()
             # Zeichenketten hier absichtlich stehen lassen — sie sind der Fund.
@@ -461,7 +369,7 @@ def check_glass_runner() -> None:
     """
     glass = re.compile(r"\.glassEffect\(|\.scrollEdgeEffectStyle\(")
     used: list[str] = []
-    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+    for label, folder in (("iOS", IOS),):
         for path in swift_files(folder):
             if glass.search(strip_comments_and_strings(path.read_text())):
                 used.append(f"{label}/{path.name}")
@@ -469,7 +377,7 @@ def check_glass_runner() -> None:
         return
 
     where_used = ", ".join(sorted(used))
-    for name in ("build-ios.yml", "build-macos.yml"):
+    for name in ("build-ios.yml",):
         workflow = ROOT / ".github/workflows" / name
         if not workflow.exists():
             continue
@@ -612,59 +520,6 @@ def check_ios_package_oauth() -> None:
             '`#include? "Google.local.xcconfig"` fehlt — dort schreibt das Werkzeug die Client-ID hin.')
 
 
-def check_macos_package_oauth() -> None:
-    """Das verteilbare macOS-Paket muss Google-Abgleich haben.
-
-    Bis 2.6.0 ging nur das Quellpaket hinaus; der Release-Build war Nachweis
-    ohne Google-Konfiguration. Ab 2.7.0 ist `Nori.app` das Hauptpaket und
-    braucht denselben Schutz wie die IPA: Konfiguration vor dem Build,
-    Prüfung des Programms und des ZIP vor dem Hochladen.
-    """
-    name = "build-macos.yml"
-    workflow = ROOT / ".github/workflows" / name
-    if not workflow.exists():
-        return
-    whole = workflow.read_text()
-    job = re.search(r"^  package:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", whole, re.MULTILINE | re.DOTALL)
-    if job is None:
-        add("ERROR", name, "Der Job `package` fehlt — ohne ihn gibt es kein geprüftes Nori.app.")
-        return
-    text = job.group(1)
-
-    def position(pattern: str) -> int:
-        match = re.search(pattern, text)
-        return match.start() if match else -1
-
-    configure = position(r"tools/configure-google-oauth\.py\s+--macos\b")
-    build = position(r"-configuration\s+Release")
-    verify_app = position(r"tools/configure-google-oauth\.py\s+--verify-macos-app\b")
-    verify_zip = position(r"tools/configure-google-oauth\.py\s+--verify-macos-zip\b")
-    upload = position(r"actions/upload-artifact@")
-
-    if configure < 0 or build < 0 or configure > build:
-        add("ERROR", name, "Vor dem Release-Build fehlt `python3 tools/configure-google-oauth.py --macos`. "
-            "Ohne ihn entsteht ein Nori.app ohne Google-Abgleich.")
-    if verify_app < 0 or verify_app < build:
-        add("ERROR", name, "Nach dem Build fehlt `tools/configure-google-oauth.py --verify-macos-app` "
-            "für das gebaute Nori.app.")
-    if verify_zip < 0 or upload < 0 or verify_zip > upload:
-        add("ERROR", name, "Vor dem Hochladen fehlt `tools/configure-google-oauth.py --verify-macos-zip` "
-            "für das fertige App-Paket.")
-    if "--ios" in text or "--webos" in text:
-        add("ERROR", name, "Der macOS-Paketlauf fasst eine fremde Google-Konfiguration an.")
-
-    plist_path = ROOT / "native/Nori-macOS/Nori/Info.plist"
-    plist = plist_path.read_text() if plist_path.exists() else ""
-    if "<key>GoogleClientID</key>" not in plist or "$(GOOGLE_CLIENT_ID)" not in plist:
-        add("ERROR", "macOS/Info.plist", "GoogleClientID muss aus der Build-Einstellung $(GOOGLE_CLIENT_ID) kommen.")
-    if "<key>GoogleClientSecret</key>" not in plist or "$(GOOGLE_CLIENT_SECRET)" not in plist:
-        add("ERROR", "macOS/Info.plist", "GoogleClientSecret muss aus der Build-Einstellung $(GOOGLE_CLIENT_SECRET) kommen.")
-    xcconfig = ROOT / "native/Nori-macOS/Config/Nori.xcconfig"
-    if xcconfig.exists() and '#include? "Google.local.xcconfig"' not in xcconfig.read_text():
-        add("ERROR", "native/Nori-macOS/Config/Nori.xcconfig",
-            '`#include? "Google.local.xcconfig"` fehlt — dort schreibt das Werkzeug Client-ID und Secret hin.')
-
-
 def check_main_actor_calls(folder: Path, label: str) -> None:
     """`@MainActor`-Methoden dürfen nicht synchron aus einer View-Hilfe kommen.
 
@@ -760,7 +615,7 @@ def check_app_icons() -> None:
     lassen — eine Meldung, die die Ursache nicht nennt. iOS-Icons dürfen
     außerdem keinen Alphakanal haben.
     """
-    for label, folder in (("iOS", IOS), ("macOS", MAC)):
+    for label, folder in (("iOS", IOS),):
         iconset = folder / "Assets.xcassets/AppIcon.appiconset"
         contents = iconset / "Contents.json"
         if not contents.exists():
@@ -813,15 +668,13 @@ def check_icon_declared() -> None:
     """Eine handgepflegte Info.plist muss ihren Iconsatz selbst nennen.
 
     `CFBundleIconName` verweist auf den Iconsatz im Assetkatalog. Xcode trägt
-    den Schlüssel nur bei `GENERATE_INFOPLIST_FILE = YES` nach — beide Targets
-    stehen hier auf `NO`. Fehlt er, findet iOS kein Icon: die installierte App
+    den Schlüssel nur bei `GENERATE_INFOPLIST_FILE = YES` nach — das Target
+    steht hier auf `NO`. Fehlt er, findet iOS kein Icon: die installierte App
     bleibt als Platzhalterkachel auf dem Home-Bildschirm stehen und sieht aus,
-    als lade sie endlos. Auf macOS zeigen Dock und Finder das graue
-    Standardsymbol.
+    als lade sie endlos.
     """
     targets = [
         ("iOS", IOS, ROOT / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj"),
-        ("macOS", MAC, ROOT / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj"),
     ]
     for label, folder, pbx in targets:
         plist = folder / "Info.plist"
@@ -848,9 +701,8 @@ def check_icon_declared() -> None:
 
 
 def check_deployment_targets() -> None:
-    """Die Regeln oben sind auf macOS 14 / iOS 17 geeicht."""
+    """Die Regeln oben sind auf iOS 17 geeicht."""
     expectations = [
-        (ROOT / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj", "MACOSX_DEPLOYMENT_TARGET", "14.0"),
         (ROOT / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj", "IPHONEOS_DEPLOYMENT_TARGET", "17.0"),
     ]
     for pbx, key, expected in expectations:
@@ -886,7 +738,6 @@ def check_pbxproj_identifiers() -> None:
     """
     projects = [
         ("iOS", ROOT / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj"),
-        ("macOS", ROOT / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj"),
     ]
     reference = re.compile(r"^\t\t(A[BC]\d+) /\* (.+?) \*/ = \{isa = PBX(BuildFile|FileReference)", re.M)
 
@@ -932,25 +783,19 @@ def check_pbxproj_identifiers() -> None:
 
 
 def main() -> int:
-    if not IOS.is_dir() or not MAC.is_dir():
+    if not IOS.is_dir() or not CORE.is_dir():
         print("Quellordner nicht gefunden – bitte aus dem Repo-Wurzelverzeichnis aufrufen.", file=sys.stderr)
         return 2
 
     check_shared_files()
-    check_target(IOS, is_mac=False)
-    check_target(MAC, is_mac=True)
+    check_target(IOS)
     check_string_literals(IOS, "iOS")
-    check_string_literals(MAC, "macOS")
     check_section_initializers(IOS, "iOS")
-    check_section_initializers(MAC, "macOS")
     check_main_actor_calls(IOS, "iOS")
-    check_main_actor_calls(MAC, "macOS")
     check_ios_runner()
     check_glass_runner()
     check_ios_package_oauth()
-    check_macos_package_oauth()
     check_fill_in_fixed_frame(IOS, "iOS")
-    check_fill_in_fixed_frame(MAC, "macOS")
     check_no_secrets()
     check_app_icons()
     check_icon_declared()
@@ -968,7 +813,7 @@ def main() -> int:
         print("check-apple-sources: keine Auffälligkeiten.")
     else:
         print(f"check-apple-sources: {len(errors)} Fehler, {len(warnings)} Hinweise.")
-    print("Hinweis: ersetzt keinen Build. Der Typechecker ist der Lauf 'Build macOS'.")
+    print("Hinweis: ersetzt keinen Build. Der Typechecker ist der Lauf 'Build iOS'.")
 
     return 1 if errors else 0
 

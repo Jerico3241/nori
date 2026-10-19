@@ -1,67 +1,41 @@
 ---
 name: apple-parity
-description: Regeln für Änderungen an den nativen Apple-Targets von Nori und am gemeinsamen NoriCore.
+description: Regeln für Änderungen an der iOS-App von Nori und am gemeinsamen NoriCore.
 ---
 
-# Apple-Targets und gemeinsamer Kern
+# iOS-App und gemeinsamer Kern
 
-## 1. Gemeinsame Kernlogik
+Seit Nori 2.8.0 gibt es nur noch die iOS/iPadOS-App. Die macOS-App ist
+eingestellt; ihr Quelltext liegt nur noch in der Git-Geschichte.
+
+## 1. Kernlogik
 
 Die folgenden Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`:
 
 `Models.swift` · `LibraryStore.swift` · `AniworldClient.swift` · `HosterResolver.swift` · `HTML.swift`
 
-Die gleichnamigen Dateien unter `native/Nori-iOS/Nori/` und `native/Nori-macOS/Nori/` sind Git-Symlinks auf diese Quelle. Änderungen niemals in einem einzelnen Plattformpfad separat vornehmen.
+Die gleichnamigen Dateien unter `native/Nori-iOS/Nori/` sind Git-Symlinks auf diese Quelle. Änderungen niemals im iOS-Pfad separat vornehmen.
 
 Nach Strukturänderungen prüfen:
 
 ```bash
 readlink native/Nori-iOS/Nori/Models.swift
-readlink native/Nori-macOS/Nori/Models.swift
 cd native && swift test
 ```
 
-`tools/check-apple-sources.py` bleibt als zusätzliche statische Prüfung bestehen.
+`tools/check-apple-sources.py` prüft zusätzlich statisch, dass jede dieser Dateien ein Symlink auf den Kern ist.
 
-## 2. Bewusst getrennte UI
-
-`NoriApp.swift` · `Theme.swift` · alle `*View.swift` · plattformspezifische Player-Dateien
-
-| Thema | iOS | macOS |
-| --- | --- | --- |
-| Navigation | `TabView` | `NavigationSplitView` |
-| Einstellungen | App-Tab/Ansicht | `Settings`-Scene (⌘,) |
-| Player | iOS-Player / Sheet | eigenes Fenster / AVKit |
-| Aktualisieren | `.refreshable` | Toolbar-Knopf + ⌘R |
-| Bedienung | Touch/Gesten | Maus, Hover, Kontextmenüs, Shortcuts |
-| Erscheinungsbild | mobile UI | dynamische Mac-Farben |
-
-Die Mac-App ist kein wörtlicher Port der iOS-Oberfläche.
-
-## iOS-Muster, die auf dem Mac vermieden werden
-
-- `.refreshable` als einzige Aktualisierung
-- `.fullScreenCover`
-- `.navigationBarTitleDisplayMode`
-- `.navigationBarBackButtonHidden`
-- Drag-Gesten als einzige Bedienmöglichkeit
-- erzwungenes Farbschema, wenn das Systemerscheinungsbild unterstützt werden soll
-- zu kleine adaptive Rasterzellen für Desktop-Fenster
-
-Auf dem Mac gehören stattdessen je nach Kontext `.onHover`, `.contextMenu`, `.help()` und `.keyboardShortcut` dazu.
-
-## API-Decke
+## 2. API-Decke
 
 | Target | Minimum |
 | --- | --- |
-| macOS | 14.0 |
 | iOS | 17.0 |
 
-Keine APIs verwenden, die das jeweilige Deployment-Target oder das SDK des konfigurierten Xcode-Runners überschreiten.
+Keine APIs verwenden, die das Deployment-Target oder das SDK des konfigurierten Xcode-Runners überschreiten; neuere APIs nur hinter `#available`.
 
 ## Core-Änderungen und CI
 
-Eine Änderung unter `native/NoriCore/**` betrifft immer beide Apple-Apps. Deshalb müssen `Build iOS`, `Build macOS` und `Swift tests` darauf reagieren.
+Eine Änderung unter `native/NoriCore/**` betrifft die iOS-App. Deshalb müssen `Build iOS` und `Swift tests` darauf reagieren. Beide laufen auf `macos-26`; das Projekt ist privat und die Minuten sind knapp, also keine zusätzlichen Auslöser.
 
 Vor dem Push:
 
