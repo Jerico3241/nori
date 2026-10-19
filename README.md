@@ -15,17 +15,17 @@ Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wieder
 
 ## Aktueller Stand
 
-Nori **2.8.0** — Nori gibt es nur noch für iPhone und iPad. Die Apps für
-macOS, Windows und LG webOS sind mit dieser Fassung eingestellt und aus dem
-Repository entfernt; ihr letzter Stand bleibt in der Git-Geschichte erhalten.
-Ein Release heißt `Nori v2.8.0` (Tag `v2.8.0`). Wie er entsteht:
+Nori **2.9.0** — für iPhone und iPad, dazu neu die Android-App, die bisher
+nur von Hand gebaut wird und noch nicht im Release liegt. Die Apps für macOS,
+Windows und LG webOS sind seit 2.8.0 eingestellt; ihr letzter Stand bleibt in
+der Git-Geschichte erhalten. Ein Release heißt `Nori v2.9.0` (Tag `v2.9.0`). Wie er entsteht:
 [docs/releases.md](docs/releases.md).
 
 | Plattform | Version | Paket im Release | Status |
 | --- | --- | --- | --- |
-| iOS / iPadOS | **2.8.0** (Build 43) | `Nori-iOS-v2.8.0.ipa`, unsigniert | Native SwiftUI-App, einzige gepflegte Plattform |
+| iOS / iPadOS | **2.9.0** (Build 44) | `Nori-iOS-v2.9.0.ipa`, unsigniert | Native SwiftUI-App |
 | macOS, Windows, LG webOS | — | — | eingestellt |
-| Android / Google TV | — | — | Keine App in diesem Repository |
+| Android / Google TV | **2.9.0** | noch nicht; `Nori-Android-v2.9.0.apk` am Lauf „Build Android" | Native Compose-App auf demselben Kern, auf keinem Gerät erprobt; Google TV folgt — [docs/android.md](docs/android.md) |
 
 Die Nummer setzt und prüft `tools/nori-version.py`:
 
@@ -164,7 +164,7 @@ Danach zeigt die Seite den Zustand, „Jetzt synchronisieren" und „Dieses Ger�
 | Plattform | Anmeldung |
 | --- | --- |
 | iOS / iPadOS | Authorization Code + PKCE über `ASWebAuthenticationSession` |
-| Android | vorbereitet, noch nicht umgesetzt — `docs/android.md` |
+| Android | noch nicht umgesetzt; geplant über Googles Authorization API — `docs/android.md` |
 
 Angefordert wird nur `https://www.googleapis.com/auth/drive.appdata`. Kein `email`, kein `profile`, kein `openid` — Nori sieht weder Name noch Adresse des Google-Kontos.
 

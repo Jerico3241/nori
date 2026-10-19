@@ -8,7 +8,9 @@ description: Arbeitsregeln für Änderungen, Prüfung, Releases und Versionspfle
 ## Repository-Wahrheiten
 
 - Gemeinsamer Swift-Kern: `native/NoriCore/Sources/NoriCore/`
-- iOS-App: `native/Nori-iOS/` — seit 2.8.0 die einzige App; macOS, Windows
+- Android-App: `native/Nori-Android/` (seit 2.9.0, Lauf „Build Android" nur
+  von Hand, auf Linux) — `docs/android.md`
+- iOS-App: `native/Nori-iOS/` — seit 2.8.0 neben Android die einzige App; macOS, Windows
   und LG webOS sind eingestellt und nicht wieder anzulegen, ohne dass der
   Nutzer es ausdrücklich will
 - SwiftPM/Testpaket: `native/Package.swift` + `native/Tests/`

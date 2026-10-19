@@ -3,11 +3,80 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-Seit 2.6.0 tragen alle Plattformen dieselbe Nummer. Seit Nori **2.8.0** gibt
-es Nori nur noch für iPhone und iPad, veröffentlicht als GitHub Release
-`Nori v2.8.0`. Die Abschnitte darunter stammen aus der Zeit mehrerer
+Seit 2.6.0 tragen alle Plattformen dieselbe Nummer. Aktuell ist
+Nori **2.9.0**: die iPhone/iPad-App und, neu im Repository, die Android-App (noch
+nicht im Release). Seit 2.8.0 gibt es kein macOS, Windows und LG webOS mehr. Die Abschnitte darunter stammen aus der Zeit mehrerer
 Plattformen; zuletzt waren das iOS/iPadOS 1.26.0, macOS 1.21.0, Windows 2.1.0
 und LG webOS 2.5.0.
+
+## [Nori 2.9.0] — 2026-10-19
+
+Die **Android-App** kommt ins Repository: eine native Compose-App auf demselben
+Swift-Kern wie iPhone und iPad. Sie entsteht bisher nur von Hand über den Lauf
+„Build Android" und ist noch nicht Teil des Releases.
+
+### Allgemein
+
+- Plan für Android, mit Salvatore abgestimmt: erst Handy und Tablet, dann
+  Google TV; die App erscheint später als Datei im gemeinsamen Release.
+
+### iOS / iPadOS
+
+- Version 2.9.0 (vorher 2.8.0), Build 44. Keine sichtbare Änderung: der
+  geteilte Kern bestimmt seinen Ablageort jetzt an einer Stelle
+  (`NoriStorage`), auf iOS mit demselben Ergebnis wie bisher.
+
+### Android / Google TV
+
+- **Die App aus dem September** (Arbeitsstand „Android 1.0.0" vom 8.9., nie
+  auf `main`) ist auf den heutigen Kern gebracht: Startseite, Suche,
+  Serienseite mit Staffeln und Fortschritt, Merkliste, Verlauf, Kalender,
+  Einstellungen und ein Player über Media3 mit Hosterwechsel, Sprachwahl,
+  Spuren, Tempo, Bild-in-Bild und automatischer nächster Folge.
+- Trägt die gemeinsame Nori-Version: `versionName` und `versionCode` kommen
+  aus `MARKETING_VERSION` und `CURRENT_PROJECT_VERSION` des iOS-Projekts.
+- Die Brücke setzt die Vorgabequelle nicht mehr still um. „Weiterschauen" und
+  die Staffelanzeige zählen mit der Quelle des Titels; vorher schrieb jeder
+  Aufruf die Vorgabe um und stieß damit einen Abgleich an.
+- Wiedergabefortschritt wird sofort geschrieben. Auf Apple bündelt der Kern
+  die Takte über `DispatchQueue.main`; auf Android arbeitet niemand diese
+  Warteschlange ab, und der Fortschritt wäre erst beim nächsten Abschluss auf
+  der Platte gelandet.
+- Die Cover-Suche bekommt die Alternativtitel der Serie mit, wie auf iOS.
+
+### Technische Änderungen
+
+- `Build Android` (`.github/workflows/build-android-app.yml`) läuft auf
+  `ubuntu-24.04` statt auf dem self-hosted Mac und **nur von Hand**. Er holt
+  Swift 6.3.3 und das Swift-SDK für Android von swift.org, richtet es gegen
+  das NDK des Runners ein, baut `libNoriAndroid.so` für arm64 und x86_64, die
+  APKs über Gradle und prüft sie mit `tools/check-android-apk.py`. Am Lauf
+  hängt `Nori-Android-v2.9.0.apk`.
+- Entfernt: `build-android.yml` (nur der Kern, auf macOS),
+  `tools/require-swift-android.sh` und `tools/android-sdk.sh` — beide nur für
+  den Mac.
+- `native/Package.swift`: Produkt `NoriAndroid` (dynamisch) und das C-Target
+  `NoriJNI`.
+- `NoriStorage` in `Models.swift`: der Ablageort von `library.json`,
+  `covers.json`, `episodes.json` und `tmdb-lists.json` an einer Stelle; die
+  Android-App setzt ihn auf `Context.filesDir`.
+- `HLSPlaylist.swift` importiert `FoundationNetworking`, wo es das gibt.
+- `Swift tests` startet nicht mehr bei Änderungen an der Kotlin-Oberfläche
+  (`native/Nori-Android/**` außer `jni/`).
+- `tools/nori-version.py` zählt `native/Nori-Android` und
+  `native/Package.swift` als Paketinhalt.
+
+### Bekannte Einschränkungen
+
+- **Auf keinem Gerät gelaufen.** Ob AniWorld antwortet, ein Hoster einen
+  Stream liefert und Media3 ihn abspielt, zeigt erst der Test auf einem
+  echten Gerät.
+- **Kein Abgleich über Google Drive** auf Android, noch nicht.
+- **Wechselnde Signatur.** Jeder Lauf signiert mit einem neuen
+  Debug-Schlüssel; vor einer neuen Fassung muss die alte deinstalliert
+  werden.
+- Google TV: `LEANBACK_LAUNCHER` steht im Manifest, eine Oberfläche für die
+  Fernbedienung gibt es noch nicht.
 
 ## [Nori 2.8.0] — 2026-10-19
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Identisch mit NoriColors.bg in Theme.kt. -->
+    <color name="nori_bg">#FF05060A</color>
+    <color name="nori_accent">#FFD7DEEA</color>
+</resources>

@@ -1,0 +1,151 @@
+plugins {
+    // Kein `kotlin.android` mehr: seit AGP 9 bringt das Android-Plugin die
+    // Kotlin-Unterstützung selbst mit, und es zusätzlich anzuwenden ist ein
+    // Fehler. Die Compiler-Plugins für Compose und Serialisierung bleiben —
+    // das sind eigene Erweiterungen, keine zweite Kotlin-Anbindung.
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+// Die Nori-Version steht an genau einer Stelle: `MARKETING_VERSION` im
+// iOS-Projekt, gesetzt von `tools/nori-version.py`. Android liest sie von dort,
+// statt eine zweite Nummer zu führen, die irgendwann abweicht. Die Buildnummer
+// (`CURRENT_PROJECT_VERSION`) wird zum `versionCode` — sie steigt mit jedem
+// `bump`, und Android installiert eine neue Fassung nur über eine mit
+// kleinerem `versionCode`.
+val iosProject = rootDir.resolve("../Nori-iOS/Nori.xcodeproj/project.pbxproj").readText()
+fun xcodeSetting(name: String): String {
+    val values = Regex("""\b$name = ([^;]*);""").findAll(iosProject).map { it.groupValues[1].trim('"', ' ') }.toSet()
+    check(values.size == 1) { "$name im iOS-Projekt nicht eindeutig: $values" }
+    return values.single()
+}
+val noriVersion = xcodeSetting("MARKETING_VERSION")
+val noriBuild = xcodeSetting("CURRENT_PROJECT_VERSION").toInt()
+
+android {
+    namespace = "de.nori"
+    // 37, nicht 36: Compose 1.12 und okhttp-android 5.5 verlangen es
+    // ausdrücklich („requires libraries and applications that depend on it to
+    // compile against version 37 or later"). Der Build bricht sonst schon in
+    // der Abhängigkeitsprüfung ab. `minSdk` bleibt davon unberührt — die
+    // App läuft weiter ab Android 9.
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "de.nori"
+        minSdk = 28
+        targetSdk = 37
+        versionCode = noriBuild
+        versionName = noriVersion
+
+        // Nur die beiden ABIs, für die NoriCore gebaut wird. Ein drittes
+        // stillschweigend mitzupacken hieße: eine APK, die auf dem Gerät am
+        // fehlenden libNoriAndroid.so stirbt.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    // Die .so-Dateien kommen fertig aus dem SwiftPM-Build (siehe
+    // tools/collect-android-libs.py). Kein NDK, kein CMake im Gradle-Build.
+    sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
+
+    packaging {
+        resources {
+            excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES")
+        }
+    }
+
+    // Je ABI eine eigene APK, dazu eine universelle.
+    //
+    // Die Swift-Laufzeit wiegt rund 25 MB je Architektur. In einer
+    // universellen APK liegt sie deshalb zweimal, obwohl jedes Gerät nur eine
+    // davon je benutzt. Die geteilten Dateien sind knapp halb so groß; die
+    // universelle bleibt daneben stehen, weil sie sich ohne Kenntnis des
+    // Zielgeräts weitergeben lässt.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            isMinifyEnabled = false
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Ohne Signatur ist die APK nicht installierbar. Ein
+            // Debug-Schlüssel ist für ein privates Projekt der richtige
+            // Kompromiss: die Datei lässt sich aufs Gerät ziehen, ohne dass
+            // ein echter Schlüssel in die CI muss.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        // ModalBottomSheet und rememberModalBottomSheetState sind als
+        // experimentell gekennzeichnet. Ohne Opt-in wäre das ein
+        // Übersetzungsfehler, kein Hinweis.
+        //
+        // Media3s @UnstableApi stand hier ebenfalls und war wirkungslos:
+        // „is not an opt-in requirement marker". Der Build übersetzt ohne.
+        freeCompilerArgs.addAll(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+        )
+    }
+}
+
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.datastore.preferences)
+
+    implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.exoplayer.dash)
+    implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.media3.session)
+
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.okhttp)
+}

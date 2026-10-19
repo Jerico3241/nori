@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    library.json, covers.json und episodes.json gehören in die Sicherung: das
+    ist die Merkliste, der Verlauf und der Wiedergabefortschritt.
+
+    `domain="file"` meint genau `filesDir` — der Bildzwischenspeicher liegt in
+    `cacheDir` und wird ohnehin nie gesichert. Ein `exclude` dafür stand hier
+    einmal und war doppelt falsch: überflüssig, und „cache" ist in diesem
+    Schema gar kein zulässiger Bereich.
+-->
+<full-backup-content>
+    <include domain="file" path="." />
+</full-backup-content>

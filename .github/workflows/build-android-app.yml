@@ -1,0 +1,177 @@
+name: Build Android
+
+# Baut die Android-App auf einem Linux-Runner von GitHub.
+#
+# **Nur von Hand** (Actions → Build Android → Run workflow), nicht bei jedem
+# Push: das Repository ist privat, die Minuten sind begrenzt. Linux statt
+# macOS, weil weder der Swift-Kern für Android noch Gradle einen Mac brauchen
+# — und ein Mac-Runner zählt zehnfach.
+#
+# `ubuntu-latest` ist derzeit Ubuntu 24.04; die Toolchain unten ist die für
+# 24.04. Wechselt GitHub das Abbild, zeigt der erste Schritt das sofort.
+#
+# Ein Lauf, drei Schritte:
+#
+#   1. Open-Source-Swift und das Swift-SDK für Android einrichten (beides in
+#      exakt derselben Fassung, sonst scheitert der Build an Fehlern, die nach
+#      kaputtem Quelltext aussehen — docs/android.md).
+#   2. NoriCore als `libNoriAndroid.so` je ABI cross-übersetzen und mit der
+#      Swift-Laufzeit nach `jniLibs` einsammeln.
+#   3. Gradle baut daraus die APKs; `tools/check-android-apk.py` prüft, was ein
+#      grüner Gradle-Lauf nicht beweist.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SWIFT_VERSION: "6.3.3"
+  # Prüfsumme des SDK-Bündels von swift.org, siehe docs/android.md.
+  SWIFT_ANDROID_SDK_CHECKSUM: d160cc3206dd1886dae3fef2337af5e25ec034692cd0ec225721c56cc69da7f5
+
+jobs:
+  apk:
+    name: APK bauen
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Toolchain und SDK-Bündel sind zusammen gut 1 GB. Zwischengespeichert,
+      # damit nicht jeder Lauf sie neu holt.
+      - name: Swift zwischenspeichern
+        id: swift-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/swift-toolchain
+            ~/.swiftpm/swift-sdks
+          key: swift-android-${{ env.SWIFT_VERSION }}-${{ runner.os }}-ubuntu2404
+
+      - name: Swift-Toolchain und Android-SDK holen
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          V="$SWIFT_VERSION"
+          mkdir -p ~/swift-toolchain
+          curl -fsSL "https://download.swift.org/swift-$V-release/ubuntu2404/swift-$V-RELEASE/swift-$V-RELEASE-ubuntu24.04.tar.gz" \
+            | tar -xz -C ~/swift-toolchain --strip-components=1
+          ~/swift-toolchain/usr/bin/swift sdk install \
+            "https://download.swift.org/swift-$V-release/android-sdk/swift-$V-RELEASE/swift-$V-RELEASE_android.artifactbundle.tar.gz" \
+            --checksum "$SWIFT_ANDROID_SDK_CHECKSUM"
+
+      - name: Toolchain auswählen
+        run: |
+          echo "$HOME/swift-toolchain/usr/bin" >> "$GITHUB_PATH"
+          "$HOME/swift-toolchain/usr/bin/swift" --version
+
+      # Das Bündel zeigt über `sdkRootPath: ndk-sysroot` auf ein Verzeichnis,
+      # das es nicht mitbringt; ein Skript im Bündel legt es gegen das NDK an.
+      # Fehlt der Schritt, bricht der Build in SwiftSoup mit „'semaphore.h'
+      # file not found" ab. Das NDK bringt der Runner mit.
+      - name: SDK gegen das NDK einrichten
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          echo "NDK: $ANDROID_NDK_HOME"
+          SCRIPT="$(find ~/.swiftpm/swift-sdks -path '*swift-android/scripts/setup-android-sdk.sh' | head -1)"
+          test -n "$SCRIPT" || { echo "::error::setup-android-sdk.sh nicht im SDK-Bündel gefunden."; exit 1; }
+          # Aus dem Zwischenspeicher kann das Verzeichnis schon dastehen. Zeigt
+          # es noch auf ein vorhandenes NDK, bleibt es; hat GitHub das NDK im
+          # Abbild getauscht, ist es eine tote Verknüpfung und wird neu angelegt.
+          SYSROOT="$(find ~/.swiftpm/swift-sdks -maxdepth 6 -name ndk-sysroot | head -1)"
+          if [ -n "$SYSROOT" ] && [ -e "$SYSROOT/usr/include" ]; then
+              echo "ndk-sysroot vorhanden: $SYSROOT"
+          else
+              [ -n "$SYSROOT" ] && rm -rf "$SYSROOT"
+              bash "$SCRIPT"
+          fi
+          swift sdk list
+
+      # --api 28 muss zu `minSdk` in app/build.gradle.kts passen. Gegen eine
+      # höhere Ebene gebaut, lädt die Bibliothek auf älteren Geräten nicht.
+      - name: Ziel-Tripel ermitteln
+        id: triples
+        run: python3 tools/android-triples.py --api 28 --github-output | tee -a "$GITHUB_OUTPUT"
+
+      - name: libNoriAndroid.so bauen (arm64-v8a)
+        working-directory: native
+        run: |
+          set -euo pipefail
+          test -n "${{ steps.triples.outputs.arm64 }}" || { echo "::error::Kein arm64-Tripel im SDK."; exit 1; }
+          swift build -c release --product NoriAndroid \
+            --swift-sdk "${{ steps.triples.outputs.arm64 }}" \
+            --scratch-path "$RUNNER_TEMP/build-arm64"
+
+      - name: libNoriAndroid.so bauen (x86_64)
+        working-directory: native
+        run: |
+          set -euo pipefail
+          test -n "${{ steps.triples.outputs.x86_64 }}" || { echo "::error::Kein x86_64-Tripel im SDK."; exit 1; }
+          swift build -c release --product NoriAndroid \
+            --swift-sdk "${{ steps.triples.outputs.x86_64 }}" \
+            --scratch-path "$RUNNER_TEMP/build-x86_64"
+
+      # Die Swift-Laufzeit ist auf Android kein Systembestandteil und muss mit
+      # in die APK, sonst stirbt die App beim Laden der Bibliothek.
+      - name: Laufzeit und Bibliothek einsammeln
+        run: |
+          python3 tools/collect-android-libs.py \
+            --arm64-build "$RUNNER_TEMP/build-arm64" \
+            --x86-64-build "$RUNNER_TEMP/build-x86_64" \
+            --arm64-triple "${{ steps.triples.outputs.arm64 }}" \
+            --x86-64-triple "${{ steps.triples.outputs.x86_64 }}" \
+            --out native/Nori-Android/app/src/main/jniLibs
+
+      # JDK 21 und das Android-SDK bringt der Runner mit. Plattform 37 wird nur
+      # versucht: fehlt sie, holt AGP sie selbst (Lizenzen sind angenommen).
+      - name: JDK und Android-Plattform
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          yes 2>/dev/null | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" > /dev/null \
+            || echo "Hinweis: Plattform 37 nicht vorinstallierbar, AGP lädt sie nach."
+
+      - name: Gradle zwischenspeichern
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('native/Nori-Android/gradle/libs.versions.toml', 'native/Nori-Android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Release-APK bauen
+        working-directory: native/Nori-Android
+        run: ./gradlew --no-daemon assembleRelease
+
+      # R8 darf die JNI-Brücke nicht entfernen. Ein Release-Build, der
+      # durchläuft, beweist das nicht — die Methode fehlt erst zur Laufzeit.
+      - name: Brücke und Laufzeit in den APKs nachweisen
+        run: python3 tools/check-android-apk.py
+
+      - name: APK benennen
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 tools/nori-version.py show | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          cd native/Nori-Android/app/build/outputs/apk/release
+          cp app-arm64-v8a-release.apk "Nori-Android-v$VERSION.apk"
+          ls -lh *.apk
+
+      # Nur die APK für echte Geräte (arm64). Die universelle und die für den
+      # Emulator wären doppelt so groß und braucht niemand zum Ausprobieren.
+      # Drei Tage, wie jedes Zwischenpaket: Artefakte zählen gegen den
+      # Speicher des privaten Repositorys.
+      - name: APK hochladen
+        uses: actions/upload-artifact@v5
+        with:
+          name: nori-android-apk
+          path: native/Nori-Android/app/build/outputs/apk/release/Nori-Android-v*.apk
+          if-no-files-found: error
+          retention-days: 3

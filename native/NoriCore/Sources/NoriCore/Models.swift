@@ -412,3 +412,33 @@ func berlinDate(year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0)
     parts.minute = minute
     return parts.date ?? Date()
 }
+
+/// Wo Nori seine eigenen Dateien ablegt.
+///
+/// `library.json`, `covers.json`, `episodes.json` und `tmdb-lists.json`
+/// bestimmten ihren Ordner bisher je für sich, mit denselben vier Zeilen um
+/// `applicationSupportDirectory`. Zusammengefasst, weil Android einen anderen
+/// Ort braucht: dort gibt es kein „Application Support", der Ablageort ist
+/// `Context.filesDir` und nur der App selbst bekannt. Sie setzt ihn beim Start
+/// über `directoryOverride`, bevor irgendetwas anderes im Kern läuft.
+///
+/// Auf iOS bleibt `directoryOverride` leer und alles verhält sich wie zuvor.
+enum NoriStorage {
+    /// Von der Android-App gesetzt, sonst leer. Genau einmal geschrieben,
+    /// bevor ein Store oder Index entsteht.
+    nonisolated(unsafe) static var directoryOverride: URL?
+
+    static var directory: URL {
+        if let directoryOverride { return directoryOverride }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("Nori", isDirectory: true)
+    }
+
+    /// Der Ordner, garantiert vorhanden.
+    static func prepared() -> URL {
+        let folder = directory
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+}

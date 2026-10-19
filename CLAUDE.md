@@ -8,6 +8,7 @@ Anime- und Serien-App für iPhone und iPad. Kataloge von AniWorld und Serienstre
 | --- | --- | --- |
 | `native/NoriCore/Sources/NoriCore/` | gemeinsamer Swift-Kern | ja |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
+| `native/Nori-Android/` | Android (später auch Google TV), Compose + Media3, `minSdk` 28; Kern über JNI (`NoriCore/Sources/NoriCore/Android/`) | ja |
 | `native/Tests/` | Tests des gemeinsamen Kerns | ja |
 | `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
@@ -15,6 +16,10 @@ Anime- und Serien-App für iPhone und iPad. Kataloge von AniWorld und Serienstre
 macOS, Windows und LG webOS sind mit Nori 2.8.0 eingestellt; ihr Quelltext
 (`native/Nori-macOS/`, `apps/`, `shared/`, `services/`) liegt nur noch in der
 Git-Geschichte. Nicht wieder anlegen, ohne dass der Nutzer es ausdrücklich will.
+
+Android ist seit Nori 2.9.0 im Repository und trägt dieselbe Nummer (gelesen
+aus dem iOS-Projekt). Gebaut wird nur von Hand über „Build Android" auf
+Linux; Plan und Einzelheiten: `docs/android.md`.
 
 ## Gemeinsamer Apple-Core
 

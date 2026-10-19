@@ -190,14 +190,7 @@ final class LibraryStore {
     /// `deferredWriteDelay` ebenso — ein Test soll nicht zehn Sekunden warten.
     init(directory: URL? = nil, deferredWriteDelay: TimeInterval = LibraryStore.deferredWriteDelay) {
         writeDelay = deferredWriteDelay
-        let folder: URL
-        if let directory {
-            folder = directory
-        } else {
-            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            folder = dir.appendingPathComponent("Nori", isDirectory: true)
-        }
+        let folder = directory ?? NoriStorage.directory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         url = folder.appendingPathComponent("library.json")
         load()

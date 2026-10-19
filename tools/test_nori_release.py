@@ -863,7 +863,7 @@ class CleanupTests(ReleaseTestCase):
         listed = {Path(path).name for path in self.tool.CLEANUP_WORKFLOWS}
         self.assertTrue({"release.yml", "build-ios.yml"} <= listed)
         # Einträge ohne Datei sind nur entfernte Nori-Workflows mit alten Läufen.
-        self.assertEqual(listed - workflows, {"package-ios-ipa.yml", "package-macos-source.yml", "build-android-app.yml",
+        self.assertEqual(listed - workflows, {"package-ios-ipa.yml", "package-macos-source.yml", "build-android.yml",
                                               "build-macos.yml", "build-webos.yml", "build-windows.yml"})
         for name in listed:
             self.assertNotRegex(name, r"codeql|dependabot|renovate|security|scan|stale|label")
