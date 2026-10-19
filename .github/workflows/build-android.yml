@@ -33,6 +33,10 @@ env:
   SWIFT_VERSION: "6.3.3"
   # Prüfsumme des SDK-Bündels von swift.org, siehe docs/android.md.
   SWIFT_ANDROID_SDK_CHECKSUM: d160cc3206dd1886dae3fef2337af5e25ec034692cd0ec225721c56cc69da7f5
+  # Unter Linux legt SwiftPM SDKs von sich aus unter ~/.config/swiftpm ab,
+  # auf dem Mac unter ~/.swiftpm. Die Hilfsskripte suchen in ~/.swiftpm;
+  # deshalb wird der Ort bei jedem Aufruf ausdrücklich genannt.
+  SWIFT_SDKS: /home/runner/.swiftpm/swift-sdks
 
 jobs:
   apk:
@@ -64,7 +68,8 @@ jobs:
             | tar -xz -C ~/swift-toolchain --strip-components=1
           ~/swift-toolchain/usr/bin/swift sdk install \
             "https://download.swift.org/swift-$V-release/android-sdk/swift-$V-RELEASE/swift-$V-RELEASE_android.artifactbundle.tar.gz" \
-            --checksum "$SWIFT_ANDROID_SDK_CHECKSUM"
+            --checksum "$SWIFT_ANDROID_SDK_CHECKSUM" \
+            --swift-sdks-path "$SWIFT_SDKS"
 
       - name: Toolchain auswählen
         run: |
@@ -93,7 +98,7 @@ jobs:
               [ -n "$SYSROOT" ] && rm -rf "$SYSROOT"
               bash "$SCRIPT"
           fi
-          swift sdk list
+          swift sdk list --swift-sdks-path "$SWIFT_SDKS"
 
       # --api 28 muss zu `minSdk` in app/build.gradle.kts passen. Gegen eine
       # höhere Ebene gebaut, lädt die Bibliothek auf älteren Geräten nicht.
@@ -108,6 +113,7 @@ jobs:
           test -n "${{ steps.triples.outputs.arm64 }}" || { echo "::error::Kein arm64-Tripel im SDK."; exit 1; }
           swift build -c release --product NoriAndroid \
             --swift-sdk "${{ steps.triples.outputs.arm64 }}" \
+            --swift-sdks-path "$SWIFT_SDKS" \
             --scratch-path "$RUNNER_TEMP/build-arm64"
 
       - name: libNoriAndroid.so bauen (x86_64)
@@ -117,6 +123,7 @@ jobs:
           test -n "${{ steps.triples.outputs.x86_64 }}" || { echo "::error::Kein x86_64-Tripel im SDK."; exit 1; }
           swift build -c release --product NoriAndroid \
             --swift-sdk "${{ steps.triples.outputs.x86_64 }}" \
+            --swift-sdks-path "$SWIFT_SDKS" \
             --scratch-path "$RUNNER_TEMP/build-x86_64"
 
       # Die Swift-Laufzeit ist auf Android kein Systembestandteil und muss mit
