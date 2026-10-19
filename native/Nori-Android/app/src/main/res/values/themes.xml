@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Nur das Startfenster. Alles Weitere macht Compose.
+
+        Wichtig ist die Hintergrundfarbe: ohne sie blitzt beim Start das helle
+        Standardweiß auf, bevor Compose zeichnet — bei einer dunklen App der
+        auffälligste Fehler überhaupt.
+    -->
+    <style name="Theme.Nori" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/nori_bg</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

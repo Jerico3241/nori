@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Eine tatsächlich angebotene Qualitätsstufe eines HLS-Streams.
 ///

@@ -57,6 +57,8 @@ README_ROWS = ("iOS / iPadOS",)
 PACKAGE_PATHS = (
     "native/NoriCore/Sources",
     "native/Nori-iOS",
+    "native/Nori-Android",
+    "native/Package.swift",
     "config/contract.json",
     ":(exclude)native/Nori-iOS/README.md",
 )

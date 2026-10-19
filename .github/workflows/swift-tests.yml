@@ -6,6 +6,12 @@ on:
     branches: ['**']
     paths:
       - 'native/**'
+      # Die Android-Oberfläche ist Kotlin und berührt die Swift-Tests nicht.
+      # Ohne diese Ausnahme stieße jede Änderung daran einen Mac-Lauf an
+      # (zehnfache Minuten). Die JNI-Hülle gehört zum SwiftPM-Paket und
+      # bleibt drin.
+      - '!native/Nori-Android/**'
+      - 'native/Nori-Android/jni/**'
       - 'tools/require-xcode.sh'
       - '.github/workflows/swift-tests.yml'
   workflow_dispatch:

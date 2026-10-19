@@ -55,3 +55,9 @@ native/*/build/
 # keiner der üblichen Xcode-Regeln erfasst. Ein `git add -A` nach einem Build
 # nimmt ihn sonst mit: 1600 Dateien, 22 MB, alle generiert.
 **/*.xcodeproj/-Xcc/
+native/Nori-Android/app/src/main/jniLibs/
+native/Nori-Android/.gradle/
+native/Nori-Android/.kotlin/
+native/Nori-Android/build/
+native/Nori-Android/app/build/
+native/Nori-Android/local.properties

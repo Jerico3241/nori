@@ -113,14 +113,7 @@ actor TMDBCatalog {
     nonisolated var hasKey: Bool { TMDBKeyStore.current != nil }
 
     init(directory: URL? = nil) {
-        let folder: URL
-        if let directory {
-            folder = directory
-        } else {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            folder = base.appendingPathComponent("Nori", isDirectory: true)
-        }
+        let folder = directory ?? NoriStorage.directory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         storeURL = folder.appendingPathComponent("tmdb-lists.json")
 
