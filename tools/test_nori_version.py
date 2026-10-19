@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regressionstests für tools/nori-version.py.
 
-Jeder Test baut sich ein Wegwerf-Repository mit allen Stellen, an denen die
+Jeder Test baut sich ein Wegwerf-Repository mit der Stelle, an der die
 Nori-Version steht. Nur `CurrentRepositoryTests` liest das echte Repository —
 ohne etwas zu schreiben.
 
@@ -13,7 +13,6 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
-import json
 import shutil
 import subprocess
 import sys
@@ -49,60 +48,32 @@ def pbxproj(version: str, build: str, bundle: str, second_version: str | None = 
     return "// !$*UTF8*$!\n{\n" + block(version) + block(second_version or version) + "}\n"
 
 
-def lockfile(name: str, version: str, linked: dict[str, str]) -> str:
-    packages = {"": {"name": name, "version": version, "dependencies": {"react": "^18.3.1"}}}
-    for path, package in linked.items():
-        packages[path] = {"name": package, "version": version, "devDependencies": {"typescript": "^5.6.3"}}
-    packages["node_modules/react"] = {"version": "18.3.1", "resolved": "https://example.invalid/react.tgz"}
-    document = {"name": name, "version": version, "lockfileVersion": 3, "requires": True, "packages": packages}
-    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+IOS = "native/Nori-iOS/Nori.xcodeproj/project.pbxproj"
 
 
 def changelog(version: str) -> str:
-    return (f"# Changelog\n\nAlle Plattformen tragen Nori **{version}**.\n\n"
-            f"## [Nori {version}] — 2026-09-17\n\n### Allgemein\n\n- Eine Nummer für alle.\n")
+    return (f"# Changelog\n\nAktuell: Nori **{version}**.\n\n"
+            f"## [Nori {version}] — 2026-09-17\n\n### Allgemein\n\n- Eine Nummer.\n")
 
 
-def readme(version: str, windows: str | None = None) -> str:
+def readme(version: str, ios: str | None = None) -> str:
     return (
         "# Nori\n\n## Aktueller Stand\n\n"
-        f"Nori **{version}** auf allen Plattformen.\n\n"
+        f"Nori **{version}**.\n\n"
         "| Plattform | Version |\n| --- | --- |\n"
-        f"| iOS / iPadOS | **{version}** |\n| macOS | **{version}** |\n"
-        f"| Windows | **{windows or version}** |\n| LG webOS | **{version}** |\n\n"
+        f"| iOS / iPadOS | **{ios or version}** |\n\n"
         "## Google-Anmeldung\n\n| Plattform | Fluss |\n| --- | --- |\n"
-        "| iOS / iPadOS | PKCE |\n| macOS | Loopback |\n"
+        "| iOS / iPadOS | PKCE |\n"
     )
 
 
-def files_for(version: str, ios_build: str = "40", mac_build: str = "31") -> dict[str, str]:
-    package = lambda name: json.dumps({"name": name, "version": version, "private": True}, indent=2) + "\n"  # noqa: E731
+def files_for(version: str, ios_build: str = "40") -> dict[str, str]:
     return {
-        "native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj(version, ios_build, "to.nori.ios"),
-        "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj": pbxproj(version, mac_build, "to.nori.macos"),
-        "native/Nori-macOS/Sources/Features/Settings/SettingsView.swift":
-            f'enum NoriRelease {{\n    static let version = "{version}"\n}}\n',
+        IOS: pbxproj(version, ios_build, "to.nori.ios"),
+        "native/Nori-iOS/Sources/App.swift": "struct App {}\n",
+        "native/Nori-iOS/README.md": "# iOS\n",
         "native/NoriCore/Sources/NoriCore/Models.swift": "struct Models {}\n",
         "native/Tests/NoriCoreTests/ModelsTests.swift": "// Test\n",
-        "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": version, "title": "Nori"}, indent=2) + "\n",
-        "apps/webos/package.json": package("@nori/webos"),
-        "apps/webos/package-lock.json": lockfile("@nori/webos", version, {
-            "../../shared/nori-app": "@nori/app", "../../shared/nori-core": "@nori/core"}),
-        "apps/webos/test/remote.test.mjs": "// Fernbedienung\n",
-        "apps/windows/package.json": package("@nori/windows"),
-        "apps/windows/package-lock.json": lockfile("@nori/windows", version, {
-            "../../shared/nori-app": "@nori/app", "../../shared/nori-core": "@nori/core"}),
-        "package.json": package("nori"),
-        # Wie das echte: ein Feld auf einer Zeile, das json.dumps umbrechen würde.
-        "shared/nori-core/package.json":
-            '{\n  "name": "@nori/core",\n  "version": "' + version + '",\n  "files": ["dist"]\n}\n',
-        "shared/nori-core/package-lock.json": lockfile("@nori/core", version, {}),
-        "shared/nori-core/src/index.ts": "export {};\n",
-        "shared/nori-core/test/fixtures.ts": "export {};\n",
-        "shared/nori-app/package.json": package("@nori/app"),
-        "services/nori-api/package.json": package("@nori/api"),
-        "services/nori-api/package-lock.json": lockfile("@nori/api", version, {"../../shared/nori-core": "@nori/core"}),
-        "services/nori-api/src/server.ts": f'export const API_VERSION = "{version}";\nconst other = "{version}";\n',
         "CHANGELOG.md": changelog(version),
         "README.md": readme(version),
         "docs/releases.md": "# Releases\n",
@@ -162,55 +133,35 @@ class ReadTests(VersionTestCase):
     def test_unified_state(self) -> None:
         state = self.tool.check()
         self.assertEqual(state.version, "2.6.0")
-        self.assertEqual(state.builds, {"ios": "40", "macos": "31"})
-        self.assertEqual(state.bundle_ids, {"ios": "to.nori.ios", "macos": "to.nori.macos"})
-        # Jede Stelle ist erfasst, auch die verlinkten Pakete in den Lockfiles.
-        self.assertIn('apps/windows/package-lock.json: packages["../../shared/nori-core"].version', state.values)
-        self.assertIn("services/nori-api/src/server.ts", state.values)
-        self.assertIn("native/Nori-macOS/Sources/Features/Settings/SettingsView.swift", state.values)
+        self.assertEqual(state.builds, {"ios": "40"})
+        self.assertEqual(state.bundle_ids, {"ios": "to.nori.ios"})
+        # Beide Konfigurationen (Debug und Release) sind erfasst.
+        self.assertEqual(len(state.values), 2)
 
-    def test_every_location_is_checked(self) -> None:
-        for location in self.tool.LOCATIONS:
-            with self.subTest(path=location.path):
-                original = self.read(location.path)
-                if location.kind == "pbxproj":
-                    changed = original.replace("MARKETING_VERSION = 2.6.0;", "MARKETING_VERSION = 2.5.9;", 1)
-                elif location.kind == "lockfile":
-                    changed = original.replace('"version": "2.6.0"', '"version": "2.5.9"', 1)
-                else:
-                    changed = original.replace("2.6.0", "2.5.9", 1)
-                self.assertNotEqual(changed, original)
-                self.write({location.path: changed})
-                with self.assertRaisesRegex(self.tool.VersionError, r"nicht einheitlich[\s\S]*2\.5\.9  " + location.path):
-                    self.tool.check()
-                self.write({location.path: original})
-
-    def test_linked_lockfile_package_is_checked(self) -> None:
-        document = json.loads(self.read("apps/windows/package-lock.json"))
-        document["packages"]["../../shared/nori-app"]["version"] = "2.4.0"
-        self.write({"apps/windows/package-lock.json": json.dumps(document, indent=2) + "\n"})
-        with self.assertRaisesRegex(self.tool.VersionError, "2.4.0  apps/windows/package-lock.json"):
+    def test_every_marketing_version_is_checked(self) -> None:
+        self.write({IOS: pbxproj("2.6.0", "40", "to.nori.ios", second_version="2.5.9")})
+        with self.assertRaisesRegex(self.tool.VersionError, r"nicht einheitlich[\s\S]*2\.5\.9  " + IOS):
             self.tool.check()
 
     def test_invalid_numbers(self) -> None:
-        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.6"})})
+        self.write({IOS: pbxproj("2.6", "40", "to.nori.ios")})
         with self.assertRaisesRegex(self.tool.VersionError, "Ungültige Versionsnummer"):
             self.tool.check()
 
     def test_invalid_build(self) -> None:
-        self.write({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("2.6.0", "40a", "to.nori.ios")})
+        self.write({IOS: pbxproj("2.6.0", "40a", "to.nori.ios")})
         with self.assertRaisesRegex(self.tool.VersionError, "Ungültige Buildnummer"):
             self.tool.check()
 
     def test_inconsistent_build(self) -> None:
         text = pbxproj("2.6.0", "40", "to.nori.ios").replace("CURRENT_PROJECT_VERSION = 40;", "CURRENT_PROJECT_VERSION = 41;", 1)
-        self.write({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj": text})
+        self.write({IOS: text})
         with self.assertRaisesRegex(self.tool.VersionError, "CURRENT_PROJECT_VERSION ist .* uneinheitlich"):
             self.tool.check()
 
-    def test_pattern_must_be_unique(self) -> None:
-        self.write({"services/nori-api/src/server.ts": 'export const API_VERSION = "2.6.0";\nexport const API_VERSION = "2.6.0";\n'})
-        with self.assertRaisesRegex(self.tool.VersionError, "genau eine Fundstelle"):
+    def test_missing_marketing_version(self) -> None:
+        self.write({IOS: "// !$*UTF8*$!\n{\n\t\t\t\tCURRENT_PROJECT_VERSION = 40;\n}\n"})
+        with self.assertRaisesRegex(self.tool.VersionError, "MARKETING_VERSION fehlt"):
             self.tool.check()
 
     def test_expected_version(self) -> None:
@@ -222,7 +173,7 @@ class ReadTests(VersionTestCase):
 
     def test_reads_a_commit_not_the_worktree(self) -> None:
         commit = git(self.repo, "rev-parse", "HEAD")
-        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "9.9.9"})})
+        self.write({IOS: pbxproj("9.9.9", "40", "to.nori.ios", second_version="2.6.0")})
         self.assertEqual(self.tool.check(commit=commit).version, "2.6.0")
         with self.assertRaises(self.tool.VersionError):
             self.tool.check()
@@ -230,7 +181,7 @@ class ReadTests(VersionTestCase):
 
 class DocumentTests(VersionTestCase):
     def test_changelog_section_is_required(self) -> None:
-        self.write({"CHANGELOG.md": changelog("2.6.0").replace("## [Nori 2.6.0]", "## [webOS 2.6.0]")})
+        self.write({"CHANGELOG.md": changelog("2.6.0").replace("## [Nori 2.6.0]", "## [iOS 2.6.0]")})
         with self.assertRaisesRegex(self.tool.VersionError, r"keinen Abschnitt `## \[Nori 2.6.0\]`"):
             self.tool.check()
         self.tool.check(documents=False)
@@ -241,10 +192,10 @@ class DocumentTests(VersionTestCase):
             self.tool.check()
 
     def test_readme_rows_in_status_section_only(self) -> None:
-        self.write({"README.md": readme("2.6.0", windows="2.0.0")})
-        with self.assertRaisesRegex(self.tool.VersionError, "Zeile „Windows“"):
+        self.write({"README.md": readme("2.6.0", ios="2.0.0")})
+        with self.assertRaisesRegex(self.tool.VersionError, "Zeile „iOS / iPadOS“"):
             self.tool.check()
-        # Die Tabelle weiter unten hat dieselben Zeilennamen ohne Nummer — das ist kein Fehler.
+        # Die Tabelle weiter unten hat denselben Zeilennamen ohne Nummer — das ist kein Fehler.
         self.write({"README.md": readme("2.6.0")})
         self.tool.check()
 
@@ -256,19 +207,12 @@ class DocumentTests(VersionTestCase):
 
 class SetTests(VersionTestCase):
     def test_set_updates_every_location_and_builds(self) -> None:
-        before = {name: self.read(name) for name in ("shared/nori-core/package.json", "services/nori-api/src/server.ts")}
         builds = self.tool.set_version("v2.7.0")
-        self.assertEqual(builds, {"ios": "41", "macos": "32"})
+        self.assertEqual(builds, {"ios": "41"})
         self.write({"CHANGELOG.md": changelog("2.7.0"), "README.md": readme("2.7.0")})
         state = self.tool.check("2.7.0")
-        self.assertEqual(state.builds, {"ios": "41", "macos": "32"})
-        # Nur die Nummer ändert sich: das Feld auf einer Zeile bleibt, der zweite Wert in server.ts auch.
-        self.assertEqual(self.read("shared/nori-core/package.json"),
-                         before["shared/nori-core/package.json"].replace("2.6.0", "2.7.0"))
-        self.assertIn('const other = "2.6.0";', self.read("services/nori-api/src/server.ts"))
-        lock = json.loads(self.read("apps/webos/package-lock.json"))
-        self.assertEqual(lock["packages"]["node_modules/react"]["version"], "18.3.1")
-        self.assertEqual(lock["packages"]["../../shared/nori-core"]["version"], "2.7.0")
+        self.assertEqual(state.builds, {"ios": "41"})
+        self.assertEqual(state.bundle_ids, {"ios": "to.nori.ios"})
 
     def test_set_never_downgrades_or_repeats(self) -> None:
         for version in ("2.6.0", "2.5.9", "1.0.0"):
@@ -278,24 +222,21 @@ class SetTests(VersionTestCase):
         self.assertEqual(self.tool.check().version, "2.6.0")
 
     def test_set_aligns_a_mixed_tree_to_a_number_it_already_carries(self) -> None:
-        # Der Fall nach einem Merge: einzelne Stellen tragen die neue Nummer schon,
-        # die übrigen kommen vom anderen Zweig.
-        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.5.0"}, indent=2) + "\n",
-                    "apps/windows/package.json": json.dumps({"name": "@nori/windows", "version": "2.1.0"}, indent=2) + "\n"})
-        self.assertEqual(self.tool.set_version("2.6.0"), {"ios": "41", "macos": "32"})
+        # Der Fall nach einem Merge: eine Konfiguration trägt die neue Nummer schon.
+        self.write({IOS: pbxproj("2.6.0", "40", "to.nori.ios", second_version="2.5.0")})
+        self.assertEqual(self.tool.set_version("2.6.0"), {"ios": "41"})
         self.assertEqual(self.tool.check(documents=False).version, "2.6.0")
         # Ein einheitlicher Baum lässt sich danach nicht noch einmal darauf setzen.
         with self.assertRaisesRegex(self.tool.VersionError, "nicht größer"):
             self.tool.set_version("2.6.0")
 
     def test_set_never_lowers_a_mixed_tree(self) -> None:
-        self.write({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.8.0"}, indent=2) + "\n"})
+        self.write({IOS: pbxproj("2.6.0", "40", "to.nori.ios", second_version="2.8.0")})
         with self.assertRaisesRegex(self.tool.VersionError, "nicht größer"):
             self.tool.set_version("2.6.0")
 
     def test_set_from_mixed_state_uses_the_highest(self) -> None:
-        self.write({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("1.25.2", "39", "to.nori.ios"),
-                    "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.6.3"}, indent=2) + "\n"})
+        self.write({IOS: pbxproj("1.25.2", "39", "to.nori.ios", second_version="2.6.3")})
         with self.assertRaisesRegex(self.tool.VersionError, "höchste vorhandene Stand 2.6.3"):
             self.tool.set_version("2.6.1")
         self.tool.set_version("2.6.4")
@@ -304,7 +245,7 @@ class SetTests(VersionTestCase):
     def test_explicit_builds_must_increase(self) -> None:
         with self.assertRaisesRegex(self.tool.VersionError, "Buildnummer ios 40"):
             self.tool.set_version("2.7.0", {"ios": 40})
-        self.assertEqual(self.tool.set_version("2.7.0", {"ios": 50}), {"ios": "50", "macos": "32"})
+        self.assertEqual(self.tool.set_version("2.7.0", {"ios": 50}), {"ios": "50"})
 
     def test_bump_command(self) -> None:
         self.assertEqual(self.tool.main(["bump", "minor"]), 0)
@@ -314,11 +255,6 @@ class SetTests(VersionTestCase):
         self.assertEqual(self.tool.main(["bump", "major"]), 0)
         self.assertEqual(self.tool.check(documents=False).version, "3.0.0")
 
-    def test_lockfile_not_written_by_npm_is_refused(self) -> None:
-        self.write({"shared/nori-core/package-lock.json": '{"name": "@nori/core", "version": "2.6.0", "packages": {}}\n'})
-        with self.assertRaisesRegex(self.tool.VersionError, "nicht im Format von npm"):
-            self.tool.set_version("2.7.0")
-
 
 class AgainstTests(VersionTestCase):
     def setUp(self) -> None:
@@ -327,7 +263,7 @@ class AgainstTests(VersionTestCase):
         git(self.repo, "checkout", "-q", "-b", "feature")
 
     def test_package_change_requires_a_higher_version(self) -> None:
-        self.write({"apps/webos/src/App.tsx": "export {};\n"})
+        self.write({"native/Nori-iOS/Sources/App.swift": "struct App { let x = 1 }\n"})
         self.commit()
         with self.assertRaisesRegex(self.tool.VersionError, "2.6.0 ist nicht größer als 2.6.0"):
             self.tool.check(commit="HEAD", against="base")
@@ -337,36 +273,32 @@ class AgainstTests(VersionTestCase):
         self.tool.check(commit="HEAD", against="base")
 
     def test_worktree_changes_count_too(self) -> None:
-        self.write({"shared/nori-core/src/index.ts": "export const x = 1;\n"})
+        self.write({"native/NoriCore/Sources/NoriCore/Models.swift": "struct Models { let x = 1 }\n"})
         with self.assertRaisesRegex(self.tool.VersionError, "nicht größer"):
             self.tool.check(against="base")
 
     def test_tests_and_documents_need_no_new_version(self) -> None:
-        self.write({"apps/webos/test/remote.test.mjs": "// neu\n", "docs/releases.md": "# neu\n",
-                    "native/Tests/NoriCoreTests/ModelsTests.swift": "// neu\n",
-                    "shared/nori-core/test/fixtures.ts": "export const y = 1;\n"})
+        self.write({"docs/releases.md": "# neu\n", "native/Nori-iOS/README.md": "# neu\n",
+                    "native/Tests/NoriCoreTests/ModelsTests.swift": "// neu\n"})
         self.commit()
         self.tool.check(commit="HEAD", against="base")
 
     def test_builds_must_increase_with_the_version(self) -> None:
-        self.write({"apps/windows/src/main.ts": "export {};\n"})
-        self.tool.set_version("2.6.1", {"ios": 41, "macos": 32})
-        self.write({"CHANGELOG.md": changelog("2.6.1"), "README.md": readme("2.6.1"),
-                    "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj": pbxproj("2.6.1", "31", "to.nori.macos")})
+        self.write({"native/Nori-iOS/Sources/App.swift": "struct App { let x = 1 }\n"})
+        self.write({IOS: pbxproj("2.6.1", "40", "to.nori.ios"),
+                    "CHANGELOG.md": changelog("2.6.1"), "README.md": readme("2.6.1")})
         self.commit()
-        with self.assertRaisesRegex(self.tool.VersionError, "Buildnummer macos 31 ist nicht größer als 31"):
+        with self.assertRaisesRegex(self.tool.VersionError, "Buildnummer ios 40 ist nicht größer als 40"):
             self.tool.check(commit="HEAD", against="base")
 
-    def test_base_without_newer_locations_and_with_mixed_versions(self) -> None:
+    def test_base_with_mixed_versions(self) -> None:
         git(self.repo, "checkout", "-q", "base")
-        (self.repo / "shared/nori-app/package.json").unlink()
-        self.write({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj": pbxproj("1.25.2", "39", "to.nori.ios"),
-                    "apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.4.1"}, indent=2) + "\n"})
+        self.write({IOS: pbxproj("1.25.2", "39", "to.nori.ios", second_version="2.6.0")})
         self.commit("alter Stand")
         git(self.repo, "checkout", "-q", "feature")
-        self.write({"apps/webos/src/App.tsx": "export {};\n"})
+        self.write({"native/Nori-iOS/Sources/App.swift": "struct App { let x = 1 }\n"})
         self.commit()
-        # 2.6.0 liegt über dem höchsten Stand 2.6.0? Nein — die übrigen Stellen tragen dort 2.6.0.
+        # Maßgeblich ist die höchste Nummer im Vergleichsstand, nicht die erste.
         with self.assertRaisesRegex(self.tool.VersionError, "nicht größer als 2.6.0"):
             self.tool.check(commit="HEAD", against="base")
 
@@ -396,7 +328,7 @@ class CurrentRepositoryTests(unittest.TestCase):
         tool.ROOT = REPO
         state = tool.check()
         self.assertTrue(tool.SEMVER.match(state.version))
-        self.assertEqual(set(state.builds), {"ios", "macos"})
+        self.assertEqual(set(state.builds), {"ios"})
 
 
 if __name__ == "__main__":

@@ -1,32 +1,28 @@
 #!/usr/bin/env python3
-"""Eine Versionsnummer für alle Nori-Apps.
+"""Die Versionsnummer der Nori-App für iPhone und iPad.
 
-Seit Nori 2.6.0 tragen iOS/iPadOS, macOS, Windows und LG webOS — mitsamt dem
-TypeScript-Kern, der Anwendungsschicht und dem Nori-Server — **dieselbe**
-öffentliche Versionsnummer. Sie steht an mehreren Stellen, weil jedes Werkzeug
-sie woanders sucht: Xcode in `MARKETING_VERSION`, webOS in `appinfo.json`,
-`electron-builder` in `apps/windows/package.json`. Welche Stellen das sind,
-steht hier und nirgends sonst.
+Seit Nori 2.6.0 gibt es eine gemeinsame Nummer. Seit macOS, Windows und
+LG webOS entfernt sind, steht sie nur noch in `MARKETING_VERSION` des
+iOS-Projekts. Welche Stellen das sind, steht hier und nirgends sonst.
 
     python3 tools/nori-version.py show
     python3 tools/nori-version.py check [--version 2.6.0] [--against origin/main]
     python3 tools/nori-version.py set 2.6.0
     python3 tools/nori-version.py bump patch|minor|major
 
-Neben der gemeinsamen Nummer bleiben die Buildnummern der Plattformen:
-`CURRENT_PROJECT_VERSION` wird auf iOS und macOS zu `CFBundleVersion`. `set`
-und `bump` erhöhen sie jeweils um eins — ein neuer Stand muss vom System als
+Neben der Nummer bleibt die Buildnummer: `CURRENT_PROJECT_VERSION` wird zu
+`CFBundleVersion`. `set` und `bump` erhöhen sie um eins — ein neuer Stand muss vom System als
 neuer erkannt werden, auch wenn jemand dieselbe Nummer zweimal baut.
 
 `check` prüft:
 
 * alle Stellen tragen dieselbe Nummer im Format `x.y.z`,
-* die Buildnummern sind ganze Zahlen ab 1, in jedem Projekt einheitlich,
+* die Buildnummer ist eine ganze Zahl ab 1, im Projekt einheitlich,
 * `CHANGELOG.md` hat einen Abschnitt `## [Nori x.y.z]` und nennt in der
-  Übersicht `Nori **x.y.z**`, `README.md` ebenso — in jeder Plattformzeile,
+  Übersicht `Nori **x.y.z**`, `README.md` ebenso — in der Zeile für iOS,
 * mit `--against <ref>`: Hat sich seit `<ref>` etwas geändert, das in einem
   Paket landet, muss die Nummer **größer** sein als jede Nummer in `<ref>`,
-  und die Buildnummern müssen steigen. Zwei verschiedene Pakete unter
+  und die Buildnummer muss steigen. Zwei verschiedene Pakete unter
   derselben Nummer lassen sich hinterher nicht mehr auseinanderhalten — und
   ein Gerät installiert das zweite nicht über das erste.
 
@@ -37,7 +33,6 @@ Commits. Geschrieben wird nur die Arbeitskopie.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -55,26 +50,15 @@ CHANGELOG = "CHANGELOG.md"
 README = "README.md"
 
 # Die Zeilen der Übersicht in README.md, die die Nummer tragen müssen.
-README_ROWS = ("iOS / iPadOS", "macOS", "Windows", "LG webOS")
+README_ROWS = ("iOS / iPadOS",)
 
 # Was in einem installierbaren Paket landet. Tests, Dokumentation und
 # Prüfskripte ändern kein Paket und verlangen deshalb keine neue Nummer.
 PACKAGE_PATHS = (
     "native/NoriCore/Sources",
     "native/Nori-iOS",
-    "native/Nori-macOS",
-    "apps/webos",
-    "apps/windows",
-    "shared/nori-core/src",
-    "shared/nori-core/package.json",
-    "shared/nori-app",
-    "services/nori-api/src",
-    "services/nori-api/package.json",
     "config/contract.json",
     ":(exclude)native/Nori-iOS/README.md",
-    ":(exclude)native/Nori-macOS/README.md",
-    ":(exclude)apps/webos/test",
-    ":(exclude)apps/windows/test",
 )
 
 
@@ -120,39 +104,17 @@ def next_version(version: str, part: str) -> str:
 @dataclass(frozen=True)
 class Location:
     path: str
-    kind: str    # pbxproj | json | lockfile | pattern
     label: str
-    pattern: str = ""
 
 
 LOCATIONS = (
-    Location("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", "pbxproj", "iOS/iPadOS – MARKETING_VERSION"),
-    Location("native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj", "pbxproj", "macOS – MARKETING_VERSION"),
-    Location("native/Nori-macOS/Sources/Features/Settings/SettingsView.swift", "pattern",
-             "macOS – „Neu in“ (NoriRelease.version)", r'(static let version = ")([^"]*)(")'),
-    Location("apps/webos/appinfo.json", "json", "LG webOS – appinfo.json"),
-    Location("apps/webos/package.json", "json", "LG webOS – package.json"),
-    Location("apps/webos/package-lock.json", "lockfile", "LG webOS – package-lock.json"),
-    Location("apps/windows/package.json", "json", "Windows – package.json (electron-builder)"),
-    Location("apps/windows/package-lock.json", "lockfile", "Windows – package-lock.json"),
-    Location("package.json", "json", "Wurzel – package.json"),
-    Location("shared/nori-core/package.json", "json", "Kern (TypeScript) – package.json"),
-    Location("shared/nori-core/package-lock.json", "lockfile", "Kern (TypeScript) – package-lock.json"),
-    Location("shared/nori-app/package.json", "json", "Anwendungsschicht – package.json"),
-    Location("services/nori-api/package.json", "json", "Nori-Server – package.json"),
-    Location("services/nori-api/package-lock.json", "lockfile", "Nori-Server – package-lock.json"),
-    Location("services/nori-api/src/server.ts", "pattern", "Nori-Server – API_VERSION",
-             r'(export const API_VERSION = ")([^"]*)(";)'),
+    Location("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", "iOS/iPadOS – MARKETING_VERSION"),
 )
 
-# Buildnummer (CFBundleVersion) und Kennung je Apple-Plattform.
+# Buildnummer (CFBundleVersion) und Kennung.
 XCODE_PROJECTS = {
     "ios": "native/Nori-iOS/Nori.xcodeproj/project.pbxproj",
-    "macos": "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj",
 }
-
-TOP_LEVEL_VERSION = re.compile(r'^(  "version": ")([^"]*)(")', re.MULTILINE)
-
 
 def settings(text: str, name: str) -> list[str]:
     return [value.strip().strip('"') for value in re.findall(rf"\b{name} = ([^;]*);", text)]
@@ -167,41 +129,12 @@ def single_setting(text: str, name: str, origin: str) -> str:
     return values.pop()
 
 
-def lockfile_versions(document: dict) -> dict[str, object]:
-    """Die eigene Nummer einer Lockfile und die der verlinkten Nori-Pakete."""
-    found: dict[str, object] = {"version": document.get("version")}
-    for key, entry in (document.get("packages") or {}).items():
-        if not isinstance(entry, dict):
-            continue
-        if key == "":
-            found['packages[""].version'] = entry.get("version")
-        elif key.startswith("../") and str(entry.get("name", "")).startswith("@nori/"):
-            found[f'packages["{key}"].version'] = entry.get("version")
-    return found
-
-
 def read_location(location: Location, text: str) -> dict[str, object]:
     """Alle Nummern, die an dieser Stelle stehen — benannt, damit eine Abweichung zu finden ist."""
-    if location.kind == "pbxproj":
-        values = settings(text, "MARKETING_VERSION")
-        if not values:
-            raise VersionError(f"MARKETING_VERSION fehlt in {location.path}")
-        return {f"MARKETING_VERSION #{index + 1}": value for index, value in enumerate(values)}
-    if location.kind == "json":
-        try:
-            document = json.loads(text)
-        except json.JSONDecodeError:
-            raise VersionError(f"{location.path} ist kein gültiges JSON") from None
-        return {"version": document.get("version")}
-    if location.kind == "lockfile":
-        try:
-            return lockfile_versions(json.loads(text))
-        except json.JSONDecodeError:
-            raise VersionError(f"{location.path} ist kein gültiges JSON") from None
-    matches = re.findall(location.pattern, text)
-    if len(matches) != 1:
-        raise VersionError(f"{location.path}: erwartet genau eine Fundstelle für {location.label}, gefunden {len(matches)}")
-    return {"": matches[0][1]}
+    values = settings(text, "MARKETING_VERSION")
+    if not values:
+        raise VersionError(f"MARKETING_VERSION fehlt in {location.path}")
+    return {f"MARKETING_VERSION #{index + 1}": value for index, value in enumerate(values)}
 
 
 # ── Lesen ────────────────────────────────────────────────────────────────────
@@ -232,8 +165,8 @@ def reader(commit: str | None) -> Callable[[str], str]:
 @dataclass(frozen=True)
 class State:
     values: dict[str, object]       # „Stelle: Feld" → Nummer
-    builds: dict[str, str]          # ios/macos → CURRENT_PROJECT_VERSION
-    bundle_ids: dict[str, str]      # ios/macos → PRODUCT_BUNDLE_IDENTIFIER
+    builds: dict[str, str]          # ios → CURRENT_PROJECT_VERSION
+    bundle_ids: dict[str, str]      # ios → PRODUCT_BUNDLE_IDENTIFIER
 
     @property
     def versions(self) -> set[str]:
@@ -388,25 +321,9 @@ def check(expected: str | None = None, commit: str | None = None, against: str |
 
 
 def write_location(location: Location, text: str, version: str) -> str:
-    if location.kind == "pbxproj":
-        updated, count = re.subn(r"\bMARKETING_VERSION = [^;]*;", f"MARKETING_VERSION = {version};", text)
-    elif location.kind == "json":
-        updated, count = TOP_LEVEL_VERSION.subn(rf"\g<1>{version}\g<3>", text)
-    elif location.kind == "lockfile":
-        document = json.loads(text)
-        if json.dumps(document, indent=2, ensure_ascii=False) + "\n" != text:
-            raise VersionError(f"{location.path} ist nicht im Format von npm – bitte `npm install` laufen lassen")
-        document["version"] = version
-        count = 1
-        for key, entry in (document.get("packages") or {}).items():
-            if key == "" or (key.startswith("../") and str(entry.get("name", "")).startswith("@nori/")):
-                entry["version"] = version
-                count += 1
-        updated = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
-    else:
-        updated, count = re.subn(location.pattern, rf"\g<1>{version}\g<3>", text)
-    if count < 1 or (location.kind in ("json", "pattern") and count != 1):
-        raise VersionError(f"{location.path}: Nummer nicht eindeutig gefunden ({count} Stellen)")
+    updated, count = re.subn(r"\bMARKETING_VERSION = [^;]*;", f"MARKETING_VERSION = {version};", text)
+    if count < 1:
+        raise VersionError(f"{location.path}: MARKETING_VERSION nicht gefunden")
     after = read_location(location, updated)
     if {str(value) for value in after.values()} != {version}:
         raise VersionError(f"{location.path}: nach dem Schreiben steht dort {after}")
@@ -487,16 +404,14 @@ def command_check(args) -> int:
 
 def report_set(version: str, builds: dict[str, str]) -> None:
     print(f"Nori {version} gesetzt; Buildnummern: " + ", ".join(f"{k} {v}" for k, v in builds.items()))
-    print("Noch von Hand: Abschnitt `## [Nori " + version + "]` in CHANGELOG.md, Übersicht dort und in README.md,")
-    print("„Neu in“ der macOS-App (NoriRelease.highlights). Danach: python3 tools/nori-version.py check")
+    print("Noch von Hand: Abschnitt `## [Nori " + version + "]` in CHANGELOG.md, Übersicht dort und in README.md.")
+    print("Danach: python3 tools/nori-version.py check")
 
 
 def command_set(args) -> int:
     builds = {}
     if args.build_ios is not None:
         builds["ios"] = args.build_ios
-    if args.build_macos is not None:
-        builds["macos"] = args.build_macos
     version = normalize_version(args.version)
     report_set(version, set_version(version, builds))
     return 0
@@ -530,7 +445,6 @@ def main(argv: list[str] | None = None) -> int:
     set_parser = commands.add_parser("set", help="Nummer überall setzen, Buildnummern erhöhen")
     set_parser.add_argument("version")
     set_parser.add_argument("--build-ios", type=int)
-    set_parser.add_argument("--build-macos", type=int)
     set_parser.set_defaults(handler=command_set)
 
     bump = commands.add_parser("bump", help="nächste Nummer nach Semantic Versioning")

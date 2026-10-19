@@ -1,33 +1,26 @@
 # Nori-Releases
 
-Seit 2.6.0 gilt: **eine Version, ein Tag, ein GitHub Release** — für alle
-Plattformen zugleich.
+Seit 2.6.0 gilt: **eine Version, ein Tag, ein GitHub Release**. Seit 2.7.0
+gibt es Nori nur noch für iPhone und iPad; macOS, Windows und LG webOS sind
+eingestellt und erscheinen in keinem Release mehr.
 
 | | Beispiel |
 | --- | --- |
-| Version | `2.6.0` — in allen Apps gleich |
-| Tag | `v2.6.0` |
-| GitHub Release | `Nori v2.6.0` |
-| Anhänge | die Pakete der Plattformen (macOS: App und Quellpaket) und `checksums-sha256.txt` |
+| Version | `2.7.0` |
+| Tag | `v2.7.0` |
+| GitHub Release | `Nori v2.7.0` |
+| Anhänge | `Nori-iOS-v2.7.0.ipa` und `checksums-sha256.txt` |
 
-| Plattform | Anhang | Was es ist | Gebaut von |
-| --- | --- | --- | --- |
-| iOS / iPadOS | `Nori-iOS-v<VERSION>.ipa` | unsignierte IPA, vor der Installation signieren | Build iOS, Job `ipa` |
-| macOS | `Nori-macOS-v<VERSION>.zip` | unsigniertes `Nori.app`; nach dem Entpacken per Rechtsklick öffnen | Build macOS, Job `package` |
-| macOS | `Nori-macOS-Source-v<VERSION>.zip` | Quellpaket, in Xcode öffnen und selbst signieren | Build macOS, Job `package` |
-| LG webOS | `Nori-webOS-v<VERSION>.ipk` | Installationspaket mit produktivem TV-Client | Build webOS |
-| Windows | `Nori-Windows-v<VERSION>.exe` | NSIS-Installer ohne Administratorrechte, nicht signiert | Build Windows |
-| Windows | `Nori-Windows-v<VERSION>.zip` | dieselbe App zum Entpacken, ohne Installation | Build Windows |
-| alle | `checksums-sha256.txt` | SHA-256 jedes Pakets | Nori Release |
+| Anhang | Was es ist | Gebaut von |
+| --- | --- | --- |
+| `Nori-iOS-v<VERSION>.ipa` | unsignierte IPA, vor der Installation signieren | Build iOS, Job `ipa` |
+| `checksums-sha256.txt` | SHA-256 des Pakets | Nori Release |
 
-Das Schema der Dateinamen ist `Nori-<Plattform>-v<VERSION>.<Endung>`. macOS
-liefert zwei Anhänge: das Programm (`Nori-macOS-v…zip` mit `Nori.app`) und das
-Quellpaket (`Nori-macOS-Source-v…zip`). Android und Google TV haben keine App
-in diesem Repository; die Notes nennen sie unter „nicht enthalten“, ein Paket
-wird nicht erfunden.
+Die Notes nennen macOS, Windows und LG webOS als „eingestellt“ und Android /
+Google TV als „keine App in diesem Repository“; ein Paket wird nicht erfunden.
 
 Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
-`v1.8.0` von Windows) bleiben stehen. Neue entstehen nicht.
+`windows-v…`, `v1.8.0` von Windows) bleiben stehen. Neue entstehen nicht.
 
 ## Einen Release machen
 
@@ -35,32 +28,27 @@ Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
    [Semantic Versioning](https://semver.org/lang/de/):
 
    ```bash
-   python3 tools/nori-version.py bump patch   # Fehlerbehebung: 2.6.0 → 2.6.1
-   python3 tools/nori-version.py bump minor   # neue Funktionen: 2.6.1 → 2.7.0
-   python3 tools/nori-version.py bump major   # Inkompatibles:   2.7.0 → 3.0.0
+   python3 tools/nori-version.py bump patch   # Fehlerbehebung: 2.7.0 → 2.7.1
+   python3 tools/nori-version.py bump minor   # neue Funktionen: 2.7.1 → 2.8.0
+   python3 tools/nori-version.py bump major   # Inkompatibles:   2.8.0 → 3.0.0
    ```
 
-   Das setzt die Nummer an allen Stellen und erhöht die Buildnummern von iOS
-   und macOS um eins. `python3 tools/nori-version.py set 2.7.0` geht auch.
+   Das setzt die Nummer im Xcode-Projekt und erhöht die Buildnummer um eins.
+   `python3 tools/nori-version.py set 2.8.0` geht auch.
 
 2. **Beschreiben**, was sich geändert hat — in `CHANGELOG.md` ein Abschnitt
 
    ```markdown
-   ## [Nori 2.7.0] — 2026-10-01
+   ## [Nori 2.8.0] — 2026-11-01
 
    ### Allgemein
    ### iOS / iPadOS
-   ### macOS
-   ### Android / Google TV
-   ### Windows
-   ### webOS
    ### Technische Änderungen
    ```
 
    mit nur den Unterabschnitten, in denen sich tatsächlich etwas geändert hat,
-   dazu `Nori **2.7.0**` in der Übersicht am Anfang. In `README.md` unter
-   „Aktueller Stand“ dieselbe Nummer in jeder Plattformzeile, auf dem Mac die
-   Hinweise in `NoriRelease` (`native/Nori-macOS/Sources/Features/Settings/SettingsView.swift`).
+   dazu `Nori **2.8.0**` in der Übersicht am Anfang. In `README.md` unter
+   „Aktueller Stand“ dieselbe Nummer in der Zeile iOS / iPadOS.
 
 3. **Prüfen** und über einen Pull Request nach `main` bringen:
 
@@ -69,20 +57,17 @@ Die alten, plattformgetrennten Tags (`ios-v…`, `macos-v…`, `webos-v…`,
    ```
 
 4. **Auslösen:** GitHub → **Actions** → **Nori Release** → **Run workflow** →
-   *Use workflow from* `main`, Version `2.7.0` (auch `v2.7.0` geht) →
-   **Run workflow**. Von der Kommandozeile:
-
-   ```bash
-   gh workflow run release.yml --ref main -f version=2.7.0
-   ```
-
-   Die Häkchen je Plattform stehen auf „an“. Wer eine Plattform abwählt,
-   bekommt einen Release ohne sie; die Notes sagen das. **Probelauf** baut und
-   prüft alles, legt aber nichts an und löscht nichts.
+   *Use workflow from* `main`, Version `2.8.0` (auch `v2.8.0` geht) →
+   **Run workflow**. **Probelauf** baut und prüft alles, legt aber nichts an
+   und löscht nichts.
 
 Die Eingabe bestätigt nur, was im Repository steht. Trägt `main` eine andere
 Nummer, bricht der Lauf sofort ab — eine Version kommt nie aus dem Eingabefeld
 in ein Paket.
+
+Voraussetzung ist das Repository-Secret `NORI_GOOGLE_IOS_CLIENT_ID`
+(Settings → Secrets and variables → Actions). Fehlt es, bricht der Lauf im
+ersten Job ab, bevor etwas gebaut wird.
 
 ## Vor dem ersten Release: Artefakt-Speicher
 
@@ -109,27 +94,21 @@ nur alle 6 bis 12 Stunden neu; erst danach geht das Hochladen wieder.
 
 Danach bleibt der Speicher klein: Übergabe-Artefakte leben einen Tag und
 werden nach dem Veröffentlichen gelöscht, Testpakete und Diagnose drei Tage,
-Windows lädt bei einem Push nichts hoch, und jeder Release löscht alte Läufe
-samt ihren Artefakten. Zwei Releases kurz hintereinander brauchen trotzdem
-Platz für zwei Sätze Pakete (je rund 220 MB), weil GitHub gelöschte
-Artefakte erst bei der nächsten Neuberechnung abzieht.
+und jeder Release löscht alte Läufe
+samt ihren Artefakten. 
 
 ## Ablauf
 
 ```text
 Nori Release (workflow_dispatch, concurrency „nori-release“)
- ├─ prepare    Eingabe (x.y.z oder vx.y.z) · alle Versionsstellen gleich ·
- │             Changelog und README · Tag, Release, Entwurf noch nicht da ·
- │             Version über jedem Tag · Buildnummern über jedem früheren
- │             Release · auf main · Windows-Secrets, falls Windows gewählt
- ├─ checks     Werkzeug-Tests · Apple-Quellen · swift test ·
- │             TypeScript-Kern · Nori-Server
+ ├─ prepare    Eingabe (x.y.z oder vx.y.z) · iOS-Secret gesetzt · alle
+ │             Versionsstellen gleich · Changelog und README · Tag, Release,
+ │             Entwurf noch nicht da · Version über jedem Tag · Buildnummer
+ │             über jedem früheren Release · auf main
+ ├─ checks     Werkzeug-Tests · Apple-Quellen · swift test
  ├─ ios        Build iOS (Job ipa)         → nori-release-ios
- ├─ macos      Build macOS (Job package)   → nori-release-macos
- ├─ webos      Build webOS                 → nori-release-webos
- ├─ windows    Build Windows               → nori-release-windows
- ├─ publish    nur wenn jede gewählte Plattform grün ist
- │             Pakete holen · noch einmal prüfen (Name, Prüfsumme aus dem
+ ├─ publish    nur wenn alles davor grün ist
+ │             Paket holen · noch einmal prüfen (Name, Prüfsumme aus dem
  │             Paket-Job, Inhalt, Produktionsprüfung) · checksums-sha256.txt ·
  │             Notes · Entwurf · Anhänge hochladen und gegenprüfen ·
  │             annotierter Tag · veröffentlichen · Endzustand prüfen
@@ -138,15 +117,13 @@ Nori Release (workflow_dispatch, concurrency „nori-release“)
  └─ cleanup    alte Läufe und Übergabe-Artefakte löschen
 ```
 
-Die Plattform-Läufe sind dieselben, die bei jedem Push prüfen. Vom Release
-bekommen sie `release-version`; dann
+Der Lauf `ios` ist derselbe, der bei jedem Push auf `native/**` prüft. Vom
+Release bekommt er `release-version`; dann
 
 - muss die Nummer im Commit genau diese sein,
-- heißt das Paket `Nori-<Plattform>-v<VERSION>.<Endung>` statt
-  `…-v<VERSION>-<commit>.<Endung>`,
-- liegt es als Übergabe-Artefakt `nori-release-<plattform>` **einen Tag** am
-  Lauf,
-- und bei Windows sind die Google-Secrets Pflicht.
+- heißt das Paket `Nori-iOS-v<VERSION>.ipa` statt
+  `…-v<VERSION>-<commit>.ipa`,
+- liegt es als Übergabe-Artefakt `nori-release-ios` **einen Tag** am Lauf.
 
 Alle Jobs checken denselben Commit aus (`GITHUB_SHA`), auch wenn `main`
 während des Laufs weiterzieht.
@@ -159,8 +136,8 @@ Nach dem Grundsatz *fail safely*:
 | --- | --- |
 | Eingabe ungültig, Nummer abweichend, Changelog fehlt | prepare rot — nichts wird gebaut |
 | Tag, Release oder höhere Version vorhanden | prepare rot, verständliche Meldung |
-| Test im gemeinsamen Kern | checks rot — keine Plattform wird gebaut |
-| Build, Test oder Paketprüfung einer gewählten Plattform | publish, validate und cleanup laufen nicht |
+| Test im Kern | checks rot — die IPA wird nicht gebaut |
+| Build, Test oder Paketprüfung der IPA | publish, validate und cleanup laufen nicht |
 | Paket fehlt, ist zu viel, weicht in Prüfsumme oder Inhalt ab | publish rot, nichts angelegt |
 | Hochladen oder Gegenprüfen eines Anhangs | der Entwurf bleibt **unveröffentlicht** liegen, kein Tag |
 | Tag entsteht zwischendurch anderswo | Abbruch vor dem Veröffentlichen, Tag unberührt |
@@ -182,7 +159,7 @@ Entwurf ist für den Prüfschritt mit Lesezugriff unsichtbar; ihn findet erst
 | Tag `v<VERSION>` existiert | Abbruch — der Tag wird nicht verschoben |
 | gleiche Version unter altem Tag (`webos-v2.6.0`) | Abbruch |
 | höhere Version unter irgendeinem Tag | Abbruch |
-| Buildnummer iOS/macOS nicht über der eines früheren Release-Tags | Abbruch |
+| Buildnummer iOS nicht über der eines früheren Release-Tags | Abbruch |
 
 Die Tag-Referenz wird über die API ohne `force` angelegt; gibt es sie
 inzwischen, antwortet GitHub mit 422, und nichts wird veröffentlicht. Kein
@@ -198,25 +175,13 @@ sie zusammen:
 
 | Stelle | Wozu |
 | --- | --- |
-| `MARKETING_VERSION` in beiden Xcode-Projekten | `CFBundleShortVersionString` |
-| `CURRENT_PROJECT_VERSION` in beiden Xcode-Projekten | `CFBundleVersion` — die Buildnummer |
-| `NoriRelease.version` (macOS, Einstellungen → „Neu in“) | Anzeige |
-| `apps/webos/appinfo.json`, `apps/webos/package.json` | Version auf dem Fernseher, Paketname |
-| `apps/windows/package.json`, `package.json` | `electron-builder`: Dateiname, Produktversion, Deinstallationseintrag |
-| `shared/nori-core/package.json`, `shared/nori-app/package.json` | gemeinsamer Kern, Anwendungsschicht |
-| `services/nori-api/package.json`, `API_VERSION` | Nori-Server |
-| vier `package-lock.json` | dieselbe Nummer, auch für die verlinkten Nori-Pakete |
+| `MARKETING_VERSION` im iOS-Xcode-Projekt | `CFBundleShortVersionString` |
+| `CURRENT_PROJECT_VERSION` im iOS-Xcode-Projekt | `CFBundleVersion` — die Buildnummer |
 
 Ein neues Paket muss vom Gerät als neuer erkannt werden:
-
-- **iOS/iPadOS, macOS:** `CFBundleShortVersionString` steigt mit der Version,
-  `CFBundleVersion` mit jeder Änderung. Der Release prüft beides im gebauten
-  Programm und verlangt eine Buildnummer über der jedes früheren Release-Tags.
-- **LG webOS:** `appinfo.json` und `control` im `.ipk` tragen die Version; ein
-  zweites Paket unter derselben Nummer wird nicht über das erste installiert.
-- **Windows:** Produktversion der `Nori.exe` und des Installers (`2.6.0.0`).
-- **Android** hätte `versionName` und `versionCode` — es gibt die App noch
-  nicht.
+`CFBundleShortVersionString` steigt mit der Version, `CFBundleVersion` mit
+jeder Änderung. Der Release prüft beides in der gebauten IPA und verlangt
+eine Buildnummer über der jedes früheren Release-Tags.
 
 Auf jedem Branch prüft „Check release pipeline“ mit `--against origin/main`:
 Ändert sich etwas, das in einem Paket landet, muss die Nummer größer sein als
@@ -232,9 +197,10 @@ Gelöscht werden abgeschlossene Läufe dieser Workflows, die vor dem Release
 begonnen haben — mitsamt ihren Protokollen und Artefakten:
 
 - Nori Release (`release.yml`)
-- Build iOS, Build macOS, Build webOS, Build Windows, Build Android core
+- Build iOS, Build Android core
 - Swift tests, Check Apple sources, Check release pipeline
-- die entfernten Package iOS IPA, Package macOS Source und Build Android —
+- die entfernten Build macOS, Build webOS, Build Windows, Package iOS IPA,
+  Package macOS Source und Build Android —
   GitHub nimmt einen Workflow aus seiner Liste, sobald dessen Datei fort ist,
   während die Läufe liegen bleiben. Gesucht wird deshalb in den Läufen des
   Repositorys **und** je Workflow, und entschieden wird am Pfad des Laufs.
@@ -271,17 +237,10 @@ Actions; der erste Release räumt also nur einen Teil davon ab.
 | Testpakete (`…-v<VERSION>-<commit>`) | an einem Push- oder Hand-Lauf | drei Tage |
 | Protokolle und Bildschirmfotos | nur bei einem Fehlschlag | drei Tage |
 
-Windows lädt bei einem gewöhnlichen Push keine Pakete hoch: Installer und ZIP
-sind zusammen rund 200 MB, und das Artefakt-Kontingent war am 17.09. schon
-einmal erschöpft.
-
 Ist der Speicher voll, scheitert **jedes** Hochladen („Artifact storage quota
-has been hit"). Das Testpaket von webOS darf daran scheitern, ohne den Lauf zu
-kippen — Build, Fernbedienungslauf und Paketprüfung sind dann trotzdem grün,
-und nur das Paket fehlt am Lauf. Im Release ist das Gegenteil richtig: Dort
-muss das Hochladen gelingen, sonst gibt es kein Release. `continue-on-error`
-steht deshalb an genau einem Schritt, der im Release nicht läuft, und
-`tools/test_nori_release.py` lässt es nirgends sonst zu.
+has been hit"). Im Release muss das Hochladen gelingen, sonst gibt es kein
+Release; `tools/test_nori_release.py` lässt `continue-on-error` an keinem
+Schritt zu, der im Release läuft.
 
 ## Release Notes
 
@@ -290,8 +249,8 @@ kein Release. Oben stehen Version, Commit, eine Tabelle der Anhänge mit
 Hinweisen (Buildnummer, signiert oder nicht), die nicht enthaltenen
 Plattformen und wie man die Prüfsummen nachrechnet.
 
-Übernommen werden die Unterabschnitte *Allgemein*, *iOS / iPadOS*, *macOS*,
-*Android / Google TV*, *Windows*, *webOS*, *Technische Änderungen* und
+Übernommen werden die Unterabschnitte *Allgemein*, *iOS / iPadOS*,
+*Technische Änderungen* und
 *Bekannte Einschränkungen* (dazu die älteren *Behoben*, *Geändert*,
 *Hinzugefügt* …). *Tests*, Prüfprotokolle und Codeblöcke bleiben draußen.
 Sätze und Punkte, die interne OAuth-, Secret-, Token-, `.env`-, xcconfig-
@@ -301,20 +260,18 @@ noch einmal auf Client-IDs, Secrets, Tokens und die echten Zugangsdaten des
 Runners geprüft.
 
 ```bash
-python3 tools/nori-release.py notes                       # aktuelle Version, alle Plattformen
-python3 tools/nori-release.py notes --platforms ios,webos
+python3 tools/nori-release.py notes                       # aktuelle Version
 ```
 
 ## Berechtigungen
 
 | Job | Rechte |
 | --- | --- |
-| Workflow-Vorgabe, prepare, checks, validate, Plattform-Läufe | `contents: read` |
+| Workflow-Vorgabe, prepare, checks, validate, Build iOS | `contents: read` |
 | publish | `contents: write` — Release, Anhänge, Tag |
 | cleanup | `actions: write`, `contents: read`, `pull-requests: read` |
 
-Kein Job bekommt `write-all`; die Plattform-Läufe haben nirgends
-Schreibrechte. Die Checkouts in publish, validate und cleanup behalten kein
+Kein Job bekommt `write-all`; Build iOS hat nirgends Schreibrechte. Die Checkouts in publish, validate und cleanup behalten kein
 Token (`persist-credentials: false`). Die Versionseingabe erreicht Skripte
 nur als Umgebungsvariable.
 
@@ -324,23 +281,21 @@ Die Jobs laufen auf GitHub-hosted Runnern. Der eigene Mac ist nicht nötig.
 
 | Job | Runner |
 | --- | --- |
-| Build iOS, Build macOS, Swift tests, Release `checks` | `macos-26` |
-| Build webOS, Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
-| Build Windows | `windows-latest` |
+| Build iOS, Swift tests, Release `checks` | `macos-26` |
+| Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
 
-IPA, macOS-App und webOS-Paket brauchen die Google-Zugangsdaten als
-Repository-Secrets (`NORI_GOOGLE_IOS_CLIENT_ID`, `NORI_GOOGLE_MACOS_CLIENT_ID`,
-`NORI_GOOGLE_MACOS_CLIENT_SECRET`, `NORI_GOOGLE_TV_CLIENT_ID`,
-`NORI_GOOGLE_TV_CLIENT_SECRET`). Lokal bleiben die Dateien unter
-`~/.config/nori/secrets/`.
+Das Projekt ist privat; Actions-Minuten auf `macos-26` zählen mehrfach.
+Build iOS und Swift tests starten deshalb nur bei Änderungen unter
+`native/**`, der Release nur von Hand.
+
+Die IPA braucht die Google-Client-ID als Repository-Secret
+`NORI_GOOGLE_IOS_CLIENT_ID`.
 
 | Plattform | Automatisiert | Einschränkung |
 | --- | --- | --- |
 | iOS / iPadOS | ja | unsigniert — kein Verteilungszertifikat im Repository |
-| macOS | ja, als `Nori.app` (unsigniert) plus Quellpaket | kein Developer-ID-Zertifikat, keine Notarisierung – nach dem Entpacken per Rechtsklick öffnen |
-| LG webOS | ja | Paket nicht auf einem echten Fernseher erprobt |
-| Windows | ja, wenn die Secrets gesetzt sind | `NORI_GOOGLE_DESKTOP_CLIENT_ID` und `NORI_GOOGLE_DESKTOP_CLIENT_SECRET` (Settings → Secrets and variables → Actions). Ohne sie bricht ein Release mit Windows im ersten Job ab. Nicht signiert |
-| Android / Google TV | nein | keine App in diesem Repository; `Build Android core` baut nur den Swift-Kern von Hand. Für einen Release bräuchte es die App, einen Build-Job, `versionName`/`versionCode` in `tools/nori-version.py`, einen Eintrag in `PLATFORMS` und einen Prüfer für `.apk` |
+| macOS, Windows, LG webOS | nein | eingestellt mit 2.7.0 |
+| Android / Google TV | nein | keine App in diesem Repository; `Build Android core` baut nur den Swift-Kern von Hand |
 
 ## Tests
 

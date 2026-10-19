@@ -1,6 +1,6 @@
 # Nori — Arbeitsanleitung
 
-Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
+Anime- und Serien-App für iPhone und iPad. Kataloge von AniWorld und Serienstream, Merkliste, Verlauf, Wiedergabefortschritt, Kalender und integrierter Player.
 
 ## Aufbau
 
@@ -8,17 +8,13 @@ Anime- und Serien-App für Apple-Plattformen, Windows und LG-Fernseher. Kataloge
 | --- | --- | --- |
 | `native/NoriCore/Sources/NoriCore/` | gemeinsamer Swift-Kern | ja |
 | `native/Nori-iOS/` | iOS/iPadOS, SwiftUI, Deployment-Target 17.0 | ja |
-| `native/Nori-macOS/` | macOS, SwiftUI + AppKit, Deployment-Target 14.0 | ja |
 | `native/Tests/` | Tests des gemeinsamen Kerns | ja |
-| `shared/nori-core/` | gemeinsamer Kern in TypeScript | ja |
-| `shared/nori-app/` | gemeinsame Anwendungsschicht (React) für webOS und Windows | ja |
-| `apps/webos/` | LG webOS, React + TypeScript + Enact Spotlight | ja |
-| `apps/windows/` | Windows, Electron: Hauptprozess + React-Oberfläche | ja |
-| `services/nori-api/` | Provider-Schicht als HTTP-Dienst für die TV-App | ja |
 | `config/contract.json` | kanonischer Daten-/Provider-Contract | ja |
 | `tools/` | Prüfskripte | ja |
 
-Die frühere Windows-Fassung — `desktop/` mit einem gebauten Nitro-Bundle in `server/` — ist mit Windows 2.0.0 entfallen. Sie bestand aus generierten `.mjs`-Dateien, deren Quelltext nie im Repository lag; pflegen ließ sie sich damit nicht. `apps/windows/` ersetzt sie vollständig und besteht aus Quelltext.
+macOS, Windows und LG webOS sind mit Nori 2.7.0 eingestellt; ihr Quelltext
+(`native/Nori-macOS/`, `apps/`, `shared/`, `services/`) liegt nur noch in der
+Git-Geschichte. Nicht wieder anlegen, ohne dass der Nutzer es ausdrücklich will.
 
 ## Gemeinsamer Apple-Core
 
@@ -38,62 +34,7 @@ Diese Dateien existieren kanonisch nur unter `native/NoriCore/Sources/NoriCore/`
 - `HLSPlaylist.swift`
 - `CatalogSearch.swift`
 
-Die gleichnamigen Pfade in den iOS- und macOS-Ordnern sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Die Xcode-Projekte referenzieren weiterhin ihre bekannten Pfade und bauen dadurch dieselben Quellen.
-
-Die Oberflächen bleiben bewusst getrennt: `NoriApp.swift`, `Theme.swift`, Views und Player-Integration dürfen zwischen iOS und macOS voneinander abweichen.
-
-## Gemeinsame Anwendungsschicht
-
-`shared/nori-app/` liegt zwischen `shared/nori-core/` und den zwei
-JavaScript-Oberflächen (`apps/webos/`, `apps/windows/`): Zustand, Dienste,
-Hooks, Wiedergabeanbindung und die Bausteine, die überall gleich aussehen
-(`Artwork`, `Icon`).
-
-Sie enthält **keine** Annahme über das Gerät. Was sie darüber wissen muss,
-fragt sie über `NoriPlatform` (`shared/nori-app/src/platform.ts`) — Breite der
-Zeichenfläche, ob die Eingabe gerade arbeitet, wie eine fremde Adresse
-geöffnet und wie die App beendet wird. Jede App meldet ihre Umsetzung beim
-Start an (`installPlatform`). Wer dort `window.webOS`, `navigator.userAgent`
-oder `process` abfragt, hat die Schicht falsch verstanden.
-
-Beide Apps binden sie als **Quelltext** ein — Vite-Alias auf
-`shared/nori-app/src/index.ts`, `tsconfig.json` mit `include` und `paths`.
-
-Die Schicht hat deshalb **kein eigenes `node_modules`** und soll keins
-bekommen: `@nori/core`, `react` und `hls.js` stehen in ihrer `package.json`
-als `peerDependencies`, und jede App liefert sie. Beide Werkzeuge müssen das
-wissen, sonst suchen sie neben der Quelldatei:
-
-- Vite: `resolve.dedupe: ["react", "react-dom", "@nori/core", "hls.js"]`
-- TypeScript: `paths` je App auf das eigene `node_modules` — und dabei auf die
-  **Typen** (`@types/react`), denn eine ausdrückliche Zuordnung schaltet
-  TypeScripts Rückfall auf `@types/...` ab.
-
-Bei React ist es zusätzlich eine Frage der Richtigkeit: zwei Instanzen melden
-sich als „Invalid hook call" an ganz anderer Stelle.
-
-Die Oberflächen bleiben getrennt: webOS ist für drei Meter Abstand und ein
-Steuerkreuz gebaut, Windows für Zeiger, Tastatur und ein Fenster, dessen
-Größe sich ändert. Was dort verschieden aussieht, ist Absicht.
-
-## Zweiter Kern: TypeScript
-
-Den Kern gibt es **zweimal** — in Swift unter `native/NoriCore/` für die
-Apple-Apps und in TypeScript unter `shared/nori-core/` für die webOS-App und
-den Nori-Server. Das ist keine versehentliche Dublette, TypeScript kann Swift
-nicht einbinden; es ist aber eine Gefahr.
-
-Maßgeblich ist für beide `config/contract.json`. Gleich bleiben müssen
-insbesondere: Feldnamen, die 90-%-Abschlussregel, die Resume-Schwelle von
-8 Sekunden, der Schlüssel `provider|normalizedEpisodePath`, die
-Hoster-Rangfolge und die Sprachreihenfolge.
-
-Wer eine dieser Regeln ändert, ändert sie an drei Stellen — Swift,
-TypeScript, `config/contract.json` — und in **beiden** Testreihen. Die
-benutzen absichtlich dieselben HTML-Ausschnitte:
-
-- `native/Tests/NoriCoreTests/Fixtures.swift`
-- `shared/nori-core/test/fixtures.ts`
+Die gleichnamigen Pfade im iOS-Ordner sind Git-Symlinks auf diese Dateien. Änderungen am Kern deshalb **nur** in `native/NoriCore/Sources/NoriCore/` vornehmen. Das Xcode-Projekt referenziert weiterhin seine bekannten Pfade; SwiftPM (`native/Package.swift`) baut dieselben Quellen für die Tests.
 
 ## Bauen und Prüfen
 
@@ -108,57 +49,26 @@ python3 tools/nori-version.py check --against origin/main
 Die echten App-Typechecks laufen über GitHub Actions auf `macos-26`:
 
 - `Build iOS`
-- `Build macOS`
 - `Swift tests`
 
-Änderungen an `native/NoriCore/**` müssen beide Apple-Builds auslösen.
+Änderungen an `native/NoriCore/**` müssen `Build iOS` und `Swift tests` auslösen.
 
-Für die webOS-Seite gibt es echte Prüfungen, die auch im Container durchlaufen
-— anders als bei Swift ist die Toolchain dort vorhanden:
-
-```bash
-npm --prefix shared/nori-core test     # Kern gegen dieselben Fixtures
-npm --prefix apps/webos run build      # tsc --noEmit und Vite
-python3 tools/check-webos-package.py   # Quelltext, .ipk, appinfo.json
-```
-
-Die Oberfläche lässt sich zusätzlich mit einer nachgebauten Fernbedienung
-durchspielen (`apps/webos/test/`, siehe `docs/webos.md`). Der Lauf `Build
-webOS` macht dasselbe in der CI und braucht dort kein Xcode, nur Node.
-
-Für Windows gilt dasselbe — auch diese Toolchain ist im Container vorhanden:
-
-```bash
-npm --prefix apps/windows run build          # tsc --noEmit, esbuild, Vite
-npm --prefix apps/windows run test:desktop   # Playwright startet die App
-npm --prefix apps/windows run package        # Installer und ZIP
-```
-
-`test:desktop` startet die **gebaute** App über `_electron.launch` und dazu
-einen Nachbau des Nori-Servers über `https:`. Unter Linux braucht es
-`xvfb-run -a` davor. Wer den Installer unter Linux bauen will, braucht Wine
-(`wine64` **und** `wine32:i386`) — ohne die 32-Bit-Hälfte scheitert die
-Deinstallationsroutine von NSIS. Auf dem Mac geht es ohne Wine, auf einem
-Apple-Chip aber nur mit Rosetta 2 (`docs/windows.md`).
-
-Wer `shared/nori-app/**` ändert, ändert **beide** Apps. Dann gehören beide
-Läufe dazu, nicht nur der der eigenen Plattform.
+Das Projekt ist privat, Actions-Minuten sind knapp: keine neuen Workflows oder
+Trigger ohne Not, die macOS-Läufe nur über Pfadfilter auf `native/**`.
 
 ## Konventionen
 
 - Oberflächentexte, README und Commit-Nachrichten sind deutsch.
-- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `macOS: …`, `webOS: …`, `Windows: …`.
+- Commit-Betreff mit Plattform-/Bereichspräfix, z. B. `Apple: …`, `iOS: …`, `CI: …`.
 - `SWIFT_VERSION = 5.0` ist der Sprachmodus, nicht die Compilerversion.
-- Die öffentliche Version ist für **alle** Plattformen dieselbe (Nori-Version, seit 2.6.0). Auf den Apple-Plattformen gelangt sie ausschließlich über `MARKETING_VERSION` der Xcode-Projekte ins Bundle.
+- Die öffentliche Version ist die Nori-Version. Sie gelangt ausschließlich über `MARKETING_VERSION` des Xcode-Projekts ins Bundle.
 - `config/contract.json` enthält keine App-Version.
 
 ### Versionsnummer
 
-iOS/iPadOS, macOS, Windows und LG webOS tragen **eine gemeinsame Nummer**
-`x.y.z` — ebenso Kern, Anwendungsschicht und Nori-Server. Gesetzt und geprüft
-wird sie mit einem Werkzeug, das jede Stelle kennt (Xcode-Projekte,
-`NoriRelease.version` der Mac-App, `appinfo.json`, alle `package.json` und
-`package-lock.json`, `API_VERSION`):
+Die App trägt eine Nummer `x.y.z`. Gesetzt und geprüft wird sie mit
+`tools/nori-version.py` (Xcode-Projekt, `MARKETING_VERSION` aller
+Konfigurationen):
 
 ```bash
 python3 tools/nori-version.py show
@@ -171,27 +81,24 @@ niemals zwei unterschiedliche Pakete mit derselben Version entstehen: auf einem
 Gerät installiert steht dann eine Fassung, die sich von außen nicht mehr von
 der anderen unterscheiden lässt, und ein Fehlerbericht dazu ist nicht mehr
 zuzuordnen. `bump` und `set` erhöhen deshalb auch `CURRENT_PROJECT_VERSION`
-(die Buildnummer) von iOS und macOS. Nach Semantic Versioning: Fehlerbehebung
+(die Buildnummer) von iOS. Nach Semantic Versioning: Fehlerbehebung
 → `patch`, neue Funktion → `minor`, Inkompatibles → `major`.
 
 Dazu gehören ein Abschnitt `## [Nori x.y.z]` in `CHANGELOG.md` (Unterabschnitte
-*Allgemein*, *iOS / iPadOS*, *macOS*, *Android / Google TV*, *Windows*,
-*webOS*, *Technische Änderungen* — nur die mit echten Änderungen),
+*Allgemein*, *iOS / iPadOS*, *Technische Änderungen* — nur die mit echten Änderungen),
 `Nori **x.y.z**` in dessen Übersicht und in `README.md` unter „Aktueller
-Stand“, auf dem Mac die Hinweise in `NoriRelease.highlights`.
+Stand“.
 
 `check` verlangt auf einem Branch, der etwas ändert, das in einem Paket landet,
 eine Nummer über jeder auf `main`; „Check release pipeline“ prüft das bei jedem
-Push. `tools/check-webos-package.py` prüft zusätzlich die Version **im gebauten
-`.ipk`**, `tools/nori-release.py verify` die in IPA, macOS-App-ZIP, Quellpaket,
-Installer und Windows-ZIP.
+Push. `tools/nori-release.py verify` prüft die Version in der IPA.
 
 ### Releases
 
 Ein Release entsteht nur über den Workflow **Nori Release**
 (`.github/workflows/release.yml`, von Hand): ein Tag `v<VERSION>`, ein GitHub
-Release `Nori v<VERSION>`, Pakete `Nori-<Plattform>-v<VERSION>.<Endung>` und
-`checksums-sha256.txt`. Keine Plattform-Tags mehr (`ios-v…`, `webos-v…`), kein
+Release `Nori v<VERSION>`, das Paket `Nori-iOS-v<VERSION>.ipa` und
+`checksums-sha256.txt`. Keine Plattform-Tags mehr (`ios-v…`, `macos-v…`), kein
 Tag von Hand, kein Release aus einem Plattform-Lauf. Erst nach dem
 nachgeprüften Release löscht er alte Läufe der Nori-Workflows — nie Releases,
 Anhänge, Tags oder Branches. Regeln: `docs/releases.md`, Logik:
@@ -205,11 +112,9 @@ Anhänge, Tags oder Branches. Regeln: `docs/releases.md`, Logik:
 
 Fortschritt wird nach `provider|normalizedEpisodePath` getrennt. Eine Serie bei AniWorld und Serienstream darf ihren Fortschritt nicht gegenseitig überschreiben.
 
-`shared/nori-core/src/library.ts` legt denselben Aufbau ab — dieselben Felder, dieselbe Migration —, damit die webOS-App und die Apple-Apps denselben Stand lesen können.
-
 ## Synchronisation
 
-Abgeglichen wird ausschließlich über **Google Drive**. Apple verwendet `drive.appdata` als primäre Ablage. Für die ausdrücklich aktivierte TV-Synchronisation verwendet Apple zusätzlich `drive.file` als Spiegel. webOS verwendet ausschließlich diesen `drive.file`-Spiegel. Andere Cloud-Anbieter, eigener Server oder Proxy bleiben ausgeschlossen. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
+Abgeglichen wird ausschließlich über **Google Drive**. iOS verwendet `drive.appdata` als primäre Ablage. Für die ausdrücklich aktivierte TV-Synchronisation verwendet iOS zusätzlich `drive.file` als Spiegel. Seit die webOS-App eingestellt ist, liest diesen Spiegel kein Nori mehr; der Schalter bleibt, bis der Nutzer anders entscheidet. Andere Cloud-Anbieter, eigener Server oder Proxy bleiben ausgeschlossen. Einrichtung: `docs/google-drive-sync.md`, Begründungen: `docs/synchronisation.md`.
 
 Der Grund für den Spiegel: Googles Gerätefluss für Fernseher (`/device/code`) lehnt `drive.appdata` reproduzierbar mit `invalid_scope` ab — mit mehreren TV-Clients und auch in einem separaten Google-Cloud-Projekt, entgegen Googles Dokumentation. Die Messungen stehen in `docs/google-drive-sync.md`, Abschnitt 10.
 
@@ -232,7 +137,7 @@ LibraryStore → LibrarySyncEngine → LibrarySnapshotStore → GoogleDriveClien
 
 Keine OAuth-Logik in `LibraryStore`, kein Drive-HTTP in Views oder React-Komponenten. `LibrarySyncProvider` (eine Datei ablegen und holen) bleibt als Abstraktion bestehen und wird nicht entfernt.
 
-Die Merge-Regeln sind eine reine Funktion und existieren zweimal — `LibrarySync.swift` und `shared/nori-core/src/sync.ts`. Beide laufen gegen dieselben Fälle in `config/sync-fixtures.json`; wer eine Regel ändert, ändert sie in Swift, in TypeScript und in `config/contract.json`.
+Die Merge-Regeln sind eine reine Funktion in `LibrarySync.swift`. Sie läuft gegen die Fälle in `config/sync-fixtures.json`; wer eine Regel ändert, ändert sie in Swift und in `config/contract.json`.
 
 Tokens gehören in den Schlüsselbund und niemals in `library.json`, ins Protokoll oder in die Cloud.
 
@@ -244,7 +149,7 @@ Kanonisch:
 config/contract.json
 ```
 
-`native/Nori-iOS/contract.json` und `native/Nori-macOS/contract.json` sind nur Kompatibilitäts-Symlinks darauf.
+`native/Nori-iOS/contract.json` ist nur ein Kompatibilitäts-Symlink darauf.
 
 ## Hoster
 
@@ -256,22 +161,18 @@ Hoster ändern ihre Seiten häufig. Stream-Auflösungsfehler zuerst anhand Redir
 
 Der TMDB-Schlüssel kann über Schlüsselbund bzw. Build-Einstellung bereitgestellt werden. Im aktuellen privaten Projekt existiert zusätzlich bewusst ein eingebauter Fallback-Schlüssel in `TMDBKeyStore`; diese Ausnahme ist eng begrenzt und in `tools/check-apple-sources.py` dokumentiert.
 
-Die Google-Client-IDs kommen ebenso aus Build-Einstellungen (`GOOGLE_CLIENT_ID` auf Apple, `VITE_NORI_GOOGLE_TV_CLIENT_ID` auf webOS) und nicht aus dem Quelltext.
-
-Eine Ausnahme mit Ansage: Googles OAuth-Fluss für Fernseher verlangt zusätzlich ein `client_secret` (`VITE_NORI_GOOGLE_TV_CLIENT_SECRET`). Der Wert wird **nicht** eingecheckt; warum er trotzdem in der gebauten `.ipk` liegt und warum er dort nicht wirklich geheim bleibt, steht in `docs/google-drive-sync.md`.
+Die Google-Client-ID kommt ebenso aus einer Build-Einstellung (`GOOGLE_CLIENT_ID`, in der CI das Secret `NORI_GOOGLE_IOS_CLIENT_ID`) und nicht aus dem Quelltext.
 
 ## Google-Anmeldung
 
 Für den Nutzer ist die Anmeldung **ein Knopf** — „Mit Google anmelden", einmal bei Google bestätigen, fertig. Client-ID, Client-Secret, Redirect-URI, Access- und Refresh-Token sind keine Benutzereinstellungen und gehören **nicht** in die Oberfläche; frühere Eingabefelder dafür sind entfernt. Fehlt die Build-Einstellung, ist das ein Build-Fehler: die Oberfläche sagt das in einem Satz und bietet kein Feld an.
 
-Ein zugeklappter Diagnosebereich (auf webOS am Entwicklerschalter) darf Client-ID, Herkunft und Bereich zeigen — nie ein Secret und nie einen Token.
+Ein zugeklappter Diagnosebereich darf Client-ID, Herkunft und Bereich zeigen — nie ein Secret und nie einen Token.
 
-Was eine ältere Fassung im Gerät hinterlassen hat, wird weiter **gelesen** (Schlüsselbund/`UserDefaults` auf Apple, `localStorage` auf webOS) und hat Vorrang vor dem Build, weil die vorhandenen Tokens dazu gehören. Neu eintragen lässt sich nichts.
+Was eine ältere Fassung im Gerät hinterlassen hat, wird weiter **gelesen** (Schlüsselbund/`UserDefaults`) und hat Vorrang vor dem Build, weil die vorhandenen Tokens dazu gehören. Neu eintragen lässt sich nichts.
 
-Die Flüsse: Authorization Code mit PKCE auf iOS (`ASWebAuthenticationSession`, geteilte Browser-Sitzung) und macOS (Systembrowser + Loopback), Device Authorization Grant nach RFC 8628 auf webOS. Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird auf Apple `drive.appdata` und nur nach „Mit Fernseher teilen" zusätzlich `drive.file` (mit `include_granted_scopes`), auf webOS ausschließlich `drive.file`.
+Der Fluss: Authorization Code mit PKCE (`ASWebAuthenticationSession`, geteilte Browser-Sitzung). Kein `urn:ietf:wg:oauth:2.0:oob`, keine eingebettete WebView, kein eigener Auth-Server, kein Proxy. Angefordert wird `drive.appdata` und nur nach „Mit Fernseher teilen" zusätzlich `drive.file` (mit `include_granted_scopes`).
 
-Der QR-Code am Fernseher wird **im Gerät** gerechnet (`shared/nori-core/src/qr.ts`, geprüft gegen eine unabhängige Referenz) und enthält `verification_uri_complete`, wenn Google eine liefert, sonst genau `verification_uri`. Eine Adresse mit angehängtem `user_code` selbst zusammenzusetzen ist untersagt.
-
-Tokens, Autorisierungscodes, Client-Secret, `device_code` und `user_code` gehören in **kein** Protokoll. Verbindlich beschrieben ist das alles in `config/contract.json` unter `sync.auth`.
+Tokens, Autorisierungscodes und Secrets gehören in **kein** Protokoll. Verbindlich beschrieben ist das alles in `config/contract.json` unter `sync.auth`.
 
 Keine weiteren Secrets oder Zugangsdaten fest in den Quelltext schreiben.

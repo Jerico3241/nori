@@ -1,5 +1,12 @@
 # Bibliothek zwischen Geräten abgleichen
 
+> **Stand Nori 2.7.0:** macOS, Windows und LG webOS sind eingestellt und aus
+> dem Repository entfernt. Was hier über diese Plattformen, den
+> TypeScript-Kern (`shared/`) oder den Nori-Server steht, beschreibt den
+> früheren Stand und bleibt als Begründung stehen. Der TV-Spiegel
+> wird auf iPhone und iPad weiter geschrieben, aber von keinem Gerät mehr
+> gelesen.
+
 Merkliste, Verlauf, Wiedergabefortschritt und die geteilten Einstellungen
 liegen in einer Datei je Gerät — auf Apple
 `~/Library/Application Support/Nori/library.json`, auf dem Fernseher unter

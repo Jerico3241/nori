@@ -17,10 +17,9 @@ on:
       - 'tools/configure-google-oauth.py'
       - 'tools/test_configure_google_oauth.py'
       - '.github/workflows/check-sources.yml'
-      # check-apple-sources.py liest diese beiden und prüft Xcode-Anforderung
-      # und die Google-Schritte des IPA-Jobs.
+      # check-apple-sources.py liest ihn und prüft Xcode-Anforderung und die
+      # Google-Schritte des IPA-Jobs.
       - '.github/workflows/build-ios.yml'
-      - '.github/workflows/build-macos.yml'
   workflow_dispatch:
 
 concurrency:

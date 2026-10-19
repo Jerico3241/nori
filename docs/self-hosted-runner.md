@@ -1,12 +1,14 @@
 # Eigenen Mac als GitHub-Runner (optional)
 
+> **Stand Nori 2.7.0:** macOS, Windows und LG webOS sind eingestellt. Was hier
+> über Build macOS und Build Windows steht, beschreibt den früheren Stand.
+
 Die Workflows laufen auf **GitHub-hosted Runnern**:
 
 | Job | Runner |
 | --- | --- |
-| Build iOS, Build macOS, Swift tests, Release-Job `checks`, Build Android core | `macos-26` (Xcode 26) |
-| Build webOS, Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
-| Build Windows | `windows-latest` |
+| Build iOS, Swift tests, Release-Job `checks`, Build Android core | `macos-26` (Xcode 26) |
+| Check Apple sources, Check release pipeline, Release prepare/publish/validate/cleanup | `ubuntu-latest` |
 
 Ein eigener Mac ist nicht nötig. Die Anleitung darunter gilt nur, falls jemand
 die Workflows wieder auf `[self-hosted, macOS]` stellt.

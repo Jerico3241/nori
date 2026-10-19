@@ -22,12 +22,7 @@ DerivedData/
 .swiftpm/
 Package.resolved
 
-# Node / build
-node_modules/
-.output/
-dist/
-.nitro/
-.tanstack/
+# Build
 *.log
 
 # Secrets / sandbox
@@ -35,8 +30,7 @@ dist/
 .env.*
 .grok/
 
-# Google-OAuth, lokal je Plattform. Die Client-IDs und das macOS-Secret
-# stehen hier und nirgends sonst; die OAuth-JSON-Dateien liegen ausserhalb
+# Google-OAuth, lokal. Die iOS-Client-ID steht hier und nirgends sonst; die OAuth-JSON-Dateien liegen ausserhalb
 # des Repositorys unter ~/.config/nori/secrets/ und dürfen nie hinein.
 native/*/Config/*.local.xcconfig
 client_secret*.json
@@ -48,16 +42,6 @@ AGENTS.md
 Nori-Daten/
 *.ipa
 *.app
-
-# webOS (apps/webos)
-*.ipk
-apps/webos/dist/
-apps/webos/test-shots/
-# Messwerte von `test/perf-bench.mjs` — die Zahlen stehen im Changelog.
-apps/webos/test-perf/
-shared/nori-core/dist/
-services/nori-api/dist/
-services/nori-api/dist-test/
 
 # Ausgabeordner von `xcodebuild`.
 #
@@ -71,17 +55,3 @@ native/*/build/
 # keiner der üblichen Xcode-Regeln erfasst. Ein `git add -A` nach einem Build
 # nimmt ihn sonst mit: 1600 Dateien, 22 MB, alle generiert.
 **/*.xcodeproj/-Xcc/
-
-# Screenshots des Fernbedienungslaufs (npm run test:tv)
-apps/webos/shot-*.png
-
-# Windows (apps/windows)
-#
-# `dist/` fängt die Oberfläche schon weiter oben. Hier der Rest: der
-# gebündelte Hauptprozess, die Pakete von electron-builder und was die
-# Desktop-Prüfung nebenbei anlegt. `build/` gehört ausdrücklich **nicht**
-# dazu — dort liegen die Symbole, und die sind Quelltext.
-apps/windows/dist-main/
-apps/windows/release/
-apps/windows/test-shots*/
-apps/windows/test-userdata/

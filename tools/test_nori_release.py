@@ -27,11 +27,8 @@ import plistlib
 import re
 import shutil
 import ssl
-import stat
-import struct
 import subprocess
 import sys
-import tarfile
 import tempfile
 import threading
 import unittest
@@ -55,15 +52,11 @@ MAC_ID = "333333333333-" + "macclien" * 4 + SUFFIX
 MAC_SECRET = SECRET_PREFIX + "macSecretFake" + "M" * 16
 TV_ID = "111111111111-" + "tvclient" * 4 + SUFFIX
 TV_SECRET = SECRET_PREFIX + "tvSecretFake" + "T" * 16
-OLD_TV_ID = "444444444444-" + "oldtvcli" * 4 + SUFFIX
-OLD_TV_SECRET = SECRET_PREFIX + "oldTvSecret" + "Q" * 16
-DESK_ID = "555555555555-" + "deskclie" * 4 + SUFFIX
-DESK_SECRET = SECRET_PREFIX + "deskSecretFake" + "D" * 16
 ACCESS_TOKEN = "ya" + "29." + "a" * 32
 REFRESH_TOKEN = "1/" + "/0" + "r" * 32
 OTHER_COMMIT = "b" * 40
 VERSION = "2.6.0"
-ALL = ["ios", "macos", "webos", "windows"]
+ALL = ["ios"]
 
 CHANGELOG_SECTION = """## [Nori 2.6.0] — 2026-09-17
 
@@ -116,9 +109,6 @@ def make_repo(root: Path, version: str = VERSION) -> str:
     files = files_for(version)
     files["CHANGELOG.md"] = version_changelog(version).split("## ")[0] + CHANGELOG_SECTION.replace("2.6.0", version)
     files.update({
-        "native/Nori-macOS/Nori/NoriApp.swift": "@main struct NoriApp {}\n",
-        "native/Nori-macOS/Config/Google.local.xcconfig.example": "GOOGLE_CLIENT_ID = <aus der OAuth-JSON>\n",
-        "native/Nori-macOS/Mac-App-bauen.command": "#!/bin/zsh\necho bauen\n",
         "native/Package.swift": "// swift-tools-version:5.9\n",
         "native/Tests/NoriCoreTests/ModelsTests.swift": f"let fake = \"{ACCESS_TOKEN}\"\n",
         "config/contract.json": "{}\n",
@@ -127,8 +117,6 @@ def make_repo(root: Path, version: str = VERSION) -> str:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-    (root / "native/Nori-macOS/Mac-App-bauen.command").chmod(0o755)
-    (root / "native/Nori-macOS/Nori/Models.swift").symlink_to("../../NoriCore/Sources/NoriCore/Models.swift")
     subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", str(root)], check=True)
     git(root, "add", "-A")
     git(root, "commit", "-qm", "Stand")
@@ -136,29 +124,12 @@ def make_repo(root: Path, version: str = VERSION) -> str:
 
 
 def make_secrets(directory: Path) -> None:
+    # Neben der iOS-Client-ID liegen auf dem Rechner noch die Zugangsdaten der
+    # entfernten Plattformen. In einem Paket hat keine davon etwas verloren.
     directory.mkdir()
     (directory / "google-webos-oauth.json").write_text(json.dumps({"installed": {"client_id": TV_ID, "client_secret": TV_SECRET}}))
-    (directory / "google-webos-oauth-test.json").write_text(json.dumps({"installed": {"client_id": OLD_TV_ID, "client_secret": OLD_TV_SECRET}}))
     (directory / "google-macos-oauth.json").write_text(json.dumps({"installed": {"client_id": MAC_ID, "client_secret": MAC_SECRET}}))
     (directory / "google-ios-client-id").write_text(IOS_ID + "\n")
-
-
-def make_macos_app(directory: Path, version: str = VERSION, build: str = "31", bundle: str = "to.nori.macos",
-                   name: str | None = None, extra: dict[str, bytes] | None = None,
-                   client_id: str = MAC_ID, client_secret: str = MAC_SECRET,
-                   executable: str = "Nori", binary: str | None = None) -> Path:
-    path = directory / (name or f"Nori-macOS-v{version}.zip")
-    binary = executable if binary is None else binary
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        info = {"CFBundleShortVersionString": version, "CFBundleVersion": build,
-                "CFBundleIdentifier": bundle, "CFBundleExecutable": executable,
-                "GoogleClientID": client_id, "GoogleClientSecret": client_secret}
-        archive.writestr("Nori.app/Contents/Info.plist", plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
-        if binary:
-            archive.writestr(f"Nori.app/Contents/MacOS/{binary}", b"\xcf\xfa\xed\xfe nori-macos")
-        for member, data in (extra or {}).items():
-            archive.writestr(member, data)
-    return path
 
 
 def make_ipa(directory: Path, version: str = VERSION, build: str = "40", bundle: str = "to.nori.ios",
@@ -174,121 +145,6 @@ def make_ipa(directory: Path, version: str = VERSION, build: str = "40", bundle:
             archive.writestr(f"Payload/{app}/Nori", b"\xcf\xfa\xed\xfe Set-Cookie cf_clearance=" + b"\0" * 64)
         for member, data in (extra or {}).items():
             archive.writestr(member, data)
-    return path
-
-
-def targz(entries: dict[str, bytes]) -> bytes:
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for name, data in entries.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            archive.addfile(info, io.BytesIO(data))
-    return buffer.getvalue()
-
-
-def make_ipk(directory: Path, version: str = VERSION, name: str | None = None, control_version: str | None = None,
-             appinfo_version: str | None = None, extra: dict[str, bytes] | None = None, raw: bytes | None = None) -> Path:
-    path = directory / (name or f"Nori-webOS-v{version}.ipk")
-    if raw is not None:
-        path.write_bytes(raw)
-        return path
-    control = targz({"./control": f"Package: tv.nori.app\nVersion: {control_version or version}\nArchitecture: all\n".encode()})
-    data = {
-        "./usr/palm/applications/tv.nori.app/appinfo.json":
-            json.dumps({"id": "tv.nori.app", "version": appinfo_version or version}).encode(),
-        "./usr/palm/applications/tv.nori.app/index.html": b"<!doctype html>",
-        "./usr/palm/applications/tv.nori.app/assets/index-abcdefgh.js":
-            ("var e={clientId:" + json.dumps(TV_ID) + ",clientSecret:" + json.dumps(TV_SECRET) + "};").encode(),
-    }
-    data.update(extra or {})
-    content = b"!<arch>\n"
-    for member, blob in (("debian-binary", b"2.0\n"), ("control.tar.gz", control), ("data.tar.gz", targz(data))):
-        content += f"{member + '/':<16}{0:<12}{0:<6}{0:<6}{'100644':<8}{len(blob):<10}`\n".encode() + blob
-        if len(blob) % 2:
-            content += b"\n"
-    path.write_bytes(content)
-    return path
-
-
-def version_resource(product: tuple[int, int, int, int], strings: dict[str, str]) -> bytes:
-    """VS_VERSIONINFO so, wie Windows es in `.rsrc` erwartet — nur so viel wie nötig."""
-    def pad(data: bytes) -> bytes:
-        return data + b"\0" * (-len(data) % 4)
-
-    ms, ls = (product[0] << 16) | product[1], (product[2] << 16) | product[3]
-    fixed = struct.pack("<13I", 0xFEEF04BD, 0x10000, ms, ls, ms, ls, 0x3F, 0, 0x40004, 1, 0, 0, 0)
-    # wLength (am Ende gesetzt), wValueLength, wType, szKey — aufgefüllt auf 4 Bytes, dann VS_FIXEDFILEINFO.
-    head = pad(b"\0\0" + struct.pack("<HH", len(fixed), 0) + "VS_VERSION_INFO\0".encode("utf-16-le")) + fixed
-    children = b""
-    for key, value in strings.items():
-        entry = pad(b"\0\0" + struct.pack("<HH", len(value) + 1, 1) + (key + "\0").encode("utf-16-le"))
-        entry = pad(entry + (value + "\0").encode("utf-16-le"))
-        children += struct.pack("<H", len(entry)) + entry[2:]
-    block = head + children
-    return struct.pack("<H", len(block)) + block[2:]
-
-
-def make_pe(product: tuple[int, int, int, int] = (2, 6, 0, 0), strings: dict[str, str] | None = None,
-            tail: bytes = b"") -> bytes:
-    header = b"MZ" + b"\0" * 0x3A + struct.pack("<I", 0x40) + b"PE\0\0" + b"\0" * 0x3C
-    resource = version_resource(product, strings if strings is not None else
-                                {"ProductName": "Nori", "FileVersion": "2.6.0", "ProductVersion": "2.6.0.0"})
-    return header + resource + tail
-
-
-def make_asar(files: dict[str, bytes]) -> bytes:
-    tree: dict = {"files": {}}
-    offset, blobs = 0, []
-    for name, data in files.items():
-        node = tree
-        parts = name.split("/")
-        for part in parts[:-1]:
-            node = node["files"].setdefault(part, {"files": {}})
-        node["files"][parts[-1]] = {"size": len(data), "offset": str(offset)}
-        offset += len(data)
-        blobs.append(data)
-    header = json.dumps(tree).encode()
-    padded = header + b"\0" * (-len(header) % 4)
-    header_pickle = struct.pack("<I", 4 + len(padded)) + struct.pack("<i", len(header)) + padded
-    return struct.pack("<II", 4, len(header_pickle)) + header_pickle + b"".join(blobs)
-
-
-def app_files(version: str = VERSION, main: bytes | None = None, extra: dict[str, bytes] | None = None) -> dict[str, bytes]:
-    files = {
-        "package.json": json.dumps({"name": "@nori/windows", "version": version, "main": "dist-main/main.cjs"}).encode(),
-        "dist/index.html": b"<!doctype html>",
-        "dist/assets/index-abc.js": b"const hoster = 'Set-Cookie';",
-        "dist-main/main.cjs": main if main is not None else
-            f'const google={{clientId:"{DESK_ID}",clientSecret:"{DESK_SECRET}"}};'.encode(),
-    }
-    files.update(extra or {})
-    return files
-
-
-def make_windows_zip(directory: Path, version: str = VERSION, name: str | None = None, exe: bytes | None = None,
-                     asar: bytes | None = None, extra: dict[str, bytes] | None = None, omit: tuple[str, ...] = ()) -> Path:
-    path = directory / (name or f"Nori-Windows-v{version}.zip")
-    members = {
-        "Nori.exe": exe if exe is not None else make_pe(),
-        "resources/app.asar": asar if asar is not None else make_asar(app_files(version)),
-        "locales/de.pak": b"\0pak",
-        # Chromium bringt solche Beispieltexte mit; in fremden Dateien wird nicht nach Mustern gesucht.
-        "LICENSES.chromium.html": ("<html>-----BEGIN PRIV" + "ATE KEY----- als Beispieltext</html>").encode(),
-    }
-    members.update(extra or {})
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for member, data in members.items():
-            if member not in omit:
-                archive.writestr(member, data)
-    return path
-
-
-def make_installer(directory: Path, version: str = VERSION, name: str | None = None, product=(2, 6, 0, 0),
-                   nsis: bool = True, tail: bytes = b"") -> Path:
-    path = directory / (name or f"Nori-Windows-v{version}.exe")
-    strings = {"ProductName": "Nori", "FileVersion": version, "ProductVersion": version}
-    path.write_bytes(make_pe(product, strings, (b"\xef\xbe\xad\xdeNullsoftInst" if nsis else b"") + b"\x5d\x00" * 64 + tail))
     return path
 
 
@@ -418,9 +274,7 @@ class ReleaseTestCase(unittest.TestCase):
         self.out = self.temp / "out"
         self.out.mkdir()
         # patch.dict stellt die ganze Umgebung am Ende wieder her, auch die entfernten Einträge.
-        self.enterContext(mock.patch.dict(os.environ, {
-            "NORI_GOOGLE_DESKTOP_CLIENT_ID": DESK_ID, "NORI_GOOGLE_DESKTOP_CLIENT_SECRET": DESK_SECRET,
-        }))
+        self.enterContext(mock.patch.dict(os.environ, {}))
         for name in ("GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "GITHUB_RUN_ID",
                      "GITHUB_REPOSITORY"):
             os.environ.pop(name, None)
@@ -438,15 +292,9 @@ class ReleaseTestCase(unittest.TestCase):
         self.commit = git(self.repo, "rev-parse", "HEAD")
 
     def set_version(self, version: str) -> None:
-        files = files_for(version, "41", "32")
+        files = files_for(version, "41")
         files["CHANGELOG.md"] = version_changelog(version).split("## ")[0] + CHANGELOG_SECTION.replace("2.6.0", version)
         self.commit_files(files)
-
-    def source_zip(self, name: str | None = None) -> Path:
-        path = self.out / (name or f"Nori-macOS-Source-v{VERSION}.zip")
-        path.unlink(missing_ok=True)
-        self.tool.build_source_package(self.commit, path)
-        return path
 
     def github(self, **kwargs) -> FakeGitHub:
         kwargs.setdefault("main_commits", {self.commit})
@@ -457,11 +305,6 @@ class ReleaseTestCase(unittest.TestCase):
         directory.mkdir(exist_ok=True)
         makers = {
             "ios": lambda: make_ipa(directory),
-            "macos": lambda: make_macos_app(directory),
-            "macos-source": lambda: self.source_zip_into(directory),
-            "webos": lambda: make_ipk(directory),
-            "windows-installer": lambda: make_installer(directory),
-            "windows-portable": lambda: make_windows_zip(directory),
         }
         sums = {}
         for platform in platforms:
@@ -469,11 +312,6 @@ class ReleaseTestCase(unittest.TestCase):
                 path = makers[key]()
                 sums[key] = hashlib.sha256(path.read_bytes()).hexdigest()
         return directory, sums
-
-    def source_zip_into(self, directory: Path) -> Path:
-        path = directory / f"Nori-macOS-Source-v{VERSION}.zip"
-        self.tool.build_source_package(self.commit, path)
-        return path
 
     def release(self, github: FakeGitHub, platforms=ALL, dry_run: bool = False, sums: dict | None = None,
                 directory: Path | None = None):
@@ -486,12 +324,9 @@ class MetaTests(ReleaseTestCase):
     def test_version_tag_title_and_assets_come_from_the_commit(self) -> None:
         meta = self.meta()
         self.assertEqual((meta.version, meta.commit, meta.tag, meta.title), (VERSION, self.commit, "v2.6.0", "Nori v2.6.0"))
-        self.assertEqual(meta.builds, {"ios": "40", "macos": "31"})
-        self.assertEqual(meta.bundle_ids, {"ios": "to.nori.ios", "macos": "to.nori.macos", "webos": "tv.nori.app"})
-        self.assertEqual(sorted(self.tool.expected_assets(VERSION, ALL)), [
-            "Nori-Windows-v2.6.0.exe", "Nori-Windows-v2.6.0.zip", "Nori-iOS-v2.6.0.ipa",
-            "Nori-macOS-Source-v2.6.0.zip", "Nori-macOS-v2.6.0.zip", "Nori-webOS-v2.6.0.ipk",
-        ])
+        self.assertEqual(meta.builds, {"ios": "40"})
+        self.assertEqual(meta.bundle_ids, {"ios": "to.nori.ios"})
+        self.assertEqual(sorted(self.tool.expected_assets(VERSION, ALL)), ["Nori-iOS-v2.6.0.ipa"])
 
     def test_every_asset_follows_the_naming_scheme(self) -> None:
         for key, spec in self.tool.ASSETS.items():
@@ -509,18 +344,18 @@ class MetaTests(ReleaseTestCase):
                     self.tool.read_meta("HEAD", bad)
 
     def test_mixed_versions_are_an_error(self) -> None:
-        self.commit_files({"apps/webos/appinfo.json": json.dumps({"id": "tv.nori.app", "version": "2.6.1"})})
+        self.commit_files({"native/Nori-iOS/Nori.xcodeproj/project.pbxproj":
+                           pbxproj_text(VERSION, "40", "to.nori.ios", second_version="2.6.1")})
         with self.assertRaisesRegex(self.tool.ReleaseError, "nicht einheitlich"):
             self.meta()
 
     def test_build_values_for_release_and_test_builds(self) -> None:
         meta = self.meta()
-        release = self.tool.build_values(meta, self.tool.PLATFORMS["windows"], True)
-        self.assertEqual(release["artifact"], "nori-release-windows")
+        release = self.tool.build_values(meta, self.tool.PLATFORMS["ios"], True)
+        self.assertEqual(release["artifact"], "nori-release-ios")
         self.assertEqual(release["retention"], "1")
-        self.assertEqual(release["asset_windows_installer"], "Nori-Windows-v2.6.0.exe")
-        self.assertEqual(release["asset_windows_portable"], "Nori-Windows-v2.6.0.zip")
-        self.assertNotIn("asset", release)
+        self.assertEqual(release["asset"], "Nori-iOS-v2.6.0.ipa")
+        self.assertEqual(release["asset_ios"], "Nori-iOS-v2.6.0.ipa")
         test = self.tool.build_values(meta, self.tool.PLATFORMS["ios"], False)
         short = self.commit[:7]
         self.assertEqual(test["asset"], f"Nori-iOS-v2.6.0-{short}.ipa")
@@ -529,8 +364,9 @@ class MetaTests(ReleaseTestCase):
         self.assertEqual(test["build"], "40")
 
     def test_platform_input(self) -> None:
-        self.assertEqual(self.tool.parse_platforms("windows, IOS,ios"), ["ios", "windows"])
-        for bad in ("", " , ", "android", "ios,tvos"):
+        self.assertEqual(self.tool.parse_platforms(" IOS,ios"), ["ios"])
+        # Entfernte Plattformen sind unbekannt, nicht stillschweigend leer.
+        for bad in ("", " , ", "android", "ios,tvos", "macos", "webos", "windows", "ios,windows"):
             with self.subTest(value=bad):
                 with self.assertRaises(self.tool.ReleaseError):
                     self.tool.parse_platforms(bad)
@@ -543,8 +379,6 @@ class PrepareTests(ReleaseTestCase):
         git(self.repo, "checkout", "-q", "--detach")
         (self.repo / "native/Nori-iOS/Nori.xcodeproj/project.pbxproj").write_text(
             pbxproj_text("1.25.2", "39", "to.nori.ios"), encoding="utf-8")
-        (self.repo / "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj").write_text(
-            pbxproj_text("1.20.1", "30", "to.nori.macos"), encoding="utf-8")
         git(self.repo, "commit", "-qam", "alt")
         old = git(self.repo, "rev-parse", "HEAD")
         self.legacy = {}
@@ -557,15 +391,14 @@ class PrepareTests(ReleaseTestCase):
         kwargs["tags"] = {**self.legacy, **kwargs.get("tags", {})}
         return super().github(**kwargs)
 
-    def prepare(self, github: FakeGitHub, version: str = "v2.6.0", platforms: str = "ios,macos,webos,windows"):
+    def prepare(self, github: FakeGitHub, version: str = "v2.6.0", platforms: str = "ios"):
         return self.tool.prepare(version, platforms, github)
 
     def test_new_version_is_ready(self) -> None:
         github = self.github()
-        meta, platforms = self.prepare(github, platforms="webos,ios")
-        self.assertEqual((meta.version, meta.commit, platforms), (VERSION, self.commit, ["ios", "webos"]))
+        meta, platforms = self.prepare(github)
+        self.assertEqual((meta.version, meta.commit, platforms), (VERSION, self.commit, ["ios"]))
         self.assertEqual(self.tool.build_at_tag("ios-v1.25.2", "ios"), "39")
-        self.assertEqual(self.tool.build_at_tag("macos-v1.20.1", "macos"), "30")
         self.assertEqual(github.writes, [])
 
     def test_existing_tag_release_or_draft(self) -> None:
@@ -581,8 +414,9 @@ class PrepareTests(ReleaseTestCase):
                     self.prepare(self.github(**kwargs))
 
     def test_same_or_higher_version_in_any_tag_scheme(self) -> None:
+        # Auch die Tags entfernter Plattformen zählen: ihre Nummern sind vergeben.
         for tag, message in (("webos-v2.6.0", "bereits vergeben"), ("ios-v3.0.0", "nicht neuer als das vorhandene ios-v3.0.0"),
-                             ("v2.10.0", "nicht neuer"), ("windows-v2.6.1", "nicht neuer")):
+                             ("v2.10.0", "nicht neuer"), ("windows-v2.6.1", "nicht neuer"), ("macos-v2.6.0", "bereits vergeben")):
             with self.subTest(tag=tag):
                 with self.assertRaisesRegex(self.tool.ReleaseError, message):
                     self.prepare(self.github(tags={tag: OTHER_COMMIT}))
@@ -593,7 +427,6 @@ class PrepareTests(ReleaseTestCase):
         self.assertEqual(self.tool.build_at_tag("ios-v1.9.4", "ios"), "40")
         with self.assertRaisesRegex(self.tool.ReleaseError, "Buildnummer ios 40 ist nicht größer als 40 in ios-v1.9.4"):
             self.prepare(self.github(tags={"ios-v1.9.4": self.commit}))
-        # macOS kennt nur seine eigenen und die gemeinsamen Tags.
         git(self.repo, "tag", "-a", "v1.0.0", "-m", "alt")
         with self.assertRaisesRegex(self.tool.ReleaseError, "Buildnummer ios 40 ist nicht größer als 40 in ios-v1.9.4"):
             self.prepare(self.github(tags={"ios-v1.9.4": self.commit, "v1.0.0": self.commit}))
@@ -614,7 +447,7 @@ class PrepareTests(ReleaseTestCase):
         self.prepare(self.github(tags={"v1.8.0": OTHER_COMMIT}))
 
     def test_missing_documents_block_the_release(self) -> None:
-        self.commit_files({"CHANGELOG.md": "# Changelog\n\nNori **2.6.0**\n\n## [webOS 2.6.0]\n"})
+        self.commit_files({"CHANGELOG.md": "# Changelog\n\nNori **2.6.0**\n\n## [iOS 2.6.0]\n"})
         with self.assertRaisesRegex(self.tool.ReleaseError, r"keinen Abschnitt `## \[Nori 2.6.0\]`"):
             self.prepare(self.github())
 
@@ -661,14 +494,11 @@ class PublishTests(ReleaseTestCase):
         github = self.github()
         self.release(github)
         body = github.release_list[0]["body"]
-        for expected in ("**Nori 2.6.0** für iOS / iPadOS, macOS, LG webOS, Windows",
+        for expected in ("**Nori 2.6.0** für iOS / iPadOS.",
                          f"[`{self.commit[:7]}`](https://github.com/owner/nori/commit/{self.commit})",
                          "| iOS / iPadOS | `Nori-iOS-v2.6.0.ipa` | Build 40. Unsigniert",
-                         "| macOS | `Nori-macOS-v2.6.0.zip` | Build 31. Unsigniert",
-                         "| macOS (Quellpaket) | `Nori-macOS-Source-v2.6.0.zip` | Build 31. Quellpaket",
-                         "| Windows | `Nori-Windows-v2.6.0.exe` |", "| Windows (ohne Installation) | `Nori-Windows-v2.6.0.zip` |",
-                         "| LG webOS | `Nori-webOS-v2.6.0.ipk` |",
-                         "Nicht enthalten: Android (keine App in diesem Repository), Google TV",
+                         "Nicht enthalten: macOS (eingestellt), Windows (eingestellt), LG webOS (eingestellt), "
+                         "Android (keine App in diesem Repository), Google TV",
                          "shasum -a 256 -c checksums-sha256.txt",
                          "### Allgemein", "- **Ein Release je Version.** Alle Pakete hängen an einem Release.",
                          "### iOS / iPadOS", "  - Unterpunkt ohne Einzelheiten.", "### Windows",
@@ -678,32 +508,25 @@ class PublishTests(ReleaseTestCase):
                            "Alter Abschnitt", "für diesen Release nicht gebaut"):
             self.assertNotIn(unexpected, body)
 
-    def test_subset_of_platforms(self) -> None:
-        github = self.github()
-        self.assertEqual(self.release(github, platforms=["ios", "webos"]), "created")
-        release = github.release_list[0]
-        self.assertEqual(sorted(a["name"] for a in release["assets"]),
-                         ["Nori-iOS-v2.6.0.ipa", "Nori-webOS-v2.6.0.ipk", self.tool.CHECKSUMS])
-        self.assertIn("Nicht enthalten: macOS (für diesen Release nicht gebaut), Windows (für diesen Release nicht gebaut)",
-                      release["body"])
-
     def test_missing_or_extra_package_blocks_the_release(self) -> None:
-        directory, sums = self.packages(["ios", "webos"])
-        with self.assertRaisesRegex(self.tool.ReleaseError, "Es fehlen Pakete: Nori-Windows-v2.6.0.exe, Nori-Windows-v2.6.0.zip"):
-            self.release(self.github(), platforms=["ios", "webos", "windows"], directory=directory, sums=sums)
+        empty = self.out / "leer"
+        empty.mkdir()
+        with self.assertRaisesRegex(self.tool.ReleaseError, "Es fehlen Pakete: Nori-iOS-v2.6.0.ipa"):
+            self.release(self.github(), directory=empty, sums={})
+        directory, sums = self.packages()
         (directory / "build.log").write_text("Protokoll")
         github = self.github()
         with self.assertRaisesRegex(self.tool.ReleaseError, "Unerwartete Dateien bei den Paketen: build.log"):
-            self.release(github, platforms=["ios", "webos"], directory=directory, sums=sums)
+            self.release(github, directory=directory, sums=sums)
         self.assertEqual(github.writes, [])
 
     def test_checksum_from_package_job_is_required_and_must_match(self) -> None:
-        directory, sums = self.packages(["ios", "webos"])
+        directory, sums = self.packages()
         github = self.github()
-        with self.assertRaisesRegex(self.tool.ReleaseError, "Prüfsumme aus dem Paket-Job fehlt für webos"):
-            self.release(github, platforms=["ios", "webos"], directory=directory, sums={"ios": sums["ios"]})
+        with self.assertRaisesRegex(self.tool.ReleaseError, "Prüfsumme aus dem Paket-Job fehlt für ios"):
+            self.release(github, directory=directory, sums={})
         with self.assertRaisesRegex(self.tool.ReleaseError, "weicht vom geprüften Paket ab"):
-            self.release(github, platforms=["ios", "webos"], directory=directory, sums={**sums, "webos": "0" * 64})
+            self.release(github, directory=directory, sums={"ios": "0" * 64})
         self.assertEqual(github.writes, [])
 
     def test_existing_release_is_never_duplicated_or_overwritten(self) -> None:
@@ -728,7 +551,7 @@ class PublishTests(ReleaseTestCase):
 
     def test_failed_production_check_blocks_the_release(self) -> None:
         def failing(meta, spec, path):
-            if spec.key == "windows-portable":
+            if spec.key == "ios":
                 raise self.tool.ReleaseError("Produktionsprüfung fehlgeschlagen")
         self.tool.production_check = failing
         github = self.github()
@@ -738,7 +561,7 @@ class PublishTests(ReleaseTestCase):
 
     def test_modified_upload_is_never_published(self) -> None:
         github = self.github()
-        github.corrupt_upload = "Nori-webOS-v2.6.0.ipk"
+        github.corrupt_upload = "Nori-iOS-v2.6.0.ipa"
         with self.assertRaisesRegex(self.tool.ReleaseError, "weicht vom geprüften Paket ab"):
             self.release(github)
         self.assertNotIn("tag", github.writes)
@@ -790,8 +613,6 @@ class VerifyTests(ReleaseTestCase):
 
     def test_wrong_name(self) -> None:
         self.assertRejected("ios", make_ipa(self.out, name="Nori-iOS-2.6.0-unsigned.ipa"), "Falsches Paket")
-        self.assertRejected("webos", make_ipk(self.out, name="tv.nori.app_2.6.0_all.ipk"), "Falsches Paket")
-        self.assertRejected("windows-portable", make_windows_zip(self.out, name="Nori-2.6.0-portable.zip"), "Falsches Paket")
 
     def test_checksum_must_match(self) -> None:
         ipa = make_ipa(self.out)
@@ -831,160 +652,18 @@ class VerifyTests(ReleaseTestCase):
             with self.subTest(message=message):
                 self.assertRejected("ios", make_ipa(self.out, extra={"Payload/Nori.app/main.jsbundle": content}), message)
 
-    def test_ipk_versions_and_content(self) -> None:
-        self.assertRejected("webos", make_ipk(self.out, control_version="2.5.0"), r"Version \(control\)")
-        self.assertRejected("webos", make_ipk(self.out, appinfo_version="2.5.0"), r"appinfo\.json")
-        self.assertRejected("webos", make_ipk(self.out, raw=b"kein ar"), "kein ar-Archiv")
-        app = "./usr/palm/applications/tv.nori.app/"
-        cases = {
-            app + ".env.local": (b"VITE=1", "unzulässige Datei"),
-            app + "assets/old.js": (OLD_TV_SECRET.encode(), "google-webos-oauth-test.json client_secret"),
-            app + "assets/mac.js": (MAC_SECRET.encode(), "google-macos-oauth.json client_secret"),
-            app + "assets/ios.js": (IOS_ID.encode(), "google-ios-client-id"),
-            app + "assets/token.js": (REFRESH_TOKEN.encode(), "Refresh-Token"),
-        }
-        for member, (content, message) in cases.items():
-            with self.subTest(member=member):
-                self.assertRejected("webos", make_ipk(self.out, extra={member: content}), message)
-
-    def test_source_package_is_the_commit(self) -> None:
-        path = self.source_zip()
-        with zipfile.ZipFile(path) as archive:
-            infos = {info.filename: info for info in archive.infolist()}
-            link = infos["native/Nori-macOS/Nori/Models.swift"]
-            self.assertTrue(stat.S_ISLNK(link.external_attr >> 16))
-            self.assertEqual(archive.read(link), b"../../NoriCore/Sources/NoriCore/Models.swift")
-        self.assertEqual((infos["native/Nori-macOS/Mac-App-bauen.command"].external_attr >> 16) & 0o777, 0o755)
-        self.assertNotIn("native/Nori-iOS/Nori.xcodeproj/project.pbxproj", infos)
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos-source"], path)
-
-    def test_source_package_ignores_the_worktree(self) -> None:
-        (self.repo / "native/Nori-macOS/Notizen.txt").write_text("nicht eingecheckt")
-        (self.repo / "native/Nori-macOS/Config/Google.local.xcconfig").write_text(f"GOOGLE_CLIENT_ID = {MAC_ID}\n")
-        (self.repo / "README.md").write_text("# lokal geändert\n")
-        path = self.source_zip()
-        with zipfile.ZipFile(path) as archive:
-            names = archive.namelist()
-            self.assertNotEqual(archive.read("README.md"), "# lokal geändert\n".encode())
-        self.assertNotIn("native/Nori-macOS/Notizen.txt", names)
-        self.assertNotIn("native/Nori-macOS/Config/Google.local.xcconfig", names)
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos-source"], path)
-
-    def test_source_zip_must_equal_the_commit(self) -> None:
-        good = self.source_zip()
-        tampered = self.out / "neu" / good.name
-        tampered.parent.mkdir()
-        with zipfile.ZipFile(good) as source, zipfile.ZipFile(tampered, "w") as target:
-            for info in source.infolist():
-                data = source.read(info)
-                if info.filename == "README.md":
-                    data = b"# anders\n"
-                target.writestr(info, data)
-            target.writestr("native/Nori-macOS/Config/Google.local.xcconfig", f"GOOGLE_CLIENT_ID = {MAC_ID}\n")
-        self.assertRejected("macos-source", tampered, "unzulässige Datei")
-
-    def test_source_zip_from_an_older_commit_is_rejected(self) -> None:
-        older = self.source_zip()
-        self.commit_files({"native/Nori-macOS/Nori/NoriApp.swift": "@main struct NoriApp { let neu = 1 }\n"})
-        self.assertRejected("macos-source", older, "NoriApp.swift weicht vom Stand")
-
-    def test_macos_app_zip(self) -> None:
-        path = make_macos_app(self.out)
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["macos"], path)
-        self.assertRejected("macos", make_macos_app(self.out, extra={"README.txt": b"hi"}), "außerhalb von Nori.app")
-        self.assertRejected("macos", make_macos_app(self.out, version="2.5.0", name="Nori-macOS-v2.6.0.zip"),
-                            "CFBundleShortVersionString")
-        self.assertRejected("macos", make_macos_app(self.out, build="30"), "CFBundleVersion")
-        self.assertRejected("macos", make_macos_app(self.out, bundle="to.nori.ios"), "Bundle-ID")
-        self.assertRejected("macos", make_macos_app(self.out, client_id=""), "GoogleClientID fehlt oder ist leer")
-        self.assertRejected("macos", make_macos_app(self.out, client_secret=""), "GoogleClientSecret fehlt oder ist leer")
-        self.assertRejected("macos", make_macos_app(self.out, extra={"Nori.app/Contents/MacOS/other": b"x"},
-                                                   binary=""), "MacOS/Nori fehlt")
-        self.assertRejected("macos", make_macos_app(self.out, extra={"Nori.app/Contents/leak.js": IOS_ID.encode()}),
-                            "google-ios-client-id")
-        self.assertRejected("macos", make_macos_app(self.out, client_id="$(GOOGLE_CLIENT_ID)"),
-                            "unaufgelöster Platzhalter")
-        self.assertRejected("macos", make_macos_app(self.out, client_secret="$(GOOGLE_CLIENT_SECRET)"),
-                            "unaufgelöster Platzhalter")
-
-    def test_windows_installer(self) -> None:
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["windows-installer"], make_installer(self.out))
-        self.assertRejected("windows-installer", make_installer(self.out, product=(2, 5, 0, 0)), "Produktversion 2.5.0.0")
-        self.assertRejected("windows-installer", make_installer(self.out, nsis=False), "kein NSIS-Installer")
-        self.assertRejected("windows-installer", make_installer(self.out, tail=MAC_SECRET.encode()),
-                            "google-macos-oauth.json client_secret")
-        plain = self.out / "Nori-Windows-v2.6.0.exe"
-        plain.write_bytes(b"MZ" + b"\0" * 200)
-        self.assertRejected("windows-installer", plain, "PE-Kopf fehlt")
-        plain.write_bytes(make_pe(tail=b"NullsoftInst")[:0x80] + b"NullsoftInst")
-        self.assertRejected("windows-installer", plain, "keine Versionsangaben")
-
-    def test_windows_portable(self) -> None:
-        self.tool.verify_asset(self.meta(), self.tool.ASSETS["windows-portable"], make_windows_zip(self.out))
-        cases = (
-            (dict(asar=make_asar(app_files("2.5.0"))), r"Version \(app.asar/package.json\) ist '2.5.0'"),
-            (dict(exe=make_pe((2, 5, 0, 0))), "Nori.exe: Produktversion 2.5.0.0"),
-            (dict(exe=make_pe(strings={"ProductVersion": "2.5.0"})), "ProductVersion '2.5.0'"),
-            (dict(omit=("resources/app.asar",)), "resources/app.asar fehlt"),
-            (dict(omit=("Nori.exe",)), "Nori.exe fehlt"),
-            (dict(asar=b"kaputt"), "app.asar ist nicht lesbar"),
-            (dict(asar=make_asar({k: v for k, v in app_files().items() if k != "dist/index.html"})), "dist/index.html fehlt"),
-            (dict(asar=make_asar(app_files(extra={"dist/assets/t.js": REFRESH_TOKEN.encode()}))), "Refresh-Token"),
-            (dict(asar=make_asar(app_files(extra={"dist/assets/t.js": TV_SECRET.encode()}))), "google-webos-oauth.json client_secret"),
-            (dict(extra={"resources/elevate.exe": IOS_ID.encode()}), "google-ios-client-id"),
-            (dict(extra={"resources/.env": b"X=1"}), "unzulässige Datei"),
-            (dict(extra={"../evil.dll": b"x"}), "unzulässiger Pfad"),
-        )
-        for kwargs, message in cases:
-            with self.subTest(message=message):
-                self.assertRejected("windows-portable", make_windows_zip(self.out, **kwargs), message)
-
-    def test_windows_allows_its_own_desktop_client_only(self) -> None:
-        # Nutzt Windows denselben Desktop-Client wie macOS, ist das erlaubt — aber nur im Windows-Paket.
-        main = f'const google={{clientId:"{MAC_ID}",clientSecret:"{MAC_SECRET}"}};'.encode()
-        path = make_windows_zip(self.out, asar=make_asar(app_files(main=main)))
-        with mock.patch.dict(os.environ, {"NORI_GOOGLE_DESKTOP_CLIENT_ID": MAC_ID,
-                                          "NORI_GOOGLE_DESKTOP_CLIENT_SECRET": MAC_SECRET}):
-            self.tool.verify_asset(self.meta(), self.tool.ASSETS["windows-portable"], path)
-            # In jedem anderen Paket bleibt derselbe Wert ein Fehler.
-            self.assertRejected("webos", make_ipk(self.out, extra={
-                "./usr/palm/applications/tv.nori.app/x.js": MAC_SECRET.encode()}), "google-macos-oauth.json client_secret")
-        self.assertRejected("windows-portable", path, "google-macos-oauth.json")
-
-    def test_windows_production_check(self) -> None:
-        path = make_windows_zip(self.out)
-        self.tool.check_windows_credentials(path)
-        other = self.out / "ohne"
-        other.mkdir()
-        without = make_windows_zip(other, asar=make_asar(app_files(main=b'const google={clientId:"",clientSecret:""};')))
-        with self.assertRaisesRegex(self.tool.ReleaseError, "NORI_GOOGLE_DESKTOP_CLIENT_ID ist nicht in den Hauptprozess eingebaut"):
-            self.tool.check_windows_credentials(without)
-        with mock.patch.dict(os.environ, {"NORI_GOOGLE_DESKTOP_CLIENT_ID": "", "NORI_GOOGLE_DESKTOP_CLIENT_SECRET": " "}):
-            with self.assertRaisesRegex(self.tool.ReleaseError, "Repository-Secrets anlegen"):
-                self.tool.check_windows_credentials(path)
-
-    def test_asar_reader(self) -> None:
-        files = {"package.json": b"{}", "a/b/c.js": b"abc", "leer.txt": b""}
-        self.assertEqual(self.tool.read_asar(make_asar(files), "x"), files)
-        data = make_asar({"a.js": b"abcdef"})
-        with self.assertRaisesRegex(self.tool.ReleaseError, "abgeschnitten"):
-            self.tool.read_asar(data[:-3], "x")
-        evil = make_asar({"..": b"x"})
-        with self.assertRaisesRegex(self.tool.ReleaseError, "unzulässiger Pfad"):
-            self.tool.read_asar(evil, "x")
-
     def test_check_app(self) -> None:
         app = self.out / "Nori.app"
-        (app / "Contents").mkdir(parents=True)
-        info = {"CFBundleShortVersionString": VERSION, "CFBundleVersion": "31", "CFBundleIdentifier": "to.nori.macos"}
-        (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
-        self.tool.check_app("macos", app, self.meta())
-        info["CFBundleVersion"] = "30"
-        (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
-        with self.assertRaisesRegex(self.tool.ReleaseError, "CFBundleVersion ist '30'"):
-            self.tool.check_app("macos", app, self.meta())
-        with self.assertRaisesRegex(self.tool.ReleaseError, "fehlt"):
+        app.mkdir()
+        info = {"CFBundleShortVersionString": VERSION, "CFBundleVersion": "40", "CFBundleIdentifier": "to.nori.ios"}
+        (app / "Info.plist").write_bytes(plistlib.dumps(info))
+        self.tool.check_app("ios", app, self.meta())
+        info["CFBundleVersion"] = "39"
+        (app / "Info.plist").write_bytes(plistlib.dumps(info))
+        with self.assertRaisesRegex(self.tool.ReleaseError, "CFBundleVersion ist '39'"):
             self.tool.check_app("ios", app, self.meta())
+        with self.assertRaisesRegex(self.tool.ReleaseError, "fehlt"):
+            self.tool.check_app("ios", self.out / "Anders.app", self.meta())
 
 
 class NotesTests(ReleaseTestCase):
@@ -1047,15 +726,14 @@ class ValidateTests(ReleaseTestCase):
         with self.assertRaisesRegex(self.tool.ReleaseError, "weicht von der Prüfsumme bei GitHub ab"):
             self.tool.validate_release(github, self.meta(), ALL)
         sums_asset["digest"] = "sha256:" + hashlib.sha256(github.blobs[sums_asset["id"]]).hexdigest()
+        with self.assertRaisesRegex(self.tool.ReleaseError, "weicht von checksums-sha256.txt ab"):
+            self.tool.validate_release(github, self.meta(), ALL)
+        ipa = next(a for a in github.release_list[0]["assets"] if a["name"] == "Nori-iOS-v2.6.0.ipa")
+        github.blobs[sums_asset["id"]] = (ipa["digest"].removeprefix("sha256:") + "  Nori-iOS-v2.6.0.ipa\n"
+                                          + "0" * 64 + "  Nori-macOS-v2.6.0.zip\n").encode()
+        sums_asset["digest"] = "sha256:" + hashlib.sha256(github.blobs[sums_asset["id"]]).hexdigest()
         with self.assertRaisesRegex(self.tool.ReleaseError, "checksums-sha256.txt nennt"):
             self.tool.validate_release(github, self.meta(), ALL)
-
-    def test_platform_set_must_match(self) -> None:
-        github = self.published(platforms=["ios", "webos"])
-        self.tool.validate_release(github, self.meta(), ["ios", "webos"])
-        with self.assertRaisesRegex(self.tool.ReleaseError, "fehlt: Nori-Windows"):
-            self.tool.validate_release(github, self.meta(), ["ios", "webos", "windows"])
-
 
 def workflow_run(run_id: int, path: str, created: str, status: str = "completed", sha: str = "c" * 40,
                  branch: str = "main") -> dict:
@@ -1183,9 +861,10 @@ class CleanupTests(ReleaseTestCase):
     def test_allowlist(self) -> None:
         workflows = {path.name for path in (REPO / ".github/workflows").glob("*.yml")}
         listed = {Path(path).name for path in self.tool.CLEANUP_WORKFLOWS}
-        self.assertTrue({"release.yml", "build-ios.yml", "build-macos.yml", "build-webos.yml", "build-windows.yml"} <= listed)
+        self.assertTrue({"release.yml", "build-ios.yml"} <= listed)
         # Einträge ohne Datei sind nur entfernte Nori-Workflows mit alten Läufen.
-        self.assertEqual(listed - workflows, {"package-ios-ipa.yml", "package-macos-source.yml", "build-android-app.yml"})
+        self.assertEqual(listed - workflows, {"package-ios-ipa.yml", "package-macos-source.yml", "build-android-app.yml",
+                                              "build-macos.yml", "build-webos.yml", "build-windows.yml"})
         for name in listed:
             self.assertNotRegex(name, r"codeql|dependabot|renovate|security|scan|stale|label")
 
@@ -1365,9 +1044,7 @@ def all_steps(workflow: dict) -> list[dict]:
     return [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
 
 
-BUILD_WORKFLOWS = {
-    "ios": "build-ios.yml", "macos": "build-macos.yml", "webos": "build-webos.yml", "windows": "build-windows.yml",
-}
+BUILD_WORKFLOWS = {"ios": "build-ios.yml"}
 
 
 class WorkflowTests(unittest.TestCase):
@@ -1398,11 +1075,10 @@ class WorkflowTests(unittest.TestCase):
         on = triggers(load_workflow("release.yml"))
         self.assertEqual(set(on), {"workflow_dispatch"})
         inputs = on["workflow_dispatch"]["inputs"]
+        # Nur noch eine Plattform: nichts abzuwählen.
+        self.assertEqual(set(inputs), {"version", "dry_run"})
         self.assertTrue(inputs["version"]["required"])
         self.assertEqual(inputs["version"]["type"], "string")
-        for platform in BUILD_WORKFLOWS:
-            self.assertEqual(inputs[platform]["type"], "boolean")
-            self.assertIs(inputs[platform]["default"], True)
         self.assertIs(inputs["dry_run"]["default"], False)
 
     def test_one_release_at_a_time(self) -> None:
@@ -1417,7 +1093,7 @@ class WorkflowTests(unittest.TestCase):
             job = jobs[platform]
             self.assertEqual(job["uses"], f"./.github/workflows/{file}")
             self.assertEqual(sorted(job["needs"]), ["checks", "prepare"])
-            self.assertIn(f"needs.prepare.outputs.{platform} == 'true'", job["if"])
+            self.assertNotIn("if", job)
             self.assertEqual(job["with"]["release-version"], "${{ needs.prepare.outputs.version }}")
             self.assertEqual(job["permissions"], {"contents": "read"})
         publish = jobs["publish"]
@@ -1427,7 +1103,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("needs.prepare.result == 'success'", condition)
         self.assertIn("needs.checks.result == 'success'", condition)
         for platform in BUILD_WORKFLOWS:
-            self.assertIn(f"(needs.prepare.outputs.{platform} != 'true' || needs.{platform}.result == 'success')", condition)
+            self.assertIn(f"needs.{platform}.result == 'success'", condition)
         for bypass in ("always()", "failure()", "|| true"):
             self.assertNotIn(bypass, condition)
         validate, cleanup = jobs["validate"], jobs["cleanup"]
@@ -1469,7 +1145,7 @@ class WorkflowTests(unittest.TestCase):
         publish = next(step for step in jobs["publish"]["steps"] if "nori-release.py publish" in step.get("run", ""))
         self.assertIn('--commit "$GITHUB_SHA"', publish["run"])
         self.assertIn("--sha256", publish["run"])
-        self.assertIn("macos-source=$SHA256_MACOS_SOURCE", publish["run"])
+        self.assertIn("ios=$SHA256_IOS", publish["run"])
         cleanup = next(step for step in jobs["cleanup"]["steps"] if "nori-release.py cleanup" in step.get("run", ""))
         self.assertIn('--keep-run "$GITHUB_RUN_ID"', cleanup["run"])
         for name in ("publish", "validate", "cleanup"):
@@ -1487,15 +1163,7 @@ class WorkflowTests(unittest.TestCase):
                 call = triggers(workflow)["workflow_call"]
                 self.assertTrue(call["inputs"]["release-version"]["required"])
                 outputs = call["outputs"]
-                if platform == "windows":
-                    self.assertIn("sha256_installer", outputs)
-                    self.assertIn("sha256_portable", outputs)
-                elif platform == "macos":
-                    self.assertIn("sha256", outputs)
-                    self.assertIn("sha256_source", outputs)
-                    self.assertIn("asset_source", outputs)
-                else:
-                    self.assertIn("sha256", outputs)
+                self.assertIn("sha256", outputs)
                 group = workflow["concurrency"]["group"]
                 self.assertIn("inputs.release-version", group)
                 self.assertIn("github.run_id", group)
@@ -1566,22 +1234,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--verify-ios-app", ios["Google OAuth im gebauten Programm prüfen"]["run"])
         self.assertIn("--verify-ios-ipa", ios["Google OAuth in der fertigen IPA prüfen"]["run"])
         self.assertIn("check-app --platform ios", ios["Version im gebauten Programm prüfen"]["run"])
-        webos = {step.get("name"): step for step in load_workflow("build-webos.yml")["jobs"]["build"]["steps"]}
-        self.assertIn("--production", webos["Paket prüfen"]["run"])
-        self.assertIn("--reference-dist", webos["Paket prüfen"]["run"])
-        macos = {step.get("name"): step for step in load_workflow("build-macos.yml")["jobs"]["package"]["steps"]}
-        self.assertIn("--macos", macos["Google OAuth für macOS bereitstellen"]["run"])
-        self.assertIn("--verify-macos-app", macos["Google OAuth im gebauten Programm prüfen"]["run"])
-        self.assertIn("--verify-macos-zip", macos["Google OAuth im App-Paket prüfen"]["run"])
-        self.assertIn("check-app --platform macos", macos["Version im gebauten Programm prüfen"]["run"])
-        self.assertIn("ditto -c -k --keepParent", macos["Nori.app packen"]["run"])
-        self.assertIn("nori-release.py source-package", macos["Quellpaket aus dem Commit schnüren"]["run"])
-        self.assertIn("--asset macos ", macos["App-Paket für den Release prüfen"]["run"])
-        self.assertIn("--asset macos-source", macos["Quellpaket prüfen"]["run"])
-        windows = {step.get("name"): step for step in load_workflow("build-windows.yml")["jobs"]["build"]["steps"]}
-        self.assertIn("inputs.release-version", str(windows["Google-Zugang für den Release prüfen"]["if"]))
-        verify = windows["Pakete für den Release prüfen"]["run"]
-        self.assertIn("--production", verify)
 
     def test_tags_start_no_workflow(self) -> None:
         # Ein Release-Tag darf weder Builds noch einen zweiten Release anstoßen.
@@ -1597,7 +1249,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertNotIn("tags", push)
 
     def test_replaced_workflows_are_gone(self) -> None:
-        for name in ("package-ios-ipa.yml", "package-macos-source.yml"):
+        for name in ("package-ios-ipa.yml", "package-macos-source.yml",
+                     "build-macos.yml", "build-webos.yml", "build-windows.yml"):
             self.assertFalse((REPO / ".github/workflows" / name).exists(), name)
         for path in sorted((REPO / ".github/workflows").glob("*.yml")):
             text = path.read_text()

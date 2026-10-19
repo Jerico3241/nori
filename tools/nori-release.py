@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Nori-Releases: eine Version, ein Tag, ein GitHub Release, alle Plattformen.
+"""Nori-Releases: eine Version, ein Tag, ein GitHub Release.
 
 Aufgerufen vom Workflow **Nori Release** (`.github/workflows/release.yml`) und
-von den Plattform-Läufen, die er aufruft — `Build iOS`, `Build macOS`,
-`Build webOS` und `Build Windows`.
+vom Lauf `Build iOS`, den er aufruft. Seit macOS, Windows und LG webOS
+entfernt sind, gibt es nur noch eine Plattform: iOS/iPadOS.
 
     python3 tools/nori-release.py meta           --platform ios [--release-version 2.6.0]
-    python3 tools/nori-release.py prepare        --version v2.6.0 --platforms ios,macos,webos,windows
-    python3 tools/nori-release.py source-package --output Nori-macOS-Source-v2.6.0.zip
-    python3 tools/nori-release.py check-app      --platform macos --app <Nori.app>
-    python3 tools/nori-release.py verify         --asset macos --file <Nori-macOS-v…zip>
-    python3 tools/nori-release.py notes          [--platforms ios,macos,webos,windows]
+    python3 tools/nori-release.py prepare        --version v2.6.0 --platforms ios
+    python3 tools/nori-release.py check-app      --platform ios --app <Nori.app>
+    python3 tools/nori-release.py verify         --asset ios --file <Nori-iOS-v…ipa>
+    python3 tools/nori-release.py notes          [--platforms ios]
     python3 tools/nori-release.py publish        --version 2.6.0 --platforms … --dir <Ordner> --sha256 ios=<…> … --commit <SHA>
     python3 tools/nori-release.py validate       --version 2.6.0 --platforms … --commit <SHA>
     python3 tools/nori-release.py cleanup        --version 2.6.0 --platforms … --commit <SHA> --keep-run <ID>
@@ -24,8 +23,9 @@ Die Regeln stehen hier und nirgends sonst:
 * Jede Version bekommt genau einen Release. Gibt es Tag, Release oder Entwurf
   schon, oder trägt ein vorhandener Tag — auch ein alter `ios-v…` — eine
   gleiche oder höhere Version, bricht der Lauf ab. Verschoben, überschrieben
-  oder gelöscht wird dabei nie etwas. Die Buildnummern von iOS und macOS
-  müssen über denen jedes früheren Release-Tags liegen.
+  oder gelöscht wird dabei nie etwas. Die Buildnummer von iOS
+  muss über denen jedes früheren Release-Tags liegen. Die alten Tags der
+  entfernten Plattformen (`webos-v…` usw.) zählen dabei weiter mit.
 * Angehängt werden genau die Pakete der gewählten Plattformen, benannt
   `Nori-<Plattform>-v<VERSION>.<Endung>`, und `checksums-sha256.txt`. Jedes
   Paket wird am Namen, an der Prüfsumme aus seinem Paket-Job und am Inhalt
@@ -50,14 +50,11 @@ import datetime as dt
 import hashlib
 import http.client
 import importlib.util
-import io
 import json
 import os
 import plistlib
 import re
 import ssl
-import stat
-import struct
 import subprocess
 import sys
 import tempfile
@@ -160,83 +157,39 @@ ASSETS = {
         "ios", "ios", "Nori-iOS-v{version}{suffix}.ipa", "ipa", "application/octet-stream", "iOS / iPadOS",
         "Unsigniert – vor der Installation signieren, etwa mit Feather, ESign oder SideStore.",
     ),
-    "macos": AssetSpec(
-        "macos", "macos", "Nori-macOS-v{version}{suffix}.zip", "macos-app", "application/zip", "macOS",
-        "Unsigniert – nach dem Entpacken per Rechtsklick auf Nori.app öffnen, nicht doppelklicken. "
-        "Gatekeeper fragt beim ersten Start nach.",
-    ),
-    "macos-source": AssetSpec(
-        "macos-source", "macos", "Nori-macOS-Source-v{version}{suffix}.zip", "source-zip", "application/zip",
-        "macOS (Quellpaket)",
-        "Quellpaket – in Xcode öffnen und mit einem eigenen Team signieren.",
-    ),
-    "webos": AssetSpec(
-        "webos", "webos", "Nori-webOS-v{version}{suffix}.ipk", "ipk", "application/octet-stream", "LG webOS",
-        "Installationspaket für LG-Fernseher im Entwicklermodus.",
-    ),
-    "windows-installer": AssetSpec(
-        "windows-installer", "windows", "Nori-Windows-v{version}{suffix}.exe", "windows-installer",
-        "application/vnd.microsoft.portable-executable", "Windows",
-        "Installer ohne Administratorrechte. Nicht signiert: SmartScreen fragt beim ersten Start nach "
-        "(„Weitere Informationen“ → „Trotzdem ausführen“).",
-    ),
-    "windows-portable": AssetSpec(
-        "windows-portable", "windows", "Nori-Windows-v{version}{suffix}.zip", "windows-portable", "application/zip",
-        "Windows (ohne Installation)", "Entpacken und `Nori.exe` starten – es wird nichts installiert.",
-    ),
 }
 
 PLATFORMS = {
     "ios": Platform("ios", "iOS / iPadOS", "iOS", ".github/workflows/build-ios.yml", ("ios",), "ios-v"),
-    "macos": Platform("macos", "macOS", "macOS", ".github/workflows/build-macos.yml",
-                      ("macos", "macos-source"), "macos-v"),
-    "webos": Platform("webos", "LG webOS", "webOS", ".github/workflows/build-webos.yml", ("webos",), "webos-v"),
-    "windows": Platform("windows", "Windows", "Windows", ".github/workflows/build-windows.yml",
-                        ("windows-installer", "windows-portable"), "windows-v"),
 }
+
+# Tag-Schemata vor 2.6.0 von Plattformen, die es nicht mehr gibt. Ihre Tags
+# stehen noch im Repository, und keine neue Nummer darf unter ihnen liegen.
+RETIRED_PREFIXES = ("macos-v", "webos-v", "windows-v")
 
 # Plattformen ohne App in diesem Repository. Sie stehen in den Notes unter
 # „nicht enthalten“ — ein Paket für sie gibt es nicht, und es wird keines erfunden.
 NOT_AVAILABLE = {
+    "macOS": "eingestellt",
+    "Windows": "eingestellt",
+    "LG webOS": "eingestellt",
     "Android": "keine App in diesem Repository",
     "Google TV": "keine App in diesem Repository",
 }
 
 # Längere Präfixe zuerst: `webos-v2.2.1` ist kein `v…`-Tag.
-TAG_PREFIXES = tuple(sorted({"v", *(platform.legacy_prefix for platform in PLATFORMS.values())}, key=len, reverse=True))
+TAG_PREFIXES = tuple(sorted({"v", *RETIRED_PREFIXES, *(platform.legacy_prefix for platform in PLATFORMS.values())},
+                            key=len, reverse=True))
 
 XCODE_PROJECTS = {
     "ios": "native/Nori-iOS/Nori.xcodeproj/project.pbxproj",
-    "macos": "native/Nori-macOS/NoriMac.xcodeproj/project.pbxproj",
-}
-WEBOS_APPINFO = "apps/webos/appinfo.json"
-
-# Inhalt des macOS-Quellpakets: diese Pfade, genau so, wie sie im Commit stehen.
-SOURCE_PATHS = {
-    "macos": (
-        "native/Nori-macOS",
-        "native/NoriCore",
-        "native/Package.swift",
-        "native/Tests",
-        "config/contract.json",
-        "README.md",
-        "CHANGELOG.md",
-    ),
 }
 
 # Welche echten Werte vom Rechner ein Paket tragen darf. Alles andere aus
 # ~/.config/nori/secrets ist in jedem Paket ein Fehler.
 ALLOWED_CREDENTIALS = {
     "ipa": {"google-ios-client-id"},
-    "ipk": {"google-webos-oauth.json client_id", "google-webos-oauth.json client_secret"},
-    "macos-app": {"google-macos-oauth.json client_id", "google-macos-oauth.json client_secret"},
-    "source-zip": set(),
-    "windows-installer": set(),
-    "windows-portable": set(),
 }
-# Der Desktop-Client von Windows kommt als Umgebungsvariable in den Build; er
-# darf im Windows-Paket stehen und sonst nirgends.
-DESKTOP_CLIENT_ENV = ("NORI_GOOGLE_DESKTOP_CLIENT_ID", "NORI_GOOGLE_DESKTOP_CLIENT_SECRET")
 
 
 def platform_for(key: str) -> Platform:
@@ -254,7 +207,7 @@ def asset_for(key: str) -> AssetSpec:
 
 
 def parse_platforms(value: str | Iterable[str]) -> list[str]:
-    """`ios,webos` → in fester Reihenfolge, ohne Doppelte; leer oder unbekannt ist ein Fehler."""
+    """`ios` → in fester Reihenfolge, ohne Doppelte; leer oder unbekannt ist ein Fehler."""
     items = value.split(",") if isinstance(value, str) else list(value)
     wanted = {item.strip().lower() for item in items if item and item.strip()}
     unknown = sorted(wanted - set(PLATFORMS))
@@ -334,12 +287,7 @@ def read_meta(ref: str = "HEAD", expected: str | None = None) -> Meta:
                 f"Verlangt ist Version {wanted}, Commit {commit[:7]} trägt {version} – "
                 "erst die Nummer im Repository setzen (python3 tools/nori-version.py set …), dann releasen"
             )
-    try:
-        appinfo = json.loads(file_at(commit, WEBOS_APPINFO))
-    except json.JSONDecodeError:
-        raise ReleaseError(f"{WEBOS_APPINFO} ist kein gültiges JSON") from None
-    bundle_ids = {**state.bundle_ids, "webos": str(appinfo.get("id", ""))}
-    return Meta(version, commit, dict(state.builds), bundle_ids)
+    return Meta(version, commit, dict(state.builds), dict(state.bundle_ids))
 
 
 def check_documents(meta: Meta) -> None:
@@ -365,7 +313,7 @@ def build_at_tag(tag: str, platform: str) -> str | None:
 
 
 def check_builds(meta: Meta, tags: Iterable[str]) -> None:
-    """iOS und macOS müssen als neuer erkannt werden — auch gegenüber alten Plattform-Tags."""
+    """iOS muss als neuer erkannt werden — auch gegenüber alten Plattform-Tags."""
     for platform, build in meta.builds.items():
         prefixes = ("v", PLATFORMS[platform].legacy_prefix)
         for tag in sorted(tags):
@@ -403,11 +351,6 @@ FORBIDDEN_FILES = re.compile(
 
 VERIFIERS = {
     "ipa": "verify_ipa",
-    "ipk": "verify_ipk",
-    "macos-app": "verify_macos_app",
-    "source-zip": "verify_source_zip",
-    "windows-installer": "verify_windows_installer",
-    "windows-portable": "verify_windows_portable",
 }
 
 
@@ -436,11 +379,6 @@ def known_credentials() -> dict[str, str]:
         if len(value) >= 16:
             values["google-ios-client-id"] = value
     return values
-
-
-def desktop_credentials() -> dict[str, str]:
-    """Der Desktop-Client aus der Umgebung des Windows-Builds. Werte werden nie ausgegeben."""
-    return {name: os.environ.get(name, "").strip() for name in DESKTOP_CLIENT_ENV if os.environ.get(name, "").strip()}
 
 
 def sha256_file(path: Path) -> str:
@@ -545,358 +483,9 @@ def verify_ipa(meta: Meta, path: Path) -> None:
         scan_contents(label, files, "ipa", patterns=True)
 
 
-def verify_macos_app(meta: Meta, path: Path) -> None:
-    """ZIP mit genau einem `Nori.app`: Version, Build, Kennung, ausführbare Datei."""
-    label = path.name
-    with open_zip(path, label) as archive:
-        infos = archive.infolist()
-        names = [info.filename for info in infos]
-        for name in names:
-            safe_member(name, label)
-        outside = [name for name in names if not name.startswith("Nori.app/") and name not in ("Nori.app", "Nori.app/")]
-        if outside:
-            raise ReleaseError(f"{label}: Dateien außerhalb von Nori.app/: {', '.join(outside[:3])}")
-        check_names(label, names)
-        plist_name = "Nori.app/Contents/Info.plist"
-        try:
-            info = plistlib.loads(archive.read(plist_name))
-        except KeyError:
-            raise ReleaseError(f"{label}: {plist_name} fehlt") from None
-        except Exception as error:
-            raise ReleaseError(f"{label}: Info.plist nicht lesbar ({type(error).__name__})") from None
-        expect_equal(label, "Version (CFBundleShortVersionString)", info.get("CFBundleShortVersionString"), meta.version)
-        expect_equal(label, "Build (CFBundleVersion)", info.get("CFBundleVersion"), meta.builds["macos"])
-        expect_equal(label, "Bundle-ID", info.get("CFBundleIdentifier"), meta.bundle_ids["macos"])
-        client = info.get("GoogleClientID")
-        if not isinstance(client, str) or not client.strip():
-            raise ReleaseError(f"{label}: GoogleClientID fehlt oder ist leer – diese Fassung hätte keinen Google-Abgleich")
-        if "$(" in client:
-            raise ReleaseError(f"{label}: GoogleClientID ist ein unaufgelöster Platzhalter")
-        secret = info.get("GoogleClientSecret")
-        if not isinstance(secret, str) or not secret.strip():
-            raise ReleaseError(f"{label}: GoogleClientSecret fehlt oder ist leer")
-        if "$(" in secret:
-            raise ReleaseError(f"{label}: GoogleClientSecret ist ein unaufgelöster Platzhalter")
-        executable = info.get("CFBundleExecutable") or "Nori"
-        binary = f"Nori.app/Contents/MacOS/{executable}"
-        if binary not in names:
-            raise ReleaseError(f"{label}: {binary} fehlt")
-        files = ((entry.filename, archive.read(entry)) for entry in infos if not entry.is_dir())
-        scan_contents(label, files, "macos-app", patterns=True, secret_pattern_allowed=True)
-
-
-def webos_checker():
-    return load_tool("check_webos_package", "check-webos-package.py")
-
-
-def verify_ipk(meta: Meta, path: Path) -> None:
-    label = path.name
-    result = webos_checker().read_ipk(path)
-    if isinstance(result, str):
-        raise ReleaseError(f"{label}: {result}")
-    members, raw_files = result
-    if sorted(members) != ["control.tar.gz", "data.tar.gz", "debian-binary"]:
-        raise ReleaseError(f"{label}: unerwartete Teile im Paket: {', '.join(sorted(members))}")
-    if members["debian-binary"].strip() != b"2.0":
-        raise ReleaseError(f"{label}: debian-binary ist nicht 2.0")
-
-    files = [(name[2:] if name.startswith("./") else name.lstrip("/"), data) for name, data in raw_files]
-    for name, _ in files:
-        safe_member(name, label)
-    check_names(label, (name for name, _ in files))
-    by_name = dict(files)
-
-    control = by_name.get("control")
-    if control is None:
-        raise ReleaseError(f"{label}: control fehlt")
-    fields = dict(re.findall(r"^([A-Za-z-]+):[ \t]*(.*?)[ \t]*$", control.decode("utf-8", "replace"), re.MULTILINE))
-    bundle_id = meta.bundle_ids["webos"]
-    expect_equal(label, "Paketname (control)", fields.get("Package"), bundle_id)
-    expect_equal(label, "Version (control)", fields.get("Version"), meta.version)
-
-    appinfo_path = f"usr/palm/applications/{bundle_id}/appinfo.json"
-    try:
-        appinfo = json.loads(by_name[appinfo_path])
-    except KeyError:
-        raise ReleaseError(f"{label}: {appinfo_path} fehlt") from None
-    except ValueError:
-        raise ReleaseError(f"{label}: appinfo.json ist kein gültiges JSON") from None
-    expect_equal(label, "Version (appinfo.json)", appinfo.get("version"), meta.version)
-    expect_equal(label, "App-ID (appinfo.json)", appinfo.get("id"), bundle_id)
-    # Das TV-Paket trägt genau ein Secret; welches, prüft check-webos-package.py --production.
-    scan_contents(label, files, "ipk", patterns=True, secret_pattern_allowed=True)
-
-
-def git_blobs(shas: list[str]) -> dict[str, bytes]:
-    """Inhalte vieler Blobs in einem Aufruf."""
-    if not shas:
-        return {}
-    result = run_git("cat-file", "--batch", binary=True, stdin=("\n".join(shas) + "\n").encode())
-    if result.returncode != 0:
-        raise ReleaseError("git cat-file fehlgeschlagen")
-    out, blobs, position = result.stdout, {}, 0
-    for sha in shas:
-        end = out.index(b"\n", position)
-        header = out[position:end].split()
-        if len(header) != 3 or header[1] != b"blob":
-            raise ReleaseError(f"Blob {sha[:7]} ist nicht lesbar")
-        size = int(header[2])
-        blobs[sha] = out[end + 1:end + 1 + size]
-        position = end + 1 + size + 1
-    return blobs
-
-
-def source_tree(commit: str, key: str) -> dict[str, tuple[str, str]]:
-    tree: dict[str, tuple[str, str]] = {}
-    listing = git("ls-tree", "-r", "-z", "--full-tree", commit, "--", *SOURCE_PATHS[key])
-    for record in listing.split("\0"):
-        if not record:
-            continue
-        header, _, name = record.partition("\t")
-        mode, kind, sha = header.split()
-        if kind == "blob":
-            tree[name] = (mode, sha)
-    if not tree:
-        raise ReleaseError(f"Commit {commit[:7]} enthält keine Quelldateien")
-    return tree
-
-
-def build_source_package(commit: str, output: Path, key: str = "macos") -> int:
-    """Das Quellpaket aus dem Commit selbst — nicht aus der Arbeitskopie, Symlinks bleiben Symlinks."""
-    tree = source_tree(commit, key)
-    blobs = git_blobs(sorted({sha for _, sha in tree.values()}))
-    seconds = int(git("show", "-s", "--format=%ct", commit).strip())
-    stamp = max(dt.datetime.fromtimestamp(seconds, dt.timezone.utc), dt.datetime(1980, 1, 1, tzinfo=dt.timezone.utc))
-    date_time = stamp.timetuple()[:6]
-    with zipfile.ZipFile(output, "w") as archive:
-        for name in sorted(tree):
-            mode, sha = tree[name]
-            info = zipfile.ZipInfo(name, date_time)
-            info.create_system = 3
-            if mode == "120000":
-                info.external_attr = (stat.S_IFLNK | 0o777) << 16
-                info.compress_type = zipfile.ZIP_STORED
-            else:
-                info.external_attr = (stat.S_IFREG | (0o755 if mode == "100755" else 0o644)) << 16
-                info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, blobs[sha])
-    return len(tree)
-
-
-def verify_source_zip(meta: Meta, path: Path) -> None:
-    """Jede Datei des Quellpakets ist Byte für Byte die des Commits — nicht mehr, nicht weniger."""
-    label = path.name
-    entries: dict[str, tuple[bytes, bool]] = {}
-    with open_zip(path, label) as archive:
-        for info in archive.infolist():
-            safe_member(info.filename, label)
-            if info.is_dir():
-                continue
-            entries[info.filename] = (archive.read(info), stat.S_ISLNK(info.external_attr >> 16))
-    check_names(label, entries)
-
-    tree = source_tree(meta.commit, "macos")
-    extra = sorted(set(entries) - set(tree))
-    if extra:
-        raise ReleaseError(
-            f"{label}: {len(extra)} Datei(en) gehören nicht zu Commit {meta.commit[:7]}, z. B. {', '.join(extra[:3])}"
-        )
-    missing = sorted(set(tree) - set(entries))
-    if missing:
-        raise ReleaseError(f"{label}: {len(missing)} Datei(en) des Commits fehlen, z. B. {', '.join(missing[:3])}")
-    for name, (mode, sha) in sorted(tree.items()):
-        data, is_link = entries[name]
-        blob = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-        if blob != sha or (mode == "120000") != is_link:
-            raise ReleaseError(f"{label}: {name} weicht vom Stand in {meta.commit[:7]} ab")
-
-    project = XCODE_PROJECTS["macos"]
-    text = entries[project][0].decode("utf-8", "replace")
-    tool = version_tool()
-    try:
-        version = tool.single_setting(text, "MARKETING_VERSION", project)
-        build = tool.single_setting(text, "CURRENT_PROJECT_VERSION", project)
-    except tool.VersionError as error:
-        raise ReleaseError(f"{label}: {error}") from None
-    expect_equal(label, "MARKETING_VERSION", version, meta.version)
-    expect_equal(label, "CURRENT_PROJECT_VERSION", build, meta.builds["macos"])
-    # Kein Musterabgleich: die Tests im Quellpaket tragen absichtlich erfundene Tokens.
-    scan_contents(label, ((name, data) for name, (data, _) in entries.items()), "source-zip", patterns=False)
-
-
-# Windows ─────────────────────────────────────────────────────────────────────
-
-VS_VERSION_INFO = "VS_VERSION_INFO\0".encode("utf-16-le")
-FIXED_FILE_INFO = struct.pack("<I", 0xFEEF04BD)
-NSIS_SIGNATURE = b"NullsoftInst"
-
-
-def version_string(block: bytes, key: str) -> str | None:
-    marker = (key + "\0").encode("utf-16-le")
-    index = block.find(marker)
-    while index != -1 and index % 2:
-        index = block.find(marker, index + 1)
-    if index == -1:
-        return None
-    start = index + len(marker)
-    start += -start % 4
-    end = start
-    while end + 1 < len(block) and block[end:end + 2] != b"\0\0":
-        end += 2
-    return block[start:end].decode("utf-16-le", "replace")
-
-
-def pe_version_info(data: bytes, label: str) -> tuple[tuple[int, ...], dict[str, str | None]]:
-    """Produktversion aus VS_FIXEDFILEINFO und die Zeichenketten daneben."""
-    if data[:2] != b"MZ" or len(data) < 0x40:
-        raise ReleaseError(f"{label}: kein Windows-Programm")
-    offset = int.from_bytes(data[0x3C:0x40], "little")
-    if data[offset:offset + 4] != b"PE\0\0":
-        raise ReleaseError(f"{label}: kein Windows-Programm (PE-Kopf fehlt)")
-    index = data.find(VS_VERSION_INFO)
-    while index != -1:
-        start = index - 6
-        signature = start + 40
-        if start >= 0 and data[signature:signature + 4] == FIXED_FILE_INFO:
-            length = int.from_bytes(data[start:start + 2], "little")
-            product_ms, product_ls = struct.unpack_from("<II", data, signature + 16)
-            product = (product_ms >> 16, product_ms & 0xFFFF, product_ls >> 16, product_ls & 0xFFFF)
-            block = data[start:start + length]
-            return product, {key: version_string(block, key) for key in ("ProductVersion", "FileVersion", "ProductName")}
-        index = data.find(VS_VERSION_INFO, index + 2)
-    raise ReleaseError(f"{label}: keine Versionsangaben (VS_VERSION_INFO) – Windows würde keine Version anzeigen")
-
-
-def check_pe_version(label: str, data: bytes, version: str) -> None:
-    product, strings = pe_version_info(data, label)
-    if product[:3] != version_key(version):
-        shown = ".".join(str(part) for part in product)
-        raise ReleaseError(f"{label}: Produktversion {shown}, der Release verlangt {version}")
-    value = strings.get("ProductVersion")
-    if value is not None and value != version and not value.startswith(version + "."):
-        raise ReleaseError(f"{label}: ProductVersion {value!r}, der Release verlangt {version}")
-
-
-def read_asar(data: bytes, label: str) -> dict[str, bytes]:
-    """Dateien aus einem Electron-`app.asar`. Ausgelagerte (`unpacked`) Dateien liegen daneben."""
-    try:
-        header_size = struct.unpack_from("<I", data, 4)[0]
-        json_size = struct.unpack_from("<i", data, 12)[0]
-        header = json.loads(data[16:16 + json_size].decode("utf-8"))
-    except (struct.error, ValueError, UnicodeDecodeError):
-        raise ReleaseError(f"{label}: app.asar ist nicht lesbar") from None
-    base = 8 + header_size
-    files: dict[str, bytes] = {}
-
-    def walk(node: dict, prefix: str) -> None:
-        for name, entry in (node.get("files") or {}).items():
-            path = prefix + name
-            safe_member(path, label)
-            if not isinstance(entry, dict):
-                raise ReleaseError(f"{label}: app.asar ist nicht lesbar ({path})")
-            if "files" in entry:
-                walk(entry, path + "/")
-                continue
-            if entry.get("unpacked") or "link" in entry:
-                continue
-            try:
-                start = base + int(entry["offset"])
-                end = start + int(entry["size"])
-            except (KeyError, TypeError, ValueError):
-                raise ReleaseError(f"{label}: app.asar ist nicht lesbar ({path})") from None
-            if start < base or end > len(data):
-                raise ReleaseError(f"{label}: app.asar ist abgeschnitten ({path})")
-            files[path] = data[start:end]
-
-    walk(header, "")
-    return files
-
-
-def verify_windows_installer(meta: Meta, path: Path) -> None:
-    label = path.name
-    data = path.read_bytes()
-    check_pe_version(label, data, meta.version)
-    if NSIS_SIGNATURE not in data:
-        raise ReleaseError(f"{label}: kein NSIS-Installer")
-    # Der Inhalt ist komprimiert; wiedererkannt werden nur unverpackte fremde
-    # Werte. Den Inhalt selbst prüft das ZIP aus demselben Build.
-    scan_contents(label, [(label, data)], "windows-installer", patterns=False,
-                  allowed_values=desktop_credentials().values())
-
-
-def windows_app_files(path: Path, label: str) -> tuple[dict[str, bytes], list[str]]:
-    with open_zip(path, label) as archive:
-        infos = archive.infolist()
-        names = [info.filename for info in infos]
-        for name in names:
-            safe_member(name, label)
-        check_names(label, names)
-        members = {info.filename for info in infos if not info.is_dir()}
-        for required in ("Nori.exe", "resources/app.asar"):
-            if required not in members:
-                raise ReleaseError(f"{label}: {required} fehlt – das ZIP muss den Programmordner selbst enthalten")
-        asar = read_asar(archive.read("resources/app.asar"), f"{label}: resources/app.asar")
-    return asar, sorted(members)
-
-
-def verify_windows_portable(meta: Meta, path: Path) -> None:
-    label = path.name
-    asar, members = windows_app_files(path, label)
-    try:
-        package = json.loads(asar["package.json"])
-    except KeyError:
-        raise ReleaseError(f"{label}: package.json fehlt in app.asar") from None
-    except ValueError:
-        raise ReleaseError(f"{label}: package.json in app.asar ist kein gültiges JSON") from None
-    expect_equal(label, "Version (app.asar/package.json)", package.get("version"), meta.version)
-    expect_equal(label, "Paketname (app.asar/package.json)", package.get("name"), "@nori/windows")
-    for required in ("dist/index.html", str(package.get("main") or "dist-main/main.cjs")):
-        if required not in asar:
-            raise ReleaseError(f"{label}: {required} fehlt in app.asar")
-
-    allowed = desktop_credentials().values()
-    # Muster nur im eigenen Code: Chromium und Node bringen Zeichenketten mit,
-    # die wie Beispielwerte aussehen. Fremde echte Werte werden überall gesucht.
-    scan_contents(label, ((f"app.asar/{name}", data) for name, data in asar.items()), "windows-portable",
-                  patterns=True, allowed_values=allowed, secret_pattern_allowed=True)
-    with open_zip(path, label) as archive:
-        check_pe_version(f"{label}: Nori.exe", archive.read("Nori.exe"), meta.version)
-        scan_contents(label, ((name, archive.read(name)) for name in members), "windows-portable",
-                      patterns=False, allowed_values=allowed)
-
-
-def check_windows_credentials(path: Path) -> None:
-    """Ein Windows-Release ohne eingebauten Google-Client hätte keinen Abgleich."""
-    values = desktop_credentials()
-    missing = [name for name in DESKTOP_CLIENT_ENV if name not in values]
-    if missing:
-        raise ReleaseError(
-            f"Für das Windows-Paket fehlen {', '.join(missing)} – ohne sie hätte Nori für Windows keinen "
-            "Google-Abgleich. Repository-Secrets anlegen (docs/windows.md) oder Windows im Release abwählen."
-        )
-    asar, _ = windows_app_files(path, path.name)
-    code = b"".join(data for name, data in asar.items() if name.endswith((".cjs", ".js")))
-    for name, value in values.items():
-        if value.encode() not in code:
-            raise ReleaseError(f"{path.name}: {name} ist nicht in den Hauptprozess eingebaut")
-    print(f"  {path.name}: Google-Desktop-Client eingebaut")
-
-
 def production_check(meta: Meta, spec: AssetSpec, path: Path) -> None:
     """Die Produktionsprüfung der Plattform — gegen genau diese Datei."""
-    if spec.kind == "windows-portable":
-        check_windows_credentials(path)
-        return
-    if spec.kind == "ipa":
-        command = [sys.executable, str(ROOT / "tools/configure-google-oauth.py"), "--verify-ios-ipa", str(path)]
-    elif spec.kind == "ipk":
-        command = [sys.executable, str(ROOT / "tools/check-webos-package.py"), "--production", "--ipk", str(path)]
-    elif spec.kind == "macos-app":
-        command = [sys.executable, str(ROOT / "tools/configure-google-oauth.py"), "--verify-macos-zip", str(path)]
-    else:
-        # Quellpaket: verify_source_zip hat jede Datei mit dem Commit verglichen.
-        # Installer: sein Inhalt ist der des geprüften ZIP aus demselben Build.
-        return
+    command = [sys.executable, str(ROOT / "tools/configure-google-oauth.py"), "--verify-ios-ipa", str(path)]
     # CI=true: die Werkzeuge kürzen Client-IDs dann auch außerhalb der CI.
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env={**os.environ, "CI": "true"})
     lines = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith("WARN")]
@@ -908,7 +497,7 @@ def production_check(meta: Meta, spec: AssetSpec, path: Path) -> None:
 
 def check_app(platform: str, app: Path, meta: Meta) -> None:
     """Das gebaute Programm trägt Version, Build und Kennung des Commits."""
-    plist = app / ("Contents/Info.plist" if platform == "macos" else "Info.plist")
+    plist = app / "Info.plist"
     try:
         info = plistlib.loads(plist.read_bytes())
     except FileNotFoundError:
@@ -1096,7 +685,7 @@ def build_notes(meta: Meta, platforms: list[str], repository: str) -> str:
     included = ", ".join(PLATFORMS[key].display for key in platforms)
 
     notes = "\n".join([
-        f"**Nori {meta.version}** für {included} – eine Versionsnummer für alle Plattformen.",
+        f"**Nori {meta.version}** für {included}.",
         "",
         f"Commit [`{meta.commit[:7]}`](https://github.com/{repository}/commit/{meta.commit})",
         "",
@@ -1577,14 +1166,14 @@ RELEASE_WORKFLOW = ".github/workflows/release.yml"
 CLEANUP_WORKFLOWS = frozenset({
     RELEASE_WORKFLOW,
     ".github/workflows/build-ios.yml",
-    ".github/workflows/build-macos.yml",
-    ".github/workflows/build-webos.yml",
-    ".github/workflows/build-windows.yml",
     ".github/workflows/build-android.yml",
     ".github/workflows/swift-tests.yml",
     ".github/workflows/check-sources.yml",
     ".github/workflows/check-release.yml",
     # entfernt, Läufe noch vorhanden
+    ".github/workflows/build-macos.yml",
+    ".github/workflows/build-webos.yml",
+    ".github/workflows/build-windows.yml",
     ".github/workflows/package-ios-ipa.yml",
     ".github/workflows/package-macos-source.yml",
     ".github/workflows/build-android-app.yml",
@@ -1748,13 +1337,6 @@ def command_prepare(args) -> int:
     return 0
 
 
-def command_source_package(args) -> int:
-    commit = resolve_commit(args.commit)
-    count = build_source_package(commit, args.output)
-    print(f"Quellpaket {args.output.name}: {count} Dateien aus {commit[:7]}")
-    return 0
-
-
 def command_check_app(args) -> int:
     meta = read_meta(args.commit, args.release_version or None)
     check_app(args.platform, args.app, meta)
@@ -1841,11 +1423,6 @@ def main(argv: list[str] | None = None) -> int:
     prep.add_argument("--platforms", required=True)
     prep.add_argument("--github-output", action="store_true")
     prep.set_defaults(handler=command_prepare)
-
-    source = commands.add_parser("source-package", help="macOS-Quellpaket aus dem Commit")
-    source.add_argument("--output", type=Path, required=True)
-    source.add_argument("--commit", default="HEAD")
-    source.set_defaults(handler=command_source_package)
 
     app = commands.add_parser("check-app", help="gebautes Programm gegen Version und Build prüfen")
     app.add_argument("--platform", required=True, choices=list(XCODE_PROJECTS))
