@@ -4,9 +4,6 @@ Nori ist eine native Anime- und Serien-App mit Katalog, Suche, Merkliste, Verlau
 
 Unterstützte Quellen:
 
-- **AniWorld** für Anime
-- **Serienstream** für Serien
-
 Die App nutzt verfügbare Hoster nach Priorität und erlaubt während der Wiedergabe den Wechsel von Hoster und Sprache.
 
 > **Privates Projekt.** Nori ist nicht mit AniWorld oder Serienstream verbunden.
